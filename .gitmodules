@@ -1,6 +1,0 @@
-[submodule "lib/PicoLED"]
-	path = lib/PicoLED
-	url = https://github.com/ForsakenNGS/PicoLED.git
-[submodule "lib/TFT_eSPI"]
-	path = lib/TFT_eSPI
-	url = https://github.com/Bodmer/TFT_eSPI
