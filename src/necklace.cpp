@@ -26,13 +26,22 @@ void Necklace::setup()
     HeartbeatState->init();
     States.push_back(HeartbeatState);
 
-    ActiveState = HeartbeatState;
+    std::shared_ptr<State> HackerState = std::make_shared<State_Hacker>("HackerState");
+    HackerState->init();
+    States.push_back(HackerState);
 
-#if LOGGING_ENABLED
+    setActiveState(HackerState);
+
+//#if LOGGING_ENABLED
     std::string StartingStringLog = "Starting State: ";
     StartingStringLog.append(ActiveState->GetStateName());
     jlog::print(StartingStringLog.c_str(), Verbosity::Display);
-#endif
+//#endif
+}
+
+void Necklace::setup1()
+{
+
 }
 
 void Necklace::tickLEDs()
@@ -55,11 +64,25 @@ void Necklace::tickScreen()
 void Necklace::loop()
 {
     tickLEDs();
-    tickScreen(); // todo move to loop 1
     delay(20);
 }
 
 void Necklace::loop1()
 {
+    tickScreen(); // todo move to loop 1
+}
 
+void Necklace::setActiveState(std::shared_ptr<State> InState)
+{
+    if(ActiveState)
+    {
+        ActiveState->stateDeactivated();
+    }
+
+    ActiveState = InState;
+
+    if(ActiveState)
+    {
+        ActiveState->stateActivated();
+    }
 }

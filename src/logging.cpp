@@ -21,18 +21,24 @@ Category operator|(Category lhs, Category rhs) {
     );
 }
 
-void jlog::print(const char *msg, Verbosity Verbosity, Category HideCategories)
+void jlog::print(const char *InMsg, Verbosity InVerbosity, Category InHideCategories)
 {
-    if(ProjectVerbosity > Verbosity)
+    if(ProjectVerbosity > InVerbosity)
     {
         return;
     }
 
-    if((int)(ProjectHideCategories & HideCategories) != 0)
+
+    if((ProjectHideCategories & InHideCategories) != Category::None)
     {
         // easier for people to provide hide categories
         return;
     }
 
-    Serial.println(msg);
+    Serial.println(InMsg);
+}
+
+void jlog::print(std::string InMsg, Verbosity InVerbosity, Category InHideCategories)
+{
+    jlog::print(InMsg.c_str(), InVerbosity, InHideCategories);
 }

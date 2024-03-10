@@ -11,6 +11,8 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <chrono>
+#include <ctime>
 
 #include <AnimatedGIF.h>
 
@@ -47,6 +49,9 @@ public:
     virtual void init();
     virtual void cleanup();
 
+    virtual void stateActivated();
+    virtual void stateDeactivated();
+
     // all deltaTimes are relative to their own hardware
     virtual void tickScreen();
     virtual void tickLEDs();
@@ -57,14 +62,16 @@ public:
     //void addStateTransition(std::weak_ptr<State> State, std::function<bool(State*)> Lambda);
     //void removeStateTransition(std::weak_ptr<State> State);
 
-    const std::string& GetStateName() const { return StateName; }
+    const std::string& GetStateName() const { return stateName; }
+
+    std::chrono::duration<float> GetStateActiveDuration() const;
 
 private:
     //std::map<std::weak_ptr<State>, std::function<bool(State*)>> StateTransitions;
 
-    float stateStartTime; //TODO
+    std::chrono::time_point<std::chrono::system_clock> activationTime;
 
-    std::string StateName;
+    std::string stateName;
 };
 
 class State_Boot : public State
@@ -108,4 +115,17 @@ public:
 
 private:
     bool bLoadedHeart{false};
+};
+
+
+class State_Hacker : public State
+{
+public:
+    State_Hacker(const char* InStateName);
+
+    virtual void init() override;
+
+    virtual void tickScreen() override;
+    virtual void tickLEDs() override;
+    virtual void tickLogic() override;
 };

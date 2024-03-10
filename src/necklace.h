@@ -12,12 +12,15 @@ class Necklace
 {
 public:
     void setup();
+    void setup1();
 
     void loop();
     void loop1();
 
     void tickLEDs();
     void tickScreen();
+
+    void setActiveState(std::shared_ptr<State> NewState);
 
 private:
 

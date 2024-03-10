@@ -13,6 +13,7 @@
 #include "Adafruit_GFX.h"
 #include <AnimatedGIF.h>
 
+#include "imgs/homer_tiny.h"
 #include "imgs/earth_128x128.h"
 
 void GameState::initSingleton()
@@ -44,7 +45,7 @@ void GameState::cleanup()
 
 State::State(const char* InStateName)
 {
-    StateName = InStateName;
+    stateName = InStateName;
 }
 
 
@@ -64,6 +65,16 @@ void State::cleanup()
     tickMsg.append(GetStateName());
     jlog::print(tickMsg.c_str(), Verbosity::Display, Category::StateInfo);
 #endif
+}
+
+void State::stateActivated()
+{
+    activationTime = std::chrono::system_clock::now();
+}
+
+void State::stateDeactivated()
+{
+    
 }
 
 void State::tickLEDs()
@@ -91,6 +102,13 @@ void State::tickLogic()
     tickMsg.append(GetStateName());
     jlog::print(tickMsg.c_str(), Verbosity::Verbose, Category::OnTick | Category::StateInfo);
 #endif
+}
+
+std::chrono::duration<float> State::GetStateActiveDuration() const
+{
+    std::chrono::time_point<std::chrono::system_clock> currentTime = std::chrono::system_clock::now();
+    std::chrono::duration<float> timeDiff = currentTime - activationTime;
+    return timeDiff;
 }
 
 State_Boot::State_Boot(const char* InStateName) : State(InStateName)
@@ -173,6 +191,7 @@ void State_Heartbeat::init()
 {
     State::init();
 
+    /*
     HeartGif.begin(LITTLE_ENDIAN_PIXELS);
 
     bLoadedHeart = HeartGif.open((uint8_t *)earth_128x128, sizeof(earth_128x128), GIFDraw_Necklace);
@@ -184,29 +203,16 @@ void State_Heartbeat::init()
     {
         Serial.printf("Unsuccessfully opened GIF");
     }
+    */
 }
 
 void State_Heartbeat::tickScreen()
 {
-    State::tickScreen();
-
     GlobalManager& GM = GlobalManager::get();
 
-    int playFrameResult = HeartGif.playFrame(true, NULL);
-    if(playFrameResult == 0)
-    {
-        jlog::print("playing HeartGif seems to have hit the end", Verbosity::Error);
-    }
-    else if(playFrameResult == 1)
-    {
-        jlog::print("playing HeartGif success", Verbosity::Error);
-    }
-    else{
-        jlog::print("playing HeartGif error", Verbosity::Error);
-        std::string lastError = "last error: ";
-        lastError.append(std::to_string(HeartGif.getLastError()));
-        jlog::print(lastError.c_str(), Verbosity::Error);
-    }
+    //int playFrameResult = HeartGif.playFrame(false, NULL);
+
+    State::tickScreen();
 }
 
 void State_Heartbeat::tickLEDs()
@@ -217,7 +223,7 @@ void State_Heartbeat::tickLEDs()
     
     for(int ledIdx = 0; ledIdx < RING_LENGTH; ++ledIdx)
     {
-        GM.RingLEDs[ledIdx].setRGB(255,0,0);
+        GM.RingLEDs[ledIdx].setRGB(60,0,0);
     }
 
     /*
@@ -229,6 +235,50 @@ void State_Heartbeat::tickLEDs()
 }
 
 void State_Heartbeat::tickLogic()
+{
+    State::tickLogic();
+}
+
+
+State_Hacker::State_Hacker(const char* InStateName) : State(InStateName)
+{
+
+}
+
+void State_Hacker::init()
+{
+    State::init();
+}
+
+void State_Hacker::tickScreen()
+{
+    State::tickScreen();
+
+    GlobalManager& GM = GlobalManager::get();
+
+    GM.Screen->drawLine(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, GC9A01A_CYAN);
+    GM.Screen->drawLine(SCREEN_WIDTH/2, 0, SCREEN_WIDTH/2, SCREEN_HEIGHT, GC9A01A_CYAN);
+    GM.Screen->drawLine(0, SCREEN_HEIGHT, SCREEN_WIDTH, 0, GC9A01A_CYAN);
+    GM.Screen->drawLine(0, SCREEN_HEIGHT/2, SCREEN_WIDTH, SCREEN_HEIGHT/2, GC9A01A_CYAN);
+}
+
+void State_Hacker::tickLEDs()
+{
+    State::tickLEDs();
+
+    GlobalManager& GM = GlobalManager::get();
+
+    int randPixel = std::rand() % RING_LENGTH;
+
+    GM.RingLEDs[randPixel].setRGB(0,200,0);
+
+    for(int ledIdx = 0; ledIdx < RING_LENGTH; ++ledIdx)
+    {
+        GM.RingLEDs[ledIdx].nscale8(200);
+    }
+}
+
+void State_Hacker::tickLogic()
 {
     State::tickLogic();
 }
