@@ -23,6 +23,7 @@ Category operator|(Category lhs, Category rhs) {
 
 void jlog::print(const char *InMsg, Verbosity InVerbosity, Category InHideCategories)
 {
+    /*
     if(ProjectVerbosity > InVerbosity)
     {
         return;
@@ -34,11 +35,17 @@ void jlog::print(const char *InMsg, Verbosity InVerbosity, Category InHideCatego
         // easier for people to provide hide categories
         return;
     }
+    */
 
     Serial.println(InMsg);
 }
 
 void jlog::print(std::string InMsg, Verbosity InVerbosity, Category InHideCategories)
+{
+    jlog::print(InMsg.c_str(), InVerbosity, InHideCategories);
+}
+
+void jlog::print(String InMsg, Verbosity InVerbosity, Category InHideCategories)
 {
     jlog::print(InMsg.c_str(), InVerbosity, InHideCategories);
 }

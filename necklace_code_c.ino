@@ -15,44 +15,31 @@
 
 Necklace necklace;
 
-#define DEBUGGING_ENABLED 1
-
 void setup() {
-  Serial.begin(9600);
-
-  delay(1000);
+  Serial.begin(19200);
 
   GlobalManager::initSingleton();
+  SPI.begin();
+
+  delay(3000);
 
   necklace.setup();
+}
 
-  jlog::print(("SETUP COMPLETE"));
-
-#if DEBUGGING_ENABLED
-  delay(1000);
-#endif
+void loop() {
+  necklace.loop();
 }
 
 void setup1() {
-  necklace.setup1();
-
-  jlog::print(("SETUP1 COMPLETE"));
+  delay(1000);
 }
 
-void loop(void) {
-  necklace.loop();
-
-  jlog::print(("LOOP0 COMPLETE"), Verbosity::Verbose);
-}
-
-void loop1(void)
+void loop1()
 {
   necklace.loop1();
-
-  jlog::print(("LOOP1 COMPLETE"), Verbosity::Verbose);
 }
 
-// not used, since when would it be? but worth including for knowledge
+// not called anywhere, since when would it be? but worth including for knowledge
 void cleanup(void)
 {
   GlobalManager::cleanupSingleton();

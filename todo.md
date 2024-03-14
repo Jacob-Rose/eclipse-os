@@ -1,0 +1,1 @@
+1. throw the entire thing in a try {} catch {} so we can reset when things go wrong and also give us support for outputting the log. This can only do so much but really would cover like 80% basis.

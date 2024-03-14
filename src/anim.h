@@ -3,7 +3,9 @@
 // This file is part of project necklace_code_c
 // See readme.md for full license details.
 
-#include "FastLED.h"
+#include "io.h"
+#include <memory>
+#include <vector>
 
 template<typename T>
 class Keyframe
@@ -12,7 +14,9 @@ class Keyframe
     float Loc;
 }
 
-class Anim_LED
+// type t needs to support 
+template<typename T>
+struct Attribute
 {
-    //std::vector<Keyframe> Keyframes;
+    std::vector<Keyframe<T>> Keyframes;
 }

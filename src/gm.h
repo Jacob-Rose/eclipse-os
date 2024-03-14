@@ -5,7 +5,6 @@
 
 #pragma once
 
-#include "FastLED.h"
 #include "io.h"
 
 #include "Adafruit_GC9A01A.h"
@@ -23,27 +22,25 @@ public:
     static void cleanupSingleton();
     static GlobalManager& get() { return *singleton; }
 
+    GlobalManager();
+
     void init();
     void cleanup();
 
-    std::unique_ptr<Button> GreenButton;
-    std::unique_ptr<Button> RedButton;
-    std::unique_ptr<Button> BlueButton;
+    std::unique_ptr<j::Button> GreenButton;
+    std::unique_ptr<j::Button> RedButton;
+    std::unique_ptr<j::Button> BlueButton;
 
-    CRGB RingLEDs[RING_LENGTH];
-    CRGB OutfitLEDs[BODY_LED_LENGTH];
-    CRGB BoardLED[1];
+    std::unique_ptr<j::HSVStrip> RingLEDs;
+    std::unique_ptr<j::HSVStrip> OutfitLEDs;
+    std::unique_ptr<j::HSVStrip> BoardLED;
 
-    std::unique_ptr<Adafruit_GC9A01A> Screen;
+    std::shared_ptr<Adafruit_GC9A01A> Screen;
+    j::ScreenDrawer ScreenDrawer;
 
-    //std::chrono::duration dtLEDs;
-    //std::chrono::duration dtScreen;
-    //std::chrono::duration dtLogic;
+    // USER SETTINGS
+public:
+    //bool bHasOutfitConnected = true;
 
-    //std::time_t ledTickStart;
-    //std::time_t screenTickStart;
-    //std::time_t logicTickStart; 
+    //uint8_t globalBrightness = 255;
 };
-
-// Draw a line of image directly on the LCD
-void GIFDraw_Necklace(GIFDRAW *pDraw);

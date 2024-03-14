@@ -35,11 +35,16 @@ Category operator|(Category lhs, Category rhs);
 
 Category operator&(Category lhs, Category rhs);
 
-constexpr Verbosity ProjectVerbosity { Verbosity::Verbose };
-constexpr Category ProjectHideCategories { Category::OnTick };
+constexpr Verbosity ProjectVerbosity { 
+    Verbosity::VeryVerbose
+};
+constexpr Category ProjectHideCategories { 
+    Category::OnTick
+};
 
 namespace jlog
 {
     void print(const char *msg, Verbosity Verbosity = Verbosity::Display, Category HideCategories = Category::None);
     void print(std::string msg, Verbosity Verbosity = Verbosity::Display, Category HideCategories = Category::None);
+    void print(String msg, Verbosity Verbosity = Verbosity::Display, Category HideCategories = Category::None);
 }

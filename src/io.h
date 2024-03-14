@@ -9,10 +9,16 @@
 #include "pico/stdlib.h"
 #include <Arduino.h>
 
+#include <AnimatedGIF.h>
+
+#include <Adafruit_GC9A01A.h>
+#include <Adafruit_NeoPixel.h>
+
 #include <memory>
 #include <chrono>
 #include <ctime>
 
+#pragma region DEFINES
 // BEGIN PIN + HARDWARE DEFINES
 // redefine as needed
 
@@ -23,32 +29,101 @@
 #define RING_LED_PIN D24
 #define RING_ONE_LENGTH 12
 #define RING_TWO_LENGTH 16
-#define RING_LENGTH 28 //RING_ONE_LENGTH + RING_TWO_LENGTH
+#define RING_LED_LENGTH 28 //RING_ONE_LENGTH + RING_TWO_LENGTH
 
-#define BODY_LED_PIN 6
+#define OUTFIT_LED_PIN 6
 #define ARM_LED_LENGTH 60
 #define WHIP_LED_LENGTH 32
-#define BODY_LED_LENGTH 92 //ARM_LED_LENGTH + WHIP_LED_LENGTH
+#define OUTFIT_LED_LENGTH 92 //ARM_LED_LENGTH + WHIP_LED_LENGTH
 
-#define SCREEN_DC D9
-#define SCREEN_CS D10
-#define SCREEN_RST D11
-#define SCREEN_MISO 2 // labeled MOSI in docs but actually the SDA on my chip, actually GPIO2 on Feather RP2040, 
-#define SCREEN_SCLK 3 // labeled as SCL on my chip
+#define SCREEN_DC 3
+#define SCREEN_CS 2
+#define SCREEN_RST -1
+#define SCREEN_MISO D11 // labeled MOSI in docs but actually the SDA on my chip, actually GPIO2 on Feather RP2040, 
+#define SCREEN_SCLK D10 // labeled as SCL on my chip
 
 #define SCREEN_WIDTH 240
 #define SCREEN_HEIGHT 240
 
-class Button
+#pragma endregion
+
+namespace j
 {
-public:
+    class Button
+    {
+    public:
 
-    void init(uint8_t pin);
+        void init(uint8_t pin);
 
-    void checkChange(float tick);
+        void checkChange(float tick);
 
-private:
-    uint8_t myPin;
+    private:
+        uint8_t myPin;
 
-    bool bInit = false;
+        bool bInit = false;
+    };
+
+
+    class ScreenDrawer
+    {
+    public:
+        ScreenDrawer();
+
+        void setCanvasSize(uint16_t x, uint16_t y);
+        void setScreenRef(std::weak_ptr<Adafruit_GC9A01A> inScreenRef);
+
+        static void GIFDraw_UpscaleScreen(GIFDRAW *pDraw);
+
+    protected:
+        std::weak_ptr<Adafruit_GC9A01A> ScreenRef;
+
+        // todo add canvas / screen memory for setting up things
+        bool bCanvasEnable = true;
+        int16_t xCanvasSize, yCanvasSize;
+        std::vector<uint8_t> colors;
+
+    private:
+        bool bInit = false;
+    };
+
+
+    struct HSV
+    {
+        HSV();
+        HSV(byte inH, byte inS, byte inV);
+    
+        uint16_t h; 
+        uint8_t s; 
+        uint8_t v;
+    };
+
+    /// @brief HSV Wrapper for Adafruit_Neopixel
+    ///
+    /// HSV Wrapper for an Adafruit Neopixel strip, allows us to lerp and perform much cleaner calculations 
+    /// at the cost of performance, but honestly, def worth it in this case.
+    /// 
+    /// gives us an easy way to brighten, dim, and blend colors using HSV, which improves accuracy tremendously
+    ///
+    class HSVStrip
+    {
+    public:
+        HSVStrip(uint16_t inLedCount, uint16_t inLedPin, neoPixelType inPixelType);
+        ~HSVStrip();
+
+        void setPixel(uint16_t n, const HSV& color);
+        void setPixel(uint16_t n, uint16_t h, uint8_t s, uint8_t v);
+        HSV getPixel(uint16_t n);
+        
+        void show();
+
+    protected:
+        void updateStripPixel(uint16_t n);
+
+        bool bUsesGammaCorrection = true;
+
+    private:
+        HSV* strip_HSV;
+
+        Adafruit_NeoPixel strip;
+    };
 };

@@ -6,7 +6,7 @@
 #pragma once
 
 #include <memory>
-#include "states.h"
+#include "states/state_base.h"
 
 class Necklace
 {
@@ -19,6 +19,7 @@ public:
 
     void tickLEDs();
     void tickScreen();
+    void tickLogic();
 
     void setActiveState(std::shared_ptr<State> NewState);
 

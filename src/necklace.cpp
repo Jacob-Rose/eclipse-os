@@ -7,64 +7,73 @@
 
 #include "logging.h"
 
-#include "FastLED.h"
+#include "states/states.h"
 
 #include <chrono>
 #include <ctime>
 
 void Necklace::setup()
 {
-    std::shared_ptr<State> BootState = std::make_shared<State_Boot>("BootState");
+    std::shared_ptr<State> BootState = std::make_shared<State_Boot>("Boot_State");
     BootState->init();
     States.push_back(BootState);
 
-    std::shared_ptr<State> EmoteState = std::make_shared<State_Emote>("EmoteState");
+    std::shared_ptr<State> EmoteState = std::make_shared<State_Emote>("Emote_State");
     EmoteState->init();
     States.push_back(EmoteState);
 
-    std::shared_ptr<State> HeartbeatState = std::make_shared<State_Heartbeat>("HeartbeatState");
+    std::shared_ptr<State> HeartbeatState = std::make_shared<State_Heartbeat>("Heartbeat_State");
     HeartbeatState->init();
     States.push_back(HeartbeatState);
 
-    std::shared_ptr<State> HackerState = std::make_shared<State_Hacker>("HackerState");
+    std::shared_ptr<State> HackerState = std::make_shared<State_Hacker>("Hacker_State");
     HackerState->init();
     States.push_back(HackerState);
 
-    setActiveState(HackerState);
+    std::shared_ptr<State> Serendipity = std::make_shared<State_Serendipidy>("Serendipity_State");
+    Serendipity->init();
+    States.push_back(Serendipity);
 
-//#if LOGGING_ENABLED
-    std::string StartingStringLog = "Starting State: ";
-    StartingStringLog.append(ActiveState->GetStateName());
-    jlog::print(StartingStringLog.c_str(), Verbosity::Display);
-//#endif
+    std::shared_ptr<State> SettingsState = std::make_shared<State_Settings>("Settings_State");
+    SettingsState->init();
+    States.push_back(SettingsState);
+
+    setActiveState(Serendipity);
 }
 
 void Necklace::setup1()
 {
-
+    // nothing needed here
 }
 
 void Necklace::tickLEDs()
 {
-    //std::time_t start_time = std::chrono::system_clock::now();
-    ActiveState->tickLEDs();
-    //std::time_t end_time = std::chrono::system_clock::now();
-    //std::chrono::duration<float> tick_time = end_time - start_time;
-    FastLED.show();
+    if(ActiveState != nullptr)
+    {
+        ActiveState->runTickLEDs();
+    }
 }
 
 void Necklace::tickScreen()
 {
-    //std::time_t start_time = std::chrono::system_clock::now();
-    ActiveState->tickScreen();
-    //std::time_t end_time = std::chrono::system_clock::now();
-    //std::chrono::duration<float> tick_time = end_time - start_time;
+    if(ActiveState != nullptr)
+    {
+        ActiveState->runTickScreen();
+    }
+}
+
+void Necklace::tickLogic()
+{
+    if(ActiveState != nullptr)
+    {
+        ActiveState->runTickLogic();
+    }
 }
 
 void Necklace::loop()
 {
+    tickLogic();
     tickLEDs();
-    delay(20);
 }
 
 void Necklace::loop1()
@@ -74,14 +83,14 @@ void Necklace::loop1()
 
 void Necklace::setActiveState(std::shared_ptr<State> InState)
 {
-    if(ActiveState)
+    if(ActiveState.get() != nullptr)
     {
         ActiveState->stateDeactivated();
     }
 
     ActiveState = InState;
 
-    if(ActiveState)
+    if(ActiveState.get() != nullptr)
     {
         ActiveState->stateActivated();
     }

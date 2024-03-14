@@ -26,26 +26,32 @@ void GlobalManager::cleanupSingleton()
     }
 }
 
+GlobalManager::GlobalManager()
+{
+
+}
+
 
 void GlobalManager::init()
 {
-    GreenButton = std::make_unique<Button>();
+    GreenButton = std::make_unique<j::Button>();
     GreenButton->init(GREEN_BUTTON_PIN);
 
-    RedButton = std::make_unique<Button>();
+    RedButton = std::make_unique<j::Button>();
     RedButton->init(RED_BUTTON_PIN);
 
-    BlueButton = std::make_unique<Button>();
+    BlueButton = std::make_unique<j::Button>();
     BlueButton->init(BLUE_BUTTON_PIN);
 
-    Screen = std::make_unique<Adafruit_GC9A01A>(SCREEN_CS, SCREEN_DC, SCREEN_MISO, SCREEN_SCLK, SCREEN_RST);
+    Screen = std::make_shared<Adafruit_GC9A01A>(SCREEN_CS, SCREEN_DC, SCREEN_MISO, SCREEN_SCLK, SCREEN_RST);
     Screen->begin();
-    Screen->setRotation(1);
-    Screen->fillScreen(GC9A01A_BLACK);
+    Screen->setRotation(0);
 
-    FastLED.addLeds<NEOPIXEL, RING_LED_PIN>(RingLEDs, RING_LENGTH);
-    FastLED.addLeds<NEOPIXEL, BODY_LED_PIN>(OutfitLEDs, BODY_LED_LENGTH);
-    FastLED.addLeds<NEOPIXEL, PIN_NEOPIXEL>(BoardLED, 1, 0);
+    ScreenDrawer.setScreenRef(Screen);
+
+    RingLEDs = std::make_unique<j::HSVStrip>(RING_LED_LENGTH, RING_LED_PIN, NEO_GRB + NEO_KHZ800);
+    OutfitLEDs = std::make_unique<j::HSVStrip>(OUTFIT_LED_LENGTH, OUTFIT_LED_PIN, NEO_GRB + NEO_KHZ800);
+    BoardLED = std::make_unique<j::HSVStrip>(1, PIN_NEOPIXEL, NEO_GRB + NEO_KHZ800);
 }
 
 void GlobalManager::cleanup()
@@ -54,10 +60,9 @@ void GlobalManager::cleanup()
     RedButton.reset();
     BlueButton.reset();
 
+    RingLEDs.reset();
+    OutfitLEDs.reset();
+
+
     Screen.reset();
-}
-
-void GIFDraw_Necklace(GIFDRAW *pDraw)
-{
-
 }
