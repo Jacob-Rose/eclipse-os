@@ -39,7 +39,7 @@ constexpr Verbosity ProjectVerbosity {
     Verbosity::VeryVerbose
 };
 constexpr Category ProjectHideCategories { 
-    Category::OnTick
+    //Category::OnTick
 };
 
 namespace jlog

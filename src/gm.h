@@ -40,7 +40,5 @@ public:
 
     // USER SETTINGS
 public:
-    //bool bHasOutfitConnected = true;
-
-    //uint8_t globalBrightness = 255;
+    bool bHasOutfitConnected = true;
 };

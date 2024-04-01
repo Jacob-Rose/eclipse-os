@@ -70,18 +70,17 @@ namespace j
         ScreenDrawer();
 
         void setCanvasSize(uint16_t x, uint16_t y);
-        void setScreenRef(std::weak_ptr<Adafruit_GC9A01A> inScreenRef);
+        void setScreenRef(std::shared_ptr<Adafruit_GC9A01A> inScreenRef);
 
         static void GIFDraw_UpscaleScreen(GIFDRAW *pDraw);
 
-    protected:
-        std::weak_ptr<Adafruit_GC9A01A> ScreenRef;
+    public:
+        std::shared_ptr<Adafruit_GC9A01A> ScreenRef;
 
         // todo add canvas / screen memory for setting up things
         bool bCanvasEnable = true;
         int16_t xCanvasSize, yCanvasSize;
         std::vector<uint8_t> colors;
-
     private:
         bool bInit = false;
     };
@@ -110,15 +109,19 @@ namespace j
         HSVStrip(uint16_t inLedCount, uint16_t inLedPin, neoPixelType inPixelType);
         ~HSVStrip();
 
-        void setPixel(uint16_t n, const HSV& color);
-        void setPixel(uint16_t n, uint16_t h, uint8_t s, uint8_t v);
-        HSV getPixel(uint16_t n);
+        HSV getHSV(uint16_t idx);
+        void setHSV(uint16_t idx, const HSV& hsv);
+        void setHSV(uint16_t idx, uint16_t h, uint8_t s, uint8_t v);
+
+        uint8_t getBrightness(uint16_t idx);
+        void setBrightness(uint16_t idx, uint8_t val);
         
         void show();
 
     protected:
-        void updateStripPixel(uint16_t n);
+        void updateStripPixel(uint16_t idx);
 
+        // gamma correction applied on updateStripPixel
         bool bUsesGammaCorrection = true;
 
     private:

@@ -9,12 +9,14 @@
 #include "Adafruit_GFX.h"
 #include <AnimatedGIF.h>
 
+#include <memory>
+
 #include "../io.h"
 #include "../gm.h"
 #include "../logging.h"
 
 #include "../imgs/squid.h"
-#include "../imgs/homer_tiny.h"
+#include "../imgs/amongus-dancing.h"
 #include "../imgs/kirby-32-transparency.h"
 #include "../imgs/valentines3q.h"
 
@@ -33,37 +35,84 @@ void State_Boot::tickLEDs()
 {
     State::tickLEDs();
 
-    /*
-
     GlobalManager& GM = GlobalManager::get();
 
-    GM.BoardLED[0].setHSV(currentHue, 200,50);
+    int currentLED = currentRotation * RING_TWO_LENGTH;
 
-    GM.RingLEDs[currentLED].setHSV(currentHue, 200, 50);
+    GM.RingLEDs->setHSV(currentLED + RING_ONE_LENGTH, currentHue, 200, 100);
 
-    for(int ledIdx = 0; ledIdx < RING_LENGTH; ++ledIdx)
+    float ringTwoAlpha = (float)currentLED / RING_TWO_LENGTH;
+
+    uint16_t ringTwoLEDIdx = (ringTwoAlpha * RING_ONE_LENGTH);
+
+    GM.RingLEDs->setHSV(ringTwoLEDIdx, currentHue, 200, 100);
+
+    for(int ledIdx = 0; ledIdx < RING_LED_LENGTH; ++ledIdx)
     {
-        GM.RingLEDs[ledIdx].nscale8(200);
+        uint8_t brightness = GM.RingLEDs->getBrightness(ledIdx);
+        brightness *= 0.98f;
+        GM.RingLEDs->setBrightness(ledIdx, brightness);
     }
 
-    currentHue++;
-    currentLED++;
-    if(currentLED >= RING_LENGTH)
+    currentHue += 32;
+
+    if(currentLED >= RING_TWO_LENGTH)
     {
         currentLED = 0;
     }
-    */
 }
 
 void State_Boot::tickLogic()
 {
     State::tickLogic();
+
+    currentRotation += rotationSpeed * (lastFrameDT_Logic.count() + lastFrameDT_LED.count());
+    currentRotation = std::fmod(currentRotation, 1.0f); //clamp it to 1
+}
+
+void State_Boot::addStateToInit(std::weak_ptr<State> stateToInit)
+{
+    statesToInit.push_back(stateToInit);
 }
 
 void State_Boot::tickScreen()
 {
     State::tickScreen();
+
+    // lil hacky way, but we want leds to be be fine while we load all out stuff
+    if(!bInitializedAllStates)
+    {
+        GlobalManager& GM = GlobalManager::get();
+        GM.Screen->fillRect(0,0, GM.Screen->width(), GM.Screen->height(), 0);
+        for(auto stateItr : statesToInit)
+        {
+            stateItr.lock()->init();
+        }
+        bInitializedAllStates = true;
+    }
 }
+
+
+State_Off::State_Off(const char* InStateName) : State(InStateName)
+{
+
+}
+
+void State_Off::tickScreen()
+{
+    State::tickScreen();
+}
+
+void State_Off::tickLEDs()
+{
+    State::tickLEDs();
+}
+
+void State_Off::tickLogic()
+{
+    State::tickLogic();
+}
+
 
 State_Emote::State_Emote(const char* InStateName) : State(InStateName)
 {
@@ -118,7 +167,9 @@ void State_Heartbeat::tickScreen()
 
     GlobalManager& GM = GlobalManager::get();
 
+    GM.Screen->startWrite();
     int playFrameResult = HeartGif.playFrame(true, NULL, &GM.ScreenDrawer);
+    GM.Screen->endWrite();
 }
 
 void State_Heartbeat::tickLEDs()
@@ -137,10 +188,8 @@ void State_Heartbeat::tickLEDs()
     
     for(int ledIdx = 0; ledIdx < RING_LED_LENGTH; ++ledIdx)
     {
-        GM.RingLEDs->setPixel(ledIdx, 0, 200, pulseTimeByte);
+        GM.RingLEDs->setHSV(ledIdx, 0, 200, pulseTimeByte);
     }
-
-    GM.RingLEDs->show();
 }
 
 void State_Heartbeat::tickLogic()
@@ -229,31 +278,26 @@ void State_Hacker::tickLEDs()
     uint16_t randPixel_Rings = std::rand() % RING_LED_LENGTH;
     uint16_t randHue_Rings = std::rand();
 
-    GM.RingLEDs->setPixel(randPixel_Rings, randHue_Rings, 200, 80); // set to 100 when back to hacker
+    GM.RingLEDs->setHSV(randPixel_Rings, randHue_Rings, 200, 80); // set to 100 when back to hacker
 
     for(uint16_t ledIdx = 0; ledIdx < RING_LED_LENGTH; ++ledIdx)
     {
-        j::HSV color = GM.RingLEDs->getPixel(ledIdx);
+        j::HSV color = GM.RingLEDs->getHSV(ledIdx);
         color.v = std::floor(0.9f * color.v);
-        GM.RingLEDs->setPixel(ledIdx, color);
+        GM.RingLEDs->setHSV(ledIdx, color);
     }
 
     uint16_t randPixel_Outfit = std::rand() % OUTFIT_LED_LENGTH;
     uint16_t randHue_Outfit = std::rand();
 
-    GM.OutfitLEDs->setPixel(randPixel_Outfit, randHue_Outfit, 200, 80); // set to 100 when back to hacker
+    GM.OutfitLEDs->setHSV(randPixel_Outfit, randHue_Outfit, 200, 80); // set to 100 when back to hacker
 
     for(uint16_t ledIdx = 0; ledIdx < OUTFIT_LED_LENGTH; ++ledIdx)
     {
-        j::HSV color = GM.OutfitLEDs->getPixel(ledIdx);
+        j::HSV color = GM.OutfitLEDs->getHSV(ledIdx);
         color.v = std::floor(0.9f * color.v);
-        GM.OutfitLEDs->setPixel(ledIdx, color);
+        GM.OutfitLEDs->setHSV(ledIdx, color);
     }
-
-    GM.RingLEDs->show();
-    GM.OutfitLEDs->show();
-
-    delay(20);
 }
 
 void State_Hacker::tickLogic()
@@ -261,6 +305,10 @@ void State_Hacker::tickLogic()
     State::tickLogic();
 }
 
+void* allocateBuffer(uint32_t iSize) { return malloc(iSize); }
+
+uint8_t pTurbo[TURBO_BUFFER_SIZE + 256 + (240*240)];
+uint8_t frameBuffer[(128*128)];
 
 State_Serendipidy::State_Serendipidy(const char* InStateName) : State(InStateName)
 {
@@ -273,7 +321,12 @@ void State_Serendipidy::init()
 
     img.begin(LITTLE_ENDIAN_PIXELS);
 
-    img.open((uint8_t *)kirby_32_transparency, sizeof(kirby_32_transparency), j::ScreenDrawer::GIFDraw_UpscaleScreen);
+    if ( img.open((uint8_t *)kirby_32_transparency, sizeof(kirby_32_transparency), j::ScreenDrawer::GIFDraw_UpscaleScreen) )
+    {
+        //img.setDrawType(GIF_DRAW_COOKED);
+        //img.allocTurboBuf(allocateBuffer);
+        img.allocFrameBuf(allocateBuffer);
+    }
 }
 
 void State_Serendipidy::tickScreen()
@@ -282,7 +335,10 @@ void State_Serendipidy::tickScreen()
 
     GlobalManager& GM = GlobalManager::get();
 
+    GM.Screen->startWrite();
+    GM.ScreenDrawer.setCanvasSize(img.getCanvasWidth(), img.getCanvasHeight());
     int playFrameResult = img.playFrame(true, NULL, &GM.ScreenDrawer);
+    GM.Screen->endWrite();
 }
 
 void State_Serendipidy::tickLEDs()
@@ -294,29 +350,29 @@ void State_Serendipidy::tickLEDs()
     uint16_t randPixel_Rings = std::rand() % RING_LED_LENGTH;
     uint16_t randHue_Rings = std::rand();
 
-    GM.RingLEDs->setPixel(randPixel_Rings, randHue_Rings, 128, 128); // set to 100 when back to hacker
+    GM.RingLEDs->setHSV(randPixel_Rings, randHue_Rings, 128, 128); // set to 100 when back to hacker
 
     for(uint16_t ledIdx = 0; ledIdx < RING_LED_LENGTH; ++ledIdx)
     {
-        j::HSV color = GM.RingLEDs->getPixel(ledIdx);
-        color.v = std::floor(0.9f * color.v);
-        GM.RingLEDs->setPixel(ledIdx, color);
+        j::HSV color = GM.RingLEDs->getHSV(ledIdx);
+        color.v = std::floor(0.98f * color.v);
+        GM.RingLEDs->setHSV(ledIdx, color);
     }
 
-    uint16_t randPixel_Outfit = std::rand() % OUTFIT_LED_LENGTH;
-    uint16_t randHue_Outfit = std::rand();
-
-    GM.OutfitLEDs->setPixel(randPixel_Outfit, randHue_Outfit, 128, 128); // set to 100 when back to hacker
-
-    for(uint16_t ledIdx = 0; ledIdx < OUTFIT_LED_LENGTH; ++ledIdx)
+    if(GM.bHasOutfitConnected)
     {
-        j::HSV color = GM.OutfitLEDs->getPixel(ledIdx);
-        color.v = std::floor(0.9f * color.v);
-        GM.OutfitLEDs->setPixel(ledIdx, color);
-    }
+        uint16_t randPixel_Outfit = std::rand() % OUTFIT_LED_LENGTH;
+        uint16_t randHue_Outfit = std::rand();
 
-    GM.RingLEDs->show();
-    GM.OutfitLEDs->show();
+        GM.OutfitLEDs->setHSV(randPixel_Outfit, randHue_Outfit, 128, 128); // set to 100 when back to hacker
+
+        for(uint16_t ledIdx = 0; ledIdx < OUTFIT_LED_LENGTH; ++ledIdx)
+        {
+            j::HSV color = GM.OutfitLEDs->getHSV(ledIdx);
+            color.v = std::floor(0.98f * color.v);
+            GM.OutfitLEDs->setHSV(ledIdx, color);
+        }
+    }
 
     delay(20);
 }

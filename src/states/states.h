@@ -10,6 +10,8 @@
 #include <AnimatedGIF.h>
 
 
+// Boot State also handles initializing the other states using the screen thread, 
+// so code will look a little weird and hyperspecific
 class State_Boot : public State
 {
 public:
@@ -19,8 +21,30 @@ public:
     virtual void tickLEDs() override;
     virtual void tickLogic() override;
 
-    uint8_t currentLED = 0;
-    uint8_t currentHue = 0;
+    void addStateToInit(std::weak_ptr<State> stateToInit);
+    bool hasInitializedAllStates() const { return bInitializedAllStates; }
+
+    uint16_t currentHue = 0;
+
+    float rotationSpeed = 0.5f;
+
+private:
+    float currentRotation; // normalized 0-1
+
+    std::vector<std::weak_ptr<State>> statesToInit;
+    bool bInitializedAllStates = false;
+};
+
+//psuedo-off for when charging
+// todo set up, make fill screen and leds with black once then idle with long delays
+class State_Off : public State
+{
+public:
+    State_Off(const char* InStateName);
+
+    virtual void tickScreen() override;
+    virtual void tickLEDs() override;
+    virtual void tickLogic() override;
 };
 
 class State_Emote : public State

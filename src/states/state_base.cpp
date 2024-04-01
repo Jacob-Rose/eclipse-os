@@ -31,7 +31,7 @@ void State::cleanup()
 #endif
 }
 
-void State::stateActivated()
+void State::onStateBegin()
 {
 #if LOGGING_ENABLED
     std::string tickMsg = "activating state: ";
@@ -44,9 +44,13 @@ void State::stateActivated()
     tickStartTime_LED = std::chrono::system_clock::now();
     tickStartTime_Screen = std::chrono::system_clock::now();
     tickStartTime_Logic = std::chrono::system_clock::now();
+
+    ledFrame = 0;
+    logicFrame = 0;
+    screenFrame = 0;
 }
 
-void State::stateDeactivated()
+void State::onStateEnd()
 {
 #if LOGGING_ENABLED
     std::string tickMsg = "deactivating state: ";
@@ -80,6 +84,8 @@ void State::runTickLEDs()
     tickStartTime_LED = std::chrono::system_clock::now();
 
     tickLEDs();
+
+    ledFrame++;
 }
 
 void State::runTickScreen()
@@ -94,6 +100,8 @@ void State::runTickScreen()
     tickStartTime_Screen = std::chrono::system_clock::now();
 
     tickScreen();
+
+    screenFrame++;
 }
 
 void State::runTickLogic()
@@ -108,6 +116,13 @@ void State::runTickLogic()
     tickStartTime_Logic = std::chrono::system_clock::now();
 
     tickLogic();
+
+    logicFrame++;
+}
+
+void State::addStateTransition(std::weak_ptr<State> inState, TransitionLambda lambda)
+{
+    stateTransitions[inState] = lambda;
 }
 
 std::chrono::duration<double> State::GetStateActiveDuration() const
