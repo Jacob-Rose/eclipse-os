@@ -195,6 +195,10 @@ void State_Heartbeat::tickLEDs()
 void State_Heartbeat::tickLogic()
 {
     State::tickLogic();
+
+    GlobalManager& GM = GlobalManager::get();
+
+    jlog::print(std::to_string(GM.GreenButton->isPressed()));
 }
 
 

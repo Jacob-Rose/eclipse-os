@@ -57,6 +57,8 @@ namespace j
 
         void checkChange(float tick);
 
+        bool isPressed();
+
     private:
         uint8_t myPin;
 

@@ -49,6 +49,11 @@ void Necklace::setup()
         return Boot->hasInitializedAllStates();
     });
 
+    Serendipity->addStateTransition(HeartbeatState, [](State* current, State* target){
+        GlobalManager& MyGM = GlobalManager::get();
+        return MyGM.GreenButton->isPressed();
+    });
+
     setActiveState(BootState);
 }
 

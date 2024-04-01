@@ -16,6 +16,11 @@ void Button::init(uint8_t inPin)
     myPin = inPin;
 }
 
+bool Button::isPressed()
+{
+    return !digitalRead(myPin);
+}
+
 ScreenDrawer::ScreenDrawer()
 {
 
@@ -91,6 +96,7 @@ void ScreenDrawer::setCanvasSize(uint16_t x, uint16_t y)
         int endingPixelX = ((xPixel + 1) * ScalarFloatX);
         int xSize = endingPixelX - startingPixelX;
 
+        /*
         Serial.print("spx: ");
         Serial.print(startingPixelX);
         Serial.print(" epx: ");
@@ -99,6 +105,7 @@ void ScreenDrawer::setCanvasSize(uint16_t x, uint16_t y)
         Serial.print(xSize);
         Serial.print(" c: ");
         Serial.print(c);
+        */
         Screen->writeFillRect(startingPixelX, y, xSize, ySize, c);
     }
 }
