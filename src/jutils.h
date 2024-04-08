@@ -3,4 +3,7 @@
 // This file is part of project necklace_code_c
 // See readme.md for full license details.
 
-#include "utils.h"
+#pragma once
+
+#include <chrono>
+#include <ctime>

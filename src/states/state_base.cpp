@@ -5,7 +5,7 @@
 
 #include "state_base.h"
 
-#include "../logging.h"
+#include "../jlogging.h"
 
 State::State(const char* InStateName)
 {
@@ -129,5 +129,13 @@ std::chrono::duration<double> State::GetStateActiveDuration() const
 {
     std::chrono::time_point<std::chrono::system_clock> currentTime = std::chrono::system_clock::now();
     std::chrono::duration<double> timeDiff = currentTime - activationTime;
+    return timeDiff;
+}
+
+// currently assumes for logic, but really they are all the same with some offset differences
+std::chrono::duration<double> State::GetLastFrameDelta() const
+{
+    std::chrono::time_point<std::chrono::system_clock> currentTime = std::chrono::system_clock::now();
+    std::chrono::duration<double> timeDiff = currentTime - tickStartTime_Logic;
     return timeDiff;
 }

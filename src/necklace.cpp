@@ -6,9 +6,9 @@
 #include "necklace.h"
 
 #include "gm.h"
-#include "io.h"
+#include "jio.h"
 
-#include "logging.h"
+#include "jlogging.h"
 
 #include "states/states.h"
 
@@ -52,6 +52,11 @@ void Necklace::setup()
     Serendipity->addStateTransition(HeartbeatState, [](State* current, State* target){
         GlobalManager& MyGM = GlobalManager::get();
         return MyGM.GreenButton->isPressed();
+    });
+
+    HeartbeatState->addStateTransition(Serendipity, [](State* current, State* target){
+        GlobalManager& MyGM = GlobalManager::get();
+        return current->GetStateActiveDuration().count() > 4.0f;
     });
 
     setActiveState(BootState);

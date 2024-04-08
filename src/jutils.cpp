@@ -3,12 +3,4 @@
 // This file is part of project necklace_code_c
 // See readme.md for full license details.
 
-#pragma once
-
-#include <chrono>
-#include <ctime>
-
-class GameUtils
-{
-    
-};
+#include "jutils.h"

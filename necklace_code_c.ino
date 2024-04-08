@@ -9,7 +9,7 @@
 
 #include "src/necklace.h"
 #include "src/gm.h"
-#include "src/logging.h"
+#include "src/jlogging.h"
 
 #include <string>
 

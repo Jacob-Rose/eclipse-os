@@ -42,7 +42,9 @@ public:
 
     const std::string& GetStateName() const { return stateName; }
 
-    std::chrono::duration<double> GetStateActiveDuration() const;
+
+    std::chrono::duration<double> GetStateActiveDuration() const;     // returned in seconds
+    std::chrono::duration<double> GetLastFrameDelta() const;     // returned in seconds
 
 protected:
     // used for accurately simulating time between frames

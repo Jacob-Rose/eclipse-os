@@ -11,11 +11,11 @@
 
 #include <memory>
 
-#include "../io.h"
+#include "../jio.h"
 #include "../gm.h"
-#include "../logging.h"
+#include "../jlogging.h"
 
-#include "../imgs/squid.h"
+#include "../imgs/squid-117.h"
 #include "../imgs/amongus-dancing.h"
 #include "../imgs/kirby-32-transparency.h"
 #include "../imgs/valentines3q.h"
@@ -158,7 +158,7 @@ void State_Heartbeat::init()
 
     HeartGif.begin(LITTLE_ENDIAN_PIXELS);
 
-    bLoadedHeart = HeartGif.open((uint8_t *)valentines3q, sizeof(valentines3q), j::ScreenDrawer::GIFDraw_UpscaleScreen);
+    bLoadedHeart = HeartGif.open((uint8_t *)kirby_32_transparency, sizeof(kirby_32_transparency), j::ScreenDrawer::GIFDraw_UpscaleScreen);
 }
 
 void State_Heartbeat::tickScreen()
@@ -188,7 +188,7 @@ void State_Heartbeat::tickLEDs()
     
     for(int ledIdx = 0; ledIdx < RING_LED_LENGTH; ++ledIdx)
     {
-        GM.RingLEDs->setHSV(ledIdx, 0, 200, pulseTimeByte);
+        GM.RingLEDs->setHSV(ledIdx, 0xf812, 200, pulseTimeByte);
     }
 }
 
@@ -197,8 +197,6 @@ void State_Heartbeat::tickLogic()
     State::tickLogic();
 
     GlobalManager& GM = GlobalManager::get();
-
-    jlog::print(std::to_string(GM.GreenButton->isPressed()));
 }
 
 
@@ -325,7 +323,7 @@ void State_Serendipidy::init()
 
     img.begin(LITTLE_ENDIAN_PIXELS);
 
-    if ( img.open((uint8_t *)kirby_32_transparency, sizeof(kirby_32_transparency), j::ScreenDrawer::GIFDraw_UpscaleScreen) )
+    if ( img.open((uint8_t *)squid_117, sizeof(squid_117), j::ScreenDrawer::GIFDraw_UpscaleScreen) )
     {
         //img.setDrawType(GIF_DRAW_COOKED);
         //img.allocTurboBuf(allocateBuffer);
@@ -340,7 +338,6 @@ void State_Serendipidy::tickScreen()
     GlobalManager& GM = GlobalManager::get();
 
     GM.Screen->startWrite();
-    GM.ScreenDrawer.setCanvasSize(img.getCanvasWidth(), img.getCanvasHeight());
     int playFrameResult = img.playFrame(true, NULL, &GM.ScreenDrawer);
     GM.Screen->endWrite();
 }

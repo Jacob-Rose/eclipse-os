@@ -3,10 +3,10 @@
 // This file is part of project necklace_code_c
 // See readme.md for full license details.
 
-#include "io.h"
+#include "jio.h"
 #include "gm.h"
 
-#include "logging.h"
+#include "jlogging.h"
 
 using namespace j;
 
@@ -36,12 +36,23 @@ void ScreenDrawer::setCanvasSize(uint16_t x, uint16_t y)
     int count = x * y;
     if(colors.size() > count || colors.size() < count)
     {
+        colors.resize(0);
         colors.resize(count, 0);
     }
     xCanvasSize = x;
     yCanvasSize = y;
 
-    bCanvasEnable = true;
+    bCanvasEnabled = true;
+}
+
+void ScreenDrawer::setPixelColor(uint16_t x, uint16_t y, uint16_t color)
+{
+    colors[x*xCanvasSize + y] = color;
+}
+
+uint16_t ScreenDrawer::getPixelColor(uint16_t x, uint16_t y)
+{
+    return colors[x*xCanvasSize + y];
 }
 
 /*static*/ void ScreenDrawer::GIFDraw_UpscaleScreen(GIFDRAW* pDraw)
@@ -59,20 +70,19 @@ void ScreenDrawer::setCanvasSize(uint16_t x, uint16_t y)
     uint8_t *s = pDraw->pPixels;
     uint16_t *d, *usPalette, usTemp[320];
 
+    const int yImagePixel = pDraw->y;
+
     usPalette = pDraw->pPalette;
 
     float ScalarFloatY = ((float)SCREEN_HEIGHT) / pDraw->iHeight;
 
-    int startingPixelY = (pDraw->y * ScalarFloatY);
-    int endingPixelY = ((pDraw->y + 1) * ScalarFloatY);
-    int ySize = endingPixelY - startingPixelY;
+    int startingPixelY = (yImagePixel * ScalarFloatY);
+    int endingPixelY = ((yImagePixel + 1) * ScalarFloatY);
+    int yScreenToPixelSize = endingPixelY - startingPixelY;
 
-    int16_t y = pDraw->iY + (startingPixelY); // current line
+    int16_t yStartingScreenPixel = pDraw->iY + (startingPixelY); // current line
 
-    if (y >= SCREEN_HEIGHT || pDraw->iX >= SCREEN_HEIGHT || pDraw->iWidth < 1)
-        return;
-
-    if(y == 0)
+    if(yImagePixel == 0)
     {
         SD->setCanvasSize(pDraw->iWidth, pDraw->iHeight);
     }
@@ -87,14 +97,18 @@ void ScreenDrawer::setCanvasSize(uint16_t x, uint16_t y)
         pDraw->ucHasTransparency = 0;
     }
 
-    for(int16_t xPixel = 0; xPixel < pDraw->iWidth; ++xPixel)
+    for(int16_t xImagePixel = 0; xImagePixel < pDraw->iWidth; ++xImagePixel)
     {
-        uint16_t c = pDraw->pPalette[pDraw->pPixels[xPixel]];
+        uint16_t c = pDraw->pPalette[pDraw->pPixels[xImagePixel]];
+        if(c == SD->getPixelColor(xImagePixel, yImagePixel))
+        {
+            continue;
+        }
         float ScalarFloatX = ((float)SCREEN_WIDTH) / pDraw->iWidth;
 
-        int startingPixelX = (xPixel * ScalarFloatX);
-        int endingPixelX = ((xPixel + 1) * ScalarFloatX);
-        int xSize = endingPixelX - startingPixelX;
+        int startingScreenPixelX = (xImagePixel * ScalarFloatX);
+        int endingScreenPixelX = ((xImagePixel + 1) * ScalarFloatX);
+        int xScreenToPixelSize = endingScreenPixelX - startingScreenPixelX;
 
         /*
         Serial.print("spx: ");
@@ -106,33 +120,26 @@ void ScreenDrawer::setCanvasSize(uint16_t x, uint16_t y)
         Serial.print(" c: ");
         Serial.print(c);
         */
-        Screen->writeFillRect(startingPixelX, y, xSize, ySize, c);
+
+        SD->setPixelColor(xImagePixel, yImagePixel, c);
+        Screen->writeFillRect(startingScreenPixelX, yStartingScreenPixel, xScreenToPixelSize, yScreenToPixelSize, c);
     }
 }
 
-HSV::HSV(byte inH, byte inS, byte inV) : h(inH), s(inS), v(inV)
-{
 
-}
-
-HSV::HSV() : h(0), s(0), v(0)
-{
-
-}
 
 HSVStrip::HSVStrip(uint16_t inLedCount, uint16_t inLedPin, neoPixelType inPixelType) : strip(inLedCount, inLedPin, inPixelType)
 {
-    strip_HSV = new HSV[inLedCount];
+    strip_HSV = std::vector<HSV>(inLedCount);
 
     strip.begin();
 }
 
 HSVStrip::~HSVStrip()
 {
-    delete[] strip_HSV;
 }
 
-HSV HSVStrip::getHSV(uint16_t idx)
+HSV HSVStrip::getHSV(uint16_t idx) const
 {
     return strip_HSV[idx];
 }
@@ -155,7 +162,7 @@ void HSVStrip::setHSV(uint16_t idx, uint16_t h, uint8_t s, uint8_t v)
     updateStripPixel(idx);
 }
 
-__UINT8_TYPE__ HSVStrip::getBrightness(uint16_t idx)
+__UINT8_TYPE__ HSVStrip::getBrightness(uint16_t idx) const
 {
     return strip_HSV[idx].v;
 }
@@ -181,3 +188,25 @@ void HSVStrip::show()
 {
     strip.show();
 }
+
+uint16_t HSVStrip::getLength() const
+{
+    return strip.numPixels();
+}
+
+/*
+MappedHSVStrip::MappedHSVStrip(uint16_t inLedCount, uint16_t inLedPin, neoPixelType inPixelType) : HSVStrip(inLedCount, inLedPin, inPixelType)
+{
+
+}
+
+MappedHSVStrip::~MappedHSVStrip() : ~~HSVStrip()
+{
+
+}
+
+Coordinate MappedHSVStrip::getCoord(uint16_t idx)
+{
+    return coordinates[idx];
+}
+*/
