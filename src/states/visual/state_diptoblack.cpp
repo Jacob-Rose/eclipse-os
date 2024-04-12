@@ -1,6 +1,10 @@
+// Copyright 2024 | Jake Rose 
+//
+// This file is part of project necklace_code_c
+// See readme.md for full license details.
 #include "state_diptoblack.h"
 
-#include "../gm.h"
+#include "../../gm.h"
 
 State_DipToBlack::State_DipToBlack(const char* InStateName) : State(InStateName)
 {

@@ -24,19 +24,30 @@
 // BEGIN PIN + HARDWARE DEFINES
 // redefine as needed
 
-#define GREEN_BUTTON_PIN D12
-#define RED_BUTTON_PIN D13
-#define BLUE_BUTTON_PIN D14
+// free pins
 
-#define RING_LED_PIN D24
+
+#define GREEN_BUTTON_PIN D12 // GPIO 12
+#define RED_BUTTON_PIN D13 // GPIO 13
+#define BLUE_BUTTON_PIN 1 // GPIO 26
+#define WHITE_BUTTON_PIN 0 // GPIO 27
+#define REMOTE_WHITE_BUTTON_PIN A2 // GPIO 28
+#define REMOTE_BLACK_BUTTON_PIN A3 // GPIO 29
+
+#define RING_LED_PIN D24 // GPIO 24
 #define RING_ONE_LENGTH 12
 #define RING_TWO_LENGTH 16
-#define RING_LED_LENGTH 28 //RING_ONE_LENGTH + RING_TWO_LENGTH
+// RING_ONE_LENGTH + RING_TWO_LENGTH
+#define RING_LED_LENGTH 28 
 
-#define OUTFIT_LED_PIN 6
-#define ARM_LED_LENGTH 60
-#define WHIP_LED_LENGTH 32
-#define OUTFIT_LED_LENGTH 92 //ARM_LED_LENGTH + WHIP_LED_LENGTH
+#define OUTFIT_LED_PIN 6 // GPIO 6
+#define ARM_LED_LENGTH 50
+#define WHIP_LED_LENGTH 60
+// ARM_LED_LENGTH + WHIP_LED_LENGTH
+#define OUTFIT_LED_LENGTH 110 
+
+#define GLASSES_LED_PIN A0 // GPIO 0
+#define GLASSES_LED_LENGTH 2
 
 #define SCREEN_DC 3
 #define SCREEN_CS 2
@@ -114,6 +125,9 @@ namespace j
 
         uint8_t getBrightness(uint16_t idx) const;
         void setBrightness(uint16_t idx, uint8_t val);
+
+        uint8_t getStripBrightness() const;
+        void setStripBrightness(uint8_t brightness);
         
         void show();
 

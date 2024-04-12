@@ -3,12 +3,14 @@
 
 Hello World!
 
-Don't know how you stumbled upon this but I appreciate you checking it out and hope it can be at least a jumping off point for getting Adafruit microcontrollers into a fully-finished prop (or as I like to call these trinkets I make, a relic).
+Don't know how you stumbled upon this but I appreciate you checking it out and hope it can be at least a jumping off point for getting Adafruit microcontrollers into a fully-finished prop (or as I like to call these devices I make, "relics").
 
 ## What is this?
 
 A custom microcontroller prop's code. The prop is tightly contained in a 3D printed casing to protect and align hardware into a sleek package, with an Adafruit Feather RP2040 as the brain.
 
+
+In this usage, this is the hardware we are using
 Used hardware:
 - 4 Button (2 wire + pullup resistor)
 - 1 GC9A01 Screen (SPI Interface)
@@ -26,7 +28,7 @@ License Info is located in the [license file](license.md). GNU GPLv3
 
 # Setup + Guide
 
-Welp, found graphics to be quite difficult using the provided pico library, but building with Adafruit/Arduino libraries means were locked into Arduino IDE for now and makes this not work out of the box which was a goal.
+Welp, found graphics to be quite difficult using the provided pico library, but building with Adafruit/Arduino libraries means were locked into Arduino IDE for now and makes this not support cleaner coding with cmake.
 
 ## Arduino IDE Setup (easiest)
 

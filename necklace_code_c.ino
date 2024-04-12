@@ -9,7 +9,7 @@
 
 #include "src/necklace.h"
 #include "src/gm.h"
-#include "src/jlogging.h"
+#include "src/lib/j/jlogging.h"
 
 #include <string>
 
@@ -20,9 +20,6 @@ void setup() {
 
   GlobalManager::initSingleton();
   SPI.begin();
-
-  delay(3000);
-
   necklace.setup();
 }
 
@@ -31,7 +28,7 @@ void loop() {
 }
 
 void setup1() {
-  delay(1000);
+
 }
 
 void loop1()

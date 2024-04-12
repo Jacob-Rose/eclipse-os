@@ -1,7 +1,11 @@
+// Copyright 2024 | Jake Rose 
+//
+// This file is part of project necklace_code_c
+// See readme.md for full license details.
 #include "state_drip.h"
 
-#include "../jmath.h"
-#include "../gm.h"
+#include "../../lib/j/jmath.h"
+#include "../../gm.h"
 
 #include <bits/stdc++.h>
 

@@ -4,7 +4,6 @@
 // See readme.md for full license details.
 
 #include "jio.h"
-#include "gm.h"
 
 #include "jlogging.h"
 
@@ -57,8 +56,6 @@ uint16_t ScreenDrawer::getPixelColor(uint16_t x, uint16_t y)
 
 /*static*/ void ScreenDrawer::GIFDraw_UpscaleScreen(GIFDRAW* pDraw)
 {
-    GlobalManager& GM = GlobalManager::get();
-
     ScreenDrawer* SD = static_cast<ScreenDrawer*>(pDraw->pUser);
 
     Adafruit_GC9A01A* Screen = SD->ScreenRef.get();
@@ -181,6 +178,7 @@ void HSVStrip::updateStripPixel(uint16_t idx)
     {
         neoColor = Adafruit_NeoPixel::gamma32(neoColor);
     }
+
     strip.setPixelColor(idx, neoColor);
 }
 
@@ -194,19 +192,12 @@ uint16_t HSVStrip::getLength() const
     return strip.numPixels();
 }
 
-/*
-MappedHSVStrip::MappedHSVStrip(uint16_t inLedCount, uint16_t inLedPin, neoPixelType inPixelType) : HSVStrip(inLedCount, inLedPin, inPixelType)
+uint8_t HSVStrip::getStripBrightness() const
 {
-
+    return strip.getBrightness();
 }
 
-MappedHSVStrip::~MappedHSVStrip() : ~~HSVStrip()
+void HSVStrip::setStripBrightness(uint8_t inBrightness)
 {
-
+    strip.setBrightness(inBrightness);
 }
-
-Coordinate MappedHSVStrip::getCoord(uint16_t idx)
-{
-    return coordinates[idx];
-}
-*/

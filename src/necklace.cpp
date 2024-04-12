@@ -6,11 +6,19 @@
 #include "necklace.h"
 
 #include "gm.h"
-#include "jio.h"
 
-#include "jlogging.h"
+#include "lib/j/jio.h"
+#include "lib/j/jlogging.h"
 
-#include "states/states.h"
+#include "states/core/state_sleep.h"
+#include "states/visual/state_serendipity.h"
+#include "states/visual/state_datamine.h"
+#include "states/visual/state_hacker.h"
+#include "states/visual/state_drip.h"
+#include "states/core/state_boot.h"
+#include "states/core/state_settings.h"
+
+#include "states/debug/state_buttontest.h"
 
 #include <chrono>
 #include <ctime>
@@ -19,47 +27,60 @@ void Necklace::setup()
 {
     GlobalManager& GM = GlobalManager::get();
 
-    std::shared_ptr<State_Boot> BootState = std::make_shared<State_Boot>("Boot_State");
-    BootState->init();
-    States.push_back(BootState);
+    GM.setGlobalBrightness(128);
 
-    std::shared_ptr<State_Emote> EmoteState = std::make_shared<State_Emote>("Emote_State");
-    States.push_back(EmoteState);
+    // Boot state so we can run leds while doing processing for inits (like loading images)
+    std::shared_ptr<State_Boot> Boot = std::make_shared<State_Boot>("Boot");
+    Boot->init();
+    States.push_back(Boot);
 
-    std::shared_ptr<State_Heartbeat> HeartbeatState = std::make_shared<State_Heartbeat>("Heartbeat_State");
-    States.push_back(HeartbeatState);
+    std::shared_ptr<State_Hacker> Hacker = std::make_shared<State_Hacker>("Hacker");
+    States.push_back(Hacker);
 
-    std::shared_ptr<State_Hacker> HackerState = std::make_shared<State_Hacker>("Hacker_State");
-    States.push_back(HackerState);
+    std::shared_ptr<State_Drip> Drip = std::make_shared<State_Drip>("Drip");
+    States.push_back(Drip);
 
-    std::shared_ptr<State_Serendipidy> Serendipity = std::make_shared<State_Serendipidy>("Serendipity_State");
+    std::shared_ptr<State_Datamine> Datamine = std::make_shared<State_Datamine>("Datamine");
+    States.push_back(Datamine);
+
+    std::shared_ptr<State_Serendipidy> Serendipity = std::make_shared<State_Serendipidy>("Serendipity");
     States.push_back(Serendipity);
 
-    std::shared_ptr<State_Settings> SettingsState = std::make_shared<State_Settings>("Settings_State");
-    States.push_back(SettingsState);
+    std::shared_ptr<State_Settings> Settings = std::make_shared<State_Settings>("Settings");
+    States.push_back(Settings);
 
-    BootState->addStateToInit(EmoteState);
-    BootState->addStateToInit(HeartbeatState);
-    BootState->addStateToInit(HackerState);
-    BootState->addStateToInit(Serendipity);
-    BootState->addStateToInit(SettingsState);
+    std::shared_ptr<State_ButtonTest> ButtonTest = std::make_shared<State_ButtonTest>("ButtonTest");
+    States.push_back(ButtonTest);
 
-    BootState->addStateTransition(Serendipity, [](State* current, State* target){
+    std::shared_ptr<State_Sleep> Sleep = std::make_shared<State_Sleep>("Sleep");
+    States.push_back(Sleep);
+
+    Boot->addStateToInit(Hacker);
+    Boot->addStateToInit(Drip);
+    Boot->addStateToInit(Datamine);
+    Boot->addStateToInit(Serendipity);
+    Boot->addStateToInit(Settings);
+    Boot->addStateToInit(ButtonTest);
+    Boot->addStateToInit(Sleep);
+
+    Boot->addStateTransition(Datamine, [](State* current, State* target){
         State_Boot* Boot = static_cast<State_Boot*>(current);
         return Boot->hasInitializedAllStates();
     });
 
-    Serendipity->addStateTransition(HeartbeatState, [](State* current, State* target){
+    /*
+    Serendipity->addStateTransition(Heartbeat, [](State* current, State* target){
         GlobalManager& MyGM = GlobalManager::get();
         return MyGM.GreenButton->isPressed();
     });
 
-    HeartbeatState->addStateTransition(Serendipity, [](State* current, State* target){
+    Heartbeat->addStateTransition(Serendipity, [](State* current, State* target){
         GlobalManager& MyGM = GlobalManager::get();
         return current->GetStateActiveDuration().count() > 4.0f;
     });
+    */
 
-    setActiveState(BootState);
+    setActiveState(Boot);
 }
 
 void Necklace::setup1()

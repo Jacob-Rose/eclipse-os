@@ -5,9 +5,9 @@
 
 #pragma once
 
-#include "state_base.h"
+#include "../state_base.h"
 
-#include "../jcolors.h"
+#include "../../lib/j/jcolors.h"
 
 #include <list>
 #include <ranges>

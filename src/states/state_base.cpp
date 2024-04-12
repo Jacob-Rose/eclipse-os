@@ -5,7 +5,7 @@
 
 #include "state_base.h"
 
-#include "../jlogging.h"
+#include "../lib/j/jlogging.h"
 
 State::State(const char* InStateName)
 {

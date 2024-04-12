@@ -5,7 +5,7 @@
 
 #pragma once
 
-#include "state_base.h"
+#include "../state_base.h"
 
 class State_DipToBlack : public State
 {

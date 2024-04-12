@@ -36,6 +36,7 @@ float lerp(const float& a, const float& b, const float& t);
 
 float inv_lerp(const float& a, const float& b, const float& t);
 
+// https://gist.github.com/laundmo/b224b1f4c8ef6ca5fe47e132c8deab56
 /// Remap values from one linear scale to another, a combination of lerp and inv_lerp.
 /// i_min and i_max are the scale on which the original value resides,
 /// o_min and o_max are the scale to which it should be mapped.
@@ -45,6 +46,9 @@ float inv_lerp(const float& a, const float& b, const float& t);
 ///     6.2 == remap(1, 5, 3, 7, 4.2)
 
 float remap(const float& i_min, const float& i_max, const float& o_min, const float& o_max, const float& v);
+
+//
+// Written by Jake Rose past this
 
 float lerp_keyframes(float a, const std::vector<float>& keys);
 

@@ -5,9 +5,11 @@
 
 #pragma once
 
-#include "state_base.h"
+#include "../state_base.h"
 
-#include "../jcolors.h"
+#include "../../lib/j/janim.h"
+#include "../../lib/j/jcolors.h"
+#include "../../lib/ext/easing.h"
 
 // A relatively simple theater effect using a sine wave on the LED idx (+ an offset) to make data move.
 
@@ -23,16 +25,24 @@ public:
     virtual void tickLEDs() override;
     virtual void tickLogic() override;
 
-    float theaterSinWidth = 4.0f;
+    j::LFO lfoNecklaceInner = j::LFO(100.0f, 12.0f);
+    j::LFO lfoNecklaceOuter = j::LFO(100.0f, 16.0f);
+    j::LFO lfoArm = j::LFO(300.0f, 8.5f);
+    j::LFO lfoWhip = j::LFO(1500.0f, 16.0f);
 
-    uint8_t maxHue = 220;
-    uint8_t minHue = 170;
-
-    j::HSVPalette palette = std::vector<j::HSV>({
-        j::HSV(0.0f,1.0f,1.0f)
+    j::HSVPalette armPalette = std::vector<j::HSV>({
+        j::HSV(20000,255,255)
     });
+
+    j::HSVPalette whipPalette = std::vector<j::HSV>({
+        j::HSV(20000,255,255)
+    });
+
+protected:
 
 private:
     // state info
-    float currentScreenAngle = 0;
+    float currentLFO1Offset = 0;
+    float currentLFO2Offset = 0;
+    float currentLFO3Offset = 0;
 };
