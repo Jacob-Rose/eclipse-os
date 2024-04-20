@@ -20,25 +20,52 @@ void State_ButtonTest::tickLEDs()
 {
     State::tickLEDs();
 
-    j::HSV color = bButtonPressed ? OnColor : OffColor;
+    j::HSV color = currentColor;
 
-    GlobalManager& GM = GlobalManager::get();
+    GameManager& GM = GameManager::get();
 
     for(uint16_t idx = 0; idx < GM.RingLEDs->getLength(); ++idx)
     {
         GM.RingLEDs->setHSV(idx, color);
     }
+
+    GM.BoardLED->setHSV(0, color);
 }
 
 void State_ButtonTest::tickLogic()
 {
     State::tickLogic();
 
-    GlobalManager& GM = GlobalManager::get();
+    GameManager& GM = GameManager::get();
 
-    bButtonPressed = GM.BlueButton->isPressed();
-
-    jlog::print(std::to_string(bButtonPressed));
+    if(GM.GreenButton->isPressed())
+    {
+        currentColor = GreenColor;
+    }
+    else if(GM.RedButton->isPressed())
+    {
+        currentColor = RedColor;
+    }
+    else if(GM.BlueButton->isPressed())
+    {
+        currentColor = BlueColor;
+    }
+    else if(GM.WhiteButton->isPressed())
+    {
+        currentColor = WhiteColor;
+    }
+    else if(GM.RemoteBlackButton->isPressed())
+    {
+        currentColor = BlackColor;
+    }
+    else if(GM.RemoteWhiteButton->isPressed())
+    {
+        currentColor = YellowColor;
+    }
+    else
+    {
+        currentColor = OffColor;
+    }
 }
 
 void State_ButtonTest::onStateBegin()

@@ -6,6 +6,7 @@
 #include "state_base.h"
 
 #include "../lib/j/jlogging.h"
+#include "../gm.h" // TODO make more generic
 
 State::State(const char* InStateName)
 {
@@ -57,6 +58,9 @@ void State::onStateEnd()
     tickMsg.append(GetStateName());
     jlog::print(tickMsg.c_str(), Verbosity::Display, Category::StateInfo);
 #endif
+
+    GameManager& GM = GameManager::get();
+    GM.ScreenDrawer.cancelGifRender();
 }
 
 void State::tickLEDs()
@@ -70,7 +74,6 @@ void State::tickScreen()
 void State::tickLogic()
 {
 }
-
 
 void State::runTickLEDs()
 {

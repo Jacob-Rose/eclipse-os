@@ -4,14 +4,10 @@
 // See readme.md for full license details.
 #include "state_serendipity.h"
 
-#include "../../imgs/squid-117.h"
+#include "../../imgs/squid.h"
 
 #include "../../gm.h"
 
-void* allocateBuffer(uint32_t iSize) { return malloc(iSize); }
-
-uint8_t pTurbo[TURBO_BUFFER_SIZE + 256 + (240*240)];
-uint8_t frameBuffer[(128*128)];
 
 State_Serendipidy::State_Serendipidy(const char* InStateName) : State(InStateName)
 {
@@ -24,30 +20,23 @@ void State_Serendipidy::init()
 
     img.begin(LITTLE_ENDIAN_PIXELS);
 
-    if ( img.open((uint8_t *)squid_117, sizeof(squid_117), j::ScreenDrawer::GIFDraw_UpscaleScreen) )
-    {
-        //img.setDrawType(GIF_DRAW_COOKED);
-        //img.allocTurboBuf(allocateBuffer);
-        img.allocFrameBuf(allocateBuffer);
-    }
+    img.open((uint8_t *)squid, sizeof(squid), j::ScreenDrawer::GIFDraw_UpscaleScreen);
 }
 
 void State_Serendipidy::tickScreen()
 {
     State::tickScreen();
 
-    GlobalManager& GM = GlobalManager::get();
+    GameManager& GM = GameManager::get();
 
-    GM.Screen->startWrite();
-    int playFrameResult = img.playFrame(true, NULL, &GM.ScreenDrawer);
-    GM.Screen->endWrite();
+    GM.ScreenDrawer.renderGif(img);
 }
 
 void State_Serendipidy::tickLEDs()
 {
     State::tickLEDs();
 
-    GlobalManager& GM = GlobalManager::get();
+    GameManager& GM = GameManager::get();
 
     uint16_t randPixel_Rings = std::rand() % RING_LED_LENGTH;
     uint16_t randHue_Rings = std::rand();

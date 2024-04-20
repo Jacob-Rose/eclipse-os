@@ -27,7 +27,7 @@ void State_Drip::tickScreen()
 {
     State::tickScreen();
 
-    GlobalManager& GM = GlobalManager::get();
+    GameManager& GM = GameManager::get();
 
     GM.Screen->drawRect(0,0, SCREEN_WIDTH, SCREEN_HEIGHT, 0x0000);
 }
@@ -36,7 +36,7 @@ void State_Drip::tickLEDs()
 {
     State::tickLEDs();
 
-    GlobalManager& GM = GlobalManager::get();
+    GameManager& GM = GameManager::get();
 
     for(int ledIdx = 0; ledIdx < GM.RingLEDs->getLength(); ++ledIdx)
     {
@@ -51,6 +51,11 @@ void State_Drip::tickLEDs()
     for (std::list<DropInfo>::iterator it=drops.begin(); it != drops.end(); ++it)
     {
         float dropAlpha = it->dropTime / dropTime;
+        int ledCount = std::ceil(it->dropSize);
+        for(int idx = 0; idx < ledCount; ++idx)
+        {
+            uint16_t ledIdx = idx;
+        }
 
         //todo implement drop display
     }
@@ -60,7 +65,7 @@ void State_Drip::tickLogic()
 {
     State::tickLogic();
 
-    GlobalManager& GM = GlobalManager::get();
+    GameManager& GM = GameManager::get();
 
     timeSinceDrop += GetLastFrameDelta().count();
 

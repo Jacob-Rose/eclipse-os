@@ -8,6 +8,8 @@
 #include <memory>
 #include "states/state_base.h"
 
+#include "lib/j/jio.h"
+
 class Necklace
 {
 public:
@@ -25,6 +27,10 @@ public:
 
 private:
 
+    static bool runButtonHeldTestAndReset(j::Button* inButton);
+
     std::vector<std::shared_ptr<State>> States;
     std::shared_ptr<State> ActiveState;
+
+    bool bSetupComplete = false;
 };

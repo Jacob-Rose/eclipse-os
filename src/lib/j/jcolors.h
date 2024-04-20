@@ -11,6 +11,7 @@
 
 #include <utility>
 #include <vector>
+#include <string>
 
 namespace j
 {
@@ -38,23 +39,30 @@ namespace j
     struct HSV
     {
         HSV();
-        HSV(uint16_t inH, uint8_t inS, uint8_t inV);
+        HSV(float inH, uint8_t inS, uint8_t inV);
+
+        HSV blendWith(HSV otherColor, float alpha);
 
         // val is between 0-1, wrapped using fmod
         void setHuePercent(float val);
         void setSaturationPercent(float val);
         void setBrightnessPercent(float val);
+
+        uint16_t getHueAs16() const;
+
+        std::string to_string() const;
         
-        uint16_t h; 
+        float h; 
         uint8_t s; 
         uint8_t v;
     };
 
-
+    //TODO support hsv wrapping around 0 for hue
     struct HSVPalette
     {
         HSVPalette();
         HSVPalette(const std::vector<HSV>& inColors);
+        HSVPalette(const std::initializer_list<HSV>& inColors);
 
         // scale is from 0-1.f
         // supports looping back to the original color

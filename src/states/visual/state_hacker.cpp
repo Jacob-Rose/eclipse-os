@@ -23,7 +23,7 @@ void State_Hacker::tickScreen()
 {
     State::tickScreen();
 
-    GlobalManager& GM = GlobalManager::get();
+    GameManager& GM = GameManager::get();
 
     float currentAngleSin = std::sin(currentScreenAngle);
     float currentAngleCos = std::cos(currentScreenAngle);
@@ -84,7 +84,7 @@ void State_Hacker::tickLEDs()
 {
     State::tickLEDs();
 
-    GlobalManager& GM = GlobalManager::get();
+    GameManager& GM = GameManager::get();
 
     uint16_t randPixel_Rings = std::rand() % RING_LED_LENGTH;
     uint16_t randHue_Rings = std::rand();

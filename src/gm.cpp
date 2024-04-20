@@ -5,18 +5,37 @@
 
 #include "gm.h"
 
-GlobalManager* GlobalManager::singleton = nullptr;
+uint8_t getEBrightnessAsByte(EBrightness inBrightness){
+    switch(inBrightness)
+    {
+        case EBrightness::NIGHTTRIP:
+            return 32;
+        case EBrightness::MIN:
+            return 64;
+        case EBrightness::MED:
+            return 128;
+        case EBrightness::HIGH:
+            return 200;
+        case EBrightness::MAX:
+            return 255;
+        default:
+            return 0;
+    }
+    return 0;
+}
 
-void GlobalManager::initSingleton()
+GameManager* GameManager::singleton = nullptr;
+
+void GameManager::initSingleton()
 {
     if(singleton == nullptr)
     {
-        singleton = new GlobalManager();
+        singleton = new GameManager();
         singleton->init();
     } 
 }
 
-void GlobalManager::cleanupSingleton()
+void GameManager::cleanupSingleton()
 {
     if(singleton != nullptr)
     {
@@ -26,13 +45,13 @@ void GlobalManager::cleanupSingleton()
     }
 }
 
-GlobalManager::GlobalManager()
+GameManager::GameManager()
 {
 
 }
 
 
-void GlobalManager::init()
+void GameManager::init()
 {
     GreenButton = std::make_unique<j::Button>();
     GreenButton->init(GREEN_BUTTON_PIN);
@@ -52,7 +71,7 @@ void GlobalManager::init()
     RemoteBlackButton = std::make_unique<j::Button>();
     RemoteBlackButton->init(REMOTE_BLACK_BUTTON_PIN);
 
-    Screen = std::make_shared<Adafruit_GC9A01A>(SCREEN_CS, SCREEN_DC, SCREEN_MISO, SCREEN_SCLK, SCREEN_RST);
+    Screen = std::make_shared<Adafruit_GC9A01A>(SCREEN_CS, SCREEN_DC, SCREEN_SDA, SCREEN_SCL, SCREEN_RST);
     Screen->begin();
     Screen->setRotation(0);
 
@@ -64,20 +83,46 @@ void GlobalManager::init()
     BoardLED = std::make_unique<j::HSVStrip>(1, PIN_NEOPIXEL, NEO_GRB + NEO_KHZ800);
 }
 
-uint8_t GlobalManager::getGlobalBrightness() const
+void GameManager::tickLogic(float deltaTime)
 {
-    return globalBrightness;
+    GreenButton->tick(deltaTime);
+    RedButton->tick(deltaTime);
+    BlueButton->tick(deltaTime);
+    WhiteButton->tick(deltaTime);
+
+    RemoteWhiteButton->tick(deltaTime);
+    RemoteBlackButton->tick(deltaTime);
 }
 
-void GlobalManager::setGlobalBrightness(uint8_t newBrightness)
+void GameManager::showLeds()
 {
-    globalBrightness = newBrightness;
-    RingLEDs->setStripBrightness(newBrightness);
-    OutfitLEDs->setStripBrightness(newBrightness);
-    GlassesLEDs->setStripBrightness(newBrightness);
+    RingLEDs->show();
+    BoardLED->show();
+
+    if(bHasOutfitConnected)
+    {
+        OutfitLEDs->show();
+        GlassesLEDs->show();
+    }
 }
 
-void GlobalManager::cleanup()
+EBrightness GameManager::getGlobalBrightness() const
+{
+    return currentBrightness;
+}
+
+void GameManager::setGlobalBrightness(EBrightness newBrightness)
+{
+    currentBrightness = newBrightness;
+
+    uint8_t brightnessByte = getEBrightnessAsByte(newBrightness);
+
+    RingLEDs->setStripBrightness(brightnessByte);
+    OutfitLEDs->setStripBrightness(brightnessByte);
+    GlassesLEDs->setStripBrightness(brightnessByte);
+}
+
+void GameManager::cleanup()
 {
     GreenButton.reset();
     RedButton.reset();
@@ -91,7 +136,6 @@ void GlobalManager::cleanup()
     OutfitLEDs.reset();
     GlassesLEDs.reset();
     BoardLED.reset();
-
 
     Screen.reset();
 }

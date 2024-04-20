@@ -9,6 +9,7 @@
 
 #include "../../lib/j/jcolors.h"
 
+
 class State_ButtonTest : public State
 {
 public:
@@ -20,8 +21,14 @@ public:
     
     virtual void onStateBegin() override;
 
-    j::HSV OnColor = j::HSV(0,100,100);
+    j::HSV GreenColor = j::HSV(0.2f, 255,100);
+    j::HSV RedColor = j::HSV(0,255,100);
+    j::HSV BlueColor = j::HSV(0.5f, 255, 100);
+    j::HSV WhiteColor = j::HSV(0,0,100);
+    j::HSV BlackColor = j::HSV(0.8f, 100, 100);
+    j::HSV YellowColor = j::HSV(0.1f, 255, 100);
     j::HSV OffColor = j::HSV(0,0,0);
 
-    bool bButtonPressed = false;
+private:
+    j::HSV currentColor;
 };

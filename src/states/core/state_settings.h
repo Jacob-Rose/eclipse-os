@@ -7,6 +7,8 @@
 
 #include "../state_base.h"
 
+#include <AnimatedGIF.h>
+
 class State_Settings : public State
 {
 public:
@@ -17,4 +19,9 @@ public:
     virtual void tickScreen() override;
     virtual void tickLEDs() override;
     virtual void tickLogic() override;
+
+    AnimatedGIF gif;
+
+private:
+    bool bBlueButtonSeenPressed;
 };

@@ -11,6 +11,8 @@
 #include "../../gm.h"
 #include "../../lib/j/jlogging.h"
 
+#include "../../imgs/flicker-stars.h"
+
 State_Boot::State_Boot(const char* InStateName) : State(InStateName)
 {
 
@@ -20,7 +22,7 @@ void State_Boot::tickLEDs()
 {
     State::tickLEDs();
 
-    GlobalManager& GM = GlobalManager::get();
+    GameManager& GM = GameManager::get();
 
     int currentLED = currentRotation * RING_TWO_LENGTH;
 
@@ -47,6 +49,15 @@ void State_Boot::tickLEDs()
     }
 }
 
+void State_Boot::init()
+{
+    State::init();
+
+    gif.begin(LITTLE_ENDIAN_PIXELS);
+
+    gif.open((uint8_t *)flicker_stars, sizeof(flicker_stars), j::ScreenDrawer::GIFDraw_UpscaleScreen);
+}
+
 void State_Boot::tickLogic()
 {
     State::tickLogic();
@@ -64,11 +75,13 @@ void State_Boot::tickScreen()
 {
     State::tickScreen();
 
+    GameManager& GM = GameManager::get();
+
+    GM.ScreenDrawer.renderGif(gif);
+
     // lil hacky way, but we want leds to be be fine while we load all out stuff
     if(!bInitializedAllStates)
     {
-        GlobalManager& GM = GlobalManager::get();
-        GM.Screen->fillRect(0,0, GM.Screen->width(), GM.Screen->height(), 0);
         for(auto stateItr : statesToInit)
         {
             stateItr.lock()->init();

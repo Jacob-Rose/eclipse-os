@@ -20,62 +20,46 @@
 
 #include "jcolors.h"
 
-#pragma region DEFINES
-// BEGIN PIN + HARDWARE DEFINES
-// redefine as needed
-
-// free pins
-
-
-#define GREEN_BUTTON_PIN D12 // GPIO 12
-#define RED_BUTTON_PIN D13 // GPIO 13
-#define BLUE_BUTTON_PIN 1 // GPIO 26
-#define WHITE_BUTTON_PIN 0 // GPIO 27
-#define REMOTE_WHITE_BUTTON_PIN A2 // GPIO 28
-#define REMOTE_BLACK_BUTTON_PIN A3 // GPIO 29
-
-#define RING_LED_PIN D24 // GPIO 24
-#define RING_ONE_LENGTH 12
-#define RING_TWO_LENGTH 16
-// RING_ONE_LENGTH + RING_TWO_LENGTH
-#define RING_LED_LENGTH 28 
-
-#define OUTFIT_LED_PIN 6 // GPIO 6
-#define ARM_LED_LENGTH 50
-#define WHIP_LED_LENGTH 60
-// ARM_LED_LENGTH + WHIP_LED_LENGTH
-#define OUTFIT_LED_LENGTH 110 
-
-#define GLASSES_LED_PIN A0 // GPIO 0
-#define GLASSES_LED_LENGTH 2
-
-#define SCREEN_DC 3
-#define SCREEN_CS 2
-#define SCREEN_RST -1
-#define SCREEN_MISO D11 // labeled MOSI in docs but actually the SDA on my chip, actually GPIO2 on Feather RP2040, 
-#define SCREEN_SCLK D10 // labeled as SCL on my chip
-
-#define SCREEN_WIDTH 240
-#define SCREEN_HEIGHT 240
-
-#pragma endregion
 
 namespace j
 {
+    // buttons are self managing, making them able to track their state better
+    // TODO add delegate system
     class Button
     {
     public:
-
         void init(uint8_t pin);
 
-        void checkChange(float tick);
+        void tick(float deltaTime);
 
-        bool isPressed();
+        // does not directly poll, must use tick to get updated value this frame
+        bool isPressed() const { return bLastSeenPressed; }
+        float getTimeSinceStateChange() const { return timeSinceStateChanged; }
 
+
+        bool bHasBeenReleased = true; // hacky implementation done on necklace
+
+        // lets us reset button timers easily
+        void resetTimeSinceStateChange();
     private:
+        bool pollPressed();
+
         uint8_t myPin;
 
+        bool bLastSeenPressed = false;
+
+        float timeSinceStateChanged = 0.0f;
+
         bool bInit = false;
+    };
+
+    // nice lil wrapper that can be passed in button refs and 
+    // handle tap events
+
+    // TODO
+    class ButtonObserver
+    {
+
     };
 
     // screen drawer for drawing pixel art
@@ -92,7 +76,12 @@ namespace j
         uint16_t getPixelColor(uint16_t x, uint16_t y);
         void setPixelColor(uint16_t x, uint16_t y, uint16_t color);
 
+
+
         static void GIFDraw_UpscaleScreen(GIFDRAW *pDraw);
+
+        void renderGif(AnimatedGIF& gif);
+        void cancelGifRender();
 
     public:
         std::shared_ptr<Adafruit_GC9A01A> ScreenRef;
@@ -101,6 +90,9 @@ namespace j
         bool bCanvasEnabled = false;
         int16_t xCanvasSize, yCanvasSize;
         std::vector<uint16_t> colors;
+
+    private:
+        bool bWasCancelled = false;
     };
 
 
@@ -121,7 +113,7 @@ namespace j
 
         HSV getHSV(uint16_t idx) const;
         void setHSV(uint16_t idx, const HSV& hsv);
-        void setHSV(uint16_t idx, uint16_t h, uint8_t s, uint8_t v);
+        void setHSV(uint16_t idx, float h, uint8_t s, uint8_t v);
 
         uint8_t getBrightness(uint16_t idx) const;
         void setBrightness(uint16_t idx, uint8_t val);
@@ -152,7 +144,8 @@ namespace j
         float y;
     };
 
-    // same library, responsiblity of user to use additional featureset for 2d specific effects
+    // same interface to HSVStrip, responsiblity of user to use additional featureset for 2d specific effects
+    // to support dynamic changing of mapping per state as well
     class MappedHSVStrip
     {
     public:

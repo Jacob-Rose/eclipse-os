@@ -50,7 +50,7 @@ float remap(const float& i_min, const float& i_max, const float& o_min, const fl
 //
 // Written by Jake Rose past this
 
-float lerp_keyframes(float a, const std::vector<float>& keys);
+float lerp_keyframes(float a, const std::vector<float> keys);
 
 float get_index_from_alpha(float a, const std::vector<float>& keys);
 

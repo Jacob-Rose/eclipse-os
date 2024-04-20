@@ -10,13 +10,15 @@
 #include "lib/j/jio.h"
 #include "lib/j/jlogging.h"
 
+#include "states/core/state_hubselect.h"
 #include "states/core/state_sleep.h"
 #include "states/visual/state_serendipity.h"
 #include "states/visual/state_datamine.h"
 #include "states/visual/state_hacker.h"
-#include "states/visual/state_drip.h"
+//#include "states/visual/state_drip.h"
 #include "states/core/state_boot.h"
 #include "states/core/state_settings.h"
+#include "states/visual/state_emote_heart.h"
 
 #include "states/debug/state_buttontest.h"
 
@@ -25,20 +27,15 @@
 
 void Necklace::setup()
 {
-    GlobalManager& GM = GlobalManager::get();
-
-    GM.setGlobalBrightness(128);
+    GameManager& GM = GameManager::get();
 
     // Boot state so we can run leds while doing processing for inits (like loading images)
     std::shared_ptr<State_Boot> Boot = std::make_shared<State_Boot>("Boot");
     Boot->init();
     States.push_back(Boot);
 
-    std::shared_ptr<State_Hacker> Hacker = std::make_shared<State_Hacker>("Hacker");
-    States.push_back(Hacker);
-
-    std::shared_ptr<State_Drip> Drip = std::make_shared<State_Drip>("Drip");
-    States.push_back(Drip);
+    //std::shared_ptr<State_Drip> Drip = std::make_shared<State_Drip>("Drip");
+    //States.push_back(Drip);
 
     std::shared_ptr<State_Datamine> Datamine = std::make_shared<State_Datamine>("Datamine");
     States.push_back(Datamine);
@@ -55,37 +52,109 @@ void Necklace::setup()
     std::shared_ptr<State_Sleep> Sleep = std::make_shared<State_Sleep>("Sleep");
     States.push_back(Sleep);
 
-    Boot->addStateToInit(Hacker);
-    Boot->addStateToInit(Drip);
+    std::shared_ptr<State_HubSelect> Hub = std::make_shared<State_HubSelect>("Hub");
+    States.push_back(Hub);
+
+    std::shared_ptr<State_Emote_Heart> Emote_Heart = std::make_shared<State_Emote_Heart>("Emote_Heart");
+    States.push_back(Emote_Heart);
+
+    //Boot->addStateToInit(Drip);
     Boot->addStateToInit(Datamine);
     Boot->addStateToInit(Serendipity);
     Boot->addStateToInit(Settings);
-    Boot->addStateToInit(ButtonTest);
     Boot->addStateToInit(Sleep);
+    Boot->addStateToInit(Hub);
+    Boot->addStateToInit(Emote_Heart);
 
-    Boot->addStateTransition(Datamine, [](State* current, State* target){
+    Boot->addStateTransition(Hub, [](State* current, State* target){
         State_Boot* Boot = static_cast<State_Boot*>(current);
         return Boot->hasInitializedAllStates();
     });
 
-    /*
-    Serendipity->addStateTransition(Heartbeat, [](State* current, State* target){
-        GlobalManager& MyGM = GlobalManager::get();
-        return MyGM.GreenButton->isPressed();
+    Datamine->addStateTransition(Hub, [](State* current, State* target){
+        GameManager& MyGM = GameManager::get();
+        j::Button* Button = MyGM.WhiteButton.get();
+        return Necklace::runButtonHeldTestAndReset(Button);
     });
 
-    Heartbeat->addStateTransition(Serendipity, [](State* current, State* target){
-        GlobalManager& MyGM = GlobalManager::get();
-        return current->GetStateActiveDuration().count() > 4.0f;
+    Hub->addStateTransition(Datamine, [](State* current, State* target){
+        GameManager& MyGM = GameManager::get();
+        j::Button* Button = MyGM.RedButton.get();
+        return Necklace::runButtonHeldTestAndReset(Button);
     });
-    */
+
+    Hub->addStateTransition(Serendipity, [](State* current, State* target){
+        GameManager& MyGM = GameManager::get();
+        j::Button* Button = MyGM.GreenButton.get();
+        return Necklace::runButtonHeldTestAndReset(Button);
+    });
+
+    Serendipity->addStateTransition(Hub, [](State* current, State* target){
+        GameManager& MyGM = GameManager::get();
+        j::Button* Button = MyGM.WhiteButton.get();
+        return Necklace::runButtonHeldTestAndReset(Button);
+    });
+
+    Serendipity->addStateTransition(Emote_Heart, [](State* current, State* target){
+        GameManager& MyGM = GameManager::get();
+        j::Button* Button = MyGM.RedButton.get();
+        return Necklace::runButtonHeldTestAndReset(Button);
+    });
+
+
+    Hub->addStateTransition(Settings, [](State* current, State* target){
+        GameManager& MyGM = GameManager::get();
+        j::Button* Button = MyGM.WhiteButton.get();
+        return Necklace::runButtonHeldTestAndReset(Button);
+    });
+
+    Settings->addStateTransition(Hub, [](State* current, State* target){
+        GameManager& MyGM = GameManager::get();
+        j::Button* Button = MyGM.WhiteButton.get();
+        return Necklace::runButtonHeldTestAndReset(Button);
+    });
+
+    Settings->addStateTransition(Sleep, [](State* current, State* target){
+        GameManager& MyGM = GameManager::get();
+        j::Button* Button = MyGM.RedButton.get();
+        return Necklace::runButtonHeldTestAndReset(Button);
+    });
+
+    Sleep->addStateTransition(Settings, [](State* current, State* target){
+        GameManager& MyGM = GameManager::get();
+        j::Button* Button = MyGM.RedButton.get();
+        return Necklace::runButtonHeldTestAndReset(Button);
+    });
+
 
     setActiveState(Boot);
+
+    bSetupComplete = true;
 }
 
 void Necklace::setup1()
 {
     // nothing needed here
+}
+
+bool Necklace::runButtonHeldTestAndReset(j::Button* inButton)
+{
+    constexpr float HoldThreshold = 0.005f;
+    if(inButton->isPressed())
+    {
+        bool bPressedLongEnough = inButton->getTimeSinceStateChange() > HoldThreshold;
+        if(bPressedLongEnough && inButton->bHasBeenReleased)
+        {
+            inButton->resetTimeSinceStateChange();
+            inButton->bHasBeenReleased = false;
+            return true;
+        }
+    }
+    else
+    {
+        inButton->bHasBeenReleased = true;
+    }
+    return false;
 }
 
 void Necklace::tickLEDs()
@@ -95,14 +164,8 @@ void Necklace::tickLEDs()
         ActiveState->runTickLEDs();
     }
 
-    GlobalManager& GM = GlobalManager::get();
-    GM.RingLEDs->show();
-    GM.BoardLED->show();
-
-    if(GM.bHasOutfitConnected)
-    {
-        GM.OutfitLEDs->show();
-    }
+    GameManager& GM = GameManager::get();
+    GM.showLeds();
 }
 
 void Necklace::tickScreen()
@@ -127,6 +190,9 @@ void Necklace::tickLogic()
                 setActiveState(stateTransition.first.lock());
             }
         }
+
+        GameManager& GM = GameManager::get();
+        GM.tickLogic(ActiveState->GetLastFrameDelta().count());
     }
 }
 
@@ -138,7 +204,10 @@ void Necklace::loop()
 
 void Necklace::loop1()
 {
-    tickScreen();
+    if(bSetupComplete)
+    {
+        tickScreen();
+    }
 }
 
 void Necklace::setActiveState(std::shared_ptr<State> InState)

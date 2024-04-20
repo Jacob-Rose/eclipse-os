@@ -7,12 +7,18 @@
 
 #include "../state_base.h"
 
+#include <AnimatedGIF.h>
+
 class State_Sleep : public State
 {
 public:
     State_Sleep(const char* InStateName);
 
+    virtual void init() override;
+
     virtual void tickScreen() override;
     virtual void tickLEDs() override;
     virtual void tickLogic() override;
+
+    AnimatedGIF gif;
 };

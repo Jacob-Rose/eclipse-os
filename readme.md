@@ -35,17 +35,8 @@ Welp, found graphics to be quite difficult using the provided pico library, but 
 1. Install Arduino IDE
 2. Install RP2040 support for Arduino IDE
    >  [Arduino-Pico GitHub w/ Install Instructions](https://github.com/earlephilhower/arduino-pico) 
-3. Get Adafruit GC9A01 library in Arduino IDE
+3. Get Adafruit GC9A01 and AnimatedGif libraries in Arduino IDE
    > Can be downloaded + auto-setup in Arduino IDE Library Manager
-4. Get latest version of FastLED from Github and install in library
-   >[!WARNING] 
-   > FastLED 3.6.0 that is the latest obtainable in Arduino IDE Library Manager currently was shown to have issues with Arduino Pico that were fixed in later patches of FastLED that are not on official 3.6.0 release yet.
-    
-    This makes it a requirement to download FastLED manually, but this is rather easy
-   1. Download Latest [FastLED](https://github.com/FastLED/FastLED) and paste the internal folder in your Arduino user library
-      - User Arduino Library is located in your Documents folder at %USER%/Documents/Arduino
-      - Still will give pragma warning for my current wire setup with ``#      pragma message "Forcing software SPI - no hardware SPI for you!"``. I have not personally found any impact as the FPS is still incredibly good, but this might impact performance. 
-         >I have gone in to disable this call manually on my FastLED library.
 
 
 ### Raspberry Pico / This software Programming Tips

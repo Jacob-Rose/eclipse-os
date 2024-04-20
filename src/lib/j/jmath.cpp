@@ -1,5 +1,7 @@
 #include "jmath.h"
 
+#include "jlogging.h"
+
 float lerp(const float& a, const float& b, const float& t)
 {
     return ((1.0f - t) * a) + (t * b);
@@ -15,17 +17,23 @@ float remap(const float& i_min, const float& i_max, const float& o_min, const fl
     return lerp(o_min, o_max, inv_lerp(i_min, i_max, v));
 }
 
-float lerp_keyframes(float a, const std::vector<float>& keys)
+float lerp_keyframes(float a, const std::vector<float> keys)
 {
-    if(a > 1.0f)
+    if(a >= 1.0f)
     {
         return keys[keys.size()-1];
     }
-        
-    a = std::clamp(a, 0.0f, 1.0f);
+
+    if(a <= 0.0f)
+    {
+        return keys[0];
+    }
+
     float step = 1.0f / keys.size();
     int lowerPart = std::trunc(a / step);
-    float stepAlpha = std::fmod(a, step);
+    float stepAlpha = a / step;
+    stepAlpha -= lowerPart;
+    //jlog::print("step alpha: " + std::to_string(stepAlpha));
     return lerp(keys[lowerPart], keys[lowerPart + 1], stepAlpha);
 }
 

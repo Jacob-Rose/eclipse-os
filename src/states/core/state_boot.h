@@ -7,6 +7,8 @@
 
 #include "../state_base.h"
 
+#include <AnimatedGIF.h>
+
 // Boot State also handles initializing the other states using the screen thread, 
 // so code will look a little weird and hyperspecific
 class State_Boot : public State
@@ -14,16 +16,21 @@ class State_Boot : public State
 public:
     State_Boot(const char* InStateName);
 
+    virtual void init() override;
+
     virtual void tickScreen() override;
     virtual void tickLEDs() override;
     virtual void tickLogic() override;
 
+    // state handling
     void addStateToInit(std::weak_ptr<State> stateToInit);
     bool hasInitializedAllStates() const { return bInitializedAllStates; }
 
     uint16_t currentHue = 0;
 
     float rotationSpeed = 0.5f;
+
+    AnimatedGIF gif;
 
 private:
     float currentRotation; // normalized 0-1

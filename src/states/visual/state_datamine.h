@@ -11,6 +11,8 @@
 #include "../../lib/j/jcolors.h"
 #include "../../lib/ext/easing.h"
 
+#include <AnimatedGIF.h>
+
 // A relatively simple theater effect using a sine wave on the LED idx (+ an offset) to make data move.
 
 // possibly a second sine wave that moves faster with a white pulse to visualize data transfer
@@ -19,30 +21,42 @@ class State_Datamine : public State
 public:
     State_Datamine(const char* InStateName);
 
+    virtual void init() override;
+
     virtual void onStateBegin() override;
 
     virtual void tickScreen() override;
     virtual void tickLEDs() override;
     virtual void tickLogic() override;
 
-    j::LFO lfoNecklaceInner = j::LFO(100.0f, 12.0f);
-    j::LFO lfoNecklaceOuter = j::LFO(100.0f, 16.0f);
-    j::LFO lfoArm = j::LFO(300.0f, 8.5f);
+    j::LFO lfoNecklaceInner = j::LFO(300.0f, 2.0f);
+    j::LFO lfoNecklaceOuter = j::LFO(1600.0f, 4.0f);
+    j::LFO lfoNecklaceColor = j::LFO(100.0f, 1.0f);
+    j::LFO lfoArm = j::LFO(-300.0f, 8.5f);
     j::LFO lfoWhip = j::LFO(1500.0f, 16.0f);
 
-    j::HSVPalette armPalette = std::vector<j::HSV>({
-        j::HSV(20000,255,255)
-    });
+    AnimatedGIF gif;
 
-    j::HSVPalette whipPalette = std::vector<j::HSV>({
-        j::HSV(20000,255,255)
-    });
+    float idleSpeed = 250.0f;
+    float uploadSpeed = 1800.0f;
+    float downloadSpeed = -1800.0f;
+    j::MomentumFloat activationSpeedRamp = j::MomentumFloat(50000000.0f, 1000000.0f);
 
-protected:
+    j::HSVPalette idlePalette = {
+        j::HSV(0.5f, 190, 170),
+        j::HSV(0.4f, 190, 170)
+    };
 
-private:
-    // state info
-    float currentLFO1Offset = 0;
-    float currentLFO2Offset = 0;
-    float currentLFO3Offset = 0;
+    j::HSVPalette uploadPalette = {
+        j::HSV(0.0f, 190, 255),
+        j::HSV(0.1f, 190, 255)
+    };
+
+    j::HSVPalette downloadPalette = {
+        j::HSV(0.77f, 190, 255),
+        j::HSV(0.55f, 190, 255)
+    };
+
+    private:
+        float idlePaletteBuffer = 400.0f;
 };

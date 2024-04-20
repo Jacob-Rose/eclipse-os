@@ -17,8 +17,10 @@ Necklace necklace;
 
 void setup() {
   Serial.begin(19200);
+  
+  delay(500);
 
-  GlobalManager::initSingleton();
+  GameManager::initSingleton();
   SPI.begin();
   necklace.setup();
 }
@@ -28,16 +30,17 @@ void loop() {
 }
 
 void setup1() {
-
+  delay(500);
 }
 
 void loop1()
 {
   necklace.loop1();
+  //delay(10);
 }
 
 // not called anywhere, since when would it be? but worth including for knowledge
 void cleanup(void)
 {
-  GlobalManager::cleanupSingleton();
+  GameManager::cleanupSingleton();
 }
