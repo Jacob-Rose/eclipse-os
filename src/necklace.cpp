@@ -79,13 +79,13 @@ void Necklace::setup()
 
     Hub->addStateTransition(Datamine, [](State* current, State* target){
         GameManager& MyGM = GameManager::get();
-        j::Button* Button = MyGM.RedButton.get();
+        j::Button* Button = MyGM.GreenButton.get();
         return Necklace::runButtonHeldTestAndReset(Button);
     });
 
     Hub->addStateTransition(Serendipity, [](State* current, State* target){
         GameManager& MyGM = GameManager::get();
-        j::Button* Button = MyGM.GreenButton.get();
+        j::Button* Button = MyGM.RedButton.get();
         return Necklace::runButtonHeldTestAndReset(Button);
     });
 
@@ -99,6 +99,10 @@ void Necklace::setup()
         GameManager& MyGM = GameManager::get();
         j::Button* Button = MyGM.RedButton.get();
         return Necklace::runButtonHeldTestAndReset(Button);
+    });
+
+    Emote_Heart->addStateTransition(Serendipity, [](State* current, State* target){
+        return current->GetStateActiveDuration().count() > 4.0f;
     });
 
 

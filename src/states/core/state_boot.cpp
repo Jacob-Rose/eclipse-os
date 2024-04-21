@@ -15,7 +15,13 @@
 
 State_Boot::State_Boot(const char* InStateName) : State(InStateName)
 {
+    sawFillPercentage.width = 10.0f;
+    sawFillPercentage.speed = 100.0f;
+}
 
+bool State_Boot::isStateComplete() const
+{
+    return GetStateActiveDuration().count() > 2.0f;
 }
 
 void State_Boot::tickLEDs()
@@ -23,29 +29,72 @@ void State_Boot::tickLEDs()
     State::tickLEDs();
 
     GameManager& GM = GameManager::get();
+    float deltaTime = GetLastFrameDelta().count();
 
-    int currentLED = currentRotation * RING_TWO_LENGTH;
+    sawFillPercentage.tick(deltaTime);
+    jlog::print(std::to_string(sawFillPercentage.evaluate(0.0f)));
 
-    GM.RingLEDs->setHSV(currentLED + RING_ONE_LENGTH, currentHue, 200, 100);
+    float currentBootPercentComplete = sawFillPercentage.evaluate(0.0f);
 
-    float ringTwoAlpha = (float)currentLED / RING_TWO_LENGTH;
-
-    uint16_t ringTwoLEDIdx = (ringTwoAlpha * RING_ONE_LENGTH);
-
-    GM.RingLEDs->setHSV(ringTwoLEDIdx, currentHue, 200, 100);
-
-    for(int ledIdx = 0; ledIdx < RING_LED_LENGTH; ++ledIdx)
+    for(int idx = 0; idx < RING_ONE_LENGTH; ++idx)
     {
-        uint8_t brightness = GM.RingLEDs->getBrightness(ledIdx);
-        brightness *= 0.98f;
-        GM.RingLEDs->setBrightness(ledIdx, brightness);
+        float alphaPercent = (float)idx / RING_ONE_LENGTH;
+        if(currentBootPercentComplete < alphaPercent)
+        {
+            j::HSV color = j::HSV(currentBootPercentComplete, 200, 200);
+            GM.RingLEDs->setHSV(idx, color);
+        }
+        else
+        {
+            j::HSV color = j::HSV(0,0,0);
+            GM.RingLEDs->setHSV(idx, color);
+        }
     }
 
-    currentHue += 32;
-
-    if(currentLED >= RING_TWO_LENGTH)
+    for(int idx = 0; idx < RING_TWO_LENGTH; ++idx)
     {
-        currentLED = 0;
+        float alphaPercent = (float)idx / RING_TWO_LENGTH;
+        if(currentBootPercentComplete < alphaPercent)
+        {
+            j::HSV color = j::HSV(currentBootPercentComplete, 200, 200);
+            GM.RingLEDs->setHSV(idx + RING_ONE_LENGTH, color);
+        }
+        else
+        {
+            j::HSV color = j::HSV(0,0,0);
+            GM.RingLEDs->setHSV(idx + RING_ONE_LENGTH, color);
+        }
+    }
+
+    for(int idx = 0; idx < ARM_LED_LENGTH; ++idx)
+    {
+        float alphaPercent = (float)idx / ARM_LED_LENGTH;
+        if(currentBootPercentComplete < alphaPercent)
+        {
+            j::HSV color = j::HSV(currentBootPercentComplete, 200, 200);
+            GM.OutfitLEDs->setHSV(idx, color);
+        }
+        else
+        {
+            j::HSV color = j::HSV(0,0,0);
+            GM.OutfitLEDs->setHSV(idx, color);
+        }
+    }
+
+    for(int idx = 0; idx < WHIP_LED_LENGTH; ++idx)
+    {
+        float alphaPercent = (float)idx / WHIP_LED_LENGTH;
+        alphaPercent = 1.0f - alphaPercent;
+        if(currentBootPercentComplete < alphaPercent)
+        {
+            j::HSV color = j::HSV(currentBootPercentComplete, 200, 200);
+            GM.OutfitLEDs->setHSV(idx + ARM_LED_LENGTH, color);
+        }
+        else
+        {
+            j::HSV color = j::HSV(0,0,0);
+            GM.OutfitLEDs->setHSV(idx + ARM_LED_LENGTH, color);
+        }
     }
 }
 
@@ -62,8 +111,9 @@ void State_Boot::tickLogic()
 {
     State::tickLogic();
 
-    currentRotation += rotationSpeed * (lastFrameDT_Logic.count() + lastFrameDT_LED.count());
-    currentRotation = std::fmod(currentRotation, 1.0f); //clamp it to 1
+    GameManager& GM = GameManager::get();
+
+
 }
 
 void State_Boot::addStateToInit(std::weak_ptr<State> stateToInit)

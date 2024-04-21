@@ -9,13 +9,13 @@ uint8_t getEBrightnessAsByte(EBrightness inBrightness){
     switch(inBrightness)
     {
         case EBrightness::NIGHTTRIP:
-            return 32;
+            return 15;
         case EBrightness::MIN:
-            return 64;
+            return 31;
         case EBrightness::MED:
-            return 128;
+            return 63;
         case EBrightness::HIGH:
-            return 200;
+            return 127;
         case EBrightness::MAX:
             return 255;
         default:

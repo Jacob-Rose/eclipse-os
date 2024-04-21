@@ -40,7 +40,7 @@ public:
     float idleSpeed = 250.0f;
     float uploadSpeed = 1800.0f;
     float downloadSpeed = -1800.0f;
-    j::MomentumFloat activationSpeedRamp = j::MomentumFloat(50000000.0f, 1000000.0f);
+    j::MomentumFloat activationSpeedRamp = j::MomentumFloat(5000000.0f, 1000000.0f);
 
     j::HSVPalette idlePalette = {
         j::HSV(0.5f, 190, 170),

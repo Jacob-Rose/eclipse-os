@@ -11,7 +11,8 @@
 
 State_Emote_Heart::State_Emote_Heart(const char* InStateName) : State(InStateName)
 {
-
+    heartSaw.width = 4.0f;
+    heartSaw.gapWidth = 3.0f;
 }
 
 void State_Emote_Heart::init()
@@ -37,12 +38,13 @@ void State_Emote_Heart::tickLEDs()
     State::tickLEDs();
 
     GameManager& GM = GameManager::get();
+    float deltaTime = GetLastFrameDelta().count();
 
-    float tickTime = lastFrameDT_Screen.count();
+    heartSaw.tick(deltaTime);
 
-    float pulseTime = (std::sin(GetStateActiveDuration().count() * 3.0f) + 1.0f) / 2;
+    float pulseTime = heartSaw.evaluate(0.0f);
 
-    pulseTime *= 128;
+    pulseTime *= 200;
 
     int pulseTimeByte = std::floor(pulseTime);
     
@@ -51,7 +53,13 @@ void State_Emote_Heart::tickLEDs()
         GM.RingLEDs->setHSV(ledIdx, 0xf812, 200, pulseTimeByte);
     }
 
-    GM.BoardLED->setHSV(0,0xf812, 200,255);
+    for(int ledIdx = 0; ledIdx < OUTFIT_LED_LENGTH; ++ledIdx)
+    {
+        GM.RingLEDs->setHSV(ledIdx, 0xf812, 200, pulseTimeByte);
+    }
+
+
+    GM.BoardLED->setHSV(0,0xf812, 200,pulseTimeByte);
 }
 
 void State_Emote_Heart::tickLogic()

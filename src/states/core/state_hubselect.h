@@ -26,11 +26,23 @@ public:
     virtual void tickLEDs() override;
     virtual void tickLogic() override;
 
-    AnimatedGIF MoonGif;
+    AnimatedGIF gif;
 
-    j::HSVPalette OutfitPalette;
+    j::HSVPalette OutfitPalette = {
+        j::HSV(0.82f, 80, 190),
+        j::HSV(0.77f, 230, 255),
+        j::HSV(0.66f, 180, 120)
+    };
 
-    j::LFO lfoNecklaceOuter = j::LFO(1600.0f, 4.0f);
-    j::LFO lfoInchwormSpeed = j::LFO(400.0f, 10.0f);
-    float inchwormSpeed = 400.0f;
+    j::HSVPalette WhipPalette = {
+        j::HSV(0.82f, 80, 20),
+        j::HSV(0.77f, 230, 255),
+        j::HSV(0.66f, 180, 120)
+    };
+
+    j::LFO lfoNecklaceOuter = j::LFO(200.0f, 8.0f);
+    j::LFO lfoInchwormSpeed = j::LFO(50.0f, 1.0f);
+
+    j::Saw hueSaw = j::Saw(50.0f);
+    float inchwormSpeed = 120.0f;
 };

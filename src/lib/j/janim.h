@@ -63,8 +63,8 @@ namespace j
 
         float getCurrentOffset() const { return currentOffset; }
 
-        float speed = 0.0f;
-        float width = 2.0f;
+        float speed = 1.0f;
+        float width = 1.0f;
         float initialOffset = 0.0f;
     private:
         float currentOffset = 0.0f;
@@ -84,7 +84,7 @@ namespace j
 
         float getCurrentOffset() const { return currentOffset; }
 
-        float speed = 0.0f;
+        float speed = 1.0f;
         float width = 1.0f;
         float initialOffset = 0.0f;
         float gapWidth = 0.0f;

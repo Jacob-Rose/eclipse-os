@@ -19,9 +19,9 @@ State_HubSelect::State_HubSelect(const char* InStateName) : State(InStateName)
 void State_HubSelect::init()
 {
     State::init();
-    MoonGif.begin(LITTLE_ENDIAN_PIXELS);
+    gif.begin(LITTLE_ENDIAN_PIXELS);
 
-    MoonGif.open((uint8_t *)eclipse, sizeof(eclipse), j::ScreenDrawer::GIFDraw_UpscaleScreen);
+    gif.open((uint8_t *)eclipse, sizeof(eclipse), j::ScreenDrawer::GIFDraw_UpscaleScreen);
 }
 
 void State_HubSelect::tickScreen()
@@ -30,7 +30,7 @@ void State_HubSelect::tickScreen()
 
     GameManager& GM = GameManager::get();
 
-    GM.ScreenDrawer.renderGif(MoonGif);
+    GM.ScreenDrawer.renderGif(gif);
 }
 
 void State_HubSelect::tickLEDs()
@@ -42,9 +42,9 @@ void State_HubSelect::tickLEDs()
     float deltaTime = GetLastFrameDelta().count();
 
     lfoInchwormSpeed.tick(deltaTime);
-    lfoNecklaceOuter.speed = lfoInchwormSpeed.evaluate(1.0f) * inchwormSpeed;
-
+    lfoNecklaceOuter.speed = remap(0.0f, 1.0f, -inchwormSpeed, inchwormSpeed, lfoInchwormSpeed.evaluate(1.0f));
     lfoNecklaceOuter.tick(deltaTime);
+    hueSaw.tick(deltaTime);
 
     for(int idx = 0; idx < RING_ONE_LENGTH; ++idx)
     {
@@ -54,9 +54,28 @@ void State_HubSelect::tickLEDs()
     for(int idx = 0; idx < RING_TWO_LENGTH; ++idx)
     {
         float lfo = lfoNecklaceOuter.evaluate(idx);
-        float pixelBrightness = lfo;
-        uint8_t brightnessByte = std::lroundf(pixelBrightness * 255);
-        GM.RingLEDs->setHSV(RING_ONE_LENGTH + idx, j::HSV(0.2f,255U,brightnessByte));
+        j::HSV color = WhipPalette.getColor(lfo);
+        GM.RingLEDs->setHSV(RING_ONE_LENGTH + idx, color);
+    }
+
+    for(int idx = 0; idx < ARM_LED_LENGTH; ++idx)
+    {
+        float alphaPercent = (float)idx / ARM_LED_LENGTH;
+
+        alphaPercent = hueSaw.evaluate(alphaPercent);
+        alphaPercent = std::fmod(alphaPercent, 1.0f);
+        j::HSV color = OutfitPalette.getColor(alphaPercent);
+        GM.OutfitLEDs->setHSV(idx, color);
+    }
+
+    for(int idx = 0; idx < WHIP_LED_LENGTH; ++idx)
+    {
+        float alphaPercent = (float)idx / WHIP_LED_LENGTH;
+
+        float colorHue = lfoNecklaceOuter.evaluate(alphaPercent);
+        colorHue = std::fmod(colorHue, 1.0f);
+        j::HSV color = WhipPalette.getColor(colorHue);
+        GM.OutfitLEDs->setHSV(idx + ARM_LED_LENGTH, color);
     }
 }
 

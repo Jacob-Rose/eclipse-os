@@ -7,6 +7,8 @@
 
 #include "../state_base.h"
 
+#include "../../lib/j/janim.h"
+
 #include <AnimatedGIF.h>
 
 class State_Emote_Heart : public State
@@ -22,7 +24,7 @@ public:
 
     AnimatedGIF HeartGif;
 
-    float AnimTime{ 0.8f };
+    j::Saw heartSaw;
 
 private:
     bool bLoadedHeart{false};

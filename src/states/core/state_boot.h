@@ -7,6 +7,8 @@
 
 #include "../state_base.h"
 
+#include "../../lib/j/janim.h"
+
 #include <AnimatedGIF.h>
 
 // Boot State also handles initializing the other states using the screen thread, 
@@ -26,15 +28,15 @@ public:
     void addStateToInit(std::weak_ptr<State> stateToInit);
     bool hasInitializedAllStates() const { return bInitializedAllStates; }
 
-    uint16_t currentHue = 0;
+    bool isStateComplete() const;
 
-    float rotationSpeed = 0.5f;
+    uint16_t currentHue = 0;
 
     AnimatedGIF gif;
 
-private:
-    float currentRotation; // normalized 0-1
+    j::Saw sawFillPercentage = j::Saw();
 
+private:
     std::vector<std::weak_ptr<State>> statesToInit;
     bool bInitializedAllStates = false;
 };

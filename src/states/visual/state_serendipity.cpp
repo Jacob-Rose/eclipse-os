@@ -55,7 +55,7 @@ void State_Serendipidy::tickLEDs()
         uint16_t randPixel_Outfit = std::rand() % OUTFIT_LED_LENGTH;
         uint16_t randHue_Outfit = std::rand();
 
-        GM.OutfitLEDs->setHSV(randPixel_Outfit, randHue_Outfit, 128, 128); // set to 100 when back to hacker
+        GM.OutfitLEDs->setHSV(randPixel_Outfit, randHue_Outfit, 128, 255); // set to 100 when back to hacker
 
         for(uint16_t ledIdx = 0; ledIdx < OUTFIT_LED_LENGTH; ++ledIdx)
         {
