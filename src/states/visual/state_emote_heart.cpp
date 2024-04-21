@@ -11,8 +11,9 @@
 
 State_Emote_Heart::State_Emote_Heart(const char* InStateName) : State(InStateName)
 {
+    heartSaw.speed = 100.0f;
     heartSaw.width = 4.0f;
-    heartSaw.gapWidth = 3.0f;
+    //heartSaw.gapWidth = 3.0f;
 }
 
 void State_Emote_Heart::init()
@@ -55,7 +56,7 @@ void State_Emote_Heart::tickLEDs()
 
     for(int ledIdx = 0; ledIdx < OUTFIT_LED_LENGTH; ++ledIdx)
     {
-        GM.RingLEDs->setHSV(ledIdx, 0xf812, 200, pulseTimeByte);
+        GM.OutfitLEDs->setHSV(ledIdx, 0xf812, 200, pulseTimeByte);
     }
 
 

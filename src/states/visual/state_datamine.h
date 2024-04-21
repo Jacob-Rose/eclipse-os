@@ -30,8 +30,7 @@ public:
     virtual void tickLogic() override;
 
     j::LFO lfoNecklaceInner = j::LFO(300.0f, 2.0f);
-    j::LFO lfoNecklaceOuter = j::LFO(1600.0f, 4.0f);
-    j::LFO lfoNecklaceColor = j::LFO(100.0f, 1.0f);
+    j::LFO lfoNecklaceOuter = j::LFO(1600.0f, 8.0f);
     j::LFO lfoArm = j::LFO(-300.0f, 8.5f);
     j::LFO lfoWhip = j::LFO(1500.0f, 16.0f);
 
@@ -43,8 +42,8 @@ public:
     j::MomentumFloat activationSpeedRamp = j::MomentumFloat(5000000.0f, 1000000.0f);
 
     j::HSVPalette idlePalette = {
-        j::HSV(0.5f, 190, 170),
-        j::HSV(0.4f, 190, 170)
+        j::HSV(0.6f, 190, 170),
+        j::HSV(0.8f, 255, 220)
     };
 
     j::HSVPalette uploadPalette = {
@@ -53,8 +52,8 @@ public:
     };
 
     j::HSVPalette downloadPalette = {
-        j::HSV(0.77f, 190, 255),
-        j::HSV(0.55f, 190, 255)
+        j::HSV(0.3f, 190, 255),
+        j::HSV(0.4f, 100, 255)
     };
 
     private:

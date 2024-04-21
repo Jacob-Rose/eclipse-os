@@ -40,14 +40,11 @@ void State_Datamine::tickLEDs()
 
     GameManager& GM = GameManager::get();
 
-    float necklackHue = lfoNecklaceColor.evaluate(0.0f);
-
     float deltaTime = GetLastFrameDelta().count();
 
     lfoArm.tick(deltaTime);
     lfoNecklaceInner.tick(deltaTime);
     lfoNecklaceOuter.tick(deltaTime);
-    lfoNecklaceColor.tick(deltaTime);
     lfoWhip.tick(deltaTime);
 
     
@@ -80,56 +77,42 @@ void State_Datamine::tickLEDs()
 
     for(int idx = 0; idx < RING_ONE_LENGTH; ++idx)
     {
+        float alphaPercent = (float)(idx) / RING_ONE_LENGTH;
         //auto easingFunction = getEasingFunction( EaseInOutSine );
         float lfo = lfoNecklaceInner.evaluate(idx);
         //lfo = easingFunction(lfo);
         float pixelBrightness = lfo;
 
-        float percentThrough = (float)idx / WHIP_LED_LENGTH;
-
-        j::HSV uploadColor = uploadPalette.getColor(percentThrough);
-        j::HSV downloadColor = downloadPalette.getColor(percentThrough);
-        j::HSV idleColor = idlePalette.getColor(percentThrough);
+        j::HSV uploadColor = uploadPalette.getColor(alphaPercent + 0.25f);
+        j::HSV downloadColor = downloadPalette.getColor(alphaPercent + 0.25f);
+        j::HSV idleColor = idlePalette.getColor(alphaPercent + 0.25f);
 
         j::HSV newColor;
         if(bUsePaletteBlendToUpload)
         {
-            //j::HSVPalette palette = {idleColor, uploadColor};
-            //newColor = palette.getColor(animAlphaToDownload);
-            if(idx == 1)
-            {
-                //jlog::print(std::to_string(animAlphaToDownload));
-            }
             newColor = uploadColor;
         }
         else if(bUsePaletteBlendToDownload)
         {
-            //j::HSVPalette palette = {idleColor, downloadColor};
-            //newColor = palette.getColor(animAlphaToUpload);
-            if(idx == 1)
-            {
-                //jlog::print(std::to_string(animAlphaToUpload));
-            }
             newColor = downloadColor;
         }
         else
         {
             newColor = idleColor;
         }
-        
-        uint8_t brightnessByte = std::lroundf(pixelBrightness * 255);
-        newColor.v = (int)newColor.v * brightnessByte / 255;
+
         GM.RingLEDs->setHSV(idx, newColor);
     }
 
     for(int idx = 0; idx < RING_TWO_LENGTH; ++idx)
     {
-        auto easingFunction = getEasingFunction( EaseInOutSine );
+        float alphaPercent = (float)(idx + 1) / RING_TWO_LENGTH;
         float lfo = lfoNecklaceOuter.evaluate(idx);
         //lfo = easingFunction(lfo);
         float pixelBrightness = lfo;
-        uint8_t brightnessByte = std::lroundf(pixelBrightness * 255);
-        GM.RingLEDs->setHSV(RING_ONE_LENGTH + idx, j::HSV(necklackHue,255U,brightnessByte));
+        j::HSV color = idlePalette.getColor(alphaPercent + std::abs(lfoNecklaceOuter.getCurrentOffset()) );
+        color.v *= lfo;
+        GM.RingLEDs->setHSV(RING_ONE_LENGTH + idx, color);
     }
 
     for(int idx = 0; idx < ARM_LED_LENGTH; ++idx)
@@ -137,7 +120,8 @@ void State_Datamine::tickLEDs()
         float lfo2 = lfoArm.evaluate(idx);
         float pixelBrightness = lfo2;
         uint8_t brightnessByte = std::lroundf(pixelBrightness * 255);
-        j::HSV color = j::HSV(0.75f,255U,brightnessByte);
+        j::HSV color = idlePalette.getColor(lfo2);
+        color.v = brightnessByte;
         GM.OutfitLEDs->setHSV(idx, color);
     }
 
@@ -181,11 +165,6 @@ void State_Datamine::tickLEDs()
 
         newColor.v = ((uint16_t)newColor.v * brightnessByte) / 255;
         GM.OutfitLEDs->setHSV(idx + ARM_LED_LENGTH, newColor);
-    }
-
-    for(int idx = 0; idx < GLASSES_LED_LENGTH; ++idx)
-    {
-        GM.GlassesLEDs->setHSV(idx, j::HSV(necklackHue,255U,128U));
     }
 }
 

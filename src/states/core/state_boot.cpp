@@ -15,7 +15,7 @@
 
 State_Boot::State_Boot(const char* InStateName) : State(InStateName)
 {
-    sawFillPercentage.width = 10.0f;
+    sawFillPercentage.width = 14.0f;
     sawFillPercentage.speed = 100.0f;
 }
 
@@ -38,7 +38,7 @@ void State_Boot::tickLEDs()
 
     for(int idx = 0; idx < RING_ONE_LENGTH; ++idx)
     {
-        float alphaPercent = (float)idx / RING_ONE_LENGTH;
+        float alphaPercent = (float)(idx + 1) / RING_ONE_LENGTH;
         if(currentBootPercentComplete < alphaPercent)
         {
             j::HSV color = j::HSV(currentBootPercentComplete, 200, 200);
@@ -53,7 +53,7 @@ void State_Boot::tickLEDs()
 
     for(int idx = 0; idx < RING_TWO_LENGTH; ++idx)
     {
-        float alphaPercent = (float)idx / RING_TWO_LENGTH;
+        float alphaPercent = (float)(idx + 1) / RING_TWO_LENGTH;
         if(currentBootPercentComplete < alphaPercent)
         {
             j::HSV color = j::HSV(currentBootPercentComplete, 200, 200);
@@ -68,7 +68,7 @@ void State_Boot::tickLEDs()
 
     for(int idx = 0; idx < ARM_LED_LENGTH; ++idx)
     {
-        float alphaPercent = (float)idx / ARM_LED_LENGTH;
+        float alphaPercent = (float)(idx + 1) / ARM_LED_LENGTH;
         if(currentBootPercentComplete < alphaPercent)
         {
             j::HSV color = j::HSV(currentBootPercentComplete, 200, 200);
@@ -83,7 +83,7 @@ void State_Boot::tickLEDs()
 
     for(int idx = 0; idx < WHIP_LED_LENGTH; ++idx)
     {
-        float alphaPercent = (float)idx / WHIP_LED_LENGTH;
+        float alphaPercent = (float)(idx + 1) / WHIP_LED_LENGTH;
         alphaPercent = 1.0f - alphaPercent;
         if(currentBootPercentComplete < alphaPercent)
         {

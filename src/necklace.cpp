@@ -102,7 +102,9 @@ void Necklace::setup()
     });
 
     Emote_Heart->addStateTransition(Serendipity, [](State* current, State* target){
-        return current->GetStateActiveDuration().count() > 4.0f;
+        GameManager& MyGM = GameManager::get();
+        j::Button* Button = MyGM.RedButton.get();
+        return Necklace::runButtonHeldTestAndReset(Button);
     });
 
 
