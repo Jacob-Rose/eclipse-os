@@ -23,11 +23,8 @@ public:
 
     virtual void init() override;
 
-    virtual void onStateBegin() override;
-
+    virtual void tick() override;
     virtual void tickScreen() override;
-    virtual void tickLEDs() override;
-    virtual void tickLogic() override;
 
     j::LFO lfoNecklaceInner = j::LFO(300.0f, 2.0f);
     j::LFO lfoNecklaceOuter = j::LFO(1600.0f, 8.0f);
@@ -36,10 +33,10 @@ public:
 
     AnimatedGIF gif;
 
-    float idleSpeed = 250.0f;
-    float uploadSpeed = 1800.0f;
-    float downloadSpeed = -1800.0f;
-    j::MomentumFloat activationSpeedRamp = j::MomentumFloat(5000000.0f, 1000000.0f);
+    float idleSpeed = 20.0f;
+    float uploadSpeed = 180.0f;
+    float downloadSpeed = -180.0f;
+    j::MomentumFloat activationSpeedRamp = j::MomentumFloat(50000.0f, 10000.0f);
 
     j::HSVPalette idlePalette = {
         j::HSV(0.6f, 190, 170),

@@ -23,18 +23,9 @@ void State_Serendipidy::init()
     img.open((uint8_t *)squid, sizeof(squid), j::ScreenDrawer::GIFDraw_UpscaleScreen);
 }
 
-void State_Serendipidy::tickScreen()
+void State_Serendipidy::tick()
 {
-    State::tickScreen();
-
-    GameManager& GM = GameManager::get();
-
-    GM.ScreenDrawer.renderGif(img);
-}
-
-void State_Serendipidy::tickLEDs()
-{
-    State::tickLEDs();
+    State::tick();
 
     GameManager& GM = GameManager::get();
 
@@ -68,7 +59,11 @@ void State_Serendipidy::tickLEDs()
     delay(20);
 }
 
-void State_Serendipidy::tickLogic()
+void State_Serendipidy::tickScreen()
 {
-    State::tickLogic();
+    State::tickScreen();
+
+    GameManager& GM = GameManager::get();
+
+    GM.ScreenDrawer.renderGif(img);
 }

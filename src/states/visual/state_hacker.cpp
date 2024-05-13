@@ -14,9 +14,35 @@ State_Hacker::State_Hacker(const char* InStateName) : State(InStateName)
 
 }
 
-void State_Hacker::init()
+void State_Hacker::tick()
 {
-    State::init();
+    State::tick();
+
+    GameManager& GM = GameManager::get();
+
+    uint16_t randPixel_Rings = std::rand() % RING_LED_LENGTH;
+    uint16_t randHue_Rings = std::rand();
+
+    GM.RingLEDs->setHSV(randPixel_Rings, randHue_Rings, 200, 80); // set to 100 when back to hacker
+
+    for(uint16_t ledIdx = 0; ledIdx < RING_LED_LENGTH; ++ledIdx)
+    {
+        j::HSV color = GM.RingLEDs->getHSV(ledIdx);
+        color.v = std::floor(0.9f * color.v);
+        GM.RingLEDs->setHSV(ledIdx, color);
+    }
+
+    uint16_t randPixel_Outfit = std::rand() % OUTFIT_LED_LENGTH;
+    uint16_t randHue_Outfit = std::rand();
+
+    GM.OutfitLEDs->setHSV(randPixel_Outfit, randHue_Outfit, 200, 80); // set to 100 when back to hacker
+
+    for(uint16_t ledIdx = 0; ledIdx < OUTFIT_LED_LENGTH; ++ledIdx)
+    {
+        j::HSV color = GM.OutfitLEDs->getHSV(ledIdx);
+        color.v = std::floor(0.9f * color.v);
+        GM.OutfitLEDs->setHSV(ledIdx, color);
+    }
 }
 
 void State_Hacker::tickScreen()
@@ -78,40 +104,4 @@ void State_Hacker::tickScreen()
     yEnd = SCREEN_HEIGHT - yStart;
 
     GM.Screen->drawLine(xStart, yStart, xEnd, yEnd, GC9A01A_CYAN);
-}
-
-void State_Hacker::tickLEDs()
-{
-    State::tickLEDs();
-
-    GameManager& GM = GameManager::get();
-
-    uint16_t randPixel_Rings = std::rand() % RING_LED_LENGTH;
-    uint16_t randHue_Rings = std::rand();
-
-    GM.RingLEDs->setHSV(randPixel_Rings, randHue_Rings, 200, 80); // set to 100 when back to hacker
-
-    for(uint16_t ledIdx = 0; ledIdx < RING_LED_LENGTH; ++ledIdx)
-    {
-        j::HSV color = GM.RingLEDs->getHSV(ledIdx);
-        color.v = std::floor(0.9f * color.v);
-        GM.RingLEDs->setHSV(ledIdx, color);
-    }
-
-    uint16_t randPixel_Outfit = std::rand() % OUTFIT_LED_LENGTH;
-    uint16_t randHue_Outfit = std::rand();
-
-    GM.OutfitLEDs->setHSV(randPixel_Outfit, randHue_Outfit, 200, 80); // set to 100 when back to hacker
-
-    for(uint16_t ledIdx = 0; ledIdx < OUTFIT_LED_LENGTH; ++ledIdx)
-    {
-        j::HSV color = GM.OutfitLEDs->getHSV(ledIdx);
-        color.v = std::floor(0.9f * color.v);
-        GM.OutfitLEDs->setHSV(ledIdx, color);
-    }
-}
-
-void State_Hacker::tickLogic()
-{
-    State::tickLogic();
 }

@@ -83,7 +83,7 @@ void GameManager::init()
     BoardLED = std::make_unique<j::HSVStrip>(1, PIN_NEOPIXEL, NEO_GRB + NEO_KHZ800);
 }
 
-void GameManager::tickLogic(float deltaTime)
+void GameManager::tick(float deltaTime)
 {
     GreenButton->tick(deltaTime);
     RedButton->tick(deltaTime);

@@ -25,18 +25,9 @@ void State_Datamine::init()
     gif.open((uint8_t *)cyberpunk, sizeof(cyberpunk), j::ScreenDrawer::GIFDraw_UpscaleScreen);
 }
 
-void State_Datamine::tickScreen()
+void State_Datamine::tick()
 {
-    State::tickScreen();
-
-    GameManager& GM = GameManager::get();
-
-    GM.ScreenDrawer.renderGif(gif);
-}
-
-void State_Datamine::tickLEDs()
-{
-    State::tickLEDs();
+    State::tick();
 
     GameManager& GM = GameManager::get();
 
@@ -168,15 +159,11 @@ void State_Datamine::tickLEDs()
     }
 }
 
-void State_Datamine::tickLogic()
+void State_Datamine::tickScreen()
 {
-    State::tickLogic();
+    State::tickScreen();
 
     GameManager& GM = GameManager::get();
 
-}
-
-void State_Datamine::onStateBegin()
-{
-    State::onStateBegin();
+    GM.ScreenDrawer.renderGif(gif);
 }

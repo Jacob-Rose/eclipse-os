@@ -42,13 +42,8 @@ void State::onStateBegin()
 
     activationTime = std::chrono::system_clock::now();
 
-    tickStartTime_LED = std::chrono::system_clock::now();
+    tickStartTime = std::chrono::system_clock::now();
     tickStartTime_Screen = std::chrono::system_clock::now();
-    tickStartTime_Logic = std::chrono::system_clock::now();
-
-    ledFrame = 0;
-    logicFrame = 0;
-    screenFrame = 0;
 }
 
 void State::onStateEnd()
@@ -63,7 +58,7 @@ void State::onStateEnd()
     GM.ScreenDrawer.cancelGifRender();
 }
 
-void State::tickLEDs()
+void State::tick()
 {
 }
 
@@ -71,11 +66,7 @@ void State::tickScreen()
 {
 }
 
-void State::tickLogic()
-{
-}
-
-void State::runTickLEDs()
+void State::runTick()
 {
 #if LOGGING_ENABLED
     std::string tickMsg = "ticking leds: ";
@@ -83,12 +74,12 @@ void State::runTickLEDs()
     //jlog::print(tickMsg.c_str(), Verbosity::VeryVerbose, Category::OnTick | Category::StateInfo);
 #endif
 
-    lastFrameDT_LED = std::chrono::system_clock::now() - tickStartTime_LED;
-    tickStartTime_LED = std::chrono::system_clock::now();
+    lastFrameDT = std::chrono::system_clock::now() - tickStartTime;
+    tickStartTime = std::chrono::system_clock::now();
 
-    tickLEDs();
+    jlog::print(std::to_string(GetStateActiveDuration().count()));
 
-    ledFrame++;
+    tick();
 }
 
 void State::runTickScreen()
@@ -103,24 +94,6 @@ void State::runTickScreen()
     tickStartTime_Screen = std::chrono::system_clock::now();
 
     tickScreen();
-
-    screenFrame++;
-}
-
-void State::runTickLogic()
-{
-#if LOGGING_ENABLED
-    std::string tickMsg = "ticking logic: ";
-    tickMsg.append(GetStateName());
-    //jlog::print(tickMsg.c_str(), Verbosity::Verbose, Category::OnTick | Category::StateInfo);
-#endif
-
-    lastFrameDT_Logic = std::chrono::system_clock::now() - tickStartTime_Logic;
-    tickStartTime_Logic = std::chrono::system_clock::now();
-
-    tickLogic();
-
-    logicFrame++;
 }
 
 void State::addStateTransition(std::weak_ptr<State> inState, TransitionLambda lambda)
@@ -130,15 +103,13 @@ void State::addStateTransition(std::weak_ptr<State> inState, TransitionLambda la
 
 std::chrono::duration<double> State::GetStateActiveDuration() const
 {
-    std::chrono::time_point<std::chrono::system_clock> currentTime = std::chrono::system_clock::now();
-    std::chrono::duration<double> timeDiff = currentTime - activationTime;
+    std::chrono::duration<double> timeDiff = tickStartTime - activationTime;
     return timeDiff;
 }
 
-// currently assumes for logic, but really they are all the same with some offset differences
 std::chrono::duration<double> State::GetLastFrameDelta() const
 {
     std::chrono::time_point<std::chrono::system_clock> currentTime = std::chrono::system_clock::now();
-    std::chrono::duration<double> timeDiff = currentTime - tickStartTime_Logic;
+    std::chrono::duration<double> timeDiff = currentTime - tickStartTime;
     return timeDiff;
 }

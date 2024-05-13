@@ -15,11 +15,7 @@ class State_ButtonTest : public State
 public:
     State_ButtonTest(const char* InStateName);
 
-    virtual void tickScreen() override;
-    virtual void tickLEDs() override;
-    virtual void tickLogic() override;
-    
-    virtual void onStateBegin() override;
+    virtual void tick() override;
 
     j::HSV GreenColor = j::HSV(0.2f, 255,100);
     j::HSV RedColor = j::HSV(0,255,100);
@@ -28,7 +24,4 @@ public:
     j::HSV BlackColor = j::HSV(0.8f, 100, 100);
     j::HSV YellowColor = j::HSV(0.1f, 255, 100);
     j::HSV OffColor = j::HSV(0,0,0);
-
-private:
-    j::HSV currentColor;
 };

@@ -21,15 +21,11 @@ public:
     virtual void init();
     virtual void cleanup();
 
-    // all deltaTimes are relative to their own hardware
+    virtual void tick();
     virtual void tickScreen();
-    virtual void tickLEDs();
-    // screen is rendered on seperate thread, thus we have two delta times
-    virtual void tickLogic();
 
+    void runTick();
     void runTickScreen();
-    void runTickLEDs();
-    void runTickLogic();
 
     //logic level only, no rendering logic here
     virtual void onStateBegin();
@@ -48,9 +44,8 @@ public:
 
 protected:
     // used for accurately simulating time between frames
-    std::chrono::duration<double> lastFrameDT_LED;
+    std::chrono::duration<double> lastFrameDT;
     std::chrono::duration<double> lastFrameDT_Screen;
-    std::chrono::duration<double> lastFrameDT_Logic;
 
     float framerate = 60.0f; // aim for 60fps
 
@@ -60,13 +55,8 @@ private:
     bool bInitScreen = false;
 
     //used for tracking ticks in a consistant manner
-    std::chrono::time_point<std::chrono::system_clock> tickStartTime_LED;
+    std::chrono::time_point<std::chrono::system_clock> tickStartTime;
     std::chrono::time_point<std::chrono::system_clock> tickStartTime_Screen;
-    std::chrono::time_point<std::chrono::system_clock> tickStartTime_Logic;
-
-    uint64_t ledFrame;
-    uint64_t logicFrame;
-    uint64_t screenFrame;
 
     std::map<std::weak_ptr<State>, TransitionLambda, std::owner_less<std::weak_ptr<State>>> stateTransitions;
     // a little inefficient, but very convient, if we could get an fname like system for strings would be nice.

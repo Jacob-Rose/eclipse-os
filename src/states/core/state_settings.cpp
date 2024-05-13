@@ -19,22 +19,14 @@ State_Settings::State_Settings(const char* InStateName) : State(InStateName)
 void State_Settings::init()
 {
     State::init();
-    gif.begin(LITTLE_ENDIAN_PIXELS);
+    img.begin(LITTLE_ENDIAN_PIXELS);
 
-    gif.open((uint8_t *)gears, sizeof(gears), j::ScreenDrawer::GIFDraw_UpscaleScreen);
+    img.open((uint8_t *)gears, sizeof(gears), j::ScreenDrawer::GIFDraw_UpscaleScreen);
 }
 
-void State_Settings::tickScreen()
+void State_Settings::tick()
 {
-    State::tickScreen();
-    GameManager& GM = GameManager::get();
-
-    GM.ScreenDrawer.renderGif(gif);
-}
-
-void State_Settings::tickLEDs()
-{
-    State::tickLEDs();
+    State::tick();
     
     GameManager& GM = GameManager::get();
 
@@ -59,7 +51,10 @@ void State_Settings::tickLEDs()
     }
 }
 
-void State_Settings::tickLogic()
+void State_Settings::tickScreen()
 {
-    State::tickLogic();
+    State::tickScreen();
+    GameManager& GM = GameManager::get();
+
+    GM.ScreenDrawer.renderGif(img);
 }

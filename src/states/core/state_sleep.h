@@ -16,9 +16,8 @@ public:
 
     virtual void init() override;
 
+    virtual void tick() override;
     virtual void tickScreen() override;
-    virtual void tickLEDs() override;
-    virtual void tickLogic() override;
 
-    AnimatedGIF gif;
+    AnimatedGIF img;
 };

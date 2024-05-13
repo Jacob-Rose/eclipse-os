@@ -21,23 +21,14 @@ void State_Sleep::init()
 {
     State::init();
     
-    gif.begin(LITTLE_ENDIAN_PIXELS);
+    img.begin(LITTLE_ENDIAN_PIXELS);
 
-    gif.open((uint8_t *)matrix, sizeof(matrix), j::ScreenDrawer::GIFDraw_UpscaleScreen);
+    img.open((uint8_t *)matrix, sizeof(matrix), j::ScreenDrawer::GIFDraw_UpscaleScreen);
 }
 
-void State_Sleep::tickScreen()
+void State_Sleep::tick()
 {
-    State::tickScreen();
-
-    GameManager& GM = GameManager::get();
-
-    GM.ScreenDrawer.renderGif(gif);
-}
-
-void State_Sleep::tickLEDs()
-{
-    State::tickLEDs();
+    State::tick();
     
     GameManager& GM = GameManager::get();
 
@@ -54,7 +45,11 @@ void State_Sleep::tickLEDs()
     GM.BoardLED->setHSV(0,j::HSV(0.5f, 120, 60));
 }
 
-void State_Sleep::tickLogic()
+void State_Sleep::tickScreen()
 {
-    State::tickLogic();
+    State::tickScreen();
+
+    GameManager& GM = GameManager::get();
+
+    GM.ScreenDrawer.renderGif(img);
 }

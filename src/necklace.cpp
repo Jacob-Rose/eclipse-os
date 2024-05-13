@@ -163,14 +163,29 @@ bool Necklace::runButtonHeldTestAndReset(j::Button* inButton)
     return false;
 }
 
-void Necklace::tickLEDs()
+void Necklace::tick()
 {
+    GameManager& GM = GameManager::get();
+    
+    lastFrameDT = std::chrono::system_clock::now() - tickStartTime;
+    tickStartTime = std::chrono::system_clock::now();
+
+    GM.tick(lastFrameDT.count());
+
     if(ActiveState != nullptr)
     {
-        ActiveState->runTickLEDs();
+        ActiveState->runTick();
     }
 
-    GameManager& GM = GameManager::get();
+    for(auto stateTransition : ActiveState->stateTransitions)
+    {
+        bool bStateTransitionShouldOccur = stateTransition.second(ActiveState.get(), stateTransition.first.lock().get());
+        if(bStateTransitionShouldOccur)
+        {
+            setActiveState(stateTransition.first.lock());
+        }
+    }
+
     GM.showLeds();
 }
 
@@ -182,30 +197,9 @@ void Necklace::tickScreen()
     }
 }
 
-void Necklace::tickLogic()
-{
-    if(ActiveState != nullptr)
-    {
-        ActiveState->runTickLogic();
-
-        for(auto stateTransition : ActiveState->stateTransitions)
-        {
-            bool bStateTransitionShouldOccur = stateTransition.second(ActiveState.get(), stateTransition.first.lock().get());
-            if(bStateTransitionShouldOccur)
-            {
-                setActiveState(stateTransition.first.lock());
-            }
-        }
-
-        GameManager& GM = GameManager::get();
-        GM.tickLogic(ActiveState->GetLastFrameDelta().count());
-    }
-}
-
 void Necklace::loop()
 {
-    tickLogic();
-    tickLEDs();
+    tick();
 }
 
 void Necklace::loop1()

@@ -25,18 +25,9 @@ void State_Emote_Heart::init()
     bLoadedHeart = HeartGif.open((uint8_t *)kirby, sizeof(kirby), j::ScreenDrawer::GIFDraw_UpscaleScreen);
 }
 
-void State_Emote_Heart::tickScreen()
+void State_Emote_Heart::tick()
 {
-    State::tickScreen();
-
-    GameManager& GM = GameManager::get();
-
-    GM.ScreenDrawer.renderGif(HeartGif);
-}
-
-void State_Emote_Heart::tickLEDs()
-{
-    State::tickLEDs();
+    State::tick();
 
     GameManager& GM = GameManager::get();
     float deltaTime = GetLastFrameDelta().count();
@@ -63,9 +54,11 @@ void State_Emote_Heart::tickLEDs()
     GM.BoardLED->setHSV(0,0xf812, 200,pulseTimeByte);
 }
 
-void State_Emote_Heart::tickLogic()
+void State_Emote_Heart::tickScreen()
 {
-    State::tickLogic();
+    State::tickScreen();
 
     GameManager& GM = GameManager::get();
+
+    GM.ScreenDrawer.renderGif(HeartGif);
 }

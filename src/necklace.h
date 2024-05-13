@@ -19,11 +19,16 @@ public:
     void loop();
     void loop1();
 
-    void tickLEDs();
+    void tick();
     void tickScreen();
-    void tickLogic();
 
     void setActiveState(std::shared_ptr<State> NewState);
+
+
+protected:
+    // used for accurately simulating time between frames
+    std::chrono::duration<double> lastFrameDT;
+    std::chrono::time_point<std::chrono::system_clock> tickStartTime;
 
 private:
 

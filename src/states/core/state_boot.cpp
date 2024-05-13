@@ -24,9 +24,24 @@ bool State_Boot::isStateComplete() const
     return GetStateActiveDuration().count() > 2.0f;
 }
 
-void State_Boot::tickLEDs()
+void State_Boot::init()
 {
-    State::tickLEDs();
+    State::init();
+
+    img.begin(LITTLE_ENDIAN_PIXELS);
+
+    img.open((uint8_t *)flicker_stars, sizeof(flicker_stars), j::ScreenDrawer::GIFDraw_UpscaleScreen);
+}
+
+
+void State_Boot::addStateToInit(std::weak_ptr<State> stateToInit)
+{
+    statesToInit.push_back(stateToInit);
+}
+
+void State_Boot::tick()
+{
+    State::tick();
 
     GameManager& GM = GameManager::get();
     float deltaTime = GetLastFrameDelta().count();
@@ -98,36 +113,13 @@ void State_Boot::tickLEDs()
     }
 }
 
-void State_Boot::init()
-{
-    State::init();
-
-    gif.begin(LITTLE_ENDIAN_PIXELS);
-
-    gif.open((uint8_t *)flicker_stars, sizeof(flicker_stars), j::ScreenDrawer::GIFDraw_UpscaleScreen);
-}
-
-void State_Boot::tickLogic()
-{
-    State::tickLogic();
-
-    GameManager& GM = GameManager::get();
-
-
-}
-
-void State_Boot::addStateToInit(std::weak_ptr<State> stateToInit)
-{
-    statesToInit.push_back(stateToInit);
-}
-
 void State_Boot::tickScreen()
 {
     State::tickScreen();
 
     GameManager& GM = GameManager::get();
 
-    GM.ScreenDrawer.renderGif(gif);
+    GM.ScreenDrawer.renderGif(img);
 
     // lil hacky way, but we want leds to be be fine while we load all out stuff
     if(!bInitializedAllStates)

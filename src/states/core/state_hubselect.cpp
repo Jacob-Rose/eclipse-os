@@ -19,23 +19,14 @@ State_HubSelect::State_HubSelect(const char* InStateName) : State(InStateName)
 void State_HubSelect::init()
 {
     State::init();
-    gif.begin(LITTLE_ENDIAN_PIXELS);
+    img.begin(LITTLE_ENDIAN_PIXELS);
 
-    gif.open((uint8_t *)eclipse, sizeof(eclipse), j::ScreenDrawer::GIFDraw_UpscaleScreen);
+    img.open((uint8_t *)eclipse, sizeof(eclipse), j::ScreenDrawer::GIFDraw_UpscaleScreen);
 }
 
-void State_HubSelect::tickScreen()
+void State_HubSelect::tick()
 {
-    State::tickScreen();
-
-    GameManager& GM = GameManager::get();
-
-    GM.ScreenDrawer.renderGif(gif);
-}
-
-void State_HubSelect::tickLEDs()
-{
-    State::tickLEDs();
+    State::tick();
 
     GameManager& GM = GameManager::get();
 
@@ -79,7 +70,11 @@ void State_HubSelect::tickLEDs()
     }
 }
 
-void State_HubSelect::tickLogic()
+void State_HubSelect::tickScreen()
 {
-    State::tickLogic();
+    State::tickScreen();
+
+    GameManager& GM = GameManager::get();
+
+    GM.ScreenDrawer.renderGif(img);
 }

@@ -16,27 +16,13 @@ State_ButtonTest::State_ButtonTest(const char* InStateName) : State(InStateName)
 
 }
 
-void State_ButtonTest::tickLEDs()
+void State_ButtonTest::tick()
 {
-    State::tickLEDs();
-
-    j::HSV color = currentColor;
+    State::tick();
 
     GameManager& GM = GameManager::get();
 
-    for(uint16_t idx = 0; idx < GM.RingLEDs->getLength(); ++idx)
-    {
-        GM.RingLEDs->setHSV(idx, color);
-    }
-
-    GM.BoardLED->setHSV(0, color);
-}
-
-void State_ButtonTest::tickLogic()
-{
-    State::tickLogic();
-
-    GameManager& GM = GameManager::get();
+    j::HSV currentColor = OffColor;
 
     if(GM.GreenButton->isPressed())
     {
@@ -62,18 +48,11 @@ void State_ButtonTest::tickLogic()
     {
         currentColor = YellowColor;
     }
-    else
+
+    for(uint16_t idx = 0; idx < GM.RingLEDs->getLength(); ++idx)
     {
-        currentColor = OffColor;
+        GM.RingLEDs->setHSV(idx, currentColor);
     }
-}
 
-void State_ButtonTest::onStateBegin()
-{
-    State::onStateBegin();
-}
-
-void State_ButtonTest::tickScreen()
-{
-    State::tickScreen();
+    GM.BoardLED->setHSV(0, currentColor);
 }

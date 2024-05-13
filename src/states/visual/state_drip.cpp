@@ -18,9 +18,13 @@ State_Drip::State_Drip(const char* InStateName) : State(InStateName)
 
 }
 
-void State_Drip::init()
+void State_Drip::onStateBegin()
 {
-    State::init();
+    State::onStateBegin();
+
+    timeSinceDrop = 0;
+    nextDropTime = get_random_float_in_range(dropDelay.first, dropDelay.second);
+    //todo reset drops
 }
 
 void State_Drip::tickScreen()
@@ -32,38 +36,9 @@ void State_Drip::tickScreen()
     GM.Screen->drawRect(0,0, SCREEN_WIDTH, SCREEN_HEIGHT, 0x0000);
 }
 
-void State_Drip::tickLEDs()
+void State_Drip::tick()
 {
-    State::tickLEDs();
-
-    GameManager& GM = GameManager::get();
-
-    for(int ledIdx = 0; ledIdx < GM.RingLEDs->getLength(); ++ledIdx)
-    {
-        GM.RingLEDs->setBrightness(0,0);
-    }
-
-    for(int ledIdx = 0; ledIdx < GM.OutfitLEDs->getLength(); ++ledIdx)
-    {
-        GM.OutfitLEDs->setBrightness(0,0);
-    }
-
-    for (std::list<DropInfo>::iterator it=drops.begin(); it != drops.end(); ++it)
-    {
-        float dropAlpha = it->dropTime / dropTime;
-        int ledCount = std::ceil(it->dropSize);
-        for(int idx = 0; idx < ledCount; ++idx)
-        {
-            uint16_t ledIdx = idx;
-        }
-
-        //todo implement drop display
-    }
-}
-
-void State_Drip::tickLogic()
-{
-    State::tickLogic();
+    State::tick();
 
     GameManager& GM = GameManager::get();
 
@@ -96,12 +71,27 @@ void State_Drip::tickLogic()
             continue;
         }
     }
-}
 
-void State_Drip::onStateBegin()
-{
-    State::onStateBegin();
 
-    timeSinceDrop = 0;
-    nextDropTime = get_random_float_in_range(dropDelay.first, dropDelay.second);
+    for(int ledIdx = 0; ledIdx < GM.RingLEDs->getLength(); ++ledIdx)
+    {
+        GM.RingLEDs->setBrightness(0,0);
+    }
+
+    for(int ledIdx = 0; ledIdx < GM.OutfitLEDs->getLength(); ++ledIdx)
+    {
+        GM.OutfitLEDs->setBrightness(0,0);
+    }
+
+    for (std::list<DropInfo>::iterator it=drops.begin(); it != drops.end(); ++it)
+    {
+        float dropAlpha = it->dropTime / dropTime;
+        int ledCount = std::ceil(it->dropSize);
+        for(int idx = 0; idx < ledCount; ++idx)
+        {
+            uint16_t ledIdx = idx;
+        }
+
+        //todo implement drop display
+    }
 }

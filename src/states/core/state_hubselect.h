@@ -22,11 +22,10 @@ public:
 
     virtual void init() override;
 
+    virtual void tick() override;
     virtual void tickScreen() override;
-    virtual void tickLEDs() override;
-    virtual void tickLogic() override;
 
-    AnimatedGIF gif;
+    AnimatedGIF img;
 
     j::HSVPalette OutfitPalette = {
         j::HSV(0.82f, 80, 190),
@@ -40,9 +39,9 @@ public:
         j::HSV(0.66f, 180, 120)
     };
 
-    j::LFO lfoNecklaceOuter = j::LFO(200.0f, 8.0f);
-    j::LFO lfoInchwormSpeed = j::LFO(50.0f, 1.0f);
+    j::LFO lfoNecklaceOuter = j::LFO(2.0f, 8.0f);
+    j::LFO lfoInchwormSpeed = j::LFO(1.0f, 10.0f);
 
-    j::Saw hueSaw = j::Saw(50.0f);
+    j::Saw hueSaw = j::Saw(1.0f);
     float inchwormSpeed = 120.0f;
 };

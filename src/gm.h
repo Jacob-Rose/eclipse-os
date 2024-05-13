@@ -106,7 +106,7 @@ public:
     void init();
     void cleanup();
 
-    void tickLogic(float deltaTime);
+    void tick(float deltaTime);
     void showLeds();
 
     

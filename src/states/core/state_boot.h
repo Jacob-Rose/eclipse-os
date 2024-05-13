@@ -20,9 +20,8 @@ public:
 
     virtual void init() override;
 
+    virtual void tick() override;
     virtual void tickScreen() override;
-    virtual void tickLEDs() override;
-    virtual void tickLogic() override;
 
     // state handling
     void addStateToInit(std::weak_ptr<State> stateToInit);
@@ -32,7 +31,7 @@ public:
 
     uint16_t currentHue = 0;
 
-    AnimatedGIF gif;
+    AnimatedGIF img;
 
     j::Saw sawFillPercentage = j::Saw();
 

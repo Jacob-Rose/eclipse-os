@@ -33,13 +33,10 @@ class State_Drip : public State
 public:
     State_Drip(const char* InStateName);
 
-    virtual void init() override;
-
     virtual void onStateBegin() override;
 
+    virtual void tick() override;
     virtual void tickScreen() override;
-    virtual void tickLEDs() override;
-    virtual void tickLogic() override;
 
     float dropTime = 0.8f;
     std::pair<float, float> dropDelay = {0.4f, 0.8f};
