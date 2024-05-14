@@ -16,12 +16,9 @@ class State_Emote_Heart : public State
 public:
     State_Emote_Heart(const char* InStateName);
 
-    virtual void init() override;
+    virtual void onStateBegin() override;
 
     virtual void tick() override;
-    virtual void tickScreen() override;
-
-    AnimatedGIF HeartGif;
 
     j::Saw heartSaw;
 

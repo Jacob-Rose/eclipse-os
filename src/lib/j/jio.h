@@ -69,6 +69,8 @@ namespace j
     public:
         ScreenDrawer();
 
+        void tick();
+
         void setCanvasSize(uint16_t x, uint16_t y);
         void setScreenRef(std::shared_ptr<Adafruit_GC9A01A> inScreenRef);
 
@@ -76,20 +78,21 @@ namespace j
         uint16_t getPixelColor(uint16_t x, uint16_t y);
         void setPixelColor(uint16_t x, uint16_t y, uint16_t color);
 
-
-
         static void GIFDraw_UpscaleScreen(GIFDRAW *pDraw);
 
-        void renderGif(AnimatedGIF& gif);
+        void setScreenGif(uint8_t* data, int size);
         void cancelGifRender();
 
     public:
         std::shared_ptr<Adafruit_GC9A01A> ScreenRef;
 
-        // todo add canvas / screen memory for setting up things
+    private:
         bool bCanvasEnabled = false;
         int16_t xCanvasSize, yCanvasSize;
         std::vector<uint16_t> colors;
+
+        AnimatedGIF img;
+        bool bImgReady = false;
 
     private:
         bool bWasCancelled = false;

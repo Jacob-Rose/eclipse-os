@@ -22,10 +22,8 @@ public:
     virtual void cleanup();
 
     virtual void tick();
-    virtual void tickScreen();
 
     void runTick();
-    void runTickScreen();
 
     //logic level only, no rendering logic here
     virtual void onStateBegin();
@@ -49,6 +47,9 @@ protected:
 
     float framerate = 60.0f; // aim for 60fps
 
+    uint8_t* gifData = nullptr;
+    int gifSize = 0;
+
 private:
 
     bool bInit = false;
@@ -67,4 +68,5 @@ private:
     std::string stateName;
 
     friend class Necklace;
+    friend class ScreenDrawer;
 };

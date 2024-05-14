@@ -14,10 +14,7 @@ class State_Serendipidy : public State
 public:
     State_Serendipidy(const char* InStateName);
 
-    virtual void init() override;
+    virtual void onStateBegin() override;
 
     virtual void tick() override;
-    virtual void tickScreen() override;
-
-    AnimatedGIF img;
 };

@@ -27,15 +27,6 @@ void State_Drip::onStateBegin()
     //todo reset drops
 }
 
-void State_Drip::tickScreen()
-{
-    State::tickScreen();
-
-    GameManager& GM = GameManager::get();
-
-    GM.Screen->drawRect(0,0, SCREEN_WIDTH, SCREEN_HEIGHT, 0x0000);
-}
-
 void State_Drip::tick()
 {
     State::tick();

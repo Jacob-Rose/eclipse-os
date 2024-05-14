@@ -17,13 +17,13 @@ State_Sleep::State_Sleep(const char* InStateName) : State(InStateName)
 
 }
 
-void State_Sleep::init()
+void State_Sleep::onStateBegin()
 {
-    State::init();
+    State::onStateBegin();
     
-    img.begin(LITTLE_ENDIAN_PIXELS);
+    GameManager& GM = GameManager::get();
 
-    img.open((uint8_t *)matrix, sizeof(matrix), j::ScreenDrawer::GIFDraw_UpscaleScreen);
+    GM.ScreenDrawer.setScreenGif((uint8_t *)matrix, sizeof(matrix));
 }
 
 void State_Sleep::tick()
@@ -43,13 +43,4 @@ void State_Sleep::tick()
     }
 
     GM.BoardLED->setHSV(0,j::HSV(0.5f, 120, 60));
-}
-
-void State_Sleep::tickScreen()
-{
-    State::tickScreen();
-
-    GameManager& GM = GameManager::get();
-
-    GM.ScreenDrawer.renderGif(img);
 }

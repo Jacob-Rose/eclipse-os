@@ -17,11 +17,11 @@ public:
 
     virtual void tick() override;
 
-    j::HSV GreenColor = j::HSV(0.2f, 255,100);
-    j::HSV RedColor = j::HSV(0,255,100);
-    j::HSV BlueColor = j::HSV(0.5f, 255, 100);
-    j::HSV WhiteColor = j::HSV(0,0,100);
-    j::HSV BlackColor = j::HSV(0.8f, 100, 100);
-    j::HSV YellowColor = j::HSV(0.1f, 255, 100);
-    j::HSV OffColor = j::HSV(0,0,0);
+    j::HSV GreenColor = j::HSV(0.2f, 1.f,0.5f);
+    j::HSV RedColor =   j::HSV(0.f, 1.f, 0.5f);
+    j::HSV BlueColor =  j::HSV(0.5f, 1.f, 0.5f);
+    j::HSV WhiteColor = j::HSV(0.f, 0.f, 0.5f);
+    j::HSV BlackColor = j::HSV(0.8f, 0.5f, 0.5f);
+    j::HSV YellowColor= j::HSV(0.1f, 1.f, 0.5f);
+    j::HSV OffColor =   j::HSV(0.f, 0.f , 0.f);
 };

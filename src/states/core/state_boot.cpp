@@ -11,7 +11,7 @@
 #include "../../gm.h"
 #include "../../lib/j/jlogging.h"
 
-#include "../../imgs/flicker-stars.h"
+#include "../../imgs/eclipse.h"
 
 State_Boot::State_Boot(const char* InStateName) : State(InStateName)
 {
@@ -24,13 +24,13 @@ bool State_Boot::isStateComplete() const
     return GetStateActiveDuration().count() > 2.0f;
 }
 
-void State_Boot::init()
+void State_Boot::onStateBegin()
 {
-    State::init();
+    State::onStateBegin();
 
-    img.begin(LITTLE_ENDIAN_PIXELS);
+    GameManager& GM = GameManager::get();
 
-    img.open((uint8_t *)flicker_stars, sizeof(flicker_stars), j::ScreenDrawer::GIFDraw_UpscaleScreen);
+    GM.ScreenDrawer.setScreenGif((uint8_t *)eclipse, sizeof(eclipse));
 }
 
 
@@ -42,6 +42,16 @@ void State_Boot::addStateToInit(std::weak_ptr<State> stateToInit)
 void State_Boot::tick()
 {
     State::tick();
+
+    // lil hacky way, but we want leds to be be fine while we load all out stuff
+    if(!bInitializedAllStates)
+    {
+        for(auto stateItr : statesToInit)
+        {
+            stateItr.lock()->init();
+        }
+        bInitializedAllStates = true;
+    }
 
     GameManager& GM = GameManager::get();
     float deltaTime = GetLastFrameDelta().count();
@@ -110,24 +120,5 @@ void State_Boot::tick()
             j::HSV color = j::HSV(0,0,0);
             GM.OutfitLEDs->setHSV(idx + ARM_LED_LENGTH, color);
         }
-    }
-}
-
-void State_Boot::tickScreen()
-{
-    State::tickScreen();
-
-    GameManager& GM = GameManager::get();
-
-    GM.ScreenDrawer.renderGif(img);
-
-    // lil hacky way, but we want leds to be be fine while we load all out stuff
-    if(!bInitializedAllStates)
-    {
-        for(auto stateItr : statesToInit)
-        {
-            stateItr.lock()->init();
-        }
-        bInitializedAllStates = true;
     }
 }

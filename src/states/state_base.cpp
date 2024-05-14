@@ -62,10 +62,6 @@ void State::tick()
 {
 }
 
-void State::tickScreen()
-{
-}
-
 void State::runTick()
 {
 #if LOGGING_ENABLED
@@ -80,20 +76,6 @@ void State::runTick()
     jlog::print(std::to_string(GetStateActiveDuration().count()));
 
     tick();
-}
-
-void State::runTickScreen()
-{
-#if LOGGING_ENABLED
-    std::string tickMsg = "ticking screen: ";
-    tickMsg.append(GetStateName());
-    //jlog::print(tickMsg.c_str(), Verbosity::VeryVerbose, Category::OnTick | Category::StateInfo);
-#endif
-
-    lastFrameDT_Screen = std::chrono::system_clock::now() - tickStartTime_Screen;
-    tickStartTime_Screen = std::chrono::system_clock::now();
-
-    tickScreen();
 }
 
 void State::addStateTransition(std::weak_ptr<State> inState, TransitionLambda lambda)

@@ -16,13 +16,13 @@ State_Emote_Heart::State_Emote_Heart(const char* InStateName) : State(InStateNam
     //heartSaw.gapWidth = 3.0f;
 }
 
-void State_Emote_Heart::init()
+void State_Emote_Heart::onStateBegin()
 {
-    State::init();
+    State::onStateBegin();
 
-    HeartGif.begin(LITTLE_ENDIAN_PIXELS);
+    GameManager& GM = GameManager::get();
 
-    bLoadedHeart = HeartGif.open((uint8_t *)kirby, sizeof(kirby), j::ScreenDrawer::GIFDraw_UpscaleScreen);
+    GM.ScreenDrawer.setScreenGif((uint8_t *)kirby, sizeof(kirby));
 }
 
 void State_Emote_Heart::tick()
@@ -52,13 +52,4 @@ void State_Emote_Heart::tick()
 
 
     GM.BoardLED->setHSV(0,0xf812, 200,pulseTimeByte);
-}
-
-void State_Emote_Heart::tickScreen()
-{
-    State::tickScreen();
-
-    GameManager& GM = GameManager::get();
-
-    GM.ScreenDrawer.renderGif(HeartGif);
 }

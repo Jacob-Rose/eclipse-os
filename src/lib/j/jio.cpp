@@ -48,7 +48,7 @@ void Button::resetTimeSinceStateChange()
 
 ScreenDrawer::ScreenDrawer()
 {
-
+    img.begin(LITTLE_ENDIAN_PIXELS);
 }
 
 void ScreenDrawer::setScreenRef(std::shared_ptr<Adafruit_GC9A01A> inScreenRef)
@@ -80,12 +80,26 @@ uint16_t ScreenDrawer::getPixelColor(uint16_t x, uint16_t y)
     return colors[x*xCanvasSize + y];
 }
 
-void ScreenDrawer::renderGif(AnimatedGIF& gif)
+void ScreenDrawer::tick()
 {
-    bWasCancelled = false;
+    if(!bImgReady)
+    {
+        return;
+    }
+
     ScreenRef->startWrite();
-    int playFrameResult = gif.playFrame(true, NULL, this);
+    int playFrameResult = img.playFrame(true, NULL, this);
     ScreenRef->endWrite();
+}
+
+void ScreenDrawer::setScreenGif(uint8_t* data, int size)
+{
+    bWasCancelled = true;
+    bImgReady = false;
+
+    img.open(data, size, j::ScreenDrawer::GIFDraw_UpscaleScreen);
+
+    bImgReady = true;
 }
 
 void ScreenDrawer::cancelGifRender()
@@ -104,6 +118,15 @@ void ScreenDrawer::cancelGifRender()
     }
 
     if(SD->bWasCancelled)
+    {
+        if(pDraw->y == pDraw->iHeight - 1)
+        {
+            SD->bWasCancelled = false;
+        }
+        return;
+    }
+
+    if(!SD->bImgReady)
     {
         return;
     }
@@ -127,7 +150,6 @@ void ScreenDrawer::cancelGifRender()
     {
         SD->setCanvasSize(pDraw->iWidth, pDraw->iHeight);
     }
-
 
     for(int16_t xImagePixel = 0; xImagePixel < pDraw->iWidth; ++xImagePixel)
     {
@@ -208,7 +230,7 @@ void HSVStrip::setBrightness(uint16_t idx, uint8_t val)
 
 void HSVStrip::updateStripPixel(uint16_t idx)
 {
-    uint32_t neoColor = Adafruit_NeoPixel::ColorHSV(strip_HSV[idx].getHueAs16(), strip_HSV[idx].s, strip_HSV[idx].v);
+    uint32_t neoColor = Adafruit_NeoPixel::ColorHSV(strip_HSV[idx].getHueAs16(), strip_HSV[idx].getSatAs8(), strip_HSV[idx].getValAs8());
     if(bUsesGammaCorrection)
     {
         neoColor = Adafruit_NeoPixel::gamma32(neoColor);

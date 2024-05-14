@@ -7,17 +7,16 @@
 
 #include "../state_base.h"
 
+#include "../../lib/j/janim.h"
+
 #include <AnimatedGIF.h>
 
-class State_Settings : public State
+class State_EnchantedForest : public State
 {
 public:
-    State_Settings(const char* InStateName);
+    State_EnchantedForest(const char* InStateName);
 
     virtual void onStateBegin() override;
 
     virtual void tick() override;
-
-private:
-    bool bBlueButtonSeenPressed;
 };

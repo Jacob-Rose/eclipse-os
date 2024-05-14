@@ -39,22 +39,24 @@ namespace j
     struct HSV
     {
         HSV();
-        HSV(float inH, uint8_t inS, uint8_t inV);
+        HSV(float inH, float inS, float inV);
 
         HSV blendWith(HSV otherColor, float alpha);
 
-        // val is between 0-1, wrapped using fmod
-        void setHuePercent(float val);
-        void setSaturationPercent(float val);
-        void setBrightnessPercent(float val);
+        // set between 0.f - 360.f
+        void setHueDegree(float val);
+        void setSaturationAlpha(float val);
+        void setBrightnessAlpha(float val);
 
         uint16_t getHueAs16() const;
+        uint8_t getSatAs8() const;
+        uint8_t getValAs8() const;
 
         std::string to_string() const;
         
-        float h; 
-        uint8_t s; 
-        uint8_t v;
+        float h; // in degrees
+        float s; // 0.f - 1.f
+        float v; // 0.f - 1.f
     };
 
     //TODO support hsv wrapping around 0 for hue

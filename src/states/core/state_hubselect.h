@@ -10,6 +10,8 @@
 #include "../../lib/j/jcolors.h"
 #include "../../lib/j/janim.h"
 
+#include "../../lib/j/jpalettes.h"
+
 #include <AnimatedGIF.h>
 
 // outfit should pulse a light pastel purple/pink
@@ -20,23 +22,16 @@ class State_HubSelect : public State
 public:
     State_HubSelect(const char* InStateName);
 
-    virtual void init() override;
+    virtual void onStateBegin() override;
 
     virtual void tick() override;
-    virtual void tickScreen() override;
 
-    AnimatedGIF img;
-
-    j::HSVPalette OutfitPalette = {
-        j::HSV(0.82f, 80, 190),
-        j::HSV(0.77f, 230, 255),
-        j::HSV(0.66f, 180, 120)
-    };
+    j::HSVPalette OutfitPalette = j::p_disney100;
 
     j::HSVPalette WhipPalette = {
-        j::HSV(0.82f, 80, 20),
-        j::HSV(0.77f, 230, 255),
-        j::HSV(0.66f, 180, 120)
+        j::HSV(0.82f, 0.3f, 0.1f),
+        j::HSV(0.77f, 0.85f, 1.0f),
+        j::HSV(0.66f, 0.6f, 0.5f)
     };
 
     j::LFO lfoNecklaceOuter = j::LFO(2.0f, 8.0f);

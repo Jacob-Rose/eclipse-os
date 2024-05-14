@@ -10,15 +10,19 @@
 #include "lib/j/jio.h"
 #include "lib/j/jlogging.h"
 
-#include "states/core/state_hubselect.h"
-#include "states/core/state_sleep.h"
-#include "states/visual/state_serendipity.h"
-#include "states/visual/state_datamine.h"
-#include "states/visual/state_hacker.h"
-//#include "states/visual/state_drip.h"
 #include "states/core/state_boot.h"
 #include "states/core/state_settings.h"
+#include "states/core/state_hubselect.h"
+#include "states/core/state_sleep.h"
+
+#include "states/visual/state_serendipity.h"
+#include "states/visual/state_datamine.h"
 #include "states/visual/state_emote_heart.h"
+
+#include "states/visual/state_drip.h"
+#include "states/visual/state_enchantedforest.h"
+#include "states/visual/state_ritual.h"
+#include "states/visual/state_spellcaster.h"
 
 #include "states/debug/state_buttontest.h"
 
@@ -34,62 +38,114 @@ void Necklace::setup()
     Boot->init();
     States.push_back(Boot);
 
-    //std::shared_ptr<State_Drip> Drip = std::make_shared<State_Drip>("Drip");
-    //States.push_back(Drip);
+    std::shared_ptr<State_Drip> Drip = std::make_shared<State_Drip>("Drip");
+    States.push_back(Drip);
+    Boot->addStateToInit(Drip);
 
     std::shared_ptr<State_Datamine> Datamine = std::make_shared<State_Datamine>("Datamine");
     States.push_back(Datamine);
+    Boot->addStateToInit(Datamine);
 
     std::shared_ptr<State_Serendipidy> Serendipity = std::make_shared<State_Serendipidy>("Serendipity");
     States.push_back(Serendipity);
+    Boot->addStateToInit(Serendipity);
 
     std::shared_ptr<State_Settings> Settings = std::make_shared<State_Settings>("Settings");
     States.push_back(Settings);
+    Boot->addStateToInit(Settings);
 
     std::shared_ptr<State_ButtonTest> ButtonTest = std::make_shared<State_ButtonTest>("ButtonTest");
     States.push_back(ButtonTest);
+    Boot->addStateToInit(ButtonTest);
 
     std::shared_ptr<State_Sleep> Sleep = std::make_shared<State_Sleep>("Sleep");
     States.push_back(Sleep);
+    Boot->addStateToInit(Sleep);
 
-    std::shared_ptr<State_HubSelect> Hub = std::make_shared<State_HubSelect>("Hub");
-    States.push_back(Hub);
+    std::shared_ptr<State_HubSelect> EclipseHub = std::make_shared<State_HubSelect>("EclipseHub");
+    States.push_back(EclipseHub);
+    Boot->addStateToInit(EclipseHub);
 
     std::shared_ptr<State_Emote_Heart> Emote_Heart = std::make_shared<State_Emote_Heart>("Emote_Heart");
     States.push_back(Emote_Heart);
-
-    //Boot->addStateToInit(Drip);
-    Boot->addStateToInit(Datamine);
-    Boot->addStateToInit(Serendipity);
-    Boot->addStateToInit(Settings);
-    Boot->addStateToInit(Sleep);
-    Boot->addStateToInit(Hub);
     Boot->addStateToInit(Emote_Heart);
 
-    Boot->addStateTransition(Hub, [](State* current, State* target){
+    std::shared_ptr<State_Spellcaster> Spellcaster = std::make_shared<State_Spellcaster>("Spellcaster");
+    States.push_back(Spellcaster);
+    Boot->addStateToInit(Spellcaster);
+    
+    std::shared_ptr<State_Ritual> Ritual = std::make_shared<State_Ritual>("Ritual");
+    States.push_back(Ritual);
+    Boot->addStateToInit(Ritual);
+
+    std::shared_ptr<State_EnchantedForest> EnchantedForest = std::make_shared<State_EnchantedForest>("EnchantedForest");
+    States.push_back(EnchantedForest);
+    Boot->addStateToInit(EnchantedForest);
+
+    /* BOOT TRANSITION */
+
+    Boot->addStateTransition(EclipseHub, [](State* current, State* target){
         State_Boot* Boot = static_cast<State_Boot*>(current);
         return Boot->hasInitializedAllStates();
     });
 
-    Datamine->addStateTransition(Hub, [](State* current, State* target){
+    EclipseHub->addStateTransition(Spellcaster, [](State* current, State* target){
         GameManager& MyGM = GameManager::get();
-        j::Button* Button = MyGM.WhiteButton.get();
+        j::Button* Button = MyGM.BlueButton.get();
         return Necklace::runButtonHeldTestAndReset(Button);
     });
 
-    Hub->addStateTransition(Datamine, [](State* current, State* target){
-        GameManager& MyGM = GameManager::get();
-        j::Button* Button = MyGM.GreenButton.get();
-        return Necklace::runButtonHeldTestAndReset(Button);
-    });
-
-    Hub->addStateTransition(Serendipity, [](State* current, State* target){
+    EclipseHub->addStateTransition(Ritual, [](State* current, State* target){
         GameManager& MyGM = GameManager::get();
         j::Button* Button = MyGM.RedButton.get();
         return Necklace::runButtonHeldTestAndReset(Button);
     });
 
-    Serendipity->addStateTransition(Hub, [](State* current, State* target){
+    EclipseHub->addStateTransition(EnchantedForest, [](State* current, State* target){
+        GameManager& MyGM = GameManager::get();
+        j::Button* Button = MyGM.GreenButton.get();
+        return Necklace::runButtonHeldTestAndReset(Button);
+    });
+
+    Ritual->addStateTransition(EclipseHub, [](State* current, State* target){
+        GameManager& MyGM = GameManager::get();
+        j::Button* Button = MyGM.WhiteButton.get();
+        return Necklace::runButtonHeldTestAndReset(Button);
+    });
+
+    Spellcaster->addStateTransition(EclipseHub, [](State* current, State* target){
+        GameManager& MyGM = GameManager::get();
+        j::Button* Button = MyGM.WhiteButton.get();
+        return Necklace::runButtonHeldTestAndReset(Button);
+    });
+
+    EnchantedForest->addStateTransition(EclipseHub, [](State* current, State* target){
+        GameManager& MyGM = GameManager::get();
+        j::Button* Button = MyGM.WhiteButton.get();
+        return Necklace::runButtonHeldTestAndReset(Button);
+    });
+
+    /*
+
+    Datamine->addStateTransition(EclipseHub, [](State* current, State* target){
+        GameManager& MyGM = GameManager::get();
+        j::Button* Button = MyGM.WhiteButton.get();
+        return Necklace::runButtonHeldTestAndReset(Button);
+    });
+
+    EclipseHub->addStateTransition(Datamine, [](State* current, State* target){
+        GameManager& MyGM = GameManager::get();
+        j::Button* Button = MyGM.GreenButton.get();
+        return Necklace::runButtonHeldTestAndReset(Button);
+    });
+
+    EclipseHub->addStateTransition(Serendipity, [](State* current, State* target){
+        GameManager& MyGM = GameManager::get();
+        j::Button* Button = MyGM.RedButton.get();
+        return Necklace::runButtonHeldTestAndReset(Button);
+    });
+
+    Serendipity->addStateTransition(EclipseHub, [](State* current, State* target){
         GameManager& MyGM = GameManager::get();
         j::Button* Button = MyGM.WhiteButton.get();
         return Necklace::runButtonHeldTestAndReset(Button);
@@ -108,13 +164,13 @@ void Necklace::setup()
     });
 
 
-    Hub->addStateTransition(Settings, [](State* current, State* target){
+    EclipseHub->addStateTransition(Settings, [](State* current, State* target){
         GameManager& MyGM = GameManager::get();
         j::Button* Button = MyGM.WhiteButton.get();
         return Necklace::runButtonHeldTestAndReset(Button);
     });
 
-    Settings->addStateTransition(Hub, [](State* current, State* target){
+    Settings->addStateTransition(EclipseHub, [](State* current, State* target){
         GameManager& MyGM = GameManager::get();
         j::Button* Button = MyGM.WhiteButton.get();
         return Necklace::runButtonHeldTestAndReset(Button);
@@ -131,6 +187,7 @@ void Necklace::setup()
         j::Button* Button = MyGM.RedButton.get();
         return Necklace::runButtonHeldTestAndReset(Button);
     });
+    */
 
 
     setActiveState(Boot);
@@ -191,10 +248,9 @@ void Necklace::tick()
 
 void Necklace::tickScreen()
 {
-    if(ActiveState != nullptr)
-    {
-        ActiveState->runTickScreen();
-    }
+    GameManager& GM = GameManager::get();
+
+    GM.ScreenDrawer.tick();
 }
 
 void Necklace::loop()

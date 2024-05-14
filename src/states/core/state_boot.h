@@ -18,10 +18,9 @@ class State_Boot : public State
 public:
     State_Boot(const char* InStateName);
 
-    virtual void init() override;
+    virtual void onStateBegin() override;
 
     virtual void tick() override;
-    virtual void tickScreen() override;
 
     // state handling
     void addStateToInit(std::weak_ptr<State> stateToInit);
@@ -30,8 +29,6 @@ public:
     bool isStateComplete() const;
 
     uint16_t currentHue = 0;
-
-    AnimatedGIF img;
 
     j::Saw sawFillPercentage = j::Saw();
 

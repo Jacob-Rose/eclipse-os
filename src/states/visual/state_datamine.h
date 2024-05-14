@@ -21,17 +21,14 @@ class State_Datamine : public State
 public:
     State_Datamine(const char* InStateName);
 
-    virtual void init() override;
+    virtual void onStateBegin() override;
 
     virtual void tick() override;
-    virtual void tickScreen() override;
 
     j::LFO lfoNecklaceInner = j::LFO(300.0f, 2.0f);
     j::LFO lfoNecklaceOuter = j::LFO(1600.0f, 8.0f);
     j::LFO lfoArm = j::LFO(-300.0f, 8.5f);
     j::LFO lfoWhip = j::LFO(1500.0f, 16.0f);
-
-    AnimatedGIF gif;
 
     float idleSpeed = 20.0f;
     float uploadSpeed = 180.0f;
@@ -39,18 +36,18 @@ public:
     j::MomentumFloat activationSpeedRamp = j::MomentumFloat(50000.0f, 10000.0f);
 
     j::HSVPalette idlePalette = {
-        j::HSV(0.6f, 190, 170),
-        j::HSV(0.8f, 255, 220)
+        j::HSV(180.f, 1.f, 1.f),
+        j::HSV(270.f, 1.f, 1.f)
     };
 
     j::HSVPalette uploadPalette = {
-        j::HSV(0.0f, 190, 255),
-        j::HSV(0.1f, 190, 255)
+        j::HSV(0.f, 1.f, 1.f),
+        j::HSV(45.f, 1.f, 1.f)
     };
 
     j::HSVPalette downloadPalette = {
-        j::HSV(0.3f, 190, 255),
-        j::HSV(0.4f, 100, 255)
+        j::HSV(0.3f, 1.f, 1.f),
+        j::HSV(0.4f, 0.5f, 1.f)
     };
 
     private:

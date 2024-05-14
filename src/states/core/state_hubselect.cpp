@@ -16,12 +16,13 @@ State_HubSelect::State_HubSelect(const char* InStateName) : State(InStateName)
 
 }
 
-void State_HubSelect::init()
+void State_HubSelect::onStateBegin()
 {
-    State::init();
-    img.begin(LITTLE_ENDIAN_PIXELS);
+    State::onStateBegin();
 
-    img.open((uint8_t *)eclipse, sizeof(eclipse), j::ScreenDrawer::GIFDraw_UpscaleScreen);
+    GameManager& GM = GameManager::get();
+
+    GM.ScreenDrawer.setScreenGif((uint8_t *)eclipse, sizeof(eclipse));
 }
 
 void State_HubSelect::tick()
@@ -59,6 +60,7 @@ void State_HubSelect::tick()
         GM.OutfitLEDs->setHSV(idx, color);
     }
 
+    /*
     for(int idx = 0; idx < WHIP_LED_LENGTH; ++idx)
     {
         float alphaPercent = (float)idx / WHIP_LED_LENGTH;
@@ -68,13 +70,5 @@ void State_HubSelect::tick()
         j::HSV color = WhipPalette.getColor(colorHue);
         GM.OutfitLEDs->setHSV(idx + ARM_LED_LENGTH, color);
     }
-}
-
-void State_HubSelect::tickScreen()
-{
-    State::tickScreen();
-
-    GameManager& GM = GameManager::get();
-
-    GM.ScreenDrawer.renderGif(img);
+    */
 }

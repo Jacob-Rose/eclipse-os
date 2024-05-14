@@ -16,13 +16,13 @@ State_Datamine::State_Datamine(const char* InStateName) : State(InStateName)
 {
 }
 
-void State_Datamine::init()
+void State_Datamine::onStateBegin()
 {
     State::init();
 
-    gif.begin(LITTLE_ENDIAN_PIXELS);
+    GameManager& GM = GameManager::get();
 
-    gif.open((uint8_t *)cyberpunk, sizeof(cyberpunk), j::ScreenDrawer::GIFDraw_UpscaleScreen);
+    GM.ScreenDrawer.setScreenGif((uint8_t *)cyberpunk, sizeof(cyberpunk));
 }
 
 void State_Datamine::tick()
@@ -157,13 +157,4 @@ void State_Datamine::tick()
         newColor.v = ((uint16_t)newColor.v * brightnessByte) / 255;
         GM.OutfitLEDs->setHSV(idx + ARM_LED_LENGTH, newColor);
     }
-}
-
-void State_Datamine::tickScreen()
-{
-    State::tickScreen();
-
-    GameManager& GM = GameManager::get();
-
-    GM.ScreenDrawer.renderGif(gif);
 }

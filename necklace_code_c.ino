@@ -4,6 +4,7 @@
 // See readme.md for full license details.
 
 #include <stdio.h>
+#include <Arduino.h>
 #include "pico/stdlib.h"
 #include "pico/multicore.h"
 
@@ -27,6 +28,7 @@ void setup() {
 
 void loop() {
   necklace.loop();
+  delay(33);
 }
 
 void setup1() {

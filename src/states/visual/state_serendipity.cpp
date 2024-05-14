@@ -14,13 +14,13 @@ State_Serendipidy::State_Serendipidy(const char* InStateName) : State(InStateNam
 
 }
 
-void State_Serendipidy::init()
+void State_Serendipidy::onStateBegin()
 {
-    State::init();
+    State::onStateBegin();
 
-    img.begin(LITTLE_ENDIAN_PIXELS);
+    GameManager& GM = GameManager::get();
 
-    img.open((uint8_t *)squid, sizeof(squid), j::ScreenDrawer::GIFDraw_UpscaleScreen);
+    GM.ScreenDrawer.setScreenGif((uint8_t *)squid, sizeof(squid));
 }
 
 void State_Serendipidy::tick()
@@ -57,13 +57,4 @@ void State_Serendipidy::tick()
     }
 
     delay(20);
-}
-
-void State_Serendipidy::tickScreen()
-{
-    State::tickScreen();
-
-    GameManager& GM = GameManager::get();
-
-    GM.ScreenDrawer.renderGif(img);
 }

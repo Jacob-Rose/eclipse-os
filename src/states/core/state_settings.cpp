@@ -16,12 +16,13 @@ State_Settings::State_Settings(const char* InStateName) : State(InStateName)
 
 }
 
-void State_Settings::init()
+void State_Settings::onStateBegin()
 {
-    State::init();
-    img.begin(LITTLE_ENDIAN_PIXELS);
+    State::onStateBegin();
 
-    img.open((uint8_t *)gears, sizeof(gears), j::ScreenDrawer::GIFDraw_UpscaleScreen);
+    GameManager& GM = GameManager::get();
+
+    GM.ScreenDrawer.setScreenGif((uint8_t *)gears, sizeof(gears));
 }
 
 void State_Settings::tick()
@@ -49,12 +50,4 @@ void State_Settings::tick()
     {
         GM.RingLEDs->setHSV(idx, j::HSV(0.0f,0,255));
     }
-}
-
-void State_Settings::tickScreen()
-{
-    State::tickScreen();
-    GameManager& GM = GameManager::get();
-
-    GM.ScreenDrawer.renderGif(img);
 }
