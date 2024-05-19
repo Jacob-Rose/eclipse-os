@@ -11,15 +11,26 @@
 
 namespace j
 {
+    template<typename T>
+    class Generator
+    {
+        virtual T evaluate(float val) const = 0;
+    };
+
+    class FloatAttribute
+    {
+        virtual float getCurrentPosition() const = 0;
+    };
+
     // similar to ADS in a FPS, we will blend consistantly to our target value
     // contains momentum system
-    class MomentumFloat
+    class MomentumFloat : public FloatAttribute
     {
     public:
         MomentumFloat(float inAcceleration, float inMaxSpeed);
 
         void tick(float deltaTime);
-        float getCurrentPosition() const { return currentPosition; }
+        virtual float getCurrentPosition() const override { return currentPosition; }
 
         float targetPosition;
         
@@ -30,14 +41,14 @@ namespace j
         float currentPosition = 0.0f;
     };
 
-    class Spring
+    class Spring : public FloatAttribute
     {
     public:
         Spring(float inStrengthForce, float inDampening = 0.8f);
         
         void tick(float deltaTime);
 
-        float getCurrentPosition() const { return currentPosition; }
+        virtual float getCurrentPosition() const override { return currentPosition; }
 
         float targetPosition = 0.0f;
 
@@ -51,7 +62,7 @@ namespace j
 
     // Normalized 0-1 sin wave calculator with support for dynamic offsets
     // also normalizes width so the width is the lenth of the full sine wave
-    class LFO
+    class LFO : public Generator<float>
     {
     public:
         LFO();
@@ -59,7 +70,7 @@ namespace j
 
         void tick(float deltaTime);
 
-        float evaluate(float val) const;
+        virtual float evaluate(float val) const override;
 
         float getCurrentOffset() const { return currentOffset; }
 
@@ -71,7 +82,7 @@ namespace j
     };
 
 
-    class Saw
+    class Saw : public Generator<float>
     {
     public:
         Saw();
@@ -79,8 +90,8 @@ namespace j
 
         void tick(float deltaTime);
 
-        // val is added to the currentOffset
-        float evaluate(float val) const;
+        // val is added to the currentOffset in this case
+        virtual float evaluate(float val) const override;
 
         float getCurrentOffset() const { return currentOffset; }
 
@@ -91,4 +102,7 @@ namespace j
     private:
         float currentOffset = 0.0f;
     };
+
+
+
 }

@@ -13,10 +13,10 @@
 
 #include <AnimatedGIF.h>
 
-class State_Ritual : public State
+class State_BlueMagic : public State
 {
 public:
-    State_Ritual(const char* InStateName);
+    State_BlueMagic(const char* InStateName);
 
     virtual void onStateBegin() override;
 
@@ -24,7 +24,7 @@ public:
 
     //j::FireEmitter fireEmitter;
 
-    j::HSVPalette firePalette = j::p_ritual;
+    j::HSVPalette firePalette = j::p_bluemagic;
 
     j::LFO fireOffset = j::LFO(1.0f, 40.0f);
 

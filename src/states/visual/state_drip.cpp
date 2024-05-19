@@ -7,9 +7,12 @@
 #include "../../lib/j/jmath.h"
 #include "../../gm.h"
 
-#include <bits/stdc++.h>
+#include "../../imgs/campfire.h"
 
-DropInfo::DropInfo(j::HSV inColor, float inDropSize) : color(inColor), dropSize(inDropSize)
+#include <bits/stdc++.h>
+#include <cmath>
+
+DropInfo::DropInfo(j::HSV inColor, float inDropSize, int inLocation) : color(inColor), dropSize(inDropSize), location(inLocation)
 {
 }
 
@@ -21,6 +24,21 @@ State_Drip::State_Drip(const char* InStateName) : State(InStateName)
 void State_Drip::onStateBegin()
 {
     State::onStateBegin();
+
+    GameManager& GM = GameManager::get();
+
+    GM.ScreenDrawer.setScreenGif((uint8_t *)campfire, sizeof(campfire));
+    
+
+    for(int ledIdx = 0; ledIdx < GM.RingLEDs->getLength(); ++ledIdx)
+    {
+        GM.RingLEDs->setHSV(ledIdx, j::HSV(0,0,0));
+    }
+
+    for(int ledIdx = 0; ledIdx < GM.OutfitLEDs->getLength(); ++ledIdx)
+    {
+        GM.OutfitLEDs->setHSV(ledIdx, j::HSV(0,0,0));
+    }
 
     timeSinceDrop = 0;
     nextDropTime = get_random_float_in_range(dropDelay.first, dropDelay.second);
@@ -39,50 +57,54 @@ void State_Drip::tick()
     {
         nextDropTime = get_random_float_in_range(dropDelay.first, dropDelay.second);
         j::HSV color;
-        switch(colorPickMode)
-        {
-            case ColorPickMode::RandomPalette:
-                color = palette.getColor(GetStateActiveDuration().count());
-                break;
-            default:
-                //nothing else
-                break;
-        }
+        color = palette.getColor(std::fmod(GetStateActiveDuration().count(), 1.0f));
         
         float myDropSize = get_random_float_in_range(dropSize.first, dropSize.second);
-        drops.emplace_back(DropInfo(color, myDropSize));
+        int dropIdx = random(GM.OutfitLEDs->getLength());
+        drops.emplace_back(DropInfo(color, myDropSize, dropIdx));
+
+        timeSinceDrop = 0.0f;
     }
 
-    for (std::list<DropInfo>::iterator it=drops.begin(); it != drops.end(); ++it)
+    // Use a while loop to correctly handle iterator invalidation
+    for (auto it = drops.begin(); it != drops.end(); /* no increment here */)
     {
         it->dropTime += GetLastFrameDelta().count();
-        if(it->dropTime > dropTime)
+        if (it->dropTime > dropTime)
         {
-            drops.erase(it++);
-            continue;
+            it = drops.erase(it); // erase returns the next iterator
+        }
+        else
+        {
+            ++it; // increment only if not erasing
         }
     }
 
-
-    for(int ledIdx = 0; ledIdx < GM.RingLEDs->getLength(); ++ledIdx)
-    {
-        GM.RingLEDs->setBrightness(0,0);
-    }
-
-    for(int ledIdx = 0; ledIdx < GM.OutfitLEDs->getLength(); ++ledIdx)
-    {
-        GM.OutfitLEDs->setBrightness(0,0);
-    }
 
     for (std::list<DropInfo>::iterator it=drops.begin(); it != drops.end(); ++it)
     {
         float dropAlpha = it->dropTime / dropTime;
         int ledCount = std::ceil(it->dropSize);
+
+        float alpha = lerp_keyframes(dropAlpha, DRIP_ALPHA_LERP);
         for(int idx = 0; idx < ledCount; ++idx)
         {
-            uint16_t ledIdx = idx;
-        }
+            uint16_t ledIdx = idx + it->location;
+            if(ledIdx >= GM.OutfitLEDs->getLength())
+            {
+                break;
+            }
 
-        //todo implement drop display
+            j::HSV color = it->color;
+            color.v *= alpha;
+
+            j::HSV currentColor = GM.OutfitLEDs->getHSV(ledIdx);
+            currentColor.blendWith(color, alpha);
+            GM.OutfitLEDs->setHSV(ledIdx, currentColor);
+            if(ledIdx < RING_ONE_LENGTH)
+            {
+                GM.RingLEDs->setHSV(ledIdx, currentColor);
+            }
+        }
     }
 }

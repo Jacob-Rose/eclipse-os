@@ -28,7 +28,6 @@ void setup() {
 
 void loop() {
   necklace.loop();
-  delay(33);
 }
 
 void setup1() {

@@ -8,6 +8,7 @@
 #include "../state_base.h"
 
 #include "../../lib/j/janim.h"
+#include "../../lib/j/jpalettes.h"
 
 #include <AnimatedGIF.h>
 
@@ -30,7 +31,9 @@ public:
 
     uint16_t currentHue = 0;
 
-    j::Saw sawFillPercentage = j::Saw();
+    j::Saw sawFillPercentage = j::Saw(7.5f);
+
+    j::HSVPalette palette = j::p_bootgradient;
 
 private:
     std::vector<std::weak_ptr<State>> statesToInit;

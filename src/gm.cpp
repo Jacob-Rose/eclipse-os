@@ -9,12 +9,14 @@ uint8_t getEBrightnessAsByte(EBrightness inBrightness){
     switch(inBrightness)
     {
         case EBrightness::NIGHTTRIP:
-            return 15;
+            return 7;
         case EBrightness::MIN:
-            return 31;
+            return 15;
         case EBrightness::MED:
-            return 63;
+            return 31;
         case EBrightness::HIGH:
+            return 63;
+        case EBrightness::BLINDING:
             return 127;
         case EBrightness::MAX:
             return 255;
@@ -81,6 +83,8 @@ void GameManager::init()
     OutfitLEDs = std::make_unique<j::HSVStrip>(OUTFIT_LED_LENGTH, OUTFIT_LED_PIN, NEO_GRB + NEO_KHZ800);
     GlassesLEDs = std::make_unique<j::HSVStrip>(GLASSES_LED_LENGTH, GLASSES_LED_PIN, NEO_GRB + NEO_KHZ800);
     BoardLED = std::make_unique<j::HSVStrip>(1, PIN_NEOPIXEL, NEO_GRB + NEO_KHZ800);
+
+    setGlobalBrightness(EBrightness::MED);
 }
 
 void GameManager::tick(float deltaTime)

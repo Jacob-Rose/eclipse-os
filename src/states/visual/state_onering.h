@@ -13,10 +13,10 @@
 
 #include <AnimatedGIF.h>
 
-class State_Ritual : public State
+class State_OneRing : public State
 {
 public:
-    State_Ritual(const char* InStateName);
+    State_OneRing(const char* InStateName);
 
     virtual void onStateBegin() override;
 
@@ -28,7 +28,9 @@ public:
 
     j::LFO fireOffset = j::LFO(1.0f, 40.0f);
 
-    j::LFO lfoNecklaceOuter = j::LFO(2.0f, 8.0f);
-    j::LFO lfoInchwormSpeed = j::LFO(2.0f, 1.0f);
+    j::LFO lfoNecklaceOuter = j::LFO(1.0f, 8.0f); // speed is set by the other lfo and inchwormspeed
+    j::LFO lfoInchwormSpeed = j::LFO(3.5f, 1.0f);
     float inchwormSpeed = 12.0f;
+
+    j::LFO throbLFO = j::LFO(2.0f, 1.0f);
 };

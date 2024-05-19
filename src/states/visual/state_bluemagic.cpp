@@ -2,28 +2,28 @@
 //
 // This file is part of project necklace_code_c
 // See readme.md for full license details.
-#include "state_ritual.h"
+#include "state_bluemagic.h"
 
 #include "../../lib/j/jmath.h"
 #include "../../gm.h"
 
-#include "../../imgs/ritual-fast.h"
+#include "../../imgs/mage-spell.h"
 
-State_Ritual::State_Ritual(const char* InStateName) : State(InStateName)
+State_BlueMagic::State_BlueMagic(const char* InStateName) : State(InStateName)
 {
 
 }
 
-void State_Ritual::onStateBegin()
+void State_BlueMagic::onStateBegin()
 {
     State::onStateBegin();
     
     GameManager& GM = GameManager::get();
 
-    GM.ScreenDrawer.setScreenGif((uint8_t *)ritual_fast, sizeof(ritual_fast));
+    GM.ScreenDrawer.setScreenGif((uint8_t *)mage_spell, sizeof(mage_spell));
 }
 
-void State_Ritual::tick()
+void State_BlueMagic::tick()
 {
     State::tick();
 

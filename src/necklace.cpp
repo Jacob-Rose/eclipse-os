@@ -22,6 +22,8 @@
 #include "states/visual/state_drip.h"
 #include "states/visual/state_enchantedforest.h"
 #include "states/visual/state_ritual.h"
+#include "states/visual/state_onering.h"
+#include "states/visual/state_bluemagic.h"
 #include "states/visual/state_spellcaster.h"
 
 #include "states/debug/state_buttontest.h"
@@ -78,6 +80,14 @@ void Necklace::setup()
     States.push_back(Ritual);
     Boot->addStateToInit(Ritual);
 
+    std::shared_ptr<State_OneRing> OneRing = std::make_shared<State_OneRing>("OneRing");
+    States.push_back(OneRing);
+    Boot->addStateToInit(OneRing);
+
+    std::shared_ptr<State_BlueMagic> BlueMagic = std::make_shared<State_BlueMagic>("BlueMagic");
+    States.push_back(BlueMagic);
+    Boot->addStateToInit(BlueMagic);
+
     std::shared_ptr<State_EnchantedForest> EnchantedForest = std::make_shared<State_EnchantedForest>("EnchantedForest");
     States.push_back(EnchantedForest);
     Boot->addStateToInit(EnchantedForest);
@@ -85,84 +95,12 @@ void Necklace::setup()
     /* BOOT TRANSITION */
 
     Boot->addStateTransition(EclipseHub, [](State* current, State* target){
-        State_Boot* Boot = static_cast<State_Boot*>(current);
-        return Boot->hasInitializedAllStates();
+        State_Boot* BootState = static_cast<State_Boot*>(current);
+        // cause i set this up incorrectly, we need to wait for this to be 0
+        return BootState->sawFillPercentage.evaluate(0.0f) < 0.02f; 
     });
 
-    EclipseHub->addStateTransition(Spellcaster, [](State* current, State* target){
-        GameManager& MyGM = GameManager::get();
-        j::Button* Button = MyGM.BlueButton.get();
-        return Necklace::runButtonHeldTestAndReset(Button);
-    });
-
-    EclipseHub->addStateTransition(Ritual, [](State* current, State* target){
-        GameManager& MyGM = GameManager::get();
-        j::Button* Button = MyGM.RedButton.get();
-        return Necklace::runButtonHeldTestAndReset(Button);
-    });
-
-    EclipseHub->addStateTransition(EnchantedForest, [](State* current, State* target){
-        GameManager& MyGM = GameManager::get();
-        j::Button* Button = MyGM.GreenButton.get();
-        return Necklace::runButtonHeldTestAndReset(Button);
-    });
-
-    Ritual->addStateTransition(EclipseHub, [](State* current, State* target){
-        GameManager& MyGM = GameManager::get();
-        j::Button* Button = MyGM.WhiteButton.get();
-        return Necklace::runButtonHeldTestAndReset(Button);
-    });
-
-    Spellcaster->addStateTransition(EclipseHub, [](State* current, State* target){
-        GameManager& MyGM = GameManager::get();
-        j::Button* Button = MyGM.WhiteButton.get();
-        return Necklace::runButtonHeldTestAndReset(Button);
-    });
-
-    EnchantedForest->addStateTransition(EclipseHub, [](State* current, State* target){
-        GameManager& MyGM = GameManager::get();
-        j::Button* Button = MyGM.WhiteButton.get();
-        return Necklace::runButtonHeldTestAndReset(Button);
-    });
-
-    /*
-
-    Datamine->addStateTransition(EclipseHub, [](State* current, State* target){
-        GameManager& MyGM = GameManager::get();
-        j::Button* Button = MyGM.WhiteButton.get();
-        return Necklace::runButtonHeldTestAndReset(Button);
-    });
-
-    EclipseHub->addStateTransition(Datamine, [](State* current, State* target){
-        GameManager& MyGM = GameManager::get();
-        j::Button* Button = MyGM.GreenButton.get();
-        return Necklace::runButtonHeldTestAndReset(Button);
-    });
-
-    EclipseHub->addStateTransition(Serendipity, [](State* current, State* target){
-        GameManager& MyGM = GameManager::get();
-        j::Button* Button = MyGM.RedButton.get();
-        return Necklace::runButtonHeldTestAndReset(Button);
-    });
-
-    Serendipity->addStateTransition(EclipseHub, [](State* current, State* target){
-        GameManager& MyGM = GameManager::get();
-        j::Button* Button = MyGM.WhiteButton.get();
-        return Necklace::runButtonHeldTestAndReset(Button);
-    });
-
-    Serendipity->addStateTransition(Emote_Heart, [](State* current, State* target){
-        GameManager& MyGM = GameManager::get();
-        j::Button* Button = MyGM.RedButton.get();
-        return Necklace::runButtonHeldTestAndReset(Button);
-    });
-
-    Emote_Heart->addStateTransition(Serendipity, [](State* current, State* target){
-        GameManager& MyGM = GameManager::get();
-        j::Button* Button = MyGM.RedButton.get();
-        return Necklace::runButtonHeldTestAndReset(Button);
-    });
-
+    // EclipseHub < - > Settings
 
     EclipseHub->addStateTransition(Settings, [](State* current, State* target){
         GameManager& MyGM = GameManager::get();
@@ -176,6 +114,8 @@ void Necklace::setup()
         return Necklace::runButtonHeldTestAndReset(Button);
     });
 
+    // Settings < - > Sleep
+
     Settings->addStateTransition(Sleep, [](State* current, State* target){
         GameManager& MyGM = GameManager::get();
         j::Button* Button = MyGM.RedButton.get();
@@ -184,10 +124,123 @@ void Necklace::setup()
 
     Sleep->addStateTransition(Settings, [](State* current, State* target){
         GameManager& MyGM = GameManager::get();
+        j::Button* Button = MyGM.WhiteButton.get();
+        return Necklace::runButtonHeldTestAndReset(Button);
+    });
+
+    // EclipseHub < - > Spellcaster
+
+    EclipseHub->addStateTransition(Spellcaster, [](State* current, State* target){
+        GameManager& MyGM = GameManager::get();
+        j::Button* Button = MyGM.GreenButton.get();
+        return Necklace::runButtonHeldTestAndReset(Button);
+    });
+    
+    Spellcaster->addStateTransition(EclipseHub, [](State* current, State* target){
+        GameManager& MyGM = GameManager::get();
+        j::Button* Button = MyGM.WhiteButton.get();
+        return Necklace::runButtonHeldTestAndReset(Button);
+    });
+
+    // EclipseHub < - > Drip
+
+    EclipseHub->addStateTransition(Drip, [](State* current, State* target){
+        GameManager& MyGM = GameManager::get();
+        j::Button* Button = MyGM.BlueButton.get();
+        return Necklace::runButtonHeldTestAndReset(Button);
+    });
+
+    Drip->addStateTransition(EclipseHub, [](State* current, State* target){
+        GameManager& MyGM = GameManager::get();
+        j::Button* Button = MyGM.WhiteButton.get();
+        return Necklace::runButtonHeldTestAndReset(Button);
+    });
+    
+
+    // Spellcaster < - > BlueMagic
+
+    Spellcaster->addStateTransition(BlueMagic, [](State* current, State* target){
+        GameManager& MyGM = GameManager::get();
+        j::Button* Button = MyGM.GreenButton.get();
+        return Necklace::runButtonHeldTestAndReset(Button);
+    });
+
+    BlueMagic->addStateTransition(Spellcaster, [](State* current, State* target){
+        GameManager& MyGM = GameManager::get();
+        j::Button* Button = MyGM.WhiteButton.get();
+        return Necklace::runButtonHeldTestAndReset(Button);
+    });
+
+    // Spellcaster < - > Ritual
+
+    Spellcaster->addStateTransition(Ritual, [](State* current, State* target){
+        GameManager& MyGM = GameManager::get();
         j::Button* Button = MyGM.RedButton.get();
         return Necklace::runButtonHeldTestAndReset(Button);
     });
-    */
+
+    Ritual->addStateTransition(Spellcaster, [](State* current, State* target){
+        GameManager& MyGM = GameManager::get();
+        j::Button* Button = MyGM.WhiteButton.get();
+        return Necklace::runButtonHeldTestAndReset(Button);
+    });
+
+    // Ritual < - > OneRing
+
+    Ritual->addStateTransition(OneRing, [](State* current, State* target){
+        GameManager& MyGM = GameManager::get();
+        j::Button* Button = MyGM.RedButton.get();
+        return Necklace::runButtonHeldTestAndReset(Button);
+    });
+
+    OneRing->addStateTransition(Ritual, [](State* current, State* target){
+        GameManager& MyGM = GameManager::get();
+        j::Button* Button = MyGM.WhiteButton.get();
+        return Necklace::runButtonHeldTestAndReset(Button);
+    });
+
+    // EclipseHub < - > Drip
+
+    EclipseHub->addStateTransition(Drip, [](State* current, State* target){
+        GameManager& MyGM = GameManager::get();
+        j::Button* Button = MyGM.RedButton.get();
+        return Necklace::runButtonHeldTestAndReset(Button);
+    });
+
+    Drip->addStateTransition(EclipseHub, [](State* current, State* target){
+        GameManager& MyGM = GameManager::get();
+        j::Button* Button = MyGM.WhiteButton.get();
+        return Necklace::runButtonHeldTestAndReset(Button);
+    });
+
+
+    // Drip < - > EnchantedForest
+
+    Drip->addStateTransition(EnchantedForest, [](State* current, State* target){
+        GameManager& MyGM = GameManager::get();
+        j::Button* Button = MyGM.BlueButton.get();
+        return Necklace::runButtonHeldTestAndReset(Button);
+    });
+
+    EnchantedForest->addStateTransition(Drip, [](State* current, State* target){
+        GameManager& MyGM = GameManager::get();
+        j::Button* Button = MyGM.WhiteButton.get();
+        return Necklace::runButtonHeldTestAndReset(Button);
+    });
+
+    // Drip < - > Serendipity
+
+    Drip->addStateTransition(Serendipity, [](State* current, State* target){
+        GameManager& MyGM = GameManager::get();
+        j::Button* Button = MyGM.GreenButton.get();
+        return Necklace::runButtonHeldTestAndReset(Button);
+    });
+
+    Serendipity->addStateTransition(Drip, [](State* current, State* target){
+        GameManager& MyGM = GameManager::get();
+        j::Button* Button = MyGM.WhiteButton.get();
+        return Necklace::runButtonHeldTestAndReset(Button);
+    });
 
 
     setActiveState(Boot);

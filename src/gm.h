@@ -88,7 +88,9 @@ enum class EBrightness
     MIN,
     MED,
     HIGH,
-    MAX
+    BLINDING,
+    MAX,
+    COUNT 
 };
 
 uint8_t getEBrightnessAsByte(EBrightness inBrightness);

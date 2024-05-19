@@ -1,1 +1,2 @@
-1. throw the entire thing in a try {} catch {} so we can reset when things go wrong and also give us support for outputting the log. This can only do so much but really would cover like 80% basis.
+- Tick needs to be globalized and we need a global tick manager with tick order of operations
+- - Make Saw work on negative numbers

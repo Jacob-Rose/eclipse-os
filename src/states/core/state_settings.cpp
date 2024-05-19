@@ -37,7 +37,7 @@ void State_Settings::tick()
         {
             bBlueButtonSeenPressed = true;
             EBrightness currentBrightness = GM.getGlobalBrightness();
-            currentBrightness = (EBrightness)(((int)currentBrightness + 1) % (int)EBrightness::MAX);
+            currentBrightness = (EBrightness)(((int)currentBrightness + 1) % (int)EBrightness::COUNT);
             GM.setGlobalBrightness(currentBrightness);
         }
     }
@@ -46,8 +46,15 @@ void State_Settings::tick()
         bBlueButtonSeenPressed = false;
     }
 
-    for(int idx = 0; idx < RING_LED_LENGTH; ++idx)
+    for(int idx = 0; idx < RING_ONE_LENGTH; ++idx)
     {
-        GM.RingLEDs->setHSV(idx, j::HSV(0.0f,0,255));
+        GM.RingLEDs->setHSV(idx, j::HSV(0.0f,0,1.0f));
+    }
+
+    for(int idx = RING_ONE_LENGTH; idx < GM.RingLEDs->getLength() ; ++idx)
+    {
+        float alpha = gearLFO.evaluate(idx);
+        j::HSV color = alpha > 0.5f ? j::HSV(0.0f, 0.0f,1.0f) : j::HSV(0.0f,0.0f,0.0f);
+        GM.RingLEDs->setHSV(idx, j::HSV(0.0f,0,1.0f));
     }
 }

@@ -8,18 +8,20 @@
 #include "../state_base.h"
 
 #include "../../lib/j/jcolors.h"
+#include "../../lib/j/jpalettes.h"
 
 #include <list>
 #include <ranges>
 
-#define DRIP_ARRAY_ALPHA_ARRAY {0.0f, 0.1f, 0.3f, 0.7f, 0.9f, 1.0f, 0.9f, 0.7f, 0.3f, 0.1f, 0.0f}
+#define DRIP_ALPHA_LERP {0.0f, 0.1f, 0.3f, 0.7f, 0.9f, 1.0f, 0.9f, 0.7f, 0.3f, 0.1f, 0.0f}
 
 struct DropInfo
 {
-    DropInfo(j::HSV inColor, float inDropSize);
+    DropInfo(j::HSV inColor, float inDropSize, int inLocation);
 
     j::HSV color;
     float dropSize;
+    int location;
     float dropTime = 0.0f;
 };
 
@@ -37,13 +39,11 @@ public:
 
     virtual void tick() override;
 
-    float dropTime = 0.8f;
-    std::pair<float, float> dropDelay = {0.4f, 0.8f};
-    std::pair<float, float> dropSize = {3.0f, 5.0f};
+    float dropTime = 0.3f;
+    std::pair<float, float> dropDelay = {0.002f, 0.012f};
+    std::pair<float, float> dropSize = {2.0f, 4.0f};
 
-    j::HSVPalette palette;
-
-    ColorPickMode colorPickMode;
+    j::HSVPalette palette = j::p_iceCream;
 
 protected:
     std::list<DropInfo> drops;

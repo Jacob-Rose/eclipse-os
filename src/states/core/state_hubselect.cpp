@@ -13,7 +13,6 @@
 
 State_HubSelect::State_HubSelect(const char* InStateName) : State(InStateName)
 {
-
 }
 
 void State_HubSelect::onStateBegin()
@@ -33,10 +32,7 @@ void State_HubSelect::tick()
 
     float deltaTime = GetLastFrameDelta().count();
 
-    lfoInchwormSpeed.tick(deltaTime);
-    lfoNecklaceOuter.speed = remap(0.0f, 1.0f, -inchwormSpeed, inchwormSpeed, lfoInchwormSpeed.evaluate(1.0f));
     lfoNecklaceOuter.tick(deltaTime);
-    hueSaw.tick(deltaTime);
 
     for(int idx = 0; idx < RING_ONE_LENGTH; ++idx)
     {
@@ -46,29 +42,16 @@ void State_HubSelect::tick()
     for(int idx = 0; idx < RING_TWO_LENGTH; ++idx)
     {
         float lfo = lfoNecklaceOuter.evaluate(idx);
-        j::HSV color = WhipPalette.getColor(lfo);
+        j::HSV color = palette.getColor(lfo);
         GM.RingLEDs->setHSV(RING_ONE_LENGTH + idx, color);
     }
 
     for(int idx = 0; idx < ARM_LED_LENGTH; ++idx)
     {
-        float alphaPercent = (float)idx / ARM_LED_LENGTH;
-
-        alphaPercent = hueSaw.evaluate(alphaPercent);
-        alphaPercent = std::fmod(alphaPercent, 1.0f);
-        j::HSV color = OutfitPalette.getColor(alphaPercent);
+        float lfo = lfoNecklaceOuter.evaluate(idx);
+        j::HSV color = palette.getColor(lfo);
         GM.OutfitLEDs->setHSV(idx, color);
     }
 
-    /*
-    for(int idx = 0; idx < WHIP_LED_LENGTH; ++idx)
-    {
-        float alphaPercent = (float)idx / WHIP_LED_LENGTH;
-
-        float colorHue = lfoNecklaceOuter.evaluate(alphaPercent);
-        colorHue = std::fmod(colorHue, 1.0f);
-        j::HSV color = WhipPalette.getColor(colorHue);
-        GM.OutfitLEDs->setHSV(idx + ARM_LED_LENGTH, color);
-    }
-    */
+    GM.BoardLED->setHSV(0,j::HSV(0.0f, 0.0f, 0.0f));
 }

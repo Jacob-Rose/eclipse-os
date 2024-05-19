@@ -9,6 +9,8 @@
 
 #include <AnimatedGIF.h>
 
+#include "../../lib/j/janim.h"
+
 class State_Settings : public State
 {
 public:
@@ -17,6 +19,8 @@ public:
     virtual void onStateBegin() override;
 
     virtual void tick() override;
+
+    j::LFO gearLFO = j::LFO(6.0f, 4.0f);
 
 private:
     bool bBlueButtonSeenPressed;

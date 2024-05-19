@@ -36,6 +36,12 @@ namespace j
         HSV(141.0f, 0.165f, 1.f),
     };
 
+    
+    inline HSVPalette p_purplesky {
+        HSV(280.0f, 0.86f, 0.75f),
+        HSV(265.0f, 0.75f, 0.2f),
+    };
+
     inline HSVPalette p_iceCream {
         HSV(321.0f, 0.537f, 1.f),
         HSV(62.0f, 0.239f, 1.f),
@@ -55,5 +61,10 @@ namespace j
         HSV(166.0f, 0.742f, 0.349f),
         HSV(80.0f, 0.535f, 0.675f),
         HSV(59.0f, 0.626f, 0.827f),
+    };
+
+    inline HSVPalette p_bootgradient {
+        HSV(0.0f, 0.8f, 1.0f),
+        HSV(133.0f, 0.8f, 1.0f)
     };
 };

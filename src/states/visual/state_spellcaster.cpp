@@ -26,4 +26,29 @@ void State_Spellcaster::onStateBegin()
 void State_Spellcaster::tick()
 {
     State::tick();
+
+    GameManager& GM = GameManager::get();
+
+    float deltaTime = lastFrameDT.count();
+
+    lfo1.tick(deltaTime);
+    lfo2.tick(deltaTime);
+
+    for(int i = 0; i < GM.OutfitLEDs->getLength(); ++i)
+    {
+        float combinedValues = lfo1.evaluate(i) + lfo2.evaluate(i);
+        float val = std::clamp(combinedValues, 0.0f, 1.0f);
+        j::HSV color = palette.getColor(val);
+
+        GM.OutfitLEDs->setHSV(i, color);
+    }
+    
+    for(int i = 0; i < GM.RingLEDs->getLength(); ++i)
+    {
+        float combinedValues = lfo1.evaluate(i) + lfo2.evaluate(i);
+        float val = std::clamp(combinedValues, 0.0f, 1.0f);
+        j::HSV color = palette.getColor(val);
+
+        GM.RingLEDs->setHSV(i, color);
+    }
 }

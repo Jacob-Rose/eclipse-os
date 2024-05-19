@@ -15,8 +15,7 @@
 
 State_Boot::State_Boot(const char* InStateName) : State(InStateName)
 {
-    sawFillPercentage.width = 14.0f;
-    sawFillPercentage.speed = 100.0f;
+    sawFillPercentage.width = 1.0f;
 }
 
 bool State_Boot::isStateComplete() const
@@ -57,22 +56,21 @@ void State_Boot::tick()
     float deltaTime = GetLastFrameDelta().count();
 
     sawFillPercentage.tick(deltaTime);
-    jlog::print(std::to_string(sawFillPercentage.evaluate(0.0f)));
 
     float currentBootPercentComplete = sawFillPercentage.evaluate(0.0f);
+    j::HSV paletteColor = palette.getColor(currentBootPercentComplete);
+    j::HSV offColor = j::HSV(0,0,0);
 
     for(int idx = 0; idx < RING_ONE_LENGTH; ++idx)
     {
         float alphaPercent = (float)(idx + 1) / RING_ONE_LENGTH;
         if(currentBootPercentComplete < alphaPercent)
         {
-            j::HSV color = j::HSV(currentBootPercentComplete, 200, 200);
-            GM.RingLEDs->setHSV(idx, color);
+            GM.RingLEDs->setHSV(idx, paletteColor);
         }
         else
         {
-            j::HSV color = j::HSV(0,0,0);
-            GM.RingLEDs->setHSV(idx, color);
+            GM.RingLEDs->setHSV(idx, offColor);
         }
     }
 
@@ -81,13 +79,11 @@ void State_Boot::tick()
         float alphaPercent = (float)(idx + 1) / RING_TWO_LENGTH;
         if(currentBootPercentComplete < alphaPercent)
         {
-            j::HSV color = j::HSV(currentBootPercentComplete, 200, 200);
-            GM.RingLEDs->setHSV(idx + RING_ONE_LENGTH, color);
+            GM.RingLEDs->setHSV(idx + RING_ONE_LENGTH, paletteColor);
         }
         else
         {
-            j::HSV color = j::HSV(0,0,0);
-            GM.RingLEDs->setHSV(idx + RING_ONE_LENGTH, color);
+            GM.RingLEDs->setHSV(idx + RING_ONE_LENGTH, offColor);
         }
     }
 
@@ -96,13 +92,11 @@ void State_Boot::tick()
         float alphaPercent = (float)(idx + 1) / ARM_LED_LENGTH;
         if(currentBootPercentComplete < alphaPercent)
         {
-            j::HSV color = j::HSV(currentBootPercentComplete, 200, 200);
-            GM.OutfitLEDs->setHSV(idx, color);
+            GM.OutfitLEDs->setHSV(idx, paletteColor);
         }
         else
         {
-            j::HSV color = j::HSV(0,0,0);
-            GM.OutfitLEDs->setHSV(idx, color);
+            GM.OutfitLEDs->setHSV(idx, offColor);
         }
     }
 
@@ -112,13 +106,11 @@ void State_Boot::tick()
         alphaPercent = 1.0f - alphaPercent;
         if(currentBootPercentComplete < alphaPercent)
         {
-            j::HSV color = j::HSV(currentBootPercentComplete, 200, 200);
-            GM.OutfitLEDs->setHSV(idx + ARM_LED_LENGTH, color);
+            GM.OutfitLEDs->setHSV(idx + ARM_LED_LENGTH, paletteColor);
         }
         else
         {
-            j::HSV color = j::HSV(0,0,0);
-            GM.OutfitLEDs->setHSV(idx + ARM_LED_LENGTH, color);
+            GM.OutfitLEDs->setHSV(idx + ARM_LED_LENGTH, offColor);
         }
     }
 }

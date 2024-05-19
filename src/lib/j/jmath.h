@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <cmath>
 #include <vector>
+#include <cfloat>
 
 // https://gist.github.com/laundmo/b224b1f4c8ef6ca5fe47e132c8deab56
 // converted to c++
@@ -50,10 +51,21 @@ float remap(const float& i_min, const float& i_max, const float& o_min, const fl
 //
 // Written by Jake Rose past this
 
-float lerp_keyframes(float a, const std::vector<float> keys);
+float lerp_keyframes(float a, const std::vector<float>& keys);
 
 float get_index_from_alpha(float a, const std::vector<float>& keys);
 
 float get_random_float();
 
 float get_random_float_in_range(float min, float max);
+
+//https://randomascii.wordpress.com/2012/02/25/comparing-floating-point-numbers-2012-edition/
+// essentially equal
+bool ess_equal(float A, float B,
+                         float maxRelDiff = FLT_EPSILON);
+
+
+float normalizeAngle(float angle);
+
+
+float radial_lerp(float a, float b, float t);

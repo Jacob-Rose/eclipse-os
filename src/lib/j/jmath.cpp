@@ -1,6 +1,7 @@
 #include "jmath.h"
 
 #include "jlogging.h"
+#include <random>
 
 float lerp(const float& a, const float& b, const float& t)
 {
@@ -17,7 +18,7 @@ float remap(const float& i_min, const float& i_max, const float& o_min, const fl
     return lerp(o_min, o_max, inv_lerp(i_min, i_max, v));
 }
 
-float lerp_keyframes(float a, const std::vector<float> keys)
+float lerp_keyframes(float a, const std::vector<float>& keys)
 {
     if(a >= 1.0f)
     {
@@ -61,4 +62,41 @@ float get_random_float_in_range(float min, float max)
     float randVal = get_random_float();
     float diff = max - min;
     return (diff * randVal) + min;
+}
+
+bool ess_equal(float A, float B,
+                         float maxRelDiff)
+{
+    // Calculate the difference.
+    float diff = fabs(A - B);
+    A = fabs(A);
+    B = fabs(B);
+    // Find the largest
+    float largest = (B > A) ? B : A;
+
+    if (diff <= largest * maxRelDiff)
+        return true;
+    return false;
+}
+
+float normalize_angle(float angle)
+{
+    angle = std::fmod(angle, 360.0f);
+    if (angle < 0) {
+        angle += 360.0f;
+    }
+    return angle;
+}
+
+float radial_lerp(float a, float b, float t)
+{
+    float diff = b - a;
+    if (diff > 180.0f) {
+        b -= 360.0f;
+    } else if (diff < -180.0f) {
+        b += 360.0f;
+    }
+
+    float result = a + t * (b - a);
+    return normalize_angle(result);
 }

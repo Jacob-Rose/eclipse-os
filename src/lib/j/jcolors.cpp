@@ -3,6 +3,8 @@
 #include <limits>
 #include <algorithm>
 
+#include "jmath.h"
+
 using namespace j;
 
 HSV::HSV(float inH, float inS, float inV) : h(inH), s(inS), v(inV)
@@ -23,8 +25,8 @@ HSV j::HSV::blendWith(HSV otherColor, float alpha)
 
     HSV blendedColor;
     //TODO change hue blending to support optional saturation consideration for how much impact a color has
-    blendedColor.h = h * inv_alpha + 
-                     otherColor.h * alpha; 
+    blendedColor.h = radial_lerp(h, otherColor.h, alpha);
+
     blendedColor.s = s * inv_alpha + 
                      otherColor.s * alpha;
     blendedColor.v = v * inv_alpha + 

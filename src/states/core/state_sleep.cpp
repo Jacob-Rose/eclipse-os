@@ -42,5 +42,5 @@ void State_Sleep::tick()
         GM.OutfitLEDs->setHSV(ledIdx, 0, 0, 0);
     }
 
-    GM.BoardLED->setHSV(0,j::HSV(0.5f, 120, 60));
+    //GM.BoardLED->setHSV(0,j::HSV(0.5f, 120, 60));
 }

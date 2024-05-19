@@ -26,17 +26,7 @@ public:
 
     virtual void tick() override;
 
-    j::HSVPalette OutfitPalette = j::p_disney100;
+    j::HSVPalette palette = j::p_purplesky;
 
-    j::HSVPalette WhipPalette = {
-        j::HSV(0.82f, 0.3f, 0.1f),
-        j::HSV(0.77f, 0.85f, 1.0f),
-        j::HSV(0.66f, 0.6f, 0.5f)
-    };
-
-    j::LFO lfoNecklaceOuter = j::LFO(2.0f, 8.0f);
-    j::LFO lfoInchwormSpeed = j::LFO(1.0f, 10.0f);
-
-    j::Saw hueSaw = j::Saw(1.0f);
-    float inchwormSpeed = 120.0f;
+    j::LFO lfoNecklaceOuter = j::LFO(24.0f, 16.0f);
 };

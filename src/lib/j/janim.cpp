@@ -98,3 +98,4 @@ float Saw::evaluate(float inVal) const
         return 1.0f - sawAlpha;
     }
 }
+
