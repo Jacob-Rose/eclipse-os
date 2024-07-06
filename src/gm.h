@@ -16,9 +16,9 @@
 
 #pragma region DEFINES
 
-#define IS_V1_MAPPINGS false
+#define IS_V1_MAPPINGS
 
-#if IS_V1_MAPPINGS
+#ifdef IS_V1_MAPPINGS
 
 // redefine as needed
 #define GREEN_BUTTON_PIN D12 // GPIO 12

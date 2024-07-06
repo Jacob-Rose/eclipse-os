@@ -39,11 +39,11 @@ public:
 
     virtual void tick() override;
 
-    float dropTime = 0.3f;
-    std::pair<float, float> dropDelay = {0.002f, 0.012f};
-    std::pair<float, float> dropSize = {2.0f, 4.0f};
+    float dropTime = 0.17f;
+    std::pair<float, float> dropDelay = {0.001f, 0.01f};
+    std::pair<float, float> dropSize = {1.0f, 4.0f};
 
-    j::HSVPalette palette = j::p_iceCream;
+    j::HSVPalette palette = j::p_nostalgicrain;
 
 protected:
     std::list<DropInfo> drops;

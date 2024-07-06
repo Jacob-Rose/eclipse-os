@@ -67,4 +67,11 @@ namespace j
         HSV(0.0f, 0.8f, 1.0f),
         HSV(133.0f, 0.8f, 1.0f)
     };
+
+    inline HSVPalette p_nostalgicrain {
+        HSV(259.0f, 0.65f, 0.40f),
+        HSV(269.0f, 0.607f, 0.529f),
+        HSV(289.0f, 0.418f, 0.694f),
+        HSV(337.0f, 0.18f, 1.f)
+    };
 };

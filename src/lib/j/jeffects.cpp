@@ -1,3 +1,8 @@
+// Copyright 2024 | Jake Rose 
+//
+// This file is part of project necklace_code_c
+// See readme.md for full license details.
+
 #include "jeffects.h"
 
 #include "jmath.h"
@@ -5,17 +10,16 @@
 
 using namespace j;
 
-void FireEmitter::init(uint8_t inSize)
+FireEmitter::FireEmitter(uint16_t inLength) : length(inLength)
 {
-    size = inSize;
-    heatValues.resize(size);
+    heatValues.resize(inLength);
 }
 
 
 void FireEmitter::tick(float deltaTime)
 {
     // step 1: apply cooldown
-    for(int i = 1; i < size; ++i)
+    for(int i = 1; i < length; ++i)
     {
         heatValues[i] -= deltaTime * cooldown;
         heatValues[i] = std::clamp(heatValues[i], 0.0f, 1.0f);
@@ -28,13 +32,13 @@ void FireEmitter::tick(float deltaTime)
     heatValues[0] = currentFlameSource * flameSourcePower;
 
     // step 3: spread flame
-    for(int i = 1; i < size; ++i)
+    for(int i = 1; i < length; ++i)
     {
         heatValues[i] = heatValues[i-1] * spreadRate * deltaTime;
     }
 }
 
-float FireEmitter::evaluate(int idx) const
+float FireEmitter::evaluate(float val) const
 {
     /*
     if(bReverse)
@@ -56,5 +60,8 @@ float FireEmitter::evaluate(int idx) const
 
     return evaluation;
     */
-   return std::clamp(heatValues[idx], 0.0f, 1.0f);
+
+   //TODO LOGIC
+   //return std::clamp(heatValues[idx], 0.0f, 1.0f);
+   return 0.0f;
 }

@@ -30,6 +30,10 @@ protected:
     std::chrono::duration<double> lastFrameDT;
     std::chrono::time_point<std::chrono::system_clock> tickStartTime;
 
+    // used for accurately simulating time between frames
+    std::chrono::duration<double> lastFrameDT_Screen;
+    std::chrono::time_point<std::chrono::system_clock> tickStartTime_Screen;
+
 private:
 
     static bool runButtonHeldTestAndReset(j::Button* inButton);

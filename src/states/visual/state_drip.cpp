@@ -99,7 +99,7 @@ void State_Drip::tick()
             color.v *= alpha;
 
             j::HSV currentColor = GM.OutfitLEDs->getHSV(ledIdx);
-            currentColor.blendWith(color, alpha);
+            currentColor = currentColor.blendWith(color, alpha);
             GM.OutfitLEDs->setHSV(ledIdx, currentColor);
             if(ledIdx < RING_ONE_LENGTH)
             {

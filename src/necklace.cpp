@@ -303,7 +303,10 @@ void Necklace::tickScreen()
 {
     GameManager& GM = GameManager::get();
 
-    GM.ScreenDrawer.tick();
+    lastFrameDT_Screen = std::chrono::system_clock::now() - tickStartTime_Screen;
+    tickStartTime_Screen = std::chrono::system_clock::now();
+
+    GM.ScreenDrawer.tick(lastFrameDT_Screen.count());
 }
 
 void Necklace::loop()

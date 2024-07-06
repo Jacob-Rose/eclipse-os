@@ -80,7 +80,7 @@ uint16_t ScreenDrawer::getPixelColor(uint16_t x, uint16_t y)
     return colors[x*xCanvasSize + y];
 }
 
-void ScreenDrawer::tick()
+void ScreenDrawer::tick(float deltaTime)
 {
     if(!bImgReady)
     {

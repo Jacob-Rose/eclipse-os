@@ -1,2 +1,3 @@
 - Tick needs to be globalized and we need a global tick manager with tick order of operations
-- - Make Saw work on negative numbers
+- Make Saw work on negative numbers
+- IO needs to be made more modular

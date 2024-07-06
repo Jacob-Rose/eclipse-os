@@ -19,18 +19,20 @@
 #include <ctime>
 
 #include "jcolors.h"
+#include "jtickable.h"
 
 
 namespace j
 {
     // buttons are self managing, making them able to track their state better
     // TODO add delegate system
-    class Button
+    class Button: public Tickable
     {
     public:
         void init(uint8_t pin);
 
-        void tick(float deltaTime);
+        // Tickable interface
+        virtual void tick(float deltaTime) override;
 
         // does not directly poll, must use tick to get updated value this frame
         bool isPressed() const { return bLastSeenPressed; }
@@ -54,7 +56,7 @@ namespace j
     };
 
     // nice lil wrapper that can be passed in button refs and 
-    // handle tap events
+    // handle tap events, similar wrapper to Enhanced Input triggers
 
     // TODO
     class ButtonObserver
@@ -64,12 +66,13 @@ namespace j
 
     // screen drawer for drawing pixel art
     // has performance solutions that optimize for pixel art on multiple stages
-    class ScreenDrawer
+    class ScreenDrawer: public Tickable
     {
     public:
         ScreenDrawer();
 
-        void tick();
+        // Tickable interface
+        virtual void tick(float deltaTime) override;
 
         void setCanvasSize(uint16_t x, uint16_t y);
         void setScreenRef(std::shared_ptr<Adafruit_GC9A01A> inScreenRef);

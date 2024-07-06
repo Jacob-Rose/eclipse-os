@@ -44,20 +44,20 @@ void State_Datamine::tick()
 
     if(GM.RedButton->isPressed() || GM.RemoteBlackButton->isPressed())
     {
-        activationSpeedRamp.targetPosition = uploadSpeed;
+        activationSpeedRamp.setTargetValue(uploadSpeed);
     }
     else if(GM.BlueButton->isPressed() || GM.RemoteWhiteButton->isPressed())
     {
-        activationSpeedRamp.targetPosition = downloadSpeed;
+        activationSpeedRamp.setTargetValue(downloadSpeed);
     }
     else
     {
-        activationSpeedRamp.targetPosition = idleSpeed;
+        activationSpeedRamp.setTargetValue(idleSpeed);
     }
 
     activationSpeedRamp.tick(deltaTime);
 
-    float newWhipSpeed = activationSpeedRamp.getCurrentPosition();
+    float newWhipSpeed = activationSpeedRamp.getValue();
     lfoWhip.speed = newWhipSpeed;
     lfoNecklaceOuter.speed = newWhipSpeed;
 

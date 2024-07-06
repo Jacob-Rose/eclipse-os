@@ -12,25 +12,31 @@
 
 using namespace j;
 
-
-MomentumFloat::MomentumFloat(float inAcceleration, float inMaxSpeed) : acceleration(inAcceleration), maxSpeed(inMaxSpeed)
+Sweep::Sweep()
 {
 
 }
 
-void MomentumFloat::tick(float deltaTime)
+Sweep::Sweep(float inAcceleration, float inMaxSpeed) 
+    : acceleration(inAcceleration)
+    , maxSpeed(inMaxSpeed)
 {
-    float lastTickPosition = currentPosition;
+
+}
+
+void Sweep::tick(float deltaTime)
+{
+    float lastTickPosition = currentValue;
 
     float accelerationThisFrame = acceleration;
-    if(targetPosition < currentPosition)
+    if(targetValue < currentValue)
     {
         accelerationThisFrame *= -1.0f;
     }
     //currentSpeed += accelerationThisFrame * deltaTime; // this works for spring, will reuse
     currentSpeed = accelerationThisFrame;
     currentSpeed = std::clamp(currentSpeed, -maxSpeed, maxSpeed);
-    currentPosition += currentSpeed * deltaTime;
+    currentValue += currentSpeed * deltaTime;
 }
 
 Spring::Spring(float inStrengthForce, float inDampening) : strengthForce(inStrengthForce), dampening(inDampening)
@@ -40,10 +46,10 @@ Spring::Spring(float inStrengthForce, float inDampening) : strengthForce(inStren
 
 void Spring::tick(float deltaTime)
 {
-    float deltaPos = targetPosition - currentPosition;
+    float deltaPos = targetValue - currentValue;
     float force = deltaPos * strengthForce * dampening;
     currentAcceleration += force * deltaTime;
-    currentPosition += currentAcceleration * deltaTime;
+    currentValue += currentAcceleration * deltaTime;
 }
 
 LFO::LFO()
@@ -68,7 +74,10 @@ float LFO::evaluate(float inVal) const
     return (sinVal / 2) + 0.5f;
 }
 
-Saw::Saw() {}
+Saw::Saw()
+{
+
+}
 
 Saw::Saw(float inSpeed) : speed(inSpeed)
 {

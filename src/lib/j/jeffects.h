@@ -10,34 +10,41 @@
 #include <Arduino.h>
 
 #include "janim.h"
+#include "jgenerator.h"
 
 #include <list>
 
 namespace j
 {
-    class FireEmitter
+    /// @brief A fire generator, moving in one direction. We making candles
+    /// moves in one direction from a source
+    class FireEmitter : public Generator1D, public Tickable
     {
     public:
-        void init(uint8_t inSize);
+        FireEmitter(uint16_t inLength);
+
+        // Tickable interface
+        virtual void tick(float deltaTime) override;
+
+        // Generator1D interface
+        virtual float evaluate(float val) const override;
+
 
         float cooldown = 0.1f; // fade per second
-        float spreadRate = 1.0f;
+        float spreadRate = 1.0f; 
         Saw flameSourceSaw = Saw(6.0f);
         std::vector<float> flameSourceAnim = {0.0f, 1.0f};//{0.0f,0.5f,0.2f, 0.7f,0.9f,0.3f,0.6f, 1.0f, 0.3f,0.5f,0.0f};
         float flameSourcePower = 10.0f;
         bool bReverse = false;
-
-        void tick(float deltaTime);
-        //todo make generator
-        virtual float evaluate(int idx) const;
-
     protected:
-        uint8_t size;
+        uint16_t length;
         std::vector<float> heatValues;
     };
 
 
-    class DropEmitter
+    /// @brief A generator that will generate particles of various sizes 
+    /// 
+    class DropEmitter : public GeneratorHSV
     {
         struct Drop
         {

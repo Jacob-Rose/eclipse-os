@@ -13,9 +13,10 @@
 #include <vector>
 #include <string>
 
+
 namespace j
 {
-        // originally taken from Adafruit NeoPixel
+    // originally taken from Adafruit NeoPixel
     static const uint8_t PROGMEM GammaBrightnessCorrection[256] = {
     0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
     0,   0,   0,   0,   0,   0,   0,   0,   0,   1,   1,   1,   1,   1,   1,
@@ -54,7 +55,7 @@ namespace j
 
         std::string to_string() const;
         
-        float h; // in degrees
+        float h; // 0.f - 360.0f in degrees, clamps itself and wraps around in setHueDegree()
         float s; // 0.f - 1.f
         float v; // 0.f - 1.f
     };
