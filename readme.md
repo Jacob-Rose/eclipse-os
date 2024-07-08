@@ -15,14 +15,16 @@ Used hardware:
 - 4 Button (2 wire + pullup resistor)
 - 1 GC9A01 Screen (SPI Interface)
 - 1 WS2812B Output [LED_RINGS]
-- 2 External WS2812B Outputs [BODY_LEDS, GLASSES_LEDS]
+- 1 External WS2812B Outputs (BODY_LEDS)
 - 1 Psuedo WS2812B Input (WS2812B connector used for buttons)
 
 
 ## Legalese
-I take great pride in my work. With much of this work being the "game-systems" side of things, I found showing/reproing this full stack setup from the top down was vital for me to continue redoing/expanding these types of projects. I understand the importance of open source work and sharing knowledge, which is why this is provided. 
+I take great pride in my work. With much of this work being the "game-systems" side of things, I found showing/reproing this full stack setup from the top down was vital for me to continue redoing/expanding these types of projects. I understand the importance of open source work and sharing knowledge, which is why this is provided.
 
 My wish though is that you do not remake what I have made, but you make something new. I hope this is mearly a reference for the work and steps, but please, don't be a script kiddie, make something new from this, I made it so easy for ya.
+
+I do not own any images provided in this.
 
 License Info is located in the [license file](license.md). GNU GPLv3
 
