@@ -16,8 +16,11 @@
 
 namespace j
 {
-    /// @brief A fire generator, moving in one direction. We making candles
-    /// moves in one direction from a source
+    /* @brief A fire generator, moving in one direction. We making candles
+    * moves in one direction from a source
+    * 
+    * Currently In-Development, not working
+    */
     class FireEmitter : public Generator1D, public Tickable
     {
     public:
@@ -37,13 +40,14 @@ namespace j
         float flameSourcePower = 10.0f;
         bool bReverse = false;
     protected:
-        uint16_t length;
         std::vector<float> heatValues;
     };
 
 
-    /// @brief A generator that will generate particles of various sizes 
-    /// 
+    /* @brief A generator that will generate particles of various sizes 
+    *
+    * TODO: Copy logic from drop state machine
+    */ 
     class DropEmitter : public GeneratorHSV
     {
         struct Drop

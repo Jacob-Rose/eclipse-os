@@ -7,11 +7,21 @@
 
 using namespace j;
 
-GeneratorHSV::GeneratorHSV(uint16_t inLength) : length(inLength)
+void j::Generator1DToHSV::applyEffectLogic(std::vector<HSV> &InOutColors)
 {
+    if(generator.get() == nullptr)
+    {
+        return;
+    }
+
+    for(int i = 0; i < InOutColors.size(); ++i)
+    {
+        InOutColors[i] = palette.getColor(generator->evaluate(i));
+    }
 }
 
 
+/*
 CompositeGeneratorHSV::CompositeGeneratorHSV(uint16_t inLength) : GeneratorHSV(inLength)
 {
 }
@@ -20,3 +30,4 @@ CompositeGeneratorHSV::CompositeGeneratorHSV(uint16_t inLength) : GeneratorHSV(i
 PatternHSV::PatternHSV(uint16_t inLength) : length(inLength)
 {
 }
+*/

@@ -39,7 +39,7 @@ namespace j
     /* @brief Generator1D is meant to be treated like a process, made to take in a float
     * and generate a continous pattern from that float.
     *
-    * For example, the provided float value could be the led index on the strip.
+    * For example, the provided float value in many cases will be the led index on the strip.
     * 
     * @see LFO
     * @see Saw
@@ -51,7 +51,7 @@ namespace j
 
         // we can assume that these work as float attributes in most cases
         virtual float getValue() const override { return evaluate(0.0f); }
-    };
+    };  
 
     /* @brief similar to ADS in a FPS, we will blend consistantly to our target value
     *

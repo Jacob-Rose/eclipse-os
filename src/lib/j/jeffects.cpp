@@ -10,7 +10,7 @@
 
 using namespace j;
 
-FireEmitter::FireEmitter(uint16_t inLength) : length(inLength)
+FireEmitter::FireEmitter(uint16_t inLength)
 {
     heatValues.resize(inLength);
 }
@@ -19,7 +19,7 @@ FireEmitter::FireEmitter(uint16_t inLength) : length(inLength)
 void FireEmitter::tick(float deltaTime)
 {
     // step 1: apply cooldown
-    for(int i = 1; i < length; ++i)
+    for(int i = 1; i < heatValues.size(); ++i)
     {
         heatValues[i] -= deltaTime * cooldown;
         heatValues[i] = std::clamp(heatValues[i], 0.0f, 1.0f);
@@ -32,15 +32,16 @@ void FireEmitter::tick(float deltaTime)
     heatValues[0] = currentFlameSource * flameSourcePower;
 
     // step 3: spread flame
-    for(int i = 1; i < length; ++i)
+    for(int i = 1; i < heatValues.size(); ++i)
     {
         heatValues[i] = heatValues[i-1] * spreadRate * deltaTime;
     }
 }
 
-float FireEmitter::evaluate(float val) const
+float FireEmitter::evaluate(float value) const
 {
-    /*
+    int size = heatValues.size();
+
     if(bReverse)
     {
         value = size - value;
@@ -50,7 +51,13 @@ float FireEmitter::evaluate(float val) const
 
     float alpha = std::fmod(value, 1.0f);
     int idx = value;
-    if(idx > size - 2 || (idx > size - 1 && ess_equal(alpha, 0.0f)))
+
+    if(ess_equal(alpha, 0.0f))
+    {
+        return heatValues[idx];
+    }
+
+    if(idx > size - 2)
     {
         return 0.0f;
     }
@@ -59,9 +66,4 @@ float FireEmitter::evaluate(float val) const
     evaluation = std::clamp(evaluation, 0.0f, 1.0f);
 
     return evaluation;
-    */
-
-   //TODO LOGIC
-   //return std::clamp(heatValues[idx], 0.0f, 1.0f);
-   return 0.0f;
 }

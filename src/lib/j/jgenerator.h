@@ -16,30 +16,39 @@
 
 #include "jcolors.h"
 #include "jtickable.h"
+#include "janim.h"
 
 
 namespace j
 {
 
-    /*
-    * Composite Generator supports a stack of effects
+    /* @brief A Generator that can provide or process colors 
     */
     class GeneratorHSV
     {
     public:
-        GeneratorHSV(uint16_t inLength);
-    
-        virtual uint16_t getLength() const = 0;
-        virtual void applyEffectLogic(std::vector<HSV> InOutColors) = 0;
+        // a list of HSV colors. generators should support any length provided
+        virtual void applyEffectLogic(std::vector<HSV>& InOutColors) = 0;
+    };
 
-    protected:
-        uint16_t length; 
+    /* @brief Generator1D that maps the float value to the hsv
+    *
+    */
+    class Generator1DToHSV : public GeneratorHSV
+    {
+    public:
+        j::HSVPalette palette;
+        std::unique_ptr<Generator1D> generator;
+
+        virtual void applyEffectLogic(std::vector<HSV>& InOutColors);
     };
 
 
     /*
     * Composite Generator supports a stack of effects
+    * unproven and untested, assumed overkill but leaving here for possible change in future
     */
+   /*
     class CompositeGeneratorHSV : public GeneratorHSV, public Tickable
     {
     public:
@@ -75,4 +84,5 @@ namespace j
 
         uint16_t length;
     };
+    */
 }
