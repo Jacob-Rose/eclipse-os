@@ -3,8 +3,6 @@
 
 Hello World!
 
-Don't know how you stumbled upon this but I appreciate you checking it out and hope it can be at least a jumping off point for getting Adafruit microcontrollers into a fully-finished prop (or as I like to call these devices I make, "relics").
-
 ## What is this?
 
 A custom microcontroller prop's code. This logic is made to be a universal hook in for many future projects, where this can be the starting library/template
@@ -21,8 +19,6 @@ contains advanced generator system for creating led animations
 ### eio
 contains io device wrappers
 
-
-#### eanim
 
 
 ## Legalese
