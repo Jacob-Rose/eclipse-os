@@ -7,16 +7,22 @@ Don't know how you stumbled upon this but I appreciate you checking it out and h
 
 ## What is this?
 
-A custom microcontroller prop's code. The prop is tightly contained in a 3D printed casing to protect and align hardware into a sleek package, with an Adafruit Feather RP2040 as the brain.
+A custom microcontroller prop's code. This logic is made to be a universal hook in for many future projects, where this can be the starting library/template
 
 
-In this usage, this is the hardware we are using
-Used hardware:
-- 4 Button (2 wire + pullup resistor)
-- 1 GC9A01 Screen (SPI Interface)
-- 1 WS2812B Output [LED_RINGS]
-- 1 External WS2812B Outputs (BODY_LEDS)
-- 1 Psuedo WS2812B Input (WS2812B connector used for buttons)
+The library code is currently broken into three modules:
+
+### ecore
+contains core system functionality and types. nothing in ecore has any dependencies
+
+### eanim
+contains advanced generator system for creating led animations
+
+### eio
+contains io device wrappers
+
+
+#### eanim
 
 
 ## Legalese
@@ -66,30 +72,6 @@ https://github.com/earlephilhower/arduino-pico~~
 ~~5. Install Arduino CMake
 https://github.com/queezythegreat/arduino-cmake/tree/master~~
 </details>
-
-### Hardware Required
-
-A note here, all of this hardware is rather modular and you can pick/choose your usage case.
-
-1. Adafruit Feather RP2040 [(from Adafruit Site)](https://www.adafruit.com/product/4884)
-2. GC9A01 Display [(the one I used)](https://a.co/d/eZSs6bW)
-3. LED Ring [(the one I used)](https://a.co/d/hDfiO7c)
-   1. note... I cut the inner and outer rings, so we really only use the 3rd and 4th layer. Will find other use for the bigger ones
-4. Power Latching Push Button [(the one I used)](https://a.co/d/b0Frmu7)
-5. Interface Buttons [(the one I used)](https://a.co/d/9bYm0rQ)
-6. Battery [(the one I used)](https://a.co/d/8RQDxHi)
-   1. make sure if you get a different battery to ensure the polarity is the same as the Feather board
-7. WS2812B M/F Connectors and JST M/F connectors
-
-
-#### Wiring + IO
-
-
-
-Not gonna give a whole overview, but just highlights for important knoweldge and how I did things in my setup.
-
-1. Battery | The push button was wired to an Input and Output JST connector that the battery and the board connect through, giving us an external on/off switch.
-2. All pins on Adafruit Feather RP2040 from my findings support pull up resistors on nearly all GPIO pins (used for button inputs).
 
 
 ## See Also

@@ -6,9 +6,12 @@
 #pragma once
 
 #include <memory>
-#include "states/state_base.h"
+#include "states/state.h"
 
-#include "lib/j/jio.h"
+#include "lib/eio/button.h"
+
+using namespace ecore;
+using namespace eio;
 
 class Necklace
 {
@@ -36,7 +39,7 @@ protected:
 
 private:
 
-    static bool runButtonHeldTestAndReset(j::Button* inButton);
+    static bool runButtonHeldTestAndReset(Button* inButton);
 
     std::vector<std::shared_ptr<State>> States;
     std::shared_ptr<State> ActiveState;

@@ -5,14 +5,16 @@
 
 #pragma once
 
-#include "lib/j/jio.h"
-
 #include "Adafruit_GC9A01A.h"
 #include "AnimatedGIF.h"
 
 #include <memory>
 #include <ctime>
 #include <chrono>
+
+#include "lib/eio/button.h"
+#include "lib/eio/hsv_strip.h"
+#include "lib/eio/screen_drawer.h"
 
 #pragma region DEFINES
 
@@ -81,6 +83,9 @@
 
 #pragma endregion
 
+using namespace ecore;
+using namespace eio;
+
 
 enum class EBrightness
 {
@@ -115,21 +120,21 @@ public:
     EBrightness getGlobalBrightness() const;
     void setGlobalBrightness(EBrightness newBrightness);
 
-    std::unique_ptr<j::Button> GreenButton;
-    std::unique_ptr<j::Button> RedButton;
-    std::unique_ptr<j::Button> BlueButton;
-    std::unique_ptr<j::Button> WhiteButton;
+    std::unique_ptr<Button> GreenButton;
+    std::unique_ptr<Button> RedButton;
+    std::unique_ptr<Button> BlueButton;
+    std::unique_ptr<Button> WhiteButton;
 
-    std::unique_ptr<j::Button> RemoteWhiteButton;
-    std::unique_ptr<j::Button> RemoteBlackButton;
+    std::unique_ptr<Button> RemoteWhiteButton;
+    std::unique_ptr<Button> RemoteBlackButton;
 
-    std::unique_ptr<j::HSVStrip> RingLEDs;
-    std::unique_ptr<j::HSVStrip> OutfitLEDs;
-    std::unique_ptr<j::HSVStrip> GlassesLEDs;
-    std::unique_ptr<j::HSVStrip> BoardLED;
+    std::unique_ptr<HSVStrip> RingLEDs;
+    std::unique_ptr<HSVStrip> OutfitLEDs;
+    std::unique_ptr<HSVStrip> GlassesLEDs;
+    std::unique_ptr<HSVStrip> BoardLED;
 
     std::shared_ptr<Adafruit_GC9A01A> Screen;
-    j::ScreenDrawer ScreenDrawer;
+    ScreenDrawer screenDrawer;
 
     // USER SETTINGS
 public:

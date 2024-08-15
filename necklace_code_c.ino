@@ -10,7 +10,7 @@
 
 #include "src/necklace.h"
 #include "src/gm.h"
-#include "src/lib/j/jlogging.h"
+#include "src/lib/ecore/logging.h"
 
 #include <string>
 
