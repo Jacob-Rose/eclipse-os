@@ -10,6 +10,7 @@
 #include "lib/ecore/logging.h"
 
 #include "states/state_generic.h"
+#include "kits/patterns.h"
 
 #include <chrono>
 #include <ctime>
@@ -22,10 +23,12 @@ void Necklace::setup()
     GameManager& GM = GameManager::get();
 
     // Boot state so we can run leds while doing processing for inits (like loading images)
-    std::shared_ptr<State_Generic> Boot = std::make_shared<State_Generic>("Test");
-    States.push_back(Boot);
+    std::shared_ptr<State_Generic> Test = std::make_shared<State_Generic>("Test");
+    States.push_back(Test);
 
-    setActiveState(Boot);
+    Test->generator = std::make_shared<Pattern_RitualFire>();
+
+    setActiveState(Test);
 
     bSetupComplete = true;
 }
@@ -33,26 +36,6 @@ void Necklace::setup()
 void Necklace::setup1()
 {
     // nothing needed here
-}
-
-bool Necklace::runButtonHeldTestAndReset(Button* inButton)
-{
-    constexpr float HoldThreshold = 0.005f;
-    if(inButton->isPressed())
-    {
-        bool bPressedLongEnough = inButton->getTimeSinceStateChange() > HoldThreshold;
-        if(bPressedLongEnough && inButton->bHasBeenReleased)
-        {
-            inButton->resetTimeSinceStateChange();
-            inButton->bHasBeenReleased = false;
-            return true;
-        }
-    }
-    else
-    {
-        inButton->bHasBeenReleased = true;
-    }
-    return false;
 }
 
 void Necklace::tick()
@@ -69,6 +52,7 @@ void Necklace::tick()
         ActiveState->runTick();
     }
 
+    /*
     for(auto stateTransition : ActiveState->stateTransitions)
     {
         bool bStateTransitionShouldOccur = stateTransition.second(ActiveState.get(), stateTransition.first.lock().get());
@@ -77,6 +61,7 @@ void Necklace::tick()
             setActiveState(stateTransition.first.lock());
         }
     }
+    */
 
     GM.showLeds();
 }
@@ -106,15 +91,35 @@ void Necklace::loop1()
 
 void Necklace::setActiveState(std::shared_ptr<State> InState)
 {
-    if(ActiveState.get() != nullptr)
+    if(ActiveState)
     {
         ActiveState->onStateEnd();
     }
 
     ActiveState = InState;
 
-    if(ActiveState.get() != nullptr)
+    if(ActiveState)
     {
         ActiveState->onStateBegin();
     }
+}
+
+bool Necklace::runButtonHeldTestAndReset(Button* inButton)
+{
+    constexpr float HoldThreshold = 0.005f;
+    if(inButton->isPressed())
+    {
+        bool bPressedLongEnough = inButton->getTimeSinceStateChange() > HoldThreshold;
+        if(bPressedLongEnough && inButton->bHasBeenReleased)
+        {
+            inButton->resetTimeSinceStateChange();
+            inButton->bHasBeenReleased = false;
+            return true;
+        }
+    }
+    else
+    {
+        inButton->bHasBeenReleased = true;
+    }
+    return false;
 }

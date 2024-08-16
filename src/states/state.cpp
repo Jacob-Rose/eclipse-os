@@ -92,7 +92,7 @@ std::chrono::duration<double> State::GetStateActiveDuration() const
     return timeDiff;
 }
 
-std::chrono::duration<double> State::GetLastFrameDelta() const
+std::chrono::duration<double> State::GetTimeSinceTickStarted() const
 {
     std::chrono::time_point<std::chrono::system_clock> currentTime = std::chrono::system_clock::now();
     std::chrono::duration<double> timeDiff = currentTime - tickStartTime;

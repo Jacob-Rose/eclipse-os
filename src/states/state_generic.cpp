@@ -5,6 +5,7 @@
 #include "state_generic.h"
 
 #include "../lib/ecore/math.h"
+#include "../lib/ecore/logging.h"
 #include "../gm.h"
 
 #include <AnimatedGIF.h>
@@ -32,10 +33,19 @@ void State_Generic::tick()
 
     GameManager& GM = GameManager::get();
 
-    float deltaTime = GetLastFrameDelta().count();
+    float deltaTime = lastFrameDT.count();
 
     if(generator)
-    {
+    {  
+        if(Tickable* genAsTickable = dynamic_cast<Tickable*>(generator.get()))
+        {
+            genAsTickable->tick(deltaTime);
+        }
+
         generator->applyEffectLogic(GM.OutfitLEDs->getStripHSV());
+        GM.OutfitLEDs->updateStripPixels();
+
+        generator->applyEffectLogic(GM.RingLEDs->getStripHSV());
+        GM.RingLEDs->updateStripPixels();
     }
 }

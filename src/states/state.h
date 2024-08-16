@@ -39,7 +39,7 @@ namespace ecore
         const std::string& GetStateName() const { return stateName; }
 
         std::chrono::duration<double> GetStateActiveDuration() const;     // returned in seconds
-        std::chrono::duration<double> GetLastFrameDelta() const;     // returned in seconds
+        std::chrono::duration<double> GetTimeSinceTickStarted() const;     // returned in seconds
 
         // TODO this should be private
         std::map<std::weak_ptr<State>, TransitionLambda, std::owner_less<std::weak_ptr<State>>> stateTransitions;

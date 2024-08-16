@@ -11,13 +11,12 @@
 
 #include <string>
 
-#define LOGGING_ENABLED 1
+#define LOGGING_ENABLED 0
 
 namespace ecore
 {
     enum class Verbosity : uint8_t
     {
-        TickSpam, // goes off every tick
         VeryVerbose,
         Verbose,
         Display,
@@ -36,11 +35,9 @@ namespace ecore
 
     Category operator&(Category lhs, Category rhs);
 
-    constexpr Verbosity ProjectVerbosity { 
-        Verbosity::VeryVerbose
-    };
+    constexpr Verbosity ProjectVerbosity = Verbosity::VeryVerbose;
     constexpr Category ProjectHideCategories { 
-        //Category::OnTick
+        Category::OnTick
     };
 
     void dbgLog(const char *msg, Verbosity Verbosity = Verbosity::Display, Category HideCategories = Category::None);
