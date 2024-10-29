@@ -8,27 +8,14 @@
 using namespace eanim;
 
 
-/*
-CompositeGeneratorHSV::CompositeGeneratorHSV(uint16_t inLength) : GeneratorHSV(inLength)
+
+void GeneratorHSV_Cont::applyEffectLogic(uint16_t idx, HSV &InOutColor) const
 {
+    applyEffectLogic((float)idx, InOutColor);
 }
 
 
-PatternHSV::PatternHSV(uint16_t inLength) : length(inLength)
+void GeneratorHSV_Cont2D::applyEffectLogic(float x, HSV &InOutColor) const
 {
-}
-*/
-
-void GeneratorHSV::applyEffectLogic(std::vector<HSV> &InOutColors) const
-{
-    for(int idx = 0; idx < InOutColors.size(); ++idx)
-    {
-        applyEffectLogic(idx, InOutColors[idx]);
-    }
-}
-
-void GeneratorHSV::applyEffectLogic(uint16_t idx, HSV &InOutColor) const
-{
-    // expected to be overriden
-    // not a pure virtual to support legacy applyEffectLogic(std::vector<HSV> &InOutColors)
+    applyEffectLogic(x, 0.0f, InOutColor);
 }

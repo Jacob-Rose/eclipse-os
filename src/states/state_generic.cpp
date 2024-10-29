@@ -42,10 +42,19 @@ void State_Generic::tick()
             genAsTickable->tick(deltaTime);
         }
 
-        generator->applyEffectLogic(GM.OutfitLEDs->getStripHSV());
+        ecore::HSV colorBuffer;
+        for(uint16_t i = 0; i < GM.OutfitLEDs->getLength(); ++i)
+        {
+            generator->applyEffectLogic(i, colorBuffer);
+            GM.OutfitLEDs->setHSV(i, colorBuffer);
+        }
         GM.OutfitLEDs->updateStripPixels();
 
-        generator->applyEffectLogic(GM.RingLEDs->getStripHSV());
+        for(uint16_t i = 0; i < GM.RingLEDs->getLength(); ++i)
+        {
+            generator->applyEffectLogic(i, colorBuffer);
+            GM.RingLEDs->setHSV(i, colorBuffer);
+        }
         GM.RingLEDs->updateStripPixels();
     }
 }

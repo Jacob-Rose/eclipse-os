@@ -27,6 +27,13 @@ namespace jpalettes
         HSV(327.0f, 0.492f, 0.949f),
     };
 
+    inline HSVPalette p_darkpurple_neo {
+        HSV(219.0f, 0.899f, 0.624f),
+        HSV(268.0f, 0.627f, 0.8f),
+        HSV(295.0f, 0.56f, 0.812f),
+        HSV(327.0f, 0.492f, 0.949f),
+    };
+
     inline HSVPalette p_disney100 {
         HSV(249.0f, 0.495f, 0.753f),
         HSV(257.0f, 0.431f, 0.91f),

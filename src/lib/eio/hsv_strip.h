@@ -61,7 +61,6 @@ namespace eio
         Adafruit_NeoPixel strip;
     };
 
-    /*
     struct Coordinate
     {
         Coordinate(float x, float y);
@@ -69,37 +68,29 @@ namespace eio
         float y;
     };
 
+/*
     // same interface to HSVStrip, responsiblity of user to use additional featureset for 2d specific effects
     // to support dynamic changing of mapping per state as well
-    class MappedHSVStrip
+    class MappedHSVStrip : public HSVStrip
+    {
+    public:
+        MappedHSVStrip(uint16_t inLedCount, uint16_t inLedPin, neoPixelType inPixelType);
+        ~MappedHSVStrip();
+
+        virtual Coordinate getCoord(uint16_t idx) const = 0;
+    }
+
+
+    class MappedHSVStrip_BakedData
     {
     public:
         
         MappedHSVStrip(uint16_t inLedCount, uint16_t inLedPin, neoPixelType inPixelType);
         ~MappedHSVStrip();
 
-        Coordinate getCoord(uint16_t idx) const;
-        void loadCoords(uint16_t coords[]);
-
-        enum StripMapping
-        {
-            OneToOne,
-            Stretch,
-            Repeat
-        };
-
-        struct StripInfo
-        {
-            std::shared_ptr<HSVStrip> strip;
-            StripMapping mappingMode;
-        };
-
-        const StripInfo& getStripInfo(uint8_t idx) const;
-        uint8_t getStripCount() const;
+        virtual Coordinate getCoord(uint16_t idx) const;
     protected:
         std::vector<Coordinate> coordinates;
-
-        std::vector<StripInfo> strips;
     }
     */
 }

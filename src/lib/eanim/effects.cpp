@@ -84,6 +84,8 @@ float FireGenerator::evaluate(float value) const
     return evaluation;
 }
 
+/*
+
 
 DropGenerator::DropGenerator(uint16_t inLength) : length(inLength)
 {
@@ -98,25 +100,27 @@ void DropGenerator::applyEffectLogic(std::vector<HSV> &InOutColors) const
 {
 }
 
-PerlinNoiseGenerator1D::PerlinNoiseGenerator1D()
+*/
+
+PerlinNoiseGenerator2D::PerlinNoiseGenerator2D()
 {
     init();
 }
 
-void PerlinNoiseGenerator1D::init()
+void PerlinNoiseGenerator2D::init()
 {
     currentTime = 0.0f;
     noise.SetSeed(rand());
 }
 
-void PerlinNoiseGenerator1D::tick(float deltaTime)
+void PerlinNoiseGenerator2D::tick(float deltaTime)
 {
     currentTime += deltaTime;
 }
 
-float PerlinNoiseGenerator1D::evaluate(float value) const
+float PerlinNoiseGenerator2D::evaluate(float x, float y) const
 {
     float freqScalar = 1.0f / noise.GetFrequency();
 
-    return noise.GetNoise<float>(value * imageScale, 0.0f, currentTime * timeScale * freqScalar);
+    return noise.GetNoise<float>(x * imageScaleX, y * imageScaleY, currentTime * timeScale * freqScalar);
 }

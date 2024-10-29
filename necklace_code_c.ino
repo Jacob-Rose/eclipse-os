@@ -8,13 +8,13 @@
 #include "pico/stdlib.h"
 #include "pico/multicore.h"
 
-#include "src/necklace.h"
+#include "src/obelisk.h"
 #include "src/gm.h"
 #include "src/lib/ecore/logging.h"
 
 #include <string>
 
-Necklace necklace;
+Obelisk obelisk;
 
 void setup() {
   Serial.begin(19200);
@@ -23,11 +23,11 @@ void setup() {
 
   GameManager::initSingleton();
   SPI.begin();
-  necklace.setup();
+  obelisk.setup();
 }
 
 void loop() {
-  necklace.loop();
+  obelisk.loop();
 }
 
 void setup1() {
@@ -36,7 +36,7 @@ void setup1() {
 
 void loop1()
 {
-  necklace.loop1();
+  obelisk.loop1();
   //delay(10);
 }
 

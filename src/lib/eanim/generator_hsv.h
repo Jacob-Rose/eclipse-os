@@ -28,9 +28,31 @@ namespace eanim
     class GeneratorHSV
     {
     public:
-        // a list of HSV colors. generators should support any length provided
-        virtual void applyEffectLogic(std::vector<HSV>& InOutColors) const;
-        virtual void applyEffectLogic(uint16_t idx, HSV& InOutColor) const;
+        // generate colozr for provided index
+        virtual void applyEffectLogic(uint16_t idx, HSV& InOutColor) const = 0;
+    };
+
+    /// Generator HSV Continious
+    ///
+    /// should assume x scale is relative to the led strip's index
+    class GeneratorHSV_Cont : public GeneratorHSV
+    {
+    public:
+        // continious can blend between indexes if desired
+        virtual void applyEffectLogic(float x, HSV& InOutColor) const = 0;
+        
+        virtual void applyEffectLogic(uint16_t idx, HSV& InOutColor) const override;
+    };
+
+    /// Generator HSV Continious 2D
+    ///
+    /// should assume x scale is relative to the led strip's index
+    class GeneratorHSV_Cont2D : public GeneratorHSV_Cont
+    {
+    public:
+        virtual void applyEffectLogic(float x, float y, HSV& InOutColor) const = 0;
+
+        virtual void applyEffectLogic(float x, HSV& InOutColor) const override;
     };
 
 

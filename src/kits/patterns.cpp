@@ -16,18 +16,15 @@ void Pattern_SpaceDust::tick(float deltaTime)
     
 }
 
-void Pattern_SpaceDust::applyEffectLogic(std::vector<HSV> &InOutColors) const
+void Pattern_SpaceDust::applyEffectLogic(uint16_t idx, HSV& InOutColor) const
 {
-    for(int idx = 0; idx < InOutColors.size(); ++idx)
-    {
 
-    }
 }
 
 
 Pattern_RitualFire::Pattern_RitualFire() : fireGenerator(30)
 {
-    pulsePerlinNoise.noise.SetNoiseType(FastNoiseLite::NoiseType_Cellular);
+    pulsePerlinNoise.noise.SetNoiseType(FastNoiseLite::NoiseType_OpenSimplex2);
     pulsePerlinNoise.noise.SetCellularDistanceFunction(FastNoiseLite::CellularDistanceFunction_Manhattan);
     pulsePerlinNoise.noise.SetCellularReturnType(FastNoiseLite::CellularReturnType_Distance2);
     pulsePerlinNoise.noise.SetFrequency(0.05f);
@@ -53,25 +50,22 @@ void Pattern_RitualFire::tick(float deltaTime)
     //gasesPerlinNoise.tick(deltaTime);
 }
 
-void Pattern_RitualFire::applyEffectLogic(std::vector<HSV> &InOutColors) const
+void Pattern_RitualFire::applyEffectLogic(uint16_t idx, HSV& InOutColor) const
 {
-    for(int idx = 0; idx < InOutColors.size(); ++idx)
-    {
-        HSV outColor;
+    HSV outColor;
 
-        //float fireValue = fireGenerator.evaluate(idx);
-        //j::HSV fireColor = firePalette.getColor(fireValue);
+    //float fireValue = fireGenerator.evaluate(idx);
+    //j::HSV fireColor = firePalette.getColor(fireValue);
 
-        float pulseNoiseAlpha = pulsePerlinNoise.evaluate(idx);
+    float pulseNoiseAlpha = pulsePerlinNoise.evaluate((float)idx, 0.0f);
         
-        // layer 1: background cel pattern
-        outColor = mainPalette.getColor(pulseNoiseAlpha);
+    // layer 1: background cel pattern
+    outColor = mainPalette.getColor(pulseNoiseAlpha);
 
-        // layer 2: gas layer
-        //float gasAlpha = gasesPerlinNoise.evaluate(idx);
-        //outColor = outColor.blendWith(gasColor, gasAlpha);
-        //outColor = outColor.blendWith(fireColor, fireValue);
+    // layer 2: gas layer
+    //float gasAlpha = gasesPerlinNoise.evaluate(idx);
+    //outColor = outColor.blendWith(gasColor, gasAlpha);
+    //outColor = outColor.blendWith(fireColor, fireValue);
 
-        InOutColors[idx] = outColor;
-    }
+    InOutColor = outColor;
 }

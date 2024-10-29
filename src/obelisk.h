@@ -13,7 +13,14 @@
 using namespace ecore;
 using namespace eio;
 
-class Necklace
+/*
+class MappedHSVStrip_Obelisk : public MappedHSVStrip
+{
+    uint8_t WallLength = 42;
+}
+*/
+
+class Obelisk
 {
 public:
     void setup();
@@ -24,6 +31,9 @@ public:
 
     void tick();
     void tickScreen();
+
+    float transitionTime = 8.0f;
+    float timeForStates = 20.0f;
 
     void setActiveState(std::shared_ptr<State> NewState);
 
@@ -43,6 +53,9 @@ private:
 
     std::vector<std::shared_ptr<State>> States;
     std::shared_ptr<State> ActiveState;
+    std::shared_ptr<State> NextState;
+
+    float currentTransitionTime;
 
     bool bSetupComplete = false;
 };

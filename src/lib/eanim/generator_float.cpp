@@ -62,3 +62,8 @@ float Saw::evaluate(float inVal) const
         return 1.0f - sawAlpha;
     }
 }
+
+float Generator2D::evaluate(float x) const
+{
+    return evaluate(x, 0.0f);
+}

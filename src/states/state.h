@@ -25,6 +25,8 @@ namespace ecore
         virtual void init();
         virtual void cleanup();
 
+        float timeToTransition = 0.0f;
+
         virtual void tick();
 
         //logic level only, no rendering logic here
@@ -63,6 +65,9 @@ namespace ecore
         //used for tracking ticks in a consistant manner
         std::chrono::time_point<std::chrono::system_clock> tickStartTime;
         std::chrono::time_point<std::chrono::system_clock> tickStartTime_Screen;
+
+        float transitionStartTime;
+        std::shared_ptr<State> nextState;
 
         
         // a little inefficient, but very convient, if we could get an fname like system for strings would be nice.

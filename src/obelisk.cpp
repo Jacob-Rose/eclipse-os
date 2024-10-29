@@ -3,14 +3,14 @@
 // This file is part of project necklace_code_c
 // See readme.md for full license details.
 
-#include "necklace.h"
+#include "Obelisk.h"
 
 #include "gm.h"
 
 #include "lib/ecore/logging.h"
 
 #include "states/state_generic.h"
-#include "kits/patterns.h"
+#include "states/state_obelisk.h"
 
 #include <chrono>
 #include <ctime>
@@ -18,27 +18,25 @@
 using namespace ecore;
 using namespace eio;
 
-void Necklace::setup()
+void Obelisk::setup()
 {
     GameManager& GM = GameManager::get();
 
     // Boot state so we can run leds while doing processing for inits (like loading images)
-    std::shared_ptr<State_Generic> Test = std::make_shared<State_Generic>("Test");
-    States.push_back(Test);
+    std::shared_ptr<State> ObeliskState = std::make_shared<State_Obelisk_Theater>("obelisk");
+    States.push_back(ObeliskState);
 
-    Test->generator = std::make_shared<Pattern_RitualFire>();
-
-    setActiveState(Test);
+    setActiveState(ObeliskState);
 
     bSetupComplete = true;
 }
 
-void Necklace::setup1()
+void Obelisk::setup1()
 {
     // nothing needed here
 }
 
-void Necklace::tick()
+void Obelisk::tick()
 {
     GameManager& GM = GameManager::get();
     
@@ -66,7 +64,7 @@ void Necklace::tick()
     GM.showLeds();
 }
 
-void Necklace::tickScreen()
+void Obelisk::tickScreen()
 {
     GameManager& GM = GameManager::get();
 
@@ -76,12 +74,12 @@ void Necklace::tickScreen()
     GM.screenDrawer.tick(lastFrameDT_Screen.count());
 }
 
-void Necklace::loop()
+void Obelisk::loop()
 {
     tick();
 }
 
-void Necklace::loop1()
+void Obelisk::loop1()
 {
     if(bSetupComplete)
     {
@@ -89,7 +87,7 @@ void Necklace::loop1()
     }
 }
 
-void Necklace::setActiveState(std::shared_ptr<State> InState)
+void Obelisk::setActiveState(std::shared_ptr<State> InState)
 {
     if(ActiveState)
     {
@@ -104,7 +102,7 @@ void Necklace::setActiveState(std::shared_ptr<State> InState)
     }
 }
 
-bool Necklace::runButtonHeldTestAndReset(Button* inButton)
+bool Obelisk::runButtonHeldTestAndReset(Button* inButton)
 {
     constexpr float HoldThreshold = 0.005f;
     if(inButton->isPressed())

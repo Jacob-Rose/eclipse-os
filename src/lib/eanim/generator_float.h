@@ -27,7 +27,7 @@ namespace eanim
     class Generator1D : public FloatAttribute
     {
     public:
-        virtual float evaluate(float val) const = 0;
+        virtual float evaluate(float x) const = 0;
 
         // we can assume that these work as float attributes in most cases
         virtual float getValue() const override { return evaluate(0.0f); }
@@ -75,7 +75,7 @@ namespace eanim
         virtual void tick(float deltaTime) override;
 
         // Generator1D interface
-        virtual float evaluate(float val) const override;
+        virtual float evaluate(float x) const override;
 
         float getCurrentOffset() const { return currentOffset; }
 
@@ -95,12 +95,12 @@ namespace eanim
     * TODO Noise 2D generator
     * TODO Generator2D slice : pu
     */
-    /*
-    class Generator2D
+    class Generator2D : public Generator1D
     {
-        virtual float evaluate(float value) const;
+        virtual float evaluate(float x, float y) const = 0;
+
+        virtual float evaluate(float x) const override;
     };
-    */
 
     /* @brief Generator2DLine allows us to query a single line (a Generator1D) from a Generator2D
     */

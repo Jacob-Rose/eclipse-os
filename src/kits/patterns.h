@@ -29,13 +29,13 @@ class Pattern_SpaceDust : public GeneratorHSV, public Tickable
 public:
     HSVPalette mainPalette;
     HSVPalette dustPalette;
-    DropGenerator dropGenerator;
+    //DropGenerator dropGenerator;
 
     void init();
 
     virtual void tick(float deltaTime) override;
 
-    virtual void applyEffectLogic(std::vector<HSV>& InOutColors) const;
+    virtual void applyEffectLogic(uint16_t idx, HSV& InOutColor) const override;
 };
 
 class Pattern_RitualFire : public GeneratorHSV, public Tickable
@@ -45,8 +45,8 @@ public:
     HSV gasColor = HSV(0.0f, 0.84f, 0.88f);
     HSVPalette firePalette = jpalettes::p_disney100;
     FireGenerator fireGenerator;
-    PerlinNoiseGenerator1D pulsePerlinNoise;
-    PerlinNoiseGenerator1D gasesPerlinNoise;
+    PerlinNoiseGenerator2D pulsePerlinNoise;
+    PerlinNoiseGenerator2D gasesPerlinNoise;
 
     Pattern_RitualFire();
 
@@ -54,7 +54,8 @@ public:
     
     virtual void tick(float deltaTime) override;
 
-    virtual void applyEffectLogic(std::vector<HSV>& InOutColors) const override;
+    virtual void applyEffectLogic(uint16_t idx, HSV& InOutColor) const override;
 private:
     float currentTime;
 };
+

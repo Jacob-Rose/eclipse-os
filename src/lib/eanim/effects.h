@@ -25,20 +25,21 @@ namespace eanim
 
     /* @brief Wrapper for FastNoiseLite to make it support float attributes
     */
-    class PerlinNoiseGenerator1D : public Generator1D, public Tickable
+    class PerlinNoiseGenerator2D : public Generator2D, public Tickable
     {
     public:
-        PerlinNoiseGenerator1D();
+        PerlinNoiseGenerator2D();
 
         void init();
 
         // Tickable interface
         virtual void tick(float deltaTime) override;
 
-        // Generator1D interface
-        virtual float evaluate(float value) const override;
+        // Generator2D interface
+        virtual float evaluate(float x, float y) const override;
 
-        float imageScale = 1.0f;
+        float imageScaleX = 1.0f;
+        float imageScaleY = 1.0f;
         float timeScale = 1.0f;
 
         FastNoiseLite noise;
@@ -60,7 +61,7 @@ namespace eanim
         virtual void tick(float deltaTime) override;
 
         // Generator1D interface
-        virtual float evaluate(float value) const override;
+        virtual float evaluate(float x) const override;
 
         HSVPalette palette;
         float cooldown = 0.1f; // fade per second
@@ -79,7 +80,8 @@ namespace eanim
     * TODO: Copy logic from drop state machine
     * 
     * Currently In-Development, not working
-    */ 
+    */
+   /*
     class DropGenerator : public GeneratorHSV, public Tickable
     {
     public:
@@ -112,4 +114,5 @@ namespace eanim
         std::shared_ptr<FloatAttribute> position;
         std::shared_ptr<FloatAttribute> falloffDistance;
     };
+    */
 }

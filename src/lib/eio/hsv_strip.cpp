@@ -43,7 +43,7 @@ void HSVStrip::setHSV(uint16_t idx, float h, uint8_t s, uint8_t v)
     updateStripPixel(idx);
 }
 
-__UINT8_TYPE__ HSVStrip::getBrightness(uint16_t idx) const
+uint8_t HSVStrip::getBrightness(uint16_t idx) const
 {
     return strip_HSV[idx].v;
 }
