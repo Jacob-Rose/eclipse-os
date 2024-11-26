@@ -5,6 +5,8 @@
 
 #pragma once
 
+#ifdef USE_SCREEN
+
 #include <stdio.h>
 #include "pico/stdlib.h"
 #include <Arduino.h>
@@ -59,9 +61,6 @@ namespace eio
     private:
         bool bWasCancelled = false;
     };
-
-
-
-
-
 };
+
+#endif

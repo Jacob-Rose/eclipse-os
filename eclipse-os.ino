@@ -22,7 +22,7 @@ void setup() {
   delay(500);
 
   GameManager::initSingleton();
-  SPI.begin();
+  //SPI.begin();
   obelisk.setup();
 }
 

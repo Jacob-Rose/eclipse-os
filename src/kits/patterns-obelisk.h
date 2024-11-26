@@ -5,6 +5,8 @@
 
 #pragma once
 
+#if 0
+
 #include "../lib/ecore/hsv.h"
 #include "../lib/eanim/effects.h"
 
@@ -76,3 +78,5 @@ public:
 private:
     float currentTime;
 };
+
+#endif

@@ -11,6 +11,7 @@
 
 #include "states/state_generic.h"
 #include "states/state_obelisk.h"
+#include "states/state_boxing.h"
 
 #include <chrono>
 #include <ctime>
@@ -23,7 +24,7 @@ void Obelisk::setup()
     GameManager& GM = GameManager::get();
 
     // Boot state so we can run leds while doing processing for inits (like loading images)
-    std::shared_ptr<State> ObeliskState = std::make_shared<State_Obelisk_Theater>("obelisk");
+    std::shared_ptr<State> ObeliskState = std::make_shared<State_Boxing_Theater>("mainstate");
     States.push_back(ObeliskState);
 
     setActiveState(ObeliskState);
@@ -71,7 +72,11 @@ void Obelisk::tickScreen()
     lastFrameDT_Screen = std::chrono::system_clock::now() - tickStartTime_Screen;
     tickStartTime_Screen = std::chrono::system_clock::now();
 
+#ifdef USE_SCREEN
+
     GM.screenDrawer.tick(lastFrameDT_Screen.count());
+
+#endif
 }
 
 void Obelisk::loop()

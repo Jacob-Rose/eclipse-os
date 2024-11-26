@@ -12,9 +12,18 @@
 
 using namespace ecore;
 
-HSV::HSV(float inH, float inS, float inV) : h(inH), s(inS), v(inV)
+HSV::HSV(const float& inH, const float& inS, const float& inV)
 {
+    setHueDegree(inH);
+    setSaturationAlpha(inS);
+    setBrightnessAlpha(inV);
+}
 
+HSV::HSV(const fpInt& inH, const fpInt& inS, const fpInt& inV)
+{
+    h = inH;
+    s = inS;
+    v = inV;
 }
 
 HSV::HSV() : h(0), s(0), v(0)
@@ -22,53 +31,93 @@ HSV::HSV() : h(0), s(0), v(0)
 
 }
 
-HSV HSV::blendWith(HSV otherColor, float alpha)
+void HSV::blendWith(const HSV& otherColor, float alphaAsFloat)
 {
-    alpha = std::clamp(alpha, 0.0f, 1.0f);
+    HSV newColor = blend(*this, otherColor, alphaAsFloat);
+    h = newColor.h;
+    s = newColor.s;
+    v = newColor.v;
+}
 
-    float inv_alpha = 1.0f - alpha;
+HSV HSV::blend(const HSV& a, const HSV& b, float alphaAsFloat)
+{
+    alphaAsFloat = std::clamp(alphaAsFloat, 0.0f, 1.0f);
+    fpInt alphaAsInt = alphaAsFloat * SCALE_FACTOR;
+
+    fpInt invAlphaAsInt = SCALE_FACTOR - alphaAsInt;
 
     HSV blendedColor;
-    //TODO change hue blending to support optional saturation consideration for how much impact a color has
-    blendedColor.h = radial_lerp(h, otherColor.h, alpha);
 
-    blendedColor.s = s * inv_alpha + 
-                     otherColor.s * alpha;
-    blendedColor.v = v * inv_alpha + 
-                     otherColor.v * alpha;
+    blendedColor.h = radialLerp(a.h, b.h, alphaAsInt);
+
+    blendedColor.s = a.s * invAlphaAsInt + 
+                     b.s * alphaAsInt;
+    blendedColor.v = a.v * invAlphaAsInt + 
+                     b.v * alphaAsInt;
 
     return blendedColor;
 }
 
+// Perform the radial lerp in fixed-point (using integers)
+fpInt HSV::radialLerp(fpInt a, fpInt b, float tAsFloat) {
+    fpInt tAsInt = tAsFloat * SCALE_FACTOR;
+    return radialLerp(a, b, tAsInt);
+}
+
+// Perform the radial lerp in fixed-point (using integers)
+fpInt HSV::radialLerp(fpInt a, fpInt b, fpInt tAsInt) {
+
+    // Calculate the shortest path around the circle (using integer math)
+    uint32_t diff = b - a;
+    if (diff > SCALE_FACTOR / 2) {
+        diff -= SCALE_FACTOR; // Go the shorter way
+    } else if (diff < ((int32_t)SCALE_FACTOR) / -2) {
+        diff += SCALE_FACTOR; // Go the shorter way
+    }
+
+    // Perform the interpolation (using fixed-point multiplication)
+    fpInt result = a + (uint32_t(tAsInt)) * diff / SCALE_FACTOR;
+
+    result %= SCALE_FACTOR;
+
+    return result;
+}
+
 void HSV::setSaturationAlpha(float alpha)
 {
-    s = std::clamp(alpha, 0.f, 1.f);
+    float tmpSat = std::clamp(alpha, 0.f, 1.f);
+    s = static_cast<fpInt>(tmpSat * SCALE_FACTOR);
 }
 
 void HSV::setBrightnessAlpha(float alpha)
 {
-    v = std::clamp(alpha, 0.f, 1.f);
+    float tmpBrightness = std::clamp(alpha, 0.f, 1.f);
+    v = static_cast<fpInt>(tmpBrightness * SCALE_FACTOR);
 }
 
 void HSV::setHueDegree(float inDegrees)
 {
-    h = std::fmod(inDegrees, 360.0f);
+    float tmpHue = std::fmod(inDegrees, 360.0f);
+    tmpHue /= 360;
+    h = static_cast<fpInt>(tmpHue * SCALE_FACTOR);
 }
 
 uint8_t HSV::getValAs8() const
 {
-    return v * 255;
+    uint32_t v32 = (((uint32_t)v) * 255) / SCALE_FACTOR;
+    return v32;
 }
 
 uint8_t HSV::getSatAs8() const
 {
-    return s * 255;
+    uint32_t s32 = (((uint32_t)s) * 255) / SCALE_FACTOR;
+    return s32;
 }
 
 uint16_t HSV::getHueAs16() const
 {
-    float hAsAlpha = h / 360.0f;
-    return (signed int) (hAsAlpha * std::numeric_limits<uint16_t>().max());
+    uint32_t h32 = (((uint32_t)h) * 65565) / SCALE_FACTOR;
+    return static_cast<uint16_t>(h32);
 }
 
 
@@ -84,39 +133,76 @@ HSVPalette::HSVPalette()
 
 HSVPalette::HSVPalette(const std::vector<HSV>& inColors)
 {
-    colors = inColors;
+    // Ensure the input contains more than one color
+    if (inColors.empty()) {
+        stops.clear();  // No colors to work with, clear the stops
+        return;
+    }
+
+    stops.resize(inColors.size());
+
+    stops[0].position = 0;
+    stops[0].color = inColors[0];
+
+    for(int i = 1; i < inColors.size(); ++i)
+    {
+        stops[i].color = inColors[i];
+        stops[i].position = ((float)i) / (inColors.size()-1);
+    }
 }
 
 HSVPalette::HSVPalette(const std::initializer_list<HSV>& inColors)
 {
-    colors = inColors;
+    // Ensure the input contains more than one color
+    if (inColors.size()==0) {
+        stops.clear();  // No colors to work with, clear the stops
+        return;
+    }
+
+    stops.resize(inColors.size());
+
+    stops[0].position = 0;
+    stops[0].color = inColors.begin()[0];
+
+    for(int i = 1; i < inColors.size(); ++i)
+    {
+        stops[i].color = inColors.begin()[i];
+        stops[i].position = ((float)i) / (inColors.size()-1);
+    }
 }
 
-HSV HSVPalette::getColor(float val) const
+HSVPalette::HSVPalette(const std::vector<HSVPalette::HSVStop>& inColorStops)
 {
-    if(colors.size() == 0)
-    {
-        return HSV(0,0,0);
+    stops = inColorStops;
+}
+
+
+HSVPalette::HSVPalette(const std::initializer_list<HSVPalette::HSVStop>& inColorStops)
+{
+    stops = inColorStops;
+}
+
+HSV HSVPalette::getColor(float t) const
+{
+    // Ensure stops are sorted by position
+    if (stops.empty()) return HSV(); // Default to black
+    if (t <= stops.front().position) return stops.front().color;
+    if (t >= stops.back().position) return stops.back().color;
+
+    //return stops[1].color; // KILL ME
+
+    // Find the two stops that t is between
+    for (size_t i = 0; i < stops.size() - 1; ++i) {
+        const auto& stop1 = stops[i];
+        const auto& stop2 = stops[i + 1];
+        if (t >= stop1.position && t <= stop2.position) {
+            // Interpolate between these two stops
+            float localT = (t - stop1.position) / (stop2.position - stop1.position);
+            return HSV::blend(stop1.color, stop2.color, localT);
+        }
     }
 
-    int valIntToRemove = std::trunc( val);
-    val -= valIntToRemove;
-    if(valIntToRemove % 2 == 1)
-    {
-        val = 1.0f - val;
-    }
-
-    float targetIdxFloat = val * colors.size();
-    uint16_t idx = std::trunc(targetIdxFloat);
-    uint16_t nextIdx = (idx + 1) % colors.size();
-    float alpha = targetIdxFloat - idx;
-
-    HSV idxColor = colors[idx];
-    HSV nextColor = colors[nextIdx];
-
-    HSV blendedColor = idxColor.blendWith(nextColor, alpha);
-
-    return blendedColor;
+    return HSV(); // Should not reach here
 }
 
 std::string HSV::to_string() const{

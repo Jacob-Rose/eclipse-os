@@ -14,8 +14,14 @@
 #include <string>
 
 
+
 namespace ecore
 {
+    // fixed-point int
+    typedef uint16_t fpInt;
+    static constexpr fpInt SCALE_FACTOR = 12000;//(std::numeric_limits<fpInt>::max() / 2)-1;
+
+
     // originally taken from Adafruit NeoPixel
     static const uint8_t PROGMEM GammaBrightnessCorrection[256] = {
     0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
@@ -40,9 +46,14 @@ namespace ecore
     struct HSV
     {
         HSV();
-        HSV(float inH, float inS, float inV);
+        // assumed already scaled on entrance
+        HSV(const fpInt& inH, const fpInt& inS, const fpInt& inV);
 
-        HSV blendWith(HSV otherColor, float alpha);
+        // expected user facing constructor
+        HSV(const float& inH, const float& inS, const float& inV);
+
+        void blendWith(const HSV& otherColor, float alphaAsFloat);
+        static HSV blend(const HSV& a, const HSV& b, float alphaAsFloat);
 
         // set between 0.f - 360.f
         void setHueDegree(float val);
@@ -55,22 +66,39 @@ namespace ecore
 
         std::string to_string() const;
         
-        float h; // 0.f - 360.0f in degrees, clamps itself and wraps around in setHueDegree()
-        float s; // 0.f - 1.f
-        float v; // 0.f - 1.f
+        // all values stored and done math in int space for gainful performance. Has resolution limits, but usually surpass the hardware capabilities anyway.
+        fpInt h; // once converted to scale in float space | 0.f - 360.0f in degrees, clamps itself and wraps around in setHueDegree()
+        fpInt s; // once converted to scale in float space | 0.f - 1.f
+        fpInt v; // once converted to scale in float space | 0.f - 1.f
+
+    private:
+        static fpInt radialLerp(fpInt a, fpInt b, float t);
+        static fpInt radialLerp(fpInt a, fpInt b, fpInt t);
     };
 
-    //TODO support hsv wrapping around 0 for hue
     struct HSVPalette
     {
+        struct HSVStop
+        {
+            HSV color;
+            float position;
+
+            HSVStop() : position(0.f)
+            {}
+        };
+
         HSVPalette();
+
         HSVPalette(const std::vector<HSV>& inColors);
         HSVPalette(const std::initializer_list<HSV>& inColors);
+
+        HSVPalette(const std::vector<HSVStop>& inColorStops);
+        HSVPalette(const std::initializer_list<HSVStop>& inColorStops);
 
         // scale is from 0-1.f
         // supports looping back to the original color
         HSV getColor(float val) const;
 
-        std::vector<HSV> colors;
+        std::vector<HSVStop> stops;
     };
 }

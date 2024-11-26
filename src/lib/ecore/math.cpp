@@ -92,19 +92,12 @@ float ecore::normalize_angle(float angle)
     }
     return angle;
 }
-
-float ecore::radial_lerp(float a, float b, float t)
-{
-    float diff = b - a;
-    if (diff > 180.0f)
-    {
-        b -= 360.0f;
+ // Normalize angle to the range [0, 360) in fixed-point
+int32_t normalize_angle(int32_t angle) {
+    angle = angle % (360 * SCALE_FACTOR);
+    if (angle < 0) {
+        angle += 360 * SCALE_FACTOR;
     }
-    else if (diff < -180.0f)
-    {
-        b += 360.0f;
-    }
-
-    float result = a + t * (b - a);
-    return normalize_angle(result);
+    return angle;
 }
+

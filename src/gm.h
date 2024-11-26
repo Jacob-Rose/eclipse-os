@@ -5,8 +5,10 @@
 
 #pragma once
 
+#ifdef USE_SCREEN
 #include "Adafruit_GC9A01A.h"
 #include "AnimatedGIF.h"
+#endif
 
 #include <memory>
 #include <ctime>
@@ -133,8 +135,11 @@ public:
     std::unique_ptr<HSVStrip> GlassesLEDs;
     std::unique_ptr<HSVStrip> BoardLED;
 
+
+#ifdef USE_SCREEN
     std::shared_ptr<Adafruit_GC9A01A> Screen;
     ScreenDrawer screenDrawer;
+#endif
 
     // USER SETTINGS
 public:

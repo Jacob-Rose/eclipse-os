@@ -73,18 +73,20 @@ void GameManager::init()
     RemoteBlackButton = std::make_unique<Button>();
     RemoteBlackButton->init(REMOTE_BLACK_BUTTON_PIN);
 
+#ifdef USE_SCREEN
     Screen = std::make_shared<Adafruit_GC9A01A>(SCREEN_CS, SCREEN_DC, SCREEN_SDA, SCREEN_SCL, SCREEN_RST);
     Screen->begin();
     Screen->setRotation(0);
 
     screenDrawer.setScreenRef(Screen);
+#endif
 
     RingLEDs = std::make_unique<HSVStrip>(RING_LED_LENGTH, RING_LED_PIN, NEO_GRB + NEO_KHZ800);
     OutfitLEDs = std::make_unique<HSVStrip>(OUTFIT_LED_LENGTH, OUTFIT_LED_PIN, NEO_GRB + NEO_KHZ800);
     GlassesLEDs = std::make_unique<HSVStrip>(GLASSES_LED_LENGTH, GLASSES_LED_PIN, NEO_GRB + NEO_KHZ800);
-    BoardLED = std::make_unique<HSVStrip>(1, PIN_NEOPIXEL, NEO_GRB + NEO_KHZ800);
+    //BoardLED = std::make_unique<HSVStrip>(1, PIN_NEOPIXEL, NEO_GRB + NEO_KHZ800);
 
-    setGlobalBrightness(EBrightness::HIGH);
+    setGlobalBrightness(EBrightness::MED);
 }
 
 void GameManager::tick(float deltaTime)
@@ -101,7 +103,7 @@ void GameManager::tick(float deltaTime)
 void GameManager::showLeds()
 {
     RingLEDs->show();
-    BoardLED->show();
+    //BoardLED->show();
 
     if(bHasOutfitConnected)
     {
@@ -139,7 +141,9 @@ void GameManager::cleanup()
     RingLEDs.reset();
     OutfitLEDs.reset();
     GlassesLEDs.reset();
-    BoardLED.reset();
+    //BoardLED.reset();
 
+#ifdef USE_SCREEN
     Screen.reset();
+#endif
 }

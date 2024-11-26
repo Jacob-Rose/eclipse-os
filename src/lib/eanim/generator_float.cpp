@@ -4,6 +4,7 @@
 // See readme.md for full license details.
 
 #include "generator_float.h"
+#include <algorithm>
 
 using namespace eanim;
 
@@ -26,7 +27,7 @@ float LFO::evaluate(float inVal) const
 {
     float evaluatedOffset = (inVal / width * PI * 2.f); // 2. makes it so that the width goes a full cycle instead of half
     float sinVal = std::sin(evaluatedOffset + currentOffset + initialOffset);
-    return (sinVal / 2) + 0.5f;
+    return std::clamp((sinVal / 2) + 0.5f, 0.f, 1.0f);
 }
 
 Saw::Saw()

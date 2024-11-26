@@ -27,9 +27,7 @@ HSV HSVStrip::getHSV(uint16_t idx) const
 
 void HSVStrip::setHSV(uint16_t idx, const HSV& hsv)
 {
-    strip_HSV[idx].h = hsv.h;
-    strip_HSV[idx].s = hsv.s;
-    strip_HSV[idx].v = hsv.v;
+    strip_HSV[idx] = hsv;
 
     updateStripPixel(idx);
 }

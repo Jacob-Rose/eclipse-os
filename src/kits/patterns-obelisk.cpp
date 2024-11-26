@@ -1,5 +1,7 @@
 #include "patterns-obelisk.h"
 
+#if 0
+
 using namespace eanim;
 using namespace ecore;
 
@@ -45,3 +47,5 @@ void Pattern_Obelisk_FourSeasons::applyEffectLogic(float x, float y, HSV& InOutC
 {
 
 }
+
+#endif

@@ -5,6 +5,9 @@
 
 #include "screen_drawer.h"
 
+
+#ifdef USE_SCREEN
+
 #include "../ecore/logging.h"
 
 using namespace eio;
@@ -145,3 +148,4 @@ void ScreenDrawer::cancelGifRender()
 
 
 
+#endif

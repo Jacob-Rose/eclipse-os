@@ -56,8 +56,10 @@ void State::onStateEnd()
     dbgLog(tickMsg.c_str(), Verbosity::Display, Category::StateInfo);
 #endif
 
+#if USE_SCREEN
     GameManager& GM = GameManager::get();
     GM.screenDrawer.cancelGifRender();
+#endif
 }
 
 void State::tick()
