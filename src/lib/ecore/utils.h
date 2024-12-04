@@ -5,6 +5,10 @@
 
 #pragma once
 
+#include <stdio.h>
+#include "pico/stdlib.h"
+#include <Arduino.h>
+
 namespace ecore
 {
     /* @brief remap an input to a new basis

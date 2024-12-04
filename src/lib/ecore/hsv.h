@@ -9,17 +9,18 @@
 #include "pico/stdlib.h"
 #include <Arduino.h>
 
+#include "fp.h"
+
 #include <utility>
 #include <vector>
 #include <string>
 
-
+///
+/// HSV blending using fixed point arithmetic
+///
 
 namespace ecore
 {
-    // fixed-point int
-    typedef uint16_t fpInt;
-    static constexpr fpInt SCALE_FACTOR = 12000;//(std::numeric_limits<fpInt>::max() / 2)-1;
 
 
     // originally taken from Adafruit NeoPixel
@@ -63,6 +64,10 @@ namespace ecore
         uint16_t getHueAs16() const;
         uint8_t getSatAs8() const;
         uint8_t getValAs8() const;
+
+        float getHueFloat() const;
+        float getSatFloat() const;
+        float getValFloat() const;
 
         std::string to_string() const;
         

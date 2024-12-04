@@ -20,9 +20,9 @@ State_Boxing_Noise::State_Boxing_Noise(const char* InStateName) : State(InStateN
     coreNoise.noise.SetCellularReturnType(FastNoiseLite::CellularReturnType_Distance2);
     coreNoise.noise.SetFrequency(0.05f);
     coreNoise.noise.SetCellularJitter(1.0f);
-    coreNoise.timeScale = 0.33f;
-    coreNoise.imageScaleX = 1.0f;
-    coreNoise.imageScaleY = 1.0f;
+    coreNoise.timeScale = 0.6f;
+    coreNoise.imageScaleX = 3.f;
+    coreNoise.imageScaleY = 3.f;
 }
 
 void State_Boxing_Noise::onStateBegin()
@@ -39,7 +39,7 @@ void State_Boxing_Noise::tick()
     float deltaTime = lastFrameDT.count();
 
     coreNoise.tick(deltaTime);
-    for(int testCount = 0; testCount < 20; testCount++)
+    for(int testCount = 0; testCount < 2; testCount++)
     {
         static constexpr uint16_t pixelCount = LED_COUNT;
         for(uint16_t pixelIdx = 0; pixelIdx < pixelCount; ++pixelIdx)
@@ -55,6 +55,32 @@ void State_Boxing_Noise::tick()
 
             float noiseAlpha = coreNoise.evaluate(x, y);
             outColor = palette.getColor(noiseAlpha);
+
+            /*
+            if(pixelIdx == 0)
+            {
+                std::string msg;
+                msg.append("hue: ");
+                msg.append(std::to_string(outColor.h));
+                msg.append(" sat: ");
+                msg.append(std::to_string(outColor.s));
+                msg.append(" val: ");
+                msg.append(std::to_string(outColor.v));
+                msg.append(" | hue16: ");
+                msg.append(std::to_string(outColor.getHueAs16()));
+                msg.append(" sat8: ");
+                msg.append(std::to_string(outColor.getSatAs8()));
+                msg.append(" val8: ");
+                msg.append(std::to_string(outColor.getValAs8()));
+                msg.append(" | huef: ");
+                msg.append(std::to_string(outColor.getHueFloat()));
+                msg.append(" satf: ");
+                msg.append(std::to_string(outColor.getSatFloat()));
+                msg.append(" valf: ");
+                msg.append(std::to_string(outColor.getValFloat()));
+                ecore::dbgLog(msg.c_str());
+            }
+            */
 
             GM.OutfitLEDs->setHSV(pixelIdx, outColor);
         }

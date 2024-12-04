@@ -69,6 +69,13 @@ float ecore::get_random_float_in_range(float min, float max)
     return (diff * randVal) + min;
 }
 
+int ecore::get_random_int_in_range(int min, int max)
+{
+    int diff = max - min;
+    int randValue = random() % diff;
+    return diff + min;
+}
+
 bool ecore::ess_equal(float A, float B, float maxRelDiff /* = FLT_EPSILON */)
 {
     // Calculate the difference.
@@ -82,22 +89,3 @@ bool ecore::ess_equal(float A, float B, float maxRelDiff /* = FLT_EPSILON */)
         return true;
     return false;
 }
-
-float ecore::normalize_angle(float angle)
-{
-    angle = std::fmod(angle, 360.0f);
-    if (angle < 0)
-    {
-        angle += 360.0f;
-    }
-    return angle;
-}
- // Normalize angle to the range [0, 360) in fixed-point
-int32_t normalize_angle(int32_t angle) {
-    angle = angle % (360 * SCALE_FACTOR);
-    if (angle < 0) {
-        angle += 360 * SCALE_FACTOR;
-    }
-    return angle;
-}
-

@@ -58,6 +58,10 @@ namespace ecore
     float get_random_float();
 
     float get_random_float_in_range(float min, float max);
+    float get_random_float_in_range(FloatRange range) { return get_random_float_in_range(range.min, range.max); }
+
+    int get_random_int_in_range(int min, int max);
+    float get_random_float_in_range(FloatRange range) { return get_random_int_in_range(range.min, range.max); }
 
     //https://randomascii.wordpress.com/2012/02/25/comparing-floating-point-numbers-2012-edition/
     // essentially equal

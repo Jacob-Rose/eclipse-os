@@ -23,7 +23,9 @@ namespace eanim
 {
 
     /* @brief A Generator that can provide or process colors
-    * due to the nature of this setup, these can also handle alphas and blending between layers 
+    * due to the nature of this setup, these can also handle alphas and blending between layers
+
+    * frankly, partially going toward deprecation, use GeneratorHSV_Cont and GeneratorHSV_Cont2D if possible
     */
     class GeneratorHSV
     {
@@ -33,8 +35,10 @@ namespace eanim
     };
 
     /// Generator HSV Continious
-    ///
-    /// should assume x scale is relative to the led strip's index
+    /// 
+    /// should support blending between positions
+    /// 
+    /// should assume x scale is relative to the led strip's index, and thus the led distance
     class GeneratorHSV_Cont : public GeneratorHSV
     {
     public:
@@ -46,7 +50,7 @@ namespace eanim
 
     /// Generator HSV Continious 2D
     ///
-    /// should assume x scale is relative to the led strip's index
+    /// should assume x scale is relative to the led strip's index, and thus the led distance
     class GeneratorHSV_Cont2D : public GeneratorHSV_Cont
     {
     public:

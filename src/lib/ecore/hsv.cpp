@@ -48,12 +48,13 @@ HSV HSV::blend(const HSV& a, const HSV& b, float alphaAsFloat)
 
     HSV blendedColor;
 
-    blendedColor.h = radialLerp(a.h, b.h, alphaAsInt);
+    blendedColor.h = (static_cast<uint32_t>(a.h) * invAlphaAsInt) / SCALE_FACTOR + 
+                     (static_cast<uint32_t>(b.h) * alphaAsInt) / SCALE_FACTOR;// radialLerp(a.h, b.h, alphaAsInt);
 
-    blendedColor.s = a.s * invAlphaAsInt + 
-                     b.s * alphaAsInt;
-    blendedColor.v = a.v * invAlphaAsInt + 
-                     b.v * alphaAsInt;
+    blendedColor.s = (static_cast<uint32_t>(a.s) * invAlphaAsInt) / SCALE_FACTOR + 
+                     (static_cast<uint32_t>(b.s) * alphaAsInt) / SCALE_FACTOR;
+    blendedColor.v = (static_cast<uint32_t>(a.v) * invAlphaAsInt) / SCALE_FACTOR + 
+                     (static_cast<uint32_t>(b.v) * alphaAsInt) / SCALE_FACTOR;
 
     return blendedColor;
 }
@@ -102,6 +103,25 @@ void HSV::setHueDegree(float inDegrees)
     h = static_cast<fpInt>(tmpHue * SCALE_FACTOR);
 }
 
+
+float HSV::getHueFloat() const
+{
+    float val = static_cast<float>(h);
+    return (val / SCALE_FACTOR) * 360.f;
+}
+
+float HSV::getSatFloat() const
+{
+    float val = static_cast<float>(s);
+    return val / SCALE_FACTOR;
+}
+
+float HSV::getValFloat() const
+{
+    float val = static_cast<float>(v);
+    return val / SCALE_FACTOR;
+}
+
 uint8_t HSV::getValAs8() const
 {
     uint32_t v32 = (((uint32_t)v) * 255) / SCALE_FACTOR;
@@ -116,7 +136,7 @@ uint8_t HSV::getSatAs8() const
 
 uint16_t HSV::getHueAs16() const
 {
-    uint32_t h32 = (((uint32_t)h) * 65565) / SCALE_FACTOR;
+    uint32_t h32 = (static_cast<uint32_t>(h) * UINT16_MAX) / SCALE_FACTOR;
     return static_cast<uint16_t>(h32);
 }
 

@@ -24,7 +24,7 @@ void Obelisk::setup()
     GameManager& GM = GameManager::get();
 
     // Boot state so we can run leds while doing processing for inits (like loading images)
-    std::shared_ptr<State> ObeliskState = std::make_shared<State_Boxing_Theater>("mainstate");
+    std::shared_ptr<State> ObeliskState = std::make_shared<State_Boxing_Noise>("mainstate");
     States.push_back(ObeliskState);
 
     setActiveState(ObeliskState);
