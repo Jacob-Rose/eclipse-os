@@ -15,9 +15,9 @@ using namespace eanim;
 
 State_Boxing_Noise::State_Boxing_Noise(const char* InStateName) : State(InStateName)
 {
-    coreNoise.noise.SetNoiseType(FastNoiseLite::NoiseType_OpenSimplex2);
+    coreNoise.noise.SetNoiseType(FastNoiseLite::NoiseType_Perlin);
     coreNoise.noise.SetCellularDistanceFunction(FastNoiseLite::CellularDistanceFunction_Manhattan);
-    coreNoise.noise.SetCellularReturnType(FastNoiseLite::CellularReturnType_Distance2);
+    coreNoise.noise.SetCellularReturnType(FastNoiseLite::CellularReturnType_Distance);
     coreNoise.noise.SetFrequency(0.05f);
     coreNoise.noise.SetCellularJitter(1.0f);
     coreNoise.timeScale = 0.6f;

@@ -19,6 +19,8 @@
 /// HSV blending using fixed point arithmetic
 ///
 
+using namespace efp;
+
 namespace ecore
 {
 

@@ -17,8 +17,8 @@
 using namespace ecore;
 using namespace eanim;
 
-#define ROW_LENGTH 12
-#define COLUMN_LENGTH 4
+#define ROW_LENGTH 1
+#define COLUMN_LENGTH 200
 
 #define LED_COUNT (ROW_LENGTH * COLUMN_LENGTH)
 
