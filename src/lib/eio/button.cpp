@@ -41,7 +41,23 @@ void Button::tick(float deltaTime)
     }
 }
 
-void Button::resetTimeSinceStateChange()
+bool Button::runButtonPressedScan()
 {
-    timeSinceStateChanged = 0.0f;
+    //TODO this func might need to be validated that it works
+    constexpr float HoldThreshold = 0.005f;
+    if(isPressed())
+    {
+        bool bPressedLongEnough = inButton->getTimeSinceStateChange() > HoldThreshold;
+        if(bPressedLongEnough && inButton->bHasBeenReleased)
+        {
+            timeSinceStateChanged = 0.0f;
+            bHasBeenReleased = false;
+            return true;
+        }
+    }
+    else
+    {
+        bHasBeenReleased = true;
+    }
+    return false;
 }

@@ -34,7 +34,7 @@ void State_Boxing_Noise::tick()
 {
     State::tick();
 
-    GameManager& GM = GameManager::get();
+    //GameManager& GM = GameManager::get();
 
     float deltaTime = lastFrameDT.count();
 
@@ -82,11 +82,11 @@ void State_Boxing_Noise::tick()
             }
             */
 
-            GM.OutfitLEDs->setHSV(pixelIdx, outColor);
+            //GM.OutfitLEDs->setHSV(pixelIdx, outColor);
         }
     }
 
-    GM.OutfitLEDs->updateStripPixels();
+    //GM.OutfitLEDs->updateStripPixels();
 }
 
 State_Boxing_Theater::State_Boxing_Theater(const char* InStateName) : State(InStateName)
@@ -106,7 +106,7 @@ void State_Boxing_Theater::tick()
 {
     State::tick();
 
-    GameManager& GM = GameManager::get();
+    //GameManager& GM = GameManager::get();
 
     float deltaTime = lastFrameDT.count();
 
@@ -127,12 +127,12 @@ void State_Boxing_Theater::tick()
         float noiseAlpha = lfo.evaluate(x + y);
         outColor = palette.getColor(noiseAlpha);
 
-        GM.OutfitLEDs->setHSV(pixelIdx, outColor);
+        //GM.OutfitLEDs->setHSV(pixelIdx, outColor);
     }
 
     delay(15);
 
-    GM.OutfitLEDs->updateStripPixels();
+    //GM.OutfitLEDs->updateStripPixels();
 }
 
 
@@ -150,7 +150,7 @@ void State_Boxing_Iterate::tick()
 {
     State::tick();
 
-    GameManager& GM = GameManager::get();
+    //GameManager& GM = GameManager::get();
 
     float deltaTime = lastFrameDT.count();
     trackedDeltaTime += deltaTime;
@@ -167,8 +167,8 @@ void State_Boxing_Iterate::tick()
         HSV outColor;
         outColor = palette.getColor(pixelIdx == idx);
 
-        GM.OutfitLEDs->setHSV(pixelIdx, outColor);
+        //GM.OutfitLEDs->setHSV(pixelIdx, outColor);
     }
 
-    GM.OutfitLEDs->updateStripPixels();
+    //GM.OutfitLEDs->updateStripPixels();
 }

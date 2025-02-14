@@ -34,7 +34,7 @@ void State_Obelisk_FourSeasons::tick()
 {
     State::tick();
 
-    GameManager& GM = GameManager::get();
+    //GameManager& GM = GameManager::get();
 
     float deltaTime = lastFrameDT.count();
 
@@ -56,7 +56,7 @@ void State_Obelisk_FourSeasons::tick()
                 ecore::HSVPalette& Palette = palettes[sideIdx];
                 outColor = Palette.getColor(noiseAlpha);
 
-                GM.OutfitLEDs->setHSV(stripPixelIdx, outColor);
+                //GM.OutfitLEDs->setHSV(stripPixelIdx, outColor);
             }
         }
     }
@@ -91,7 +91,7 @@ void State_Obelisk_Theater::tick()
 {
     State::tick();
 
-    GameManager& GM = GameManager::get();
+    //GameManager& GM = GameManager::get();
 
     float deltaTime = lastFrameDT.count();
 
@@ -115,8 +115,8 @@ void State_Obelisk_Theater::tick()
         */
         outColor = palette.getColor(noiseAlpha);
 
-        GM.OutfitLEDs->setHSV(pixelIdx, outColor);
+        //GM.OutfitLEDs->setHSV(pixelIdx, outColor);
     }
 
-    GM.OutfitLEDs->updateStripPixels();
+    //GM.OutfitLEDs->updateStripPixels();
 }

@@ -15,81 +15,59 @@
 #include "../states/state.h"
 
 using namespace ecore;
-using namespace eio;
 using namespace std;
 
-enum class EBrightness
+namespace eio
 {
-    NIGHTTRIP,
-    MIN,
-    MED,
-    HIGH,
-    BLINDING,
-    MAX,
-    COUNT 
-};
+    enum class EBrightness : uint8
+    {
+        NIGHTTRIP,
+        MIN,
+        MED,
+        HIGH,
+        BLINDING,
+        MAX,
+        COUNT 
+    };
 
-uint8_t getEBrightnessAsByte(EBrightness inBrightness);
+    uint8_t getEBrightnessAsByte(EBrightness inBrightness);
 
-class RelicIO
-{
-public:
+    class RelicIO
+    {
+    public:
 
-    RelicIO();
+        RelicIO();
 
-    void init();
-    void cleanup();
+        void init();
+        void cleanup();
 
-    void tick(float deltaTime);
-    void showLeds();
+        void tick(float deltaTime);
+        void showLeds();
+        
+        EBrightness getGlobalBrightness() const;
+        void setGlobalBrightness(EBrightness newBrightness);
 
-    
-    EBrightness getGlobalBrightness() const;
-    void setGlobalBrightness(EBrightness newBrightness);
+    private:
+        // each relic can define an enum for the bytes to be per-device specific
+        map<byte, shared_ptr<HSVStripSegment>> strip_segments;
 
-private:
-    // each relic can define an enum for the bytes to be per-device specific
-    map<byte, shared_ptr<HSVStripSegment>> strip_segments;
+        EBrightness currentBrightness;
+    };
 
-    EBrightness currentBrightness;
-}
+    class RelicCore
+    {
+    public:
+        virtual void init();
+        virtual void preTick();
+        virtual void tick(float deltaTime);
 
-class RelicDevice
-{
-public:
-    void setup();
-    void setup1();
+    protected:
+        // used for accurately simulating time between frames
+        std::chrono::duration<double> lastFrameDT;
+        std::chrono::time_point<std::chrono::system_clock> tickStartTime;
 
-    void loop();
-    void loop1();
+    private:
 
-    void tick();
-    void tickScreen();
-
-    float transitionTime = 8.0f;
-    float timeForStates = 20.0f;
-
-    void setActiveState(std::shared_ptr<State> NewState);
-private
-
-protected:
-    // used for accurately simulating time between frames
-    std::chrono::duration<double> lastFrameDT;
-    std::chrono::time_point<std::chrono::system_clock> tickStartTime;
-
-    // used for accurately simulating time between frames
-    std::chrono::duration<double> lastFrameDT_Screen;
-    std::chrono::time_point<std::chrono::system_clock> tickStartTime_Screen;
-
-private:
-
-    static bool runButtonHeldTestAndReset(Button* inButton);
-
-    std::vector<std::shared_ptr<State>> States;
-    std::shared_ptr<State> ActiveState;
-    std::shared_ptr<State> NextState;
-
-    float currentTransitionTime;
-
-    bool bSetupComplete = false;
+        bool bSetupComplete = false;
+    };
 }

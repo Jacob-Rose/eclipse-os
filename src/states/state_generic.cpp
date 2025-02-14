@@ -25,12 +25,13 @@ void State_Generic::tick()
 {
     State::tick();
 
-    GameManager& GM = GameManager::get();
+    //GameManager& GM = GameManager::get();
 
     float deltaTime = lastFrameDT.count();
 
     if(generator)
-    {  
+    {
+        /*
         if(Tickable* genAsTickable = dynamic_cast<Tickable*>(generator.get()))
         {
             genAsTickable->tick(deltaTime);
@@ -40,15 +41,16 @@ void State_Generic::tick()
         for(uint16_t i = 0; i < GM.OutfitLEDs->getLength(); ++i)
         {
             generator->applyEffectLogic(i, colorBuffer);
-            GM.OutfitLEDs->setHSV(i, colorBuffer);
+            //GM.OutfitLEDs->setHSV(i, colorBuffer);
         }
-        GM.OutfitLEDs->updateStripPixels();
+        //GM.OutfitLEDs->updateStripPixels();
 
         for(uint16_t i = 0; i < GM.RingLEDs->getLength(); ++i)
         {
             generator->applyEffectLogic(i, colorBuffer);
-            GM.RingLEDs->setHSV(i, colorBuffer);
+            //GM.RingLEDs->setHSV(i, colorBuffer);
         }
-        GM.RingLEDs->updateStripPixels();
+        //GM.RingLEDs->updateStripPixels();
+        */
     }
 }

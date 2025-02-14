@@ -1,5 +1,7 @@
 #include "relic.h"
 
+using namespace eio;
+
 uint8_t getEBrightnessAsByte(EBrightness inBrightness){
     switch(inBrightness)
     {
@@ -35,4 +37,12 @@ void GameManager::setGlobalBrightness(EBrightness newBrightness)
     RingLEDs->setStripBrightness(brightnessByte);
     OutfitLEDs->setStripBrightness(brightnessByte);
     GlassesLEDs->setStripBrightness(brightnessByte);
+}
+
+void RelicCore::preTick()
+{
+    lastFrameDT = std::chrono::system_clock::now() - tickStartTime;
+    tickStartTime = std::chrono::system_clock::now();
+
+    tick(lastFrameDT.count());
 }

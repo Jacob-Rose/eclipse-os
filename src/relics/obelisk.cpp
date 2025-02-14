@@ -3,9 +3,7 @@
 // This file is part of project necklace_code_c
 // See readme.md for full license details.
 
-#include "Obelisk.h"
-
-#include "gm.h"
+#include "obelisk.h"
 
 #include "lib/ecore/logging.h"
 
@@ -107,22 +105,3 @@ void Obelisk::setActiveState(std::shared_ptr<State> InState)
     }
 }
 
-bool Obelisk::runButtonHeldTestAndReset(Button* inButton)
-{
-    constexpr float HoldThreshold = 0.005f;
-    if(inButton->isPressed())
-    {
-        bool bPressedLongEnough = inButton->getTimeSinceStateChange() > HoldThreshold;
-        if(bPressedLongEnough && inButton->bHasBeenReleased)
-        {
-            inButton->resetTimeSinceStateChange();
-            inButton->bHasBeenReleased = false;
-            return true;
-        }
-    }
-    else
-    {
-        inButton->bHasBeenReleased = true;
-    }
-    return false;
-}

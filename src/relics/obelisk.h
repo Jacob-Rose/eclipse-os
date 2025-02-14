@@ -6,9 +6,7 @@
 #pragma once
 
 #include <memory>
-#include "states/state.h"
-
-#include "lib/eio/button.h"
+#include "../lib/esm/state.h"
 
 using namespace ecore;
 using namespace eio;

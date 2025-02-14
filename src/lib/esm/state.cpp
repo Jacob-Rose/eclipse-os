@@ -5,10 +5,11 @@
 
 #include "state.h"
 
-#include "../gm.h"
-#include "../lib/ecore/logging.h"
+#include "../ecore/logging.h"
 
 using namespace ecore;
+using namespace esm;
+using namespace std;
 
 State::State(const char* InStateName)
 {
@@ -55,14 +56,9 @@ void State::onStateEnd()
     tickMsg.append(GetStateName());
     dbgLog(tickMsg.c_str(), Verbosity::Display, Category::StateInfo);
 #endif
-
-#if USE_SCREEN
-    GameManager& GM = GameManager::get();
-    GM.screenDrawer.cancelGifRender();
-#endif
 }
 
-void State::tick()
+void State::tick(float deltaTime)
 {
 }
 
@@ -79,13 +75,27 @@ void State::runTick()
     lastFrameDT = std::chrono::system_clock::now() - tickStartTime;
     tickStartTime = std::chrono::system_clock::now();
 
-
-    tick();
+    tick(lastFrameDT);
 }
 
-void State::addStateTransition(std::weak_ptr<State> inState, TransitionLambda lambda)
+void State::addStateTransition(weak_ptr<State> inState, TransitionLambda lambda)
 {
     stateTransitions[inState] = lambda;
+}
+
+weak_ptr<State> State::runStateTransitionTest() const
+{
+    /*
+    for(auto transition : stateTransitions)
+    {
+        if(transition.first())
+        {
+
+        }
+    }
+    */
+
+   return nullptr;
 }
 
 std::chrono::duration<double> State::GetStateActiveDuration() const

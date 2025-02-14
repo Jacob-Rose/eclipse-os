@@ -13,7 +13,7 @@ using namespace ecore;
 using namespace eio;
 using namespace std;
 
-class JacketRelicIO : public RelicIO
+class PendantRelicIO : public RelicIO
 {
 
 };

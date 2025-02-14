@@ -32,10 +32,13 @@ namespace eio
 
         bool bHasBeenReleased = true; // hacky implementation done on necklace
 
-        // lets us reset button timers easily
-        void resetTimeSinceStateChange();
+        bool runButtonPressedScan(); // if true, we reset, so cache polling
+        
     private:
         bool pollPressed();
+
+        // lets us reset button timers easily
+        void resetTimeSinceStateChange();
 
         uint8_t myPin;
 

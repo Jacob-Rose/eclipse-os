@@ -6,9 +6,14 @@
 #pragma once
 
 #include <memory>
-#include "states/state.h"
+
+#include "relic.h"
 
 using namespace ecore;
 using namespace eio;
 using namespace std;
 
+class GloveRelicIO : public RelicIO
+{
+
+};

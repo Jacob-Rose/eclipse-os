@@ -8,8 +8,7 @@
 #include "pico/stdlib.h"
 #include "pico/multicore.h"
 
-#include "src/obelisk.h"
-#include "src/gm.h"
+#include "src/relics/obelisk.h"
 #include "src/lib/ecore/logging.h"
 
 #include <string>
@@ -21,9 +20,7 @@ void setup() {
   
   delay(500);
 
-  GameManager::initSingleton();
-  //SPI.begin();
-  obelisk.setup();
+  obelisk.init();
 }
 
 void loop() {
@@ -31,17 +28,16 @@ void loop() {
 }
 
 void setup1() {
-  delay(500);
+  //delay(500);
 }
 
 void loop1()
 {
-  obelisk.loop1();
+  //obelisk.loop1();
   //delay(10);
 }
 
 // not called anywhere, since when would it be? but worth including for knowledge
 void cleanup(void)
 {
-  GameManager::cleanupSingleton();
 }
