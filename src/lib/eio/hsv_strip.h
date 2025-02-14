@@ -16,6 +16,7 @@
 #include "../ecore/hsv.h"
 
 using namespace ecore;
+using namespace std;
 
 namespace eio
 {
@@ -61,11 +62,44 @@ namespace eio
         Adafruit_NeoPixel strip;
     };
 
+
     struct Coordinate
     {
+    public:
         Coordinate(float x, float y);
         float x;
         float y;
+    };
+
+    class HSVStripNode
+    {
+        int stripIdx; //led index
+    };
+
+
+    class MappedHSVStripNode : public HSVStripNode
+    {
+    public:
+        Coordinate coord;
+
+    };
+
+    class HSVStripNodeFactory
+    {
+        vector<shared_ptr<MappedHSVStripNode*>> GenerateAxisRow(float xDelta, float yDelta, int startIdx, int Length);
+    };
+
+    class HSVStripSegment
+    {
+
+    private:
+        HSVStrip* parentStrip{nullptr};
+
+    public:
+        void init(HSVStrip* inParentStrip, int inStartIdx, int inLength);
+        
+        vector<HSVStripNode*> Nodes;
+
     };
 
 /*

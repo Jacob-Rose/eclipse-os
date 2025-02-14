@@ -88,19 +88,10 @@
 using namespace ecore;
 using namespace eio;
 
+#include "relics/relic.h" //TODO KILL ME WITH THIS FILE
 
-enum class EBrightness
-{
-    NIGHTTRIP,
-    MIN,
-    MED,
-    HIGH,
-    BLINDING,
-    MAX,
-    COUNT 
-};
 
-uint8_t getEBrightnessAsByte(EBrightness inBrightness);
+
 
 class GameManager
 {
