@@ -12,7 +12,7 @@
 
 #include "../lib/eio/hsv_strip.h"
 
-#include "../states/state.h"
+#include "../lib/esm/state.h"
 
 using namespace ecore;
 using namespace std;
@@ -49,7 +49,7 @@ namespace eio
 
     private:
         // each relic can define an enum for the bytes to be per-device specific
-        map<byte, shared_ptr<HSVStripSegment>> strip_segments;
+        std::map<byte, shared_ptr<HSVStripSegment>, owner_less<HSVStripSegment>> strip_segments;
 
         EBrightness currentBrightness;
     };

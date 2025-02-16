@@ -5,10 +5,9 @@
 
 #pragma once
 
-#include "state.h"
-
 #include <memory>
 
+#include "../lib/esm/state.h"
 #include "../lib/eanim/generator_hsv.h"
 
 using namespace ecore;

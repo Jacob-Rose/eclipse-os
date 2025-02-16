@@ -50,7 +50,7 @@ namespace eas
         chrono::duration<double> GetTimeSinceTickStarted() const;     // returned in seconds
 
     private:
-        map<owner_less<weak_ptr<State>>, TransitionLambda> stateTransitions;
+        std::map<weak_ptr<State>, TransitionLambda, owner_less<weak_ptr<State>>> stateTransitions;
 
     protected:
         // used for accurately simulating time between frames
@@ -65,7 +65,7 @@ namespace eas
         chrono::time_point<chrono::system_clock> tickStartTime;
         
         // maps to a custom enum set up by the specific state
-        map<byte, float> animAttributes;
+        std::map<byte, float> animAttributes;
 
         std::chrono::time_point<std::chrono::system_clock> activationTime;
 

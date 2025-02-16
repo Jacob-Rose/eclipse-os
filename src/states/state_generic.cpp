@@ -6,7 +6,6 @@
 
 #include "../lib/ecore/math.h"
 #include "../lib/ecore/logging.h"
-#include "../gm.h"
 
 #include "../imgs/eclipse.h"
 

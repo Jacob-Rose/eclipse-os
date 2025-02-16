@@ -5,11 +5,11 @@
 
 #include "obelisk.h"
 
-#include "lib/ecore/logging.h"
+#include "../lib/ecore/logging.h"
 
-#include "states/state_generic.h"
-#include "states/state_obelisk.h"
-#include "states/state_boxing.h"
+#include "../states/state_generic.h"
+#include "../states/state_obelisk.h"
+#include "../states/state_boxing.h"
 
 #include <chrono>
 #include <ctime>
