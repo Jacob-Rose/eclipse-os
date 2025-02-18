@@ -49,6 +49,10 @@ RelicCore::RelicCore()
 {
 }
 
+void RelicCore::init()
+{
+}
+
 void RelicCore::preTick()
 {
     lastFrameDT = std::chrono::system_clock::now() - tickStartTime;

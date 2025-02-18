@@ -63,11 +63,11 @@ namespace eio
 
         virtual void init();
         virtual void preTick();
-        virtual void tick(float deltaTime);
+        virtual void tick(float deltaTime) {}
 
         void runTick() { preTick(); }
 
-    protected:
+    private:
         // used for accurately simulating time between frames
         std::chrono::duration<double> lastFrameDT;
         std::chrono::time_point<std::chrono::system_clock> tickStartTime;
