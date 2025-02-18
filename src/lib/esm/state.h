@@ -65,7 +65,7 @@ namespace eas
         chrono::time_point<chrono::system_clock> tickStartTime;
         
         // maps to a custom enum set up by the specific state
-        std::map<byte, float> animAttributes;
+        //std::map<byte, float> animAttributes;
 
         std::chrono::time_point<std::chrono::system_clock> activationTime;
 

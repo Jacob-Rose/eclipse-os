@@ -8,36 +8,46 @@
 #include "pico/stdlib.h"
 #include "pico/multicore.h"
 
+#include <string>
+
 #include "src/relics/obelisk.h"
 #include "src/lib/ecore/logging.h"
 
-#include <string>
+using namespace std;
 
-Obelisk obelisk;
+unique_ptr<RelicCore> relic;
 
 void setup() {
   Serial.begin(19200);
   
   delay(500);
 
-  obelisk.init();
+  relic = make_unique<ObeliskCore>();
+
+  if(relic)
+  {
+    relic->init();
+  }
 }
 
 void loop() {
-  obelisk.loop();
+  if(relic)
+  {
+    relic->runTick();
+  }
 }
 
 void setup1() {
-  //delay(500);
+
 }
 
 void loop1()
 {
-  //obelisk.loop1();
-  //delay(10);
+
 }
 
 // not called anywhere, since when would it be? but worth including for knowledge
 void cleanup(void)
 {
+  relic = nullptr;
 }

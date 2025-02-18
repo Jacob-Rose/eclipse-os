@@ -19,7 +19,7 @@ using namespace std;
 
 namespace eio
 {
-    enum class EBrightness : uint8
+    enum EBrightness
     {
         NIGHTTRIP,
         MIN,
@@ -49,7 +49,7 @@ namespace eio
 
     private:
         // each relic can define an enum for the bytes to be per-device specific
-        std::map<byte, shared_ptr<HSVStripSegment>, owner_less<HSVStripSegment>> strip_segments;
+        std::map<uint8_t, shared_ptr<HSVStripSegment>> strip_segments;
 
         EBrightness currentBrightness;
     };
@@ -60,6 +60,8 @@ namespace eio
         virtual void init();
         virtual void preTick();
         virtual void tick(float deltaTime);
+
+        void runTick() { preTick(); }
 
     protected:
         // used for accurately simulating time between frames

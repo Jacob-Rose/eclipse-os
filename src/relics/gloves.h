@@ -13,7 +13,12 @@ using namespace ecore;
 using namespace eio;
 using namespace std;
 
-class GloveRelicIO : public RelicIO
+class GloveIO : public RelicIO
+{
+
+};
+
+class GlovesCore : public RelicCore
 {
 
 };

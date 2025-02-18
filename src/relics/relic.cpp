@@ -28,15 +28,16 @@ EBrightness RelicIO::getGlobalBrightness() const
     return currentBrightness;
 }
 
-void GameManager::setGlobalBrightness(EBrightness newBrightness)
+void RelicIO::setGlobalBrightness(EBrightness newBrightness)
 {
     currentBrightness = newBrightness;
 
     uint8_t brightnessByte = getEBrightnessAsByte(newBrightness);
 
-    RingLEDs->setStripBrightness(brightnessByte);
-    OutfitLEDs->setStripBrightness(brightnessByte);
-    GlassesLEDs->setStripBrightness(brightnessByte);
+    for(auto seg : strip_segments)
+    {
+        seg.value->setGlobalBrightness(brightnessByte);
+    }
 }
 
 void RelicCore::preTick()

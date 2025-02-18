@@ -5,15 +5,19 @@
 
 #pragma once
 
-#include <memory>
+#include "../lib/esm/state.h"
 
 #include "relic.h"
 
 using namespace ecore;
 using namespace eio;
-using namespace std;
 
-class JacketRelicIO : public RelicIO
+class JacketIO : public RelicIO
+{
+
+};
+
+class JacketCore : public RelicCore
 {
 
 };
