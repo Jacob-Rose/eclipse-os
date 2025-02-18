@@ -5,10 +5,6 @@
 
 #pragma once
 
-#include <stdio.h>
-#include "pico/stdlib.h"
-#include <Arduino.h>
-
 #include "../ecore/tickable.h"
 #include "attribute_float.h"
 

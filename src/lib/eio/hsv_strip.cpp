@@ -5,17 +5,30 @@
 
 #include "hsv_strip.h"
 
-#include "../ecore/logging.h"
 #include <memory>
+
+#include "../ecore/logging.h"
+
+
 
 using namespace eio;
 using namespace std;
 
-HSVStrip::HSVStrip(uint16_t inLedCount, uint16_t inLedPin, neoPixelType inPixelType) : strip(inLedCount, inLedPin, inPixelType)
+/*
+#if USING_NEOPIXEL
+HSVStrip::HSVStrip(uint16_t inLedCount, uint16_t inLedPin, neoPixelType inPixelType) : HSVStrip(inLedCount, inLedPin)
+, strip(inLedCount, inLedPin, inPixelType)
 {
     strip_HSV = std::vector<HSV>(inLedCount);
 
     strip.begin();
+}
+#endif
+*/
+
+HSVStrip::HSVStrip(uint16_t inLedCount, uint16_t inLedPin)
+{
+
 }
 
 HSVStrip::~HSVStrip()
@@ -57,6 +70,7 @@ void HSVStrip::setBrightness(uint16_t idx, uint8_t val)
 
 void HSVStrip::updateStripPixel(uint16_t idx)
 {
+#if USING_NEOPIXEL
     uint32_t neoColor = Adafruit_NeoPixel::ColorHSV(strip_HSV[idx].getHueAs16(), strip_HSV[idx].getSatAs8(), strip_HSV[idx].getValAs8());
     if(bUsesGammaCorrection)
     {
@@ -64,26 +78,38 @@ void HSVStrip::updateStripPixel(uint16_t idx)
     }
 
     strip.setPixelColor(idx, neoColor);
+#endif
 }
 
 void HSVStrip::show()
 {
+#if USING_NEOPIXEL
     strip.show();
+#endif
 }
 
 uint16_t HSVStrip::getLength() const
 {
+#if USING_NEOPIXEL
     return strip.numPixels();
+#endif
+    return 0;
 }
 
 uint8_t HSVStrip::getStripBrightness() const
 {
+#if USING_NEOPIXEL
     return strip.getBrightness();
+#endif
+
+    return 0;
 }
 
 void HSVStrip::setStripBrightness(uint8_t inBrightness)
 {
+#if USING_NEOPIXEL
     strip.setBrightness(inBrightness);
+#endif
 }
 
 void HSVStrip::updateStripPixels()

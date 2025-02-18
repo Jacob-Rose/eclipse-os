@@ -8,11 +8,6 @@
 #include <vector>
 #include <memory>
 
-#include <Adafruit_NeoPixel.h>
-
-#include "../ecore/hsv.h"
-
-using namespace ecore;
 using namespace std;
 
 namespace ecore

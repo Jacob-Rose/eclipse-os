@@ -5,10 +5,6 @@
 
 #pragma once
 
-#include <stdio.h>
-#include "pico/stdlib.h"
-#include <Arduino.h>
-
 namespace eanim
 {
     /* @brief FloatAttribute is an interface to allow for a simple getter value

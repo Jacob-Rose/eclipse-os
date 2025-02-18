@@ -4,11 +4,10 @@
 // See readme.md for full license details.
 
 #include "logging.h"
-#include <Arduino.h>
 
 #include <type_traits>
 
-using namespace ecore;
+using namespace ecore::log;
 
 Category operator&(Category lhs, Category rhs) {
     return static_cast<Category>(
@@ -24,7 +23,7 @@ Category operator|(Category lhs, Category rhs) {
     );
 }
 
-void ecore::dbgLog(const char *InMsg, Verbosity InVerbosity, Category InHideCategories)
+void dbgLog(const char *InMsg, Verbosity InVerbosity, Category InHideCategories)
 {
     //TODO FixMe
     /*
@@ -40,6 +39,7 @@ void ecore::dbgLog(const char *InMsg, Verbosity InVerbosity, Category InHideCate
         return;
     }
     */
-
+#if USING_NEOPIXEL
     Serial.println(InMsg);
+#endif
 }

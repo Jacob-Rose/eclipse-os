@@ -5,6 +5,7 @@
 
 #include "generator_float.h"
 #include <algorithm>
+#include <cmath>
 
 using namespace eanim;
 
@@ -25,7 +26,7 @@ void LFO::tick(float deltaTime)
 
 float LFO::evaluate(float inVal) const
 {
-    float evaluatedOffset = (inVal / width * PI * 2.f); // 2. makes it so that the width goes a full cycle instead of half
+    float evaluatedOffset = (inVal / width * 3.14159265 * 2.f); // 2. makes it so that the width goes a full cycle instead of half
     float sinVal = std::sin(evaluatedOffset + currentOffset + initialOffset);
     return std::clamp((sinVal / 2) + 0.5f, 0.f, 1.0f);
 }

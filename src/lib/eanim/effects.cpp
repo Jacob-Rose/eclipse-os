@@ -78,7 +78,8 @@ float FireGenerator::evaluate(float value) const
 
     if(ess_equal(value, 0.0f))
     {
-        Serial.print(evaluation);
+        // TODO use elog system
+        //Serial.print(evaluation);
     }
 
     return evaluation;

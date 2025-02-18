@@ -5,10 +5,6 @@
 
 #pragma once
 
-#include <stdio.h>
-#include "pico/stdlib.h"
-#include <Arduino.h>
-
 #include "fp.h"
 
 #include <utility>
@@ -24,7 +20,7 @@ using namespace efp;
 namespace ecore
 {
 
-
+#if 0
     // originally taken from Adafruit NeoPixel
     static const uint8_t PROGMEM GammaBrightnessCorrection[256] = {
     0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
@@ -45,6 +41,7 @@ namespace ecore
     184, 186, 188, 191, 193, 195, 197, 199, 202, 204, 206, 209, 211, 213, 215,
     218, 220, 223, 225, 227, 230, 232, 235, 237, 240, 242, 245, 247, 250, 252,
     255};
+#endif
 
     struct HSV
     {

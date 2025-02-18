@@ -8,7 +8,12 @@
 #include <vector>
 #include <memory>
 
+#define USING_NEOPIXEL false
+
+#if USING_NEOPIXEL
+#include <Arduino.h>
 #include <Adafruit_NeoPixel.h>
+#endif
 
 #include "../ecore/hsv.h"
 #include "../ecore/coord.h"
@@ -28,7 +33,12 @@ namespace eio
     class HSVStrip
     {
     public:
+/*
+#if USING_NEOPIXEL
         HSVStrip(uint16_t inLedCount, uint16_t inLedPin, neoPixelType inPixelType);
+#endif
+*/
+        HSVStrip(uint16_t inLedCount, uint16_t inLedPin);
         ~HSVStrip();
 
         HSV getHSV(uint16_t idx) const;
@@ -56,8 +66,9 @@ namespace eio
         bool bUsesGammaCorrection = true;
 
         std::vector<HSV> strip_HSV;
-
+#if USING_NEOPIXEL
         Adafruit_NeoPixel strip;
+#endif
     };
 
 

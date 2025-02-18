@@ -7,7 +7,6 @@
 
 #include <stdio.h>
 #include "pico/stdlib.h"
-#include <Arduino.h>
 
 ///
 /// Fixed point standards for getting floating point style ranges with much more performant fixed point arithmetic.
