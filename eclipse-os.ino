@@ -8,12 +8,16 @@
 #include "pico/stdlib.h"
 #include "pico/multicore.h"
 
+namespace arduino = ::arduino;
+
 #include <string>
 
 #include "src/relics/obelisk.h"
 #include "src/lib/ecore/logging.h"
 
 using namespace std;
+// Ensure the correct byte type is used
+using byte = uint8_t;
 
 unique_ptr<RelicCore> relic;
 

@@ -50,6 +50,7 @@ namespace eio
     private:
         // each relic can define an enum for the bytes to be per-device specific
         std::map<uint8_t, shared_ptr<HSVStripSegment>> strip_segments;
+        std::map<uint8_t, shared_ptr<HSVStrip>> strips;
 
         EBrightness currentBrightness;
     };
@@ -57,6 +58,9 @@ namespace eio
     class RelicCore
     {
     public:
+
+        RelicCore();
+
         virtual void init();
         virtual void preTick();
         virtual void tick(float deltaTime);

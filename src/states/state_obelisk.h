@@ -17,6 +17,8 @@
 using namespace ecore;
 using namespace eanim;
 
+#if 0
+
 #define WALL_SIDE_LENGTH 43
 
 inline HSVPalette p_summer {
@@ -84,3 +86,5 @@ public:
 
     std::shared_ptr<GeneratorHSV> generator;
 };
+
+#endif

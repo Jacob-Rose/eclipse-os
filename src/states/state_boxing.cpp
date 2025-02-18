@@ -10,6 +10,8 @@
 
 #include "../imgs/eclipse.h"
 
+#if 0
+
 using namespace eanim;
 
 State_Boxing_Noise::State_Boxing_Noise(const char* InStateName) : State(InStateName)
@@ -171,3 +173,5 @@ void State_Boxing_Iterate::tick()
 
     //GM.OutfitLEDs->updateStripPixels();
 }
+
+#endif

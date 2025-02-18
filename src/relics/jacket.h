@@ -14,10 +14,12 @@ using namespace eio;
 
 class JacketIO : public RelicIO
 {
-
+public:
+    JacketIO();
 };
 
 class JacketCore : public RelicCore
 {
-
+public:
+    JacketCore();
 };

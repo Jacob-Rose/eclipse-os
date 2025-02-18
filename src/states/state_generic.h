@@ -12,6 +12,8 @@
 
 using namespace ecore;
 using namespace eanim;
+using namespace esm;
+using namespace std;
 
 /*
 * Just runs the provided pattern
@@ -21,9 +23,9 @@ class State_Generic : public State
 public:
     State_Generic(const char* InStateName);
 
+protected:
     virtual void onStateBegin() override;
+    virtual void tick(float deltaTime) override;
 
-    virtual void tick() override;
-
-    std::shared_ptr<GeneratorHSV> generator;
+    shared_ptr<GeneratorHSV> generator;
 };

@@ -11,7 +11,11 @@ using namespace ecore;
 using namespace esm;
 using namespace std;
 
-State::State(const char* InStateName)
+State::State() : State("untitled")
+{
+}
+
+State::State(const char *InStateName)
 {
     stateName = InStateName;
 }
@@ -46,7 +50,6 @@ void State::onStateBegin()
     activationTime = std::chrono::system_clock::now();
 
     tickStartTime = std::chrono::system_clock::now();
-    tickStartTime_Screen = std::chrono::system_clock::now();
 }
 
 void State::onStateEnd()
@@ -72,10 +75,10 @@ void State::runTick()
     //dbgPrint(std::to_string(GetStateActiveDuration().count()));
 #endif
 
-    lastFrameDT = std::chrono::system_clock::now() - tickStartTime;
-    tickStartTime = std::chrono::system_clock::now();
+    lastFrameDT = chrono::system_clock::now() - tickStartTime;
+    tickStartTime = chrono::system_clock::now();
 
-    tick(lastFrameDT);
+    tick(lastFrameDT.count());
 }
 
 void State::addStateTransition(weak_ptr<State> inState, TransitionLambda lambda)
@@ -85,28 +88,35 @@ void State::addStateTransition(weak_ptr<State> inState, TransitionLambda lambda)
 
 weak_ptr<State> State::runStateTransitionTest() const
 {
+    /* TODO  integrate w state machine */
     /*
-    for(auto transition : stateTransitions)
+    for (const auto& transition : stateTransitions)
     {
-        if(transition.first())
+        bool bTransitionConditionMet = transition.second(this, this); // Check if the transition condition is met
+        if (transition.second.operator()) // Check if the transition condition is met
         {
-
+            return transition.first; // Return the corresponding state
         }
     }
-    */
+        */
 
-   return nullptr;
+    return std::weak_ptr<State>(); // Return nullptr if no transition condition is met
 }
 
-std::chrono::duration<double> State::GetStateActiveDuration() const
+chrono::duration<double> State::GetStateActiveDuration() const
 {
-    std::chrono::duration<double> timeDiff = tickStartTime - activationTime;
+    chrono::duration<double> timeDiff = tickStartTime - activationTime;
     return timeDiff;
 }
 
-std::chrono::duration<double> State::GetTimeSinceTickStarted() const
+chrono::duration<double> State::GetTimeSinceTickStarted() const
 {
-    std::chrono::time_point<std::chrono::system_clock> currentTime = std::chrono::system_clock::now();
-    std::chrono::duration<double> timeDiff = currentTime - tickStartTime;
+    chrono::time_point<chrono::system_clock> currentTime = chrono::system_clock::now();
+    chrono::duration<double> timeDiff = currentTime - tickStartTime;
     return timeDiff;
+}
+
+void StateMachine::setActiveState(shared_ptr<State> InNextState)
+{
+    // TODO
 }

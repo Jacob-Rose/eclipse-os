@@ -7,7 +7,6 @@
 
 #include <stdio.h>
 #include "pico/stdlib.h"
-#include <Arduino.h>
 
 #include <string>
 

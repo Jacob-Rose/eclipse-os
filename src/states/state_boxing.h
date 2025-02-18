@@ -21,6 +21,8 @@ using namespace eanim;
 
 #define LED_COUNT (ROW_LENGTH * COLUMN_LENGTH)
 
+#if 0
+
 /*
 * Just runs the provided pattern
 */
@@ -75,3 +77,5 @@ public:
 
     float trackedDeltaTime = 0.0f;
 };
+
+#endif

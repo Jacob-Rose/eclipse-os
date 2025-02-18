@@ -10,6 +10,7 @@
 #include "../imgs/eclipse.h"
 
 using namespace eanim;
+using namespace esm;
 
 State_Generic::State_Generic(const char* InStateName) : State(InStateName)
 {
@@ -20,13 +21,11 @@ void State_Generic::onStateBegin()
     State::onStateBegin();
 }
 
-void State_Generic::tick()
+void State_Generic::tick(float deltaTime)
 {
-    State::tick();
+    State::tick(deltaTime);
 
     //GameManager& GM = GameManager::get();
-
-    float deltaTime = lastFrameDT.count();
 
     if(generator)
     {

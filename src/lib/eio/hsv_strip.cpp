@@ -94,24 +94,19 @@ void HSVStrip::updateStripPixels()
     }
 }
 
-vector<shared_ptr<HSVStripNode>> HSVStripNodeFactory::GenerateAxisRow(float xDelta, float yDelta, int startIdx, int Length){
+vector<shared_ptr<MappedHSVStripNode>> HSVStripNodeFactory::GenerateAxisRow(float xDelta, float yDelta, int startIdx, int Length) {
     float xAmt = 0.f, yAmt = 0.f;
 
-    vector<shared_ptr<HSVStripNode>> Nodes;
+    vector<shared_ptr<MappedHSVStripNode>> Nodes;
     
     for(int idx = 0; idx < Length; ++idx)
     {
-        shared_ptr<MappedHSVStripNode> Node = make_shared<HSVStripNode>();
-        Node.stripIdx = idx + startIdx;
-        Node.coord.x = xAmt;
-        Node.coord.u = yAmt;
-        Nodes.push(Node);
+        shared_ptr<MappedHSVStripNode> Node = make_shared<MappedHSVStripNode>();
+        Node->stripIdx = idx + startIdx;
+        Node->coord.x = xAmt;
+        Node->coord.y = yAmt;
+        Nodes.push_back(Node);
     }
-}
 
-void HSVStripSegment::init(HSVStrip* inParentStrip, int inStartIdx, int inLength)
-{
-    parentStrip = inParentStrip;
-    startIdx = inStartIdx;
-    inLength = inLength;
+    return Nodes;
 }

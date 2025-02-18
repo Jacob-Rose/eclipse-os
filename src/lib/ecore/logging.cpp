@@ -4,6 +4,7 @@
 // See readme.md for full license details.
 
 #include "logging.h"
+#include <Arduino.h>
 
 #include <type_traits>
 

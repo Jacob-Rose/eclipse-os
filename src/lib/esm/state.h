@@ -15,7 +15,7 @@
 
 using namespace std;
 
-namespace eas
+namespace esm
 {
     /* @brief States are the structures that really handle all of the associated properties. They handle input themselves.
     * States support generalized lambda based transitions for easily writing inline setters
@@ -23,6 +23,7 @@ namespace eas
     class State
     {
     public:
+        State();
         State(const char* InStateName);
 
         virtual void init();
@@ -56,8 +57,6 @@ namespace eas
         // used for accurately simulating time between frames
         chrono::duration<double> lastFrameDT;
 
-    private:
-
         bool bInit = false;
         bool bInitScreen = false;
 
@@ -75,13 +74,11 @@ namespace eas
     class StateMachine
     {
     public:
-        void addState();
-        void setActiveState(shared_ptr<State> NewState);
+        void setActiveState(shared_ptr<State> InNextState);
 
         float transitionTime = 8.0f;
 
     private:
-        vector<shared_ptr<State>> States;
         shared_ptr<State> ActiveState;
         shared_ptr<State> NextState;
 

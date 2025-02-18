@@ -4,3 +4,11 @@
 // See readme.md for full license details.
 
 #include "obelisk.h"
+
+ObeliskIO::ObeliskIO() : RelicIO()
+{
+}
+
+ObeliskCore::ObeliskCore() : RelicCore()
+{
+}

@@ -47,8 +47,8 @@ bool Button::runButtonPressedScan()
     constexpr float HoldThreshold = 0.005f;
     if(isPressed())
     {
-        bool bPressedLongEnough = inButton->getTimeSinceStateChange() > HoldThreshold;
-        if(bPressedLongEnough && inButton->bHasBeenReleased)
+        bool bPressedLongEnough = getTimeSinceStateChange() > HoldThreshold;
+        if(bPressedLongEnough && bHasBeenReleased)
         {
             timeSinceStateChanged = 0.0f;
             bHasBeenReleased = false;

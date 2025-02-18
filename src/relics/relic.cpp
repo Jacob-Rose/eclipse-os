@@ -23,6 +23,11 @@ uint8_t getEBrightnessAsByte(EBrightness inBrightness){
     return 0;
 }
 
+RelicIO::RelicIO()
+{
+    setGlobalBrightness(EBrightness::MED);
+}
+
 EBrightness RelicIO::getGlobalBrightness() const
 {
     return currentBrightness;
@@ -34,10 +39,14 @@ void RelicIO::setGlobalBrightness(EBrightness newBrightness)
 
     uint8_t brightnessByte = getEBrightnessAsByte(newBrightness);
 
-    for(auto seg : strip_segments)
+    for(auto seg : strips)
     {
-        seg.value->setGlobalBrightness(brightnessByte);
+        seg.second->setStripBrightness(brightnessByte);
     }
+}
+
+RelicCore::RelicCore()
+{
 }
 
 void RelicCore::preTick()

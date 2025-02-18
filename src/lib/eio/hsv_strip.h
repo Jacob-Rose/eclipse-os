@@ -6,17 +6,19 @@
 #pragma once
 
 #include <vector>
+#include <memory>
 
 #include <Adafruit_NeoPixel.h>
 
 #include "../ecore/hsv.h"
+#include "../ecore/coord.h"
 
 using namespace ecore;
 using namespace std;
 
 namespace eio
 {
-        /// @brief HSV Wrapper for Adafruit_Neopixel
+    /// @brief HSV Wrapper for Adafruit_Neopixel
     ///
     /// HSV Wrapper for an Adafruit Neopixel strip, allows us to lerp and perform much cleaner calculations 
     /// at the cost of performance, but honestly, def worth it in this case.
@@ -59,22 +61,20 @@ namespace eio
     };
 
 
-    struct Coordinate
-    {
-    public:
-        Coordinate(float x, float y);
-        float x;
-        float y;
-    };
-
     class HSVStripNode
     {
-        int stripIdx; //led index
+    public:
+        HSVStripNode();
+    public:
+        //led index
+        int stripIdx; 
     };
 
 
     class MappedHSVStripNode : public HSVStripNode
     {
+    public:
+        MappedHSVStripNode() {}
     public:
         Coordinate coord;
 
@@ -82,45 +82,18 @@ namespace eio
 
     class HSVStripNodeFactory
     {
-        vector<shared_ptr<MappedHSVStripNode*>> GenerateAxisRow(float xDelta, float yDelta, int startIdx, int Length);
+    public:
+        static vector<shared_ptr<MappedHSVStripNode>> GenerateAxisRow(float xDelta, float yDelta, int startIdx, int Length);
     };
 
     class HSVStripSegment
     {
+    public:
+
 
     private:
         HSVStrip* parentStrip{nullptr};
-
-    public:
-        void init(HSVStrip* inParentStrip, int inStartIdx, int inLength);
-        
         vector<HSVStripNode*> Nodes;
 
     };
-
-/*
-    // same interface to HSVStrip, responsiblity of user to use additional featureset for 2d specific effects
-    // to support dynamic changing of mapping per state as well
-    class MappedHSVStrip : public HSVStrip
-    {
-    public:
-        MappedHSVStrip(uint16_t inLedCount, uint16_t inLedPin, neoPixelType inPixelType);
-        ~MappedHSVStrip();
-
-        virtual Coordinate getCoord(uint16_t idx) const = 0;
-    }
-
-
-    class MappedHSVStrip_BakedData
-    {
-    public:
-        
-        MappedHSVStrip(uint16_t inLedCount, uint16_t inLedPin, neoPixelType inPixelType);
-        ~MappedHSVStrip();
-
-        virtual Coordinate getCoord(uint16_t idx) const;
-    protected:
-        std::vector<Coordinate> coordinates;
-    }
-    */
 }

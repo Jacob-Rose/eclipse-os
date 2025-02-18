@@ -10,6 +10,8 @@
 
 #include "../imgs/eclipse.h"
 
+#if 0
+
 using namespace eanim;
 
 State_Obelisk_FourSeasons::State_Obelisk_FourSeasons(const char* InStateName) : State(InStateName)
@@ -119,3 +121,5 @@ void State_Obelisk_Theater::tick()
 
     //GM.OutfitLEDs->updateStripPixels();
 }
+
+#endif

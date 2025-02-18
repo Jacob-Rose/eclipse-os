@@ -14,10 +14,12 @@ using namespace eio;
 
 class ObeliskIO : public RelicIO
 {
-
+public:
+    ObeliskIO();
 };
 
 class ObeliskCore : public RelicCore
 {
-
+public:
+    ObeliskCore();
 };
