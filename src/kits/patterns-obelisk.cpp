@@ -1,7 +1,5 @@
 #include "patterns-obelisk.h"
 
-#if 0
-
 using namespace eanim;
 using namespace ecore;
 
@@ -24,9 +22,26 @@ void Pattern_Obelisk_RedGreenNoise::tick(float deltaTime)
     coreNoise.tick(deltaTime);
 }
 
-void Pattern_Obelisk_RedGreenNoise::applyEffectLogic(float x, float y, HSV& InOutColor) const
+void Pattern_Obelisk_RedGreenNoise::applyEffectLogic(HSVStripNode* node, HSV& InOutColor) const
 {
     HSV outColor;
+
+    float x = 0.f;
+    float y = 0.f;
+
+    if(node)
+    {
+        if(node->GetStripNodeType() == StripNodeType::MAPPED2D)
+        {
+            HSVStripNode_Mapped2D* castedNode = static_cast<HSVStripNode_Mapped2D*>(node);
+            x = castedNode->coord.x;
+            y = castedNode->coord.y;
+        }
+        else
+        {
+            x = node->stripIdx;
+        }
+    }
 
     float noiseAlpha = coreNoise.evaluate(x, y);
     outColor = mainPalette.getColor(noiseAlpha);
@@ -43,9 +58,7 @@ void Pattern_Obelisk_FourSeasons::tick(float deltaTime)
     
 }
 
-void Pattern_Obelisk_FourSeasons::applyEffectLogic(float x, float y, HSV& InOutColor) const
+void Pattern_Obelisk_FourSeasons::applyEffectLogic(HSVStripNode* node, HSV& InOutColor) const
 {
 
 }
-
-#endif

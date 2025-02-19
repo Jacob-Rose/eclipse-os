@@ -5,7 +5,6 @@
 
 #pragma once
 
-#if 0
 
 #include "../lib/ecore/hsv.h"
 #include "../lib/eanim/effects.h"
@@ -24,7 +23,7 @@ using namespace eanim;
 #define WALL_SIDE_LENGTH 42
 #define WALL_SEGMENTS 2
 
-class Pattern_Obelisk_RedGreenNoise : public GeneratorHSV_Cont2D, public Tickable
+class Pattern_Obelisk_RedGreenNoise : public GeneratorHSV, public Tickable
 {
 public:
     HSVPalette mainPalette = jpalettes::p_bootgradient;
@@ -36,7 +35,7 @@ public:
     
     virtual void tick(float deltaTime) override;
 
-    virtual void applyEffectLogic(float x, float y, HSV& InOutColor) const override;
+    virtual void applyEffectLogic(HSVStripNode* node, HSV& InOutColor) const override;
 private:
     float currentTime;
 };
@@ -63,7 +62,7 @@ inline HSVPalette p_spring {
     HSV(18.0f, 0.612f, 0.941f),
 };
 
-class Pattern_Obelisk_FourSeasons : public GeneratorHSV_Cont2D, public Tickable
+class Pattern_Obelisk_FourSeasons : public GeneratorHSV, public Tickable
 {
 public:
     PerlinNoiseGenerator2D coreNoise;
@@ -74,9 +73,7 @@ public:
     
     virtual void tick(float deltaTime) override;
 
-    virtual void applyEffectLogic(float x, float y, HSV& InOutColor) const override;
+    virtual void applyEffectLogic(HSVStripNode* node, HSV& InOutColor) const override;
 private:
     float currentTime;
 };
-
-#endif
