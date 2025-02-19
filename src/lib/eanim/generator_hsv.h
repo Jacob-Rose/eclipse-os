@@ -12,47 +12,27 @@
 #include "../ecore/hsv.h"
 #include "../ecore/tickable.h"
 
+#include "../eio/strip_projection.h"
+
 using namespace ecore;
+using namespace eio;
 
 
 namespace eanim
 {
 
     /* @brief A Generator that can provide or process colors
-    * due to the nature of this setup, these can also handle alphas and blending between layers
+    * these can also handle alphas and blending between layers, but that is not required
 
     * frankly, partially going toward deprecation, use GeneratorHSV_Cont and GeneratorHSV_Cont2D if possible
     */
     class GeneratorHSV
     {
     public:
-        // generate colozr for provided index
-        virtual void applyEffectLogic(uint16_t idx, HSV& InOutColor) const = 0;
-    };
-
-    /// Generator HSV Continious
-    /// 
-    /// should support blending between positions
-    /// 
-    /// should assume x scale is relative to the led strip's index, and thus the led distance
-    class GeneratorHSV_Cont : public GeneratorHSV
-    {
-    public:
-        // continious can blend between indexes if desired
-        virtual void applyEffectLogic(float x, HSV& InOutColor) const = 0;
-        
-        virtual void applyEffectLogic(uint16_t idx, HSV& InOutColor) const override;
-    };
-
-    /// Generator HSV Continious 2D
-    ///
-    /// should assume x scale is relative to the led strip's index, and thus the led distance
-    class GeneratorHSV_Cont2D : public GeneratorHSV_Cont
-    {
-    public:
-        virtual void applyEffectLogic(float x, float y, HSV& InOutColor) const = 0;
-
-        virtual void applyEffectLogic(float x, HSV& InOutColor) const override;
+        // generate color for provided index
+        // node is provided for any required context
+        virtual void applyEffectLogic(HSVStripNode* node, HSV& InOutColor) const = 0;
+    
     };
 
 

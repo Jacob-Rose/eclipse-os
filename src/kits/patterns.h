@@ -7,6 +7,7 @@
 
 #include "../lib/ecore/hsv.h"
 #include "../lib/eanim/effects.h"
+#include "../lib/eio/strip_projection.h"
 
 #include "palettes.h"
 
@@ -18,6 +19,7 @@
 
 using namespace ecore;
 using namespace eanim;
+using namespace eio;
 
 
 // similar to the last of us menu
@@ -35,7 +37,7 @@ public:
 
     virtual void tick(float deltaTime) override;
 
-    virtual void applyEffectLogic(uint16_t idx, HSV& InOutColor) const override;
+    virtual void applyEffectLogic(HSVStripNode* node, HSV& InOutColor) const override;
 };
 
 class Pattern_RitualFire : public GeneratorHSV, public Tickable
@@ -54,7 +56,7 @@ public:
     
     virtual void tick(float deltaTime) override;
 
-    virtual void applyEffectLogic(uint16_t idx, HSV& InOutColor) const override;
+    virtual void applyEffectLogic(HSVStripNode* node, HSV& InOutColor) const override;
 private:
     float currentTime;
 };

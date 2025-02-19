@@ -2,7 +2,7 @@
 
 using namespace eio;
 
-uint8_t getEBrightnessAsByte(EBrightness inBrightness){
+uint8_t eio::getEBrightnessAsByte(EBrightness inBrightness) {
     switch(inBrightness)
     {
         case EBrightness::NIGHTTRIP:

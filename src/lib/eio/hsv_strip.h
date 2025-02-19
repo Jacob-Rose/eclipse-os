@@ -15,8 +15,9 @@
 #include <Adafruit_NeoPixel.h>
 #endif
 
+#include "strip_projection.h"
+
 #include "../ecore/hsv.h"
-#include "../ecore/coord.h"
 
 using namespace ecore;
 using namespace std;
@@ -71,31 +72,6 @@ namespace eio
 #endif
     };
 
-
-    class HSVStripNode
-    {
-    public:
-        HSVStripNode();
-    public:
-        //led index
-        int stripIdx; 
-    };
-
-
-    class MappedHSVStripNode : public HSVStripNode
-    {
-    public:
-        MappedHSVStripNode() {}
-    public:
-        Coordinate coord;
-
-    };
-
-    class HSVStripNodeFactory
-    {
-    public:
-        static vector<shared_ptr<MappedHSVStripNode>> GenerateAxisRow(float xDelta, float yDelta, int startIdx, int Length);
-    };
 
     class HSVStripSegment
     {

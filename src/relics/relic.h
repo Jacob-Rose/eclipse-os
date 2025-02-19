@@ -10,6 +10,7 @@
 #include <vector>
 #include <map>
 
+#include "../lib/ecore/tickable.h"
 #include "../lib/eio/hsv_strip.h"
 
 #include "../lib/esm/state.h"
@@ -19,7 +20,7 @@ using namespace std;
 
 namespace eio
 {
-    enum EBrightness
+    enum class EBrightness
     {
         NIGHTTRIP,
         MIN,
@@ -30,9 +31,9 @@ namespace eio
         COUNT 
     };
 
-    uint8_t getEBrightnessAsByte(EBrightness inBrightness);
+    static uint8_t getEBrightnessAsByte(EBrightness inBrightness);
 
-    class RelicIO
+    class RelicIO : public Tickable
     {
     public:
 
@@ -41,7 +42,7 @@ namespace eio
         void init();
         void cleanup();
 
-        void tick(float deltaTime);
+        virtual void tick(float deltaTime) override;
         void showLeds();
         
         EBrightness getGlobalBrightness() const;
@@ -55,7 +56,7 @@ namespace eio
         EBrightness currentBrightness;
     };
 
-    class RelicCore
+    class RelicCore : public Tickable
     {
     public:
 
@@ -63,7 +64,7 @@ namespace eio
 
         virtual void init();
         virtual void preTick();
-        virtual void tick(float deltaTime) {}
+        virtual void tick(float deltaTime) override {}
 
         void runTick() { preTick(); }
 
@@ -73,6 +74,7 @@ namespace eio
         std::chrono::time_point<std::chrono::system_clock> tickStartTime;
 
     private:
+        //unique_ptr<RelicIO> io;
 
         bool bSetupComplete = false;
     };

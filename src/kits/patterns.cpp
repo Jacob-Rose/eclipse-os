@@ -16,7 +16,7 @@ void Pattern_SpaceDust::tick(float deltaTime)
     
 }
 
-void Pattern_SpaceDust::applyEffectLogic(uint16_t idx, HSV& InOutColor) const
+void Pattern_SpaceDust::applyEffectLogic(HSVStripNode* node, HSV& InOutColor) const
 {
 
 }
@@ -50,14 +50,27 @@ void Pattern_RitualFire::tick(float deltaTime)
     //gasesPerlinNoise.tick(deltaTime);
 }
 
-void Pattern_RitualFire::applyEffectLogic(uint16_t idx, HSV& InOutColor) const
+void Pattern_RitualFire::applyEffectLogic(HSVStripNode* node, HSV& InOutColor) const
 {
     HSV outColor;
+
+    float x = 0.0f;
+    float y = 0.0f;
+    if(node->GetStripNodeType() == StripNodeType::MAPPED2D)
+    {
+        HSVStripNode_Mapped2D* castedNode = static_cast<HSVStripNode_Mapped2D*>(node);
+        x = castedNode->coord.x;
+        y = castedNode->coord.y;
+    }
+    else if(node)
+    {
+        x = node->stripIdx;
+    }
 
     //float fireValue = fireGenerator.evaluate(idx);
     //j::HSV fireColor = firePalette.getColor(fireValue);
 
-    float pulseNoiseAlpha = pulsePerlinNoise.evaluate((float)idx, 0.0f);
+    float pulseNoiseAlpha = pulsePerlinNoise.evaluate(x, y);
         
     // layer 1: background cel pattern
     outColor = mainPalette.getColor(pulseNoiseAlpha);

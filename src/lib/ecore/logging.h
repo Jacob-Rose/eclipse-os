@@ -13,7 +13,7 @@ namespace ecore
 {
     namespace log
     {
-        enum Verbosity
+        enum class Verbosity
         {
             VeryVerbose,
             Verbose,
@@ -22,7 +22,7 @@ namespace ecore
             Error
         };
     
-        enum Category
+        enum class Category
         {
             None        = 0b00000000,
             OnTick      = 0b00000001,
