@@ -56,15 +56,18 @@ void Pattern_RitualFire::applyEffectLogic(HSVStripNode* node, HSV& InOutColor) c
 
     float x = 0.0f;
     float y = 0.0f;
-    if(node->GetStripNodeType() == StripNodeType::MAPPED2D)
+    if(node)
     {
-        HSVStripNode_Mapped2D* castedNode = static_cast<HSVStripNode_Mapped2D*>(node);
-        x = castedNode->coord.x;
-        y = castedNode->coord.y;
-    }
-    else if(node)
-    {
-        x = node->stripIdx;
+        if(node->GetStripNodeType() == StripNodeType::MAPPED2D)
+        {
+            HSVStripNode_Mapped2D* castedNode = static_cast<HSVStripNode_Mapped2D*>(node);
+            x = castedNode->coord.x;
+            y = castedNode->coord.y;
+        }
+        else
+        {
+            x = node->stripIdx;
+        }
     }
 
     //float fireValue = fireGenerator.evaluate(idx);
