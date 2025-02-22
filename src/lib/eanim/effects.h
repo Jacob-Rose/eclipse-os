@@ -9,6 +9,8 @@
 
 #include "../external/FastNoiseLite.h"
 
+#include "../ecore/range.h"
+
 #include "generator_float.h"
 #include "generator_hsv.h"
 
@@ -74,8 +76,6 @@ namespace eanim
     /* @brief A generator that will generate particles of various sizes 
     *
     * TODO: Copy logic from drop state machine
-    * 
-    * Currently In-Development, not working
     */
    /*
     class DropGenerator : public GeneratorHSV, public Tickable
@@ -84,6 +84,7 @@ namespace eanim
         DropGenerator(uint16_t inLength);
 
         HSVPalette dropPalette;
+        FloatRange dropRate = FloatRange(0.1f, 1.0f);
         
 
         // Tickable interface
@@ -100,11 +101,15 @@ namespace eanim
         };
 
         std::list<Drop> drops;
+        float timeSinceLastDrop = 0.0f;
+
 
         int length;
     };
 
 
+    // TODO: Implement this
+    /* @brief A generator that will generate a laser scan effect like night rider
     class LaserScanGenerator : public Generator1D, public Tickable
     {
         std::shared_ptr<FloatAttribute> position;

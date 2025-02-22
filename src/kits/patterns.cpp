@@ -7,6 +7,54 @@
 
 #include "../lib/ecore/logging.h"
 
+
+
+Pattern_Noise::Pattern_Noise()
+{
+    coreNoise.noise.SetNoiseType(FastNoiseLite::NoiseType_OpenSimplex2);
+    coreNoise.noise.SetCellularDistanceFunction(FastNoiseLite::CellularDistanceFunction_Manhattan);
+    coreNoise.noise.SetCellularReturnType(FastNoiseLite::CellularReturnType_Distance2);
+    coreNoise.noise.SetFrequency(0.05f);
+    coreNoise.noise.SetCellularJitter(1.0f);
+    coreNoise.timeScale = 0.33f;
+}
+
+void Pattern_Noise::init()
+{
+}
+
+void Pattern_Noise::tick(float deltaTime)
+{
+    coreNoise.tick(deltaTime);
+}
+
+void Pattern_Noise::applyEffectLogic(HSVStripNode* node, HSV& InOutColor) const
+{
+    HSV outColor;
+
+    float x = 0.f;
+    float y = 0.f;
+
+    if(node)
+    {
+        if(node->GetStripNodeType() == StripNodeType::MAPPED2D)
+        {
+            HSVStripNode_Mapped2D* castedNode = static_cast<HSVStripNode_Mapped2D*>(node);
+            x = castedNode->coord.x;
+            y = castedNode->coord.y;
+        }
+        else
+        {
+            x = node->stripIdx;
+        }
+    }
+
+    float noiseAlpha = coreNoise.evaluate(x, y);
+    outColor = mainPalette.getColor(noiseAlpha);
+
+    InOutColor = outColor;
+}
+
 void Pattern_SpaceDust::init()
 {
 }

@@ -5,28 +5,10 @@
 
 #pragma once
 
+#include "range.h"
+
 namespace ecore
 {
-    /* @brief remap an input to a new basis
-    *   TODO ALL
-    */
-    template<typename T>
-    struct Range
-    {
-        Range() {}
-        Range(T inMin, T inMax) : min(inMin), max(inMax) {}
-
-        T min;
-        T max;
-
-        bool isWithinRange(T val) const {
-            return min < val && val < max;
-        }
-    };
-
-    using FloatRange = Range<float>;
-    using IntRange = Range<int>;
-
     /* @brief remap an input to a new basis
     *   TODO ALL
     */

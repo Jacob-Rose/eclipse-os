@@ -23,22 +23,7 @@ using namespace eanim;
 #define WALL_SIDE_LENGTH 42
 #define WALL_SEGMENTS 2
 
-class Pattern_Obelisk_RedGreenNoise : public GeneratorHSV, public Tickable
-{
-public:
-    HSVPalette mainPalette = jpalettes::p_bootgradient;
-    PerlinNoiseGenerator2D coreNoise;
 
-    Pattern_Obelisk_RedGreenNoise();
-
-    void init();
-    
-    virtual void tick(float deltaTime) override;
-
-    virtual void applyEffectLogic(HSVStripNode* node, HSV& InOutColor) const override;
-private:
-    float currentTime;
-};
 
 inline HSVPalette p_summer {
     HSV(4.0f, 0.68f, 0.81f),

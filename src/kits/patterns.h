@@ -21,6 +21,23 @@ using namespace ecore;
 using namespace eanim;
 using namespace eio;
 
+class Pattern_Noise : public GeneratorHSV, public Tickable
+{
+public:
+    HSVPalette mainPalette = jpalettes::p_bootgradient;
+    PerlinNoiseGenerator2D coreNoise;
+
+    Pattern_Noise();
+
+    void init();
+    
+    virtual void tick(float deltaTime) override;
+
+    virtual void applyEffectLogic(HSVStripNode* node, HSV& InOutColor) const override;
+private:
+    float currentTime;
+};
+
 
 // similar to the last of us menu
 // features:
