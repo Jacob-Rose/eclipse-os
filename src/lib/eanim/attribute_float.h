@@ -5,6 +5,8 @@
 
 #pragma once
 
+#include "../ecore/core.h"
+
 namespace eanim
 {
     /* @brief FloatAttribute is an interface to allow for a simple getter value

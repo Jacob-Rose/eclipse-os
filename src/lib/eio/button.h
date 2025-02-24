@@ -5,10 +5,7 @@
 
 #pragma once
 
-#include <stdio.h>
-#include "pico/stdlib.h"
-#include <Arduino.h>
-
+#include "../ecore/core.h"
 #include "../ecore/tickable.h"
 
 using namespace ecore;

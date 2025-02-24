@@ -8,10 +8,11 @@
 #include <vector>
 #include <memory>
 
-#define USING_NEOPIXEL false
+#include "../ecore/core.h"
+
+#define USING_NEOPIXEL USE_ARDUINO && true
 
 #if USING_NEOPIXEL
-#include <Arduino.h>
 #include <Adafruit_NeoPixel.h>
 #endif
 

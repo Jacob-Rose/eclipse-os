@@ -9,6 +9,7 @@
 
 #include "../external/FastNoiseLite.h"
 
+#include "../ecore/core.h"
 #include "../ecore/range.h"
 
 #include "generator_float.h"

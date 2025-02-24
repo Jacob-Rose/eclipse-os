@@ -8,6 +8,8 @@
 #include <vector>
 #include <memory>
 
+#include "../ecore/core.h"
+
 #include "../ecore/hsv.h"
 #include "../ecore/coord.h"
 

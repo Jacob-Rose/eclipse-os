@@ -5,6 +5,7 @@
 
 #include <string>
 
+#include "src/lib/ecore/core.h"
 #include "src/relics/obelisk.h"
 #include "src/lib/ecore/logging.h"
 
@@ -21,7 +22,7 @@ void setup() {
 
   if(relic)
   {
-    relic->init();
+    //relic->init();
   }
 }
 

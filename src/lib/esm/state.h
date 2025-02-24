@@ -13,6 +13,8 @@
 #include <ctime>
 #include <map>
 
+#include "../ecore/core.h"
+
 using namespace std;
 
 namespace esm

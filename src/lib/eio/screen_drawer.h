@@ -5,12 +5,11 @@
 
 #pragma once
 
-#ifdef USE_SCREEN
+#include "../ecore/core.h"
 
-#include <stdio.h>
-#include "pico/stdlib.h"
-#include <Arduino.h>
+#define USE_SCREEN USE_ARDUINO && 1
 
+#if USE_SCREEN
 #include <AnimatedGIF.h>
 
 #include <Adafruit_GC9A01A.h>

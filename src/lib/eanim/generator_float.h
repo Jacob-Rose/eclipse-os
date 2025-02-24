@@ -5,6 +5,7 @@
 
 #pragma once
 
+#include "../ecore/core.h"
 #include "../ecore/tickable.h"
 #include "attribute_float.h"
 

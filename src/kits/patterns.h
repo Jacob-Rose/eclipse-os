@@ -5,6 +5,7 @@
 
 #pragma once
 
+#include "../lib/ecore/core.h"
 #include "../lib/ecore/hsv.h"
 #include "../lib/eanim/effects.h"
 #include "../lib/eio/strip_projection.h"

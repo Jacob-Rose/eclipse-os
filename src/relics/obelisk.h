@@ -16,6 +16,8 @@ class ObeliskIO : public RelicIO
 {
 public:
     ObeliskIO();
+
+public:
 };
 
 class ObeliskCore : public RelicCore

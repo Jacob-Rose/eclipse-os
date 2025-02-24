@@ -7,8 +7,10 @@
 
 #include <memory>
 
-#include "attribute_float.h"
+#include "../ecore/core.h"
 #include "../ecore/tickable.h"
+
+#include "attribute_float.h"
 
 using namespace ecore;
 

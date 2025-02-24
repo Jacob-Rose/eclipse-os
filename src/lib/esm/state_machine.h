@@ -11,13 +11,14 @@
 #include <string>
 #include <chrono>
 #include <ctime>
-#include <map>
+
+#include "../ecore/core.h"
 
 #include "state.h"
 
 using namespace std;
 
-namespace eas
+namespace esm
 {
     class StateMachine
     {

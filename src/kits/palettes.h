@@ -5,6 +5,7 @@
 
 #pragma once
 
+#include "../lib/ecore/core.h"
 #include "../lib/ecore/hsv.h"
 
 using namespace ecore;
