@@ -5,6 +5,7 @@
 
 #pragma once
 
+#include "../lib/ecore/core.h"
 #include "../lib/esm/state.h"
 
 #include "relic.h"
@@ -12,11 +13,9 @@
 using namespace ecore;
 using namespace eio;
 
-using namespace std;
-
 namespace obelisk
 {    
-    enum class ObeliskStripID : uint8_t
+    enum class ObeliskStripID
     {
         STRIP_MAIN
     };
@@ -42,7 +41,6 @@ namespace obelisk
         virtual void init();
 
         uint16_t StripLEDPin = 6; // GPIO 6
-    public:
     };
     
     class ObeliskCore : public RelicCore

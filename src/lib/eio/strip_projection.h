@@ -35,6 +35,7 @@ namespace eio
     {
     public:
         HSVStripNode();
+        virtual ~HSVStripNode() = default;
 
         // since we dont support RTTI, we need to provide a way to check if a node is supported
         virtual StripNodeType GetStripNodeType() const { return StripNodeType::ROOT; }
@@ -48,7 +49,7 @@ namespace eio
     class HSVStripNode_Mapped2D : public HSVStripNode
     {
     public:
-        HSVStripNode_Mapped2D() {}
+        HSVStripNode_Mapped2D();
 
         virtual StripNodeType GetStripNodeType() const override { return StripNodeType::MAPPED2D; }
     public:
@@ -59,6 +60,6 @@ namespace eio
     class HSVStripNodeFactory
     {
     public:
-        static vector<shared_ptr<HSVStripNode>> GenerateAxisRow(int startIdx, int Length, Coordinate posStart, Coordinate posDelta);
+        static vector<shared_ptr<HSVStripNode>> GenerateAxisRow(int startIdx, int Length, const Coordinate& posStart, const Coordinate& posDelta);
     };
 }

@@ -6,6 +6,7 @@
 #include "state.h"
 
 #include "../ecore/logging.h"
+#include "state_machine.h"
 
 using namespace ecore;
 using namespace esm;
@@ -39,6 +40,20 @@ void State::cleanup()
 #endif
 }
 
+void esm::State::tick(float deltaTime)
+{
+#if LOGGING_ENABLED
+    std::string tickMsg = "ticking leds: ";
+    tickMsg.append(GetStateName());
+    //dbgPrint(tickMsg.c_str(), Verbosity::VeryVerbose, Category::OnTick | Category::StateInfo);
+    
+    //dbgPrint(std::to_string(GetStateActiveDuration().count()));
+#endif
+
+    timeStateActive += std::chrono::duration<double>(deltaTime);
+    runStateTransitionTest();
+}
+
 void State::onStateBegin()
 {
 #if LOGGING_ENABLED
@@ -47,9 +62,7 @@ void State::onStateBegin()
     dbgLog(tickMsg.c_str(), Verbosity::Display, Category::StateInfo);
 #endif
 
-    activationTime = std::chrono::system_clock::now();
-
-    tickStartTime = std::chrono::system_clock::now();
+    timeStateActive = std::chrono::duration<double>(0);
 }
 
 void State::onStateEnd()
@@ -61,26 +74,6 @@ void State::onStateEnd()
 #endif
 }
 
-void State::tick(float deltaTime)
-{
-}
-
-void State::runTick()
-{
-#if LOGGING_ENABLED
-    std::string tickMsg = "ticking leds: ";
-    tickMsg.append(GetStateName());
-    //dbgPrint(tickMsg.c_str(), Verbosity::VeryVerbose, Category::OnTick | Category::StateInfo);
-    
-    //dbgPrint(std::to_string(GetStateActiveDuration().count()));
-#endif
-
-    lastFrameDT = chrono::system_clock::now() - tickStartTime;
-    tickStartTime = chrono::system_clock::now();
-
-    tick(lastFrameDT.count());
-}
-
 void State::addStateTransition(weak_ptr<State> inState, TransitionLambda lambda)
 {
     stateTransitions[inState] = lambda;
@@ -89,34 +82,23 @@ void State::addStateTransition(weak_ptr<State> inState, TransitionLambda lambda)
 weak_ptr<State> State::runStateTransitionTest() const
 {
     /* TODO  integrate w state machine */
-    /*
     for (const auto& transition : stateTransitions)
     {
-        bool bTransitionConditionMet = transition.second(this, this); // Check if the transition condition is met
-        if (transition.second.operator()) // Check if the transition condition is met
+        if (auto targetState = transition.first.lock())
         {
-            return transition.first; // Return the corresponding state
+            bool bTransitionConditionMet = transition.second(targetState.get(), const_cast<State*>(this)); // Check if the transition condition is met
+            if (bTransitionConditionMet)
+            {
+                return transition.first; // Return the corresponding state
+            }
         }
     }
-        */
+
 
     return std::weak_ptr<State>(); // Return nullptr if no transition condition is met
 }
 
 chrono::duration<double> State::GetStateActiveDuration() const
 {
-    chrono::duration<double> timeDiff = tickStartTime - activationTime;
-    return timeDiff;
-}
-
-chrono::duration<double> State::GetTimeSinceTickStarted() const
-{
-    chrono::time_point<chrono::system_clock> currentTime = chrono::system_clock::now();
-    chrono::duration<double> timeDiff = currentTime - tickStartTime;
-    return timeDiff;
-}
-
-void StateMachine::setActiveState(shared_ptr<State> InNextState)
-{
-    // TODO
+    return timeStateActive;
 }

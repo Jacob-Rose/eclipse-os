@@ -28,11 +28,11 @@ RelicIO::RelicIO()
     setGlobalBrightness(EBrightness::MED);
 }
 
-void eio::RelicIO::tick(float deltaTime)
+void RelicIO::tick(float deltaTime)
 {
 }
 
-void eio::RelicIO::showLeds()
+void RelicIO::showLeds()
 {
     for(const auto& seg : strips)
     {
@@ -67,9 +67,28 @@ void RelicCore::preTick()
     tickStartTime = std::chrono::system_clock::now();
 
     tick(lastFrameDT.count());
+}
 
+void RelicCore::tick(float deltaTime)
+{
+    if(coreState)
+    {
+        // TODO make this take in the delta time and not self calculate somehow
+        coreState->tick(deltaTime);
+    }
+}
+
+void RelicCore::postTick()
+{
     if(io)
     {
         io->showLeds();
     }
+}
+
+void RelicCore::runTick()
+{
+    preTick();
+    tick(lastFrameDT.count());
+    postTick();
 }

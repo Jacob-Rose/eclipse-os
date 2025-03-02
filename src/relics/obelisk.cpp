@@ -7,11 +7,12 @@
 
 #include "../lib/eio/strip_projection.h"
 
-#define WALL_SIDE_LENGTH 42
+#include "../states/state_obelisk.h"
 
 using namespace obelisk;
 using namespace ecore;
 using namespace eio;
+using namespace std;
 
 ObeliskIO::ObeliskIO() : RelicIO()
 {
@@ -47,4 +48,6 @@ void ObeliskIO::init()
 
 ObeliskCore::ObeliskCore() : RelicCore()
 {
+    io = make_unique<ObeliskIO>();
+    coreState = make_unique<State_Obelisk_FourSeasons>("obelisk_four_seasons");
 }

@@ -14,8 +14,7 @@
 
 using namespace ecore;
 using namespace eanim;
-
-#if 0
+using namespace esm;
 
 #define WALL_SIDE_LENGTH 43
 
@@ -52,15 +51,17 @@ inline HSVPalette p_neoncity {
 class State_Obelisk_FourSeasons : public State
 {
 public:
+    State_Obelisk_FourSeasons(const char* InStateName);
+
     PerlinNoiseGenerator2D coreNoise;
 
     std::vector<ecore::HSVPalette> palettes = {p_fall, p_winter, p_spring, p_neoncity};
 
-    State_Obelisk_FourSeasons(const char* InStateName);
+
 
     virtual void onStateBegin() override;
 
-    virtual void tick() override;
+    virtual void tick(float deltaTime) override;
 
     std::shared_ptr<GeneratorHSV> generator;
 };
@@ -80,9 +81,7 @@ public:
 
     virtual void onStateBegin() override;
 
-    virtual void tick() override;
+    virtual void tick(float deltaTIme) override;
 
     std::shared_ptr<GeneratorHSV> generator;
 };
-
-#endif

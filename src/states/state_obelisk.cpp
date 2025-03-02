@@ -10,8 +10,6 @@
 
 #include "../imgs/eclipse.h"
 
-#if 0
-
 using namespace eanim;
 
 State_Obelisk_FourSeasons::State_Obelisk_FourSeasons(const char* InStateName) : State(InStateName)
@@ -31,13 +29,9 @@ void State_Obelisk_FourSeasons::onStateBegin()
     State::onStateBegin();
 }
 
-void State_Obelisk_FourSeasons::tick()
+void State_Obelisk_FourSeasons::tick(float deltaTime)
 {
-    State::tick();
-
-    //GameManager& GM = GameManager::get();
-
-    float deltaTime = lastFrameDT.count();
+    State::tick(deltaTime);
 
     coreNoise.tick(deltaTime);
 
@@ -62,7 +56,7 @@ void State_Obelisk_FourSeasons::tick()
         }
     }
 
-    GM.OutfitLEDs->updateStripPixels();
+    //GM.OutfitLEDs->updateStripPixels();
 }
 
 State_Obelisk_Theater::State_Obelisk_Theater(const char* InStateName) : State(InStateName)
@@ -88,13 +82,11 @@ void State_Obelisk_Theater::onStateBegin()
     State::onStateBegin();
 }
 
-void State_Obelisk_Theater::tick()
+void State_Obelisk_Theater::tick(float deltaTime)
 {
-    State::tick();
+    State::tick(deltaTime);
 
     //GameManager& GM = GameManager::get();
-
-    float deltaTime = lastFrameDT.count();
 
     lfo.tick(deltaTime);
     paletteLFO.tick(deltaTime);
@@ -121,5 +113,3 @@ void State_Obelisk_Theater::tick()
 
     //GM.OutfitLEDs->updateStripPixels();
 }
-
-#endif

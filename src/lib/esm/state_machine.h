@@ -20,11 +20,20 @@ using namespace std;
 
 namespace esm
 {
-    class StateMachine
+    class StateMachine : public Tickable
     {
     public:
-        void addState();
-        void setActiveState(shared_ptr<State> NewState);
+        StateMachine();
+
+        virtual void init();
+        virtual void cleanup();
+
+        virtual void tick(float deltaTime) override;
+
+        void addState(shared_ptr<State> NewState);
+
+    protected:
+        void setActiveState(shared_ptr<State> NextState);
 
         float transitionTime = 8.0f;
 
