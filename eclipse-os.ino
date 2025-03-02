@@ -10,6 +10,7 @@
 #include "src/lib/ecore/logging.h"
 
 using namespace std;
+using namespace obelisk;
 
 unique_ptr<RelicCore> relic;
 

@@ -20,4 +20,6 @@ namespace ecore
         float x;
         float y;
     };
+
+    typedef Coordinate Coord;
 }

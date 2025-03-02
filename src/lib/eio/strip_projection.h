@@ -13,6 +13,7 @@
 #include "../ecore/hsv.h"
 #include "../ecore/coord.h"
 
+
 using namespace ecore;
 using namespace std;
 
@@ -58,6 +59,6 @@ namespace eio
     class HSVStripNodeFactory
     {
     public:
-        static vector<shared_ptr<HSVStripNode_Mapped2D>> GenerateAxisRow(float xDelta, float yDelta, int startIdx, int Length);
+        static vector<shared_ptr<HSVStripNode>> GenerateAxisRow(int startIdx, int Length, Coordinate posStart, Coordinate posDelta);
     };
 }

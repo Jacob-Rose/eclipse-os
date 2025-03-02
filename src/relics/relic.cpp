@@ -28,6 +28,18 @@ RelicIO::RelicIO()
     setGlobalBrightness(EBrightness::MED);
 }
 
+void eio::RelicIO::tick(float deltaTime)
+{
+}
+
+void eio::RelicIO::showLeds()
+{
+    for(const auto& seg : strips)
+    {
+        seg.second.get()->show();
+    }
+}
+
 EBrightness RelicIO::getGlobalBrightness() const
 {
     return currentBrightness;
@@ -39,7 +51,7 @@ void RelicIO::setGlobalBrightness(EBrightness newBrightness)
 
     uint8_t brightnessByte = getEBrightnessAsByte(newBrightness);
 
-    for(auto seg : strips)
+    for(const auto& seg : strips)
     {
         seg.second->setStripBrightness(brightnessByte);
     }
@@ -55,4 +67,9 @@ void RelicCore::preTick()
     tickStartTime = std::chrono::system_clock::now();
 
     tick(lastFrameDT.count());
+
+    if(io)
+    {
+        io->showLeds();
+    }
 }

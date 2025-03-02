@@ -2,10 +2,10 @@
 
 using namespace eio;
 
-vector<shared_ptr<HSVStripNode_Mapped2D>> HSVStripNodeFactory::GenerateAxisRow(float xDelta, float yDelta, int startIdx, int Length) {
+vector<shared_ptr<HSVStripNode>> HSVStripNodeFactory::GenerateAxisRow(int startIdx, int Length, Coordinate posStart, Coordinate posDelta) {
     float xAmt = 0.f, yAmt = 0.f;
 
-    vector<shared_ptr<HSVStripNode_Mapped2D>> Nodes;
+    vector<shared_ptr<HSVStripNode>> Nodes;
     
     for(int idx = 0; idx < Length; ++idx)
     {

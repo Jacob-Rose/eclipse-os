@@ -12,16 +12,42 @@
 using namespace ecore;
 using namespace eio;
 
-class ObeliskIO : public RelicIO
-{
-public:
-    ObeliskIO();
+using namespace std;
 
-public:
-};
+namespace obelisk
+{    
+    enum class ObeliskStripID : uint8_t
+    {
+        STRIP_MAIN
+    };
+    
+    enum class StripSegmentID
+    {
+        SideA_Up,
+        SideA_Down,
+        SideB_Up,
+        SideB_Down,
+        SideC_Up,
+        SideC_Down,
+        SideD_Up,
+        SideD_Down,
+        MAX
+    };
+    
+    class ObeliskIO : public RelicIO
+    {
+    public:
+        ObeliskIO();
+    
+        virtual void init();
 
-class ObeliskCore : public RelicCore
-{
-public:
-    ObeliskCore();
-};
+        uint16_t StripLEDPin = 6; // GPIO 6
+    public:
+    };
+    
+    class ObeliskCore : public RelicCore
+    {
+    public:
+        ObeliskCore();
+    };
+}

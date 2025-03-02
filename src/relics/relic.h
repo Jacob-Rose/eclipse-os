@@ -45,10 +45,10 @@ namespace eio
         EBrightness getGlobalBrightness() const;
         void setGlobalBrightness(EBrightness newBrightness);
 
-    private:
+    protected:
         // each relic can define an enum for the bytes to be per-device specific
-        std::map<uint8_t, shared_ptr<HSVStripSegment>> strip_segments;
-        std::map<uint8_t, shared_ptr<HSVStrip>> strips;
+        std::map<uint8_t, unique_ptr<HSVStripSegment>> strip_segments;
+        std::map<uint8_t, unique_ptr<HSVStrip>> strips;
 
         EBrightness currentBrightness;
     };
@@ -70,7 +70,7 @@ namespace eio
         std::chrono::time_point<std::chrono::system_clock> tickStartTime;
 
     private:
-        //unique_ptr<RelicIO> io;
+        unique_ptr<RelicIO> io;
 
         bool bSetupComplete = false;
     };

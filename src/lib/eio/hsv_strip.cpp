@@ -119,3 +119,17 @@ void HSVStrip::updateStripPixels()
         updateStripPixel(idx);
     }
 }
+
+eio::HSVStripSegment::HSVStripSegment(HSVStrip* inParentStrip) : parentStrip(inParentStrip)
+{
+}
+
+void eio::HSVStripSegment::addNode(shared_ptr<HSVStripNode> node)
+{
+    Nodes.push_back(node);
+}
+
+void eio::HSVStripSegment::addNodes(vector<shared_ptr<HSVStripNode>> inNodes)
+{
+    Nodes.insert(Nodes.end(), inNodes.begin(), inNodes.end());
+}

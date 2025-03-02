@@ -77,11 +77,13 @@ namespace eio
     class HSVStripSegment
     {
     public:
+        HSVStripSegment(HSVStrip* parent);
 
-
+        void addNode(shared_ptr<HSVStripNode> node);
+        void addNodes(vector<shared_ptr<HSVStripNode>> inNodes);
     private:
         HSVStrip* parentStrip{nullptr};
-        vector<HSVStripNode*> Nodes;
+        vector<shared_ptr<HSVStripNode>> Nodes;
 
     };
 }
