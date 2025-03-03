@@ -34,29 +34,30 @@ void State_Obelisk_FourSeasons::tick(float deltaTime)
     State::tick(deltaTime);
 
     coreNoise.tick(deltaTime);
+}
 
-    for(uint8_t sideIdx = 0; sideIdx < 4; ++sideIdx)
+void State_Obelisk_FourSeasons::render(HSVStripSegment *segment, HSVStripNode* node)
+{
+    State::render(segment, node);
+
+    HSV outColor;
+    int x = 0, y = 0;
+    int sideIdx;
+
+    if(node->GetStripNodeType() == StripNodeType::MAPPED2D)
     {
-        for(uint8_t sideColumnIdx = 0; sideColumnIdx < 2; ++sideColumnIdx)
-        {
-            for(uint16_t pixelIdx = 0; pixelIdx < WALL_SIDE_LENGTH; ++pixelIdx)
-            {
-                HSV outColor;
+        HSVStripNode_Mapped2D* castedNode = static_cast<HSVStripNode_Mapped2D*>(node);
+        x = castedNode->coord.x;
+        y = castedNode->coord.y;
 
-                int x = sideColumnIdx % 2 == 0 ? pixelIdx : WALL_SIDE_LENGTH - pixelIdx;
-                int y = (sideIdx * 2) + sideColumnIdx;
-                int stripPixelIdx = (y*WALL_SIDE_LENGTH) + pixelIdx;
-
-                float noiseAlpha = coreNoise.evaluate(x, y);
-                ecore::HSVPalette& Palette = palettes[sideIdx];
-                outColor = Palette.getColor(noiseAlpha);
-
-                //GM.OutfitLEDs->setHSV(stripPixelIdx, outColor);
-            }
-        }
+        sideIdx = y / 2; // two strips per side
+        int stripPixelIdx = castedNode->stripIdx;
     }
+    
+    float noiseAlpha = coreNoise.evaluate(x, y);
+    outColor = palettes[sideIdx].getColor(noiseAlpha);
 
-    //GM.OutfitLEDs->updateStripPixels();
+    segment->setHSV(node, outColor);
 }
 
 State_Obelisk_Theater::State_Obelisk_Theater(const char* InStateName) : State(InStateName)
@@ -86,30 +87,30 @@ void State_Obelisk_Theater::tick(float deltaTime)
 {
     State::tick(deltaTime);
 
-    //GameManager& GM = GameManager::get();
-
     lfo.tick(deltaTime);
     paletteLFO.tick(deltaTime);
     coreNoise.tick(deltaTime);
+}
 
-    ecore::HSVPalette palette = jpalettes::p_darkpurple_neo;
+void State_Obelisk_Theater::render(HSVStripSegment *segment, HSVStripNode* node)
+{
+    State::render(segment, node);
 
-    for(uint16_t pixelIdx = 0; pixelIdx < 210; ++pixelIdx)
+    HSV outColor;
+    int x = 0, y = 0;
+    int sideIdx;
+
+    if(node->GetStripNodeType() == StripNodeType::MAPPED2D)
     {
-        HSV outColor;
+        HSVStripNode_Mapped2D* castedNode = static_cast<HSVStripNode_Mapped2D*>(node);
+        x = castedNode->coord.x;
+        y = castedNode->coord.y;
 
-        float noiseAlpha = lfo.evaluate(pixelIdx);
-        
-        /*
-        for(uint8_t paletteIdx = 0; paletteIdx < palettes.size(); ++paletteIdx)
-        {
-            palette.colors.push_back(palettes[paletteIdx].getColor(noiseAlpha));
-        }
-        */
-        outColor = palette.getColor(noiseAlpha);
-
-        //GM.OutfitLEDs->setHSV(pixelIdx, outColor);
+        sideIdx = y / 2; // two strips per side
     }
+    float noiseAlpha = lfo.evaluate(x);
+    
+    outColor = palettes[sideIdx].getColor(noiseAlpha);
 
-    //GM.OutfitLEDs->updateStripPixels();
+    segment->setHSV(node, outColor);
 }

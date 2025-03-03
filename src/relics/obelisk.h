@@ -47,5 +47,7 @@ namespace obelisk
     {
     public:
         ObeliskCore();
+
+        virtual void tick(float deltaTime) override;
     };
 }

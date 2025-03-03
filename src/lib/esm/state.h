@@ -16,8 +16,11 @@
 #include "../ecore/core.h"
 #include "../ecore/tickable.h"
 
+#include "../eio/hsv_strip.h"
+
 using namespace std;
 using namespace ecore;
+using namespace eio;
 
 namespace esm
 {
@@ -34,6 +37,7 @@ namespace esm
         virtual void cleanup();
 
         virtual void tick(float deltaTime) override;
+        virtual void render(HSVStripSegment* segment, HSVStripNode* Node) {}
 
     protected:
         //logic level only, no rendering logic here

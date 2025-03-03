@@ -133,3 +133,19 @@ void eio::HSVStripSegment::addNodes(vector<shared_ptr<HSVStripNode>> inNodes)
 {
     Nodes.insert(Nodes.end(), inNodes.begin(), inNodes.end());
 }
+
+
+void eio::HSVStripSegment::setHSV(HSVStripNode *node, const HSV &hsv)
+{
+    parentStrip->setHSV(node->stripIdx, hsv);
+}
+
+void eio::HSVStripSegment::setHSV(HSVStripNode *node, float h, uint8_t s, uint8_t v)
+{
+    parentStrip->setHSV(node->stripIdx, h, s, v);
+}
+
+const vector<shared_ptr<HSVStripNode>> &eio::HSVStripSegment::getNodes() const
+{ 
+    return Nodes; 
+}

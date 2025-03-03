@@ -75,14 +75,25 @@ void RelicCore::tick(float deltaTime)
     {
         // TODO make this take in the delta time and not self calculate somehow
         coreState->tick(deltaTime);
+
+        if(coreIO)
+        {
+            for(const auto& seg : coreIO->strip_segments)
+            {
+                for(const auto& node : seg.second->getNodes())
+                {
+                    coreState->render(seg.second.get(), node.get());
+                }
+            }
+        }
     }
 }
 
 void RelicCore::postTick()
 {
-    if(io)
+    if(coreIO)
     {
-        io->showLeds();
+        coreIO->showLeds();
     }
 }
 

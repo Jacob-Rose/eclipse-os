@@ -14,6 +14,7 @@
 
 using namespace ecore;
 using namespace eanim;
+using namespace eio;
 using namespace esm;
 
 #define WALL_SIDE_LENGTH 43
@@ -57,11 +58,10 @@ public:
 
     std::vector<ecore::HSVPalette> palettes = {p_fall, p_winter, p_spring, p_neoncity};
 
-
-
     virtual void onStateBegin() override;
 
     virtual void tick(float deltaTime) override;
+    virtual void render(HSVStripSegment* segment, HSVStripNode* node) override;
 
     std::shared_ptr<GeneratorHSV> generator;
 };
@@ -82,6 +82,7 @@ public:
     virtual void onStateBegin() override;
 
     virtual void tick(float deltaTIme) override;
+    virtual void render(HSVStripSegment* segment, HSVStripNode* node) override;
 
     std::shared_ptr<GeneratorHSV> generator;
 };

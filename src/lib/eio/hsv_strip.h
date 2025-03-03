@@ -81,6 +81,11 @@ namespace eio
 
         void addNode(shared_ptr<HSVStripNode> node);
         void addNodes(vector<shared_ptr<HSVStripNode>> inNodes);
+
+        void setHSV(HSVStripNode* node, const HSV& hsv);
+        void setHSV(HSVStripNode* node, float h, uint8_t s, uint8_t v);
+
+        const vector<shared_ptr<HSVStripNode>>& getNodes() const;
     private:
         HSVStrip* parentStrip{nullptr};
         vector<shared_ptr<HSVStripNode>> Nodes;

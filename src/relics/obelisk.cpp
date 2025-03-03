@@ -48,6 +48,14 @@ void ObeliskIO::init()
 
 ObeliskCore::ObeliskCore() : RelicCore()
 {
-    io = make_unique<ObeliskIO>();
+    coreIO = make_unique<ObeliskIO>();
     coreState = make_unique<State_Obelisk_FourSeasons>("obelisk_four_seasons");
+}
+
+
+void obelisk::ObeliskCore::tick(float deltaTime)
+{
+    RelicCore::tick(deltaTime); // runs tick on coreState
+
+
 }

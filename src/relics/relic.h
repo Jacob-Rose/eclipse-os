@@ -67,7 +67,7 @@ namespace eio
         void runTick();
 
     protected:
-        unique_ptr<RelicIO> io;
+        unique_ptr<RelicIO> coreIO;
         unique_ptr<State> coreState;
     
     private:
