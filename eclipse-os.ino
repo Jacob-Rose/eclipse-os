@@ -11,19 +11,20 @@
 
 using namespace std;
 using namespace obelisk;
+using namespace ecore;
 
 unique_ptr<RelicCore> relic;
 
 void setup() {
-  Serial.begin(19200);
+  Serial.begin(4800);
   
-  delay(500);
+  delay(4000);
 
   relic = make_unique<ObeliskCore>();
 
   if(relic)
   {
-    //relic->init();
+    relic->init();
   }
 }
 

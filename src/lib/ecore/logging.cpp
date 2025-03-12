@@ -5,6 +5,8 @@
 
 #include "logging.h"
 
+#include "core.h"
+
 #include <type_traits>
 
 using namespace ecore::log;
@@ -23,7 +25,7 @@ Category operator|(Category lhs, Category rhs) {
     );
 }
 
-void dbgLog(const char *InMsg, Verbosity InVerbosity, Category InHideCategories)
+void ecore::log::dbgLog(const char *InMsg, Verbosity InVerbosity, Category InHideCategories)
 {
     //TODO FixMe
     /*
@@ -39,7 +41,5 @@ void dbgLog(const char *InMsg, Verbosity InVerbosity, Category InHideCategories)
         return;
     }
     */
-#if USING_NEOPIXEL
     Serial.println(InMsg);
-#endif
 }

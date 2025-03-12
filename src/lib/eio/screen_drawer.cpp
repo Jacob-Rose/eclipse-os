@@ -14,13 +14,17 @@ using namespace eio;
 
 ScreenDrawer::ScreenDrawer()
 {
+#if USE_SCREEN
     img.begin(LITTLE_ENDIAN_PIXELS);
+#endif
 }
 
+#if USE_SCREEN
 void ScreenDrawer::setScreenRef(std::shared_ptr<Adafruit_GC9A01A> inScreenRef)
 {
     ScreenRef = inScreenRef;
 }
+#endif
 
 void ScreenDrawer::setCanvasSize(uint16_t x, uint16_t y)
 {
@@ -52,10 +56,13 @@ void ScreenDrawer::tick(float deltaTime)
     {
         return;
     }
-
+#if USE_SCREEN
     ScreenRef->startWrite();
+
     int playFrameResult = img.playFrame(true, NULL, this);
+
     ScreenRef->endWrite();
+#endif
 }
 
 void ScreenDrawer::setScreenGif(uint8_t* data, int size)
@@ -63,9 +70,11 @@ void ScreenDrawer::setScreenGif(uint8_t* data, int size)
     bWasCancelled = true;
     bImgReady = false;
 
+#if USE_SCREEN
     img.open(data, size, eio::ScreenDrawer::GIFDraw_UpscaleScreen);
 
     bImgReady = true;
+#endif
 }
 
 void ScreenDrawer::cancelGifRender()
@@ -73,6 +82,7 @@ void ScreenDrawer::cancelGifRender()
     bWasCancelled = true;
 }
 
+#if USE_SCREEN
 /*static*/ void ScreenDrawer::GIFDraw_UpscaleScreen(GIFDRAW* pDraw)
 {
     ScreenDrawer* SD = static_cast<ScreenDrawer*>(pDraw->pUser);
@@ -145,7 +155,7 @@ void ScreenDrawer::cancelGifRender()
         Screen->writeFillRect(startingScreenPixelX, yStartingScreenPixel, xScreenToPixelSize, yScreenToPixelSize, c);
     }
 }
-
+#endif
 
 
 #endif

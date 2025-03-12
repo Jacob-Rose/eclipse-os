@@ -1,6 +1,9 @@
 #include "relic.h"
 
+#include "../lib/ecore/logging.h"
+
 using namespace eio;
+using namespace ecore::log;
 
 uint8_t eio::getEBrightnessAsByte(EBrightness inBrightness) {
     switch(inBrightness)
@@ -28,6 +31,10 @@ RelicIO::RelicIO()
     setGlobalBrightness(EBrightness::MED);
 }
 
+void RelicIO::init()
+{
+}
+
 void RelicIO::tick(float deltaTime)
 {
 }
@@ -36,6 +43,9 @@ void RelicIO::showLeds()
 {
     for(const auto& seg : strips)
     {
+        #if DEBUG_LOGGING_ENABLED
+        dbgLog("RelicIO::showLeds", Verbosity::Display, Category::StateInfo);
+    #endif
         seg.second.get()->show();
     }
 }

@@ -11,9 +11,12 @@
 #include "../imgs/eclipse.h"
 
 using namespace eanim;
+using namespace ecore;
+using namespace ecore::log;
 
 State_Obelisk_FourSeasons::State_Obelisk_FourSeasons(const char* InStateName) : State(InStateName)
 {
+    /*
     coreNoise.noise.SetNoiseType(FastNoiseLite::NoiseType_OpenSimplex2);
     coreNoise.noise.SetCellularDistanceFunction(FastNoiseLite::CellularDistanceFunction_Manhattan);
     coreNoise.noise.SetCellularReturnType(FastNoiseLite::CellularReturnType_Distance2);
@@ -22,6 +25,7 @@ State_Obelisk_FourSeasons::State_Obelisk_FourSeasons(const char* InStateName) : 
     coreNoise.timeScale = 0.33f;
     coreNoise.imageScaleX = 1.0f;
     coreNoise.imageScaleY = 1.0f;
+    */
 }
 
 void State_Obelisk_FourSeasons::onStateBegin()
@@ -33,7 +37,7 @@ void State_Obelisk_FourSeasons::tick(float deltaTime)
 {
     State::tick(deltaTime);
 
-    coreNoise.tick(deltaTime);
+    //coreNoise.tick(deltaTime);
 }
 
 void State_Obelisk_FourSeasons::render(HSVStripSegment *segment, HSVStripNode* node)
@@ -51,10 +55,9 @@ void State_Obelisk_FourSeasons::render(HSVStripSegment *segment, HSVStripNode* n
         y = castedNode->coord.y;
 
         sideIdx = y / 2; // two strips per side
-        int stripPixelIdx = castedNode->stripIdx;
     }
     
-    float noiseAlpha = coreNoise.evaluate(x, y);
+    float noiseAlpha = 0;//coreNoise.evaluate(x, y);
     outColor = palettes[sideIdx].getColor(noiseAlpha);
 
     segment->setHSV(node, outColor);
@@ -67,20 +70,13 @@ State_Obelisk_Theater::State_Obelisk_Theater(const char* InStateName) : State(In
 
     paletteLFO.speed = 0.1f;
 
-
-    coreNoise.noise.SetNoiseType(FastNoiseLite::NoiseType_OpenSimplex2S);
-    coreNoise.noise.SetCellularDistanceFunction(FastNoiseLite::CellularDistanceFunction_Hybrid);
-    coreNoise.noise.SetCellularReturnType(FastNoiseLite::CellularReturnType_Distance);
-    coreNoise.noise.SetFrequency(0.05f);
-    coreNoise.noise.SetCellularJitter(1.0f);
-    coreNoise.timeScale = 0.33f;
-    coreNoise.imageScaleX = 1.0f;
-    coreNoise.imageScaleY = 1.0f;
 }
 
 void State_Obelisk_Theater::onStateBegin()
 {
     State::onStateBegin();
+
+    log::dbgLog("State_Obelisk_Theater::onStateBegin", log::Verbosity::Display, log::Category::StateInfo);
 }
 
 void State_Obelisk_Theater::tick(float deltaTime)
@@ -89,7 +85,6 @@ void State_Obelisk_Theater::tick(float deltaTime)
 
     lfo.tick(deltaTime);
     paletteLFO.tick(deltaTime);
-    coreNoise.tick(deltaTime);
 }
 
 void State_Obelisk_Theater::render(HSVStripSegment *segment, HSVStripNode* node)
@@ -108,9 +103,9 @@ void State_Obelisk_Theater::render(HSVStripSegment *segment, HSVStripNode* node)
 
         sideIdx = y / 2; // two strips per side
     }
-    float noiseAlpha = lfo.evaluate(x);
+    float alpha = lfo.evaluate(x);
     
-    outColor = palettes[sideIdx].getColor(noiseAlpha);
+    outColor = palettes[sideIdx].getColor(alpha);
 
     segment->setHSV(node, outColor);
 }

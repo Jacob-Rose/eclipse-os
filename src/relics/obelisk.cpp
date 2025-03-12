@@ -8,9 +8,11 @@
 #include "../lib/eio/strip_projection.h"
 
 #include "../states/state_obelisk.h"
+#include "../lib/ecore/logging.h"
 
 using namespace obelisk;
 using namespace ecore;
+using namespace ecore::log;
 using namespace eio;
 using namespace std;
 
@@ -20,6 +22,8 @@ ObeliskIO::ObeliskIO() : RelicIO()
 
 void ObeliskIO::init()
 {
+    RelicIO::init();
+
     auto [mainStripIt, stripInserted] = strips.emplace(static_cast<uint8_t>(ObeliskStripID::STRIP_MAIN), make_unique<HSVStrip>(WALL_SIDE_LENGTH * 8, StripLEDPin));
 
     HSVStrip* mainStrip = mainStripIt->second.get();
@@ -43,13 +47,17 @@ void ObeliskIO::init()
     auto [it8, inserted8] = strip_segments.emplace(static_cast<uint8_t>(StripSegmentID::SideD_Down), make_unique<HSVStripSegment>(mainStrip));
     if (inserted8) it8->second->addNodes(HSVStripNodeFactory::GenerateAxisRow(WALL_SIDE_LENGTH * 7, WALL_SIDE_LENGTH, Coord(7, WALL_SIDE_LENGTH), Coord(0, -1.f)));
     
+    dbgLog("ObeliskIO::init", Verbosity::Display, Category::StateInfo);
+
     setGlobalBrightness(EBrightness::HIGH);
 }
 
 ObeliskCore::ObeliskCore() : RelicCore()
 {
     coreIO = make_unique<ObeliskIO>();
+    coreIO->init();
     coreState = make_unique<State_Obelisk_FourSeasons>("obelisk_four_seasons");
+    coreState->init();
 }
 
 

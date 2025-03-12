@@ -7,8 +7,6 @@
 
 #include <list>
 
-#include "../external/FastNoiseLite.h"
-
 #include "../ecore/core.h"
 #include "../ecore/range.h"
 
@@ -19,32 +17,6 @@ using namespace ecore;
 
 namespace eanim
 {
-    //TODO lots of noise functions https://gametorrahod.com/various-noise-functions/
-
-
-    /* @brief Wrapper for FastNoiseLite to make it support float attributes
-    */
-    class PerlinNoiseGenerator2D : public Generator2D, public Tickable
-    {
-    public:
-        PerlinNoiseGenerator2D();
-
-        void init();
-
-        // Tickable interface
-        virtual void tick(float deltaTime) override;
-
-        // Generator2D interface
-        virtual float evaluate(float x, float y) const override;
-
-        float imageScaleX = 1.0f;
-        float imageScaleY = 1.0f;
-        float timeScale = 1.0f;
-
-        FastNoiseLite noise;
-    private:
-        float currentTime;
-    };
 
     /* @brief A fire generator, moving in one direction. We making candles
     * moves in one direction from a source
@@ -78,7 +50,6 @@ namespace eanim
     *
     * TODO: Copy logic from drop state machine
     */
-   /*
     class DropGenerator : public GeneratorHSV, public Tickable
     {
     public:
@@ -92,7 +63,7 @@ namespace eanim
         virtual void tick(float deltaTime) override;
 
         // GeneratorHSV interface
-        virtual void applyEffectLogic(std::vector<HSV>& InOutColors) const override;
+        virtual void applyEffectLogic(HSVStripNode* node, HSV& InOutColor) const override;
 
     private:
         struct Drop
@@ -110,11 +81,10 @@ namespace eanim
 
 
     // TODO: Implement this
-    /* @brief A generator that will generate a laser scan effect like night rider
+    /* @brief A generator that will generate a laser scan effect like night rider */
     class LaserScanGenerator : public Generator1D, public Tickable
     {
         std::shared_ptr<FloatAttribute> position;
         std::shared_ptr<FloatAttribute> falloffDistance;
     };
-    */
 }

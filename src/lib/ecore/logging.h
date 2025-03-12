@@ -7,7 +7,7 @@
 
 #include <string>
 
-#define LOGGING_ENABLED 0
+#define DEBUG_LOGGING_ENABLED 1
 
 namespace ecore
 {

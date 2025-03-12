@@ -54,7 +54,7 @@ class State_Obelisk_FourSeasons : public State
 public:
     State_Obelisk_FourSeasons(const char* InStateName);
 
-    PerlinNoiseGenerator2D coreNoise;
+    //PerlinNoiseGenerator2D coreNoise;
 
     std::vector<ecore::HSVPalette> palettes = {p_fall, p_winter, p_spring, p_neoncity};
 
@@ -70,7 +70,6 @@ public:
 class State_Obelisk_Theater : public State 
 {
 public:
-    PerlinNoiseGenerator2D coreNoise;
     LFO lfo;
     LFO paletteLFO;
     float timescale = 0.02f;

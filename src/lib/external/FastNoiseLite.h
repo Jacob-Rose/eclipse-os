@@ -50,6 +50,8 @@
 #ifndef FASTNOISELITE_H
 #define FASTNOISELITE_H
 
+#define FNL_JAKEMODS true
+
 #include <cmath>
 
 class FastNoiseLite

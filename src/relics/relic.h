@@ -40,6 +40,8 @@ namespace eio
 
         RelicIO();
 
+        virtual void init();
+
         virtual void tick(float deltaTime) override;
         void showLeds();
         
@@ -59,6 +61,8 @@ namespace eio
     public:
 
         RelicCore();
+
+        virtual void init() {};
 
         virtual void preTick();
         virtual void tick(float deltaTime) override;

@@ -13,6 +13,7 @@
 
 using namespace eio;
 using namespace std;
+using namespace ecore::log;
 
 /*
 #if USING_NEOPIXEL
@@ -83,6 +84,10 @@ void HSVStrip::updateStripPixel(uint16_t idx)
 
 void HSVStrip::show()
 {
+#if DEBUG_LOGGING_ENABLED
+    dbgLog("HSVStrip::show", Verbosity::Display, Category::StateInfo);
+#endif
+
 #if USING_NEOPIXEL
     strip.show();
 #endif

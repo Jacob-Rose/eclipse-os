@@ -38,7 +38,7 @@ namespace obelisk
     public:
         ObeliskIO();
     
-        virtual void init();
+        virtual void init() override;
 
         uint16_t StripLEDPin = 6; // GPIO 6
     };

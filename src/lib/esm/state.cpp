@@ -9,6 +9,7 @@
 #include "state_machine.h"
 
 using namespace ecore;
+using namespace ecore::log;
 using namespace esm;
 using namespace std;
 
@@ -24,7 +25,7 @@ State::State(const char *InStateName)
 
 void State::init()
 {
-#if LOGGING_ENABLED
+#if DEBUG_LOGGING_ENABLED
     std::string tickMsg = "init state: ";
     tickMsg.append(GetStateName());
     dbgLog(tickMsg.c_str(), Verbosity::Display, Category::StateInfo);
@@ -33,7 +34,7 @@ void State::init()
 
 void State::cleanup()
 {
-#if LOGGING_ENABLED
+#if DEBUG_LOGGING_ENABLED
     std::string tickMsg = "cleanup state: ";
     tickMsg.append(GetStateName());
     dbgLog(tickMsg.c_str(), Verbosity::Display, Category::StateInfo);
@@ -42,7 +43,7 @@ void State::cleanup()
 
 void esm::State::tick(float deltaTime)
 {
-#if LOGGING_ENABLED
+#if DEBUG_LOGGING_ENABLED
     std::string tickMsg = "ticking leds: ";
     tickMsg.append(GetStateName());
     //dbgPrint(tickMsg.c_str(), Verbosity::VeryVerbose, Category::OnTick | Category::StateInfo);
@@ -56,7 +57,7 @@ void esm::State::tick(float deltaTime)
 
 void State::onStateBegin()
 {
-#if LOGGING_ENABLED
+#if DEBUG_LOGGING_ENABLED
     std::string tickMsg = "activating state: ";
     tickMsg.append(GetStateName());
     dbgLog(tickMsg.c_str(), Verbosity::Display, Category::StateInfo);
@@ -67,7 +68,7 @@ void State::onStateBegin()
 
 void State::onStateEnd()
 {
-#if LOGGING_ENABLED
+#if DEBUG_LOGGING_ENABLED
     std::string tickMsg = "deactivating state: ";
     tickMsg.append(GetStateName());
     dbgLog(tickMsg.c_str(), Verbosity::Display, Category::StateInfo);
@@ -81,7 +82,6 @@ void State::addStateTransition(weak_ptr<State> inState, TransitionLambda lambda)
 
 weak_ptr<State> State::runStateTransitionTest() const
 {
-    /* TODO  integrate w state machine */
     for (const auto& transition : stateTransitions)
     {
         if (auto targetState = transition.first.lock())

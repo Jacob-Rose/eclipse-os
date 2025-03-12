@@ -7,12 +7,13 @@
 
 #include "../ecore/core.h"
 
-#define USE_SCREEN USE_ARDUINO && 1
+#define USE_SCREEN USE_ARDUINO && 0
 
 #if USE_SCREEN
 #include <AnimatedGIF.h>
 
 #include <Adafruit_GC9A01A.h>
+#endif
 
 #include <memory>
 #include <chrono>
@@ -35,31 +36,30 @@ namespace eio
         virtual void tick(float deltaTime) override;
 
         void setCanvasSize(uint16_t x, uint16_t y);
+#if USE_SCREEN
         void setScreenRef(std::shared_ptr<Adafruit_GC9A01A> inScreenRef);
+        static void GIFDraw_UpscaleScreen(GIFDRAW *pDraw);
+#endif
 
         // using canvas pixels, lets us scale our performance with our image size
         uint16_t getPixelColor(uint16_t x, uint16_t y);
         void setPixelColor(uint16_t x, uint16_t y, uint16_t color);
 
-        static void GIFDraw_UpscaleScreen(GIFDRAW *pDraw);
-
         void setScreenGif(uint8_t* data, int size);
         void cancelGifRender();
-
-    public:
-        std::shared_ptr<Adafruit_GC9A01A> ScreenRef;
 
     private:
         bool bCanvasEnabled = false;
         int16_t xCanvasSize, yCanvasSize;
         std::vector<uint16_t> colors;
 
+#if USE_SCREEN
+        std::shared_ptr<Adafruit_GC9A01A> ScreenRef;
         AnimatedGIF img;
+#endif
         bool bImgReady = false;
 
     private:
         bool bWasCancelled = false;
     };
 };
-
-#endif
