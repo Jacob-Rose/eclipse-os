@@ -16,7 +16,6 @@ using namespace ecore::log;
 
 State_Obelisk_FourSeasons::State_Obelisk_FourSeasons(const char* InStateName) : State(InStateName)
 {
-    /*
     coreNoise.noise.SetNoiseType(FastNoiseLite::NoiseType_OpenSimplex2);
     coreNoise.noise.SetCellularDistanceFunction(FastNoiseLite::CellularDistanceFunction_Manhattan);
     coreNoise.noise.SetCellularReturnType(FastNoiseLite::CellularReturnType_Distance2);
@@ -25,7 +24,6 @@ State_Obelisk_FourSeasons::State_Obelisk_FourSeasons(const char* InStateName) : 
     coreNoise.timeScale = 0.33f;
     coreNoise.imageScaleX = 1.0f;
     coreNoise.imageScaleY = 1.0f;
-    */
 }
 
 void State_Obelisk_FourSeasons::onStateBegin()
@@ -37,7 +35,7 @@ void State_Obelisk_FourSeasons::tick(float deltaTime)
 {
     State::tick(deltaTime);
 
-    //coreNoise.tick(deltaTime);
+    coreNoise.tick(deltaTime);
 }
 
 void State_Obelisk_FourSeasons::render(HSVStripSegment *segment, HSVStripNode* node)

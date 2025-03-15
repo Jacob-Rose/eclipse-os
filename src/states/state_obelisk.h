@@ -9,6 +9,7 @@
 
 #include "../lib/esm/state.h"
 #include "../lib/eanim/effects.h"
+#include "../lib/eanim/noise.h"
 #include "../lib/ecore/hsv.h"
 #include "../lib/eanim/generator_hsv.h"
 
@@ -54,7 +55,7 @@ class State_Obelisk_FourSeasons : public State
 public:
     State_Obelisk_FourSeasons(const char* InStateName);
 
-    //PerlinNoiseGenerator2D coreNoise;
+    PerlinNoiseGenerator2D coreNoise;
 
     std::vector<ecore::HSVPalette> palettes = {p_fall, p_winter, p_spring, p_neoncity};
 

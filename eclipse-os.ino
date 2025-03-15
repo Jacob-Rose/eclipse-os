@@ -18,7 +18,7 @@ unique_ptr<RelicCore> relic;
 void setup() {
   Serial.begin(4800);
   
-  delay(4000);
+  delay(400);
 
   relic = make_unique<ObeliskCore>();
 
@@ -32,6 +32,7 @@ void loop() {
   if(relic)
   {
     relic->runTick();
+    delay(40);
   }
 }
 
