@@ -10,25 +10,12 @@
 #include <type_traits>
 
 using namespace ecore::log;
+using namespace std;
 
-Category operator&(Category lhs, Category rhs) {
-    return static_cast<Category>(
-        static_cast<std::underlying_type_t<Category>>(lhs) &
-        static_cast<std::underlying_type_t<Category>>(rhs)
-    );
-}
-
-Category operator|(Category lhs, Category rhs) {
-    return static_cast<Category>(
-        static_cast<std::underlying_type_t<Category>>(lhs) |
-        static_cast<std::underlying_type_t<Category>>(rhs)
-    );
-}
 
 void ecore::log::dbgLog(const char *InMsg, Verbosity InVerbosity, Category InHideCategories)
 {
-    //TODO FixMe
-    /*
+    
     if(ProjectVerbosity > InVerbosity)
     {
         return;
@@ -40,6 +27,5 @@ void ecore::log::dbgLog(const char *InMsg, Verbosity InVerbosity, Category InHid
         // easier for people to provide hide categories
         return;
     }
-    */
     Serial.println(InMsg);
 }

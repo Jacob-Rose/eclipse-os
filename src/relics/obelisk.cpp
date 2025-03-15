@@ -49,7 +49,7 @@ void ObeliskIO::init()
     if (inserted8) it8->second->addNodes(HSVStripNodeFactory::GenerateAxisRow(WALL_SIDE_LENGTH * 7, WALL_SIDE_LENGTH, Coord(7, WALL_SIDE_LENGTH), Coord(0, -1.f)));
     */
     
-    dbgLog("ObeliskIO::init", Verbosity::Display, Category::StateInfo);
+    dbgLog("ObeliskIO::init", Verbosity::Verbose, Category::Relic);
 
     setGlobalBrightness(EBrightness::HIGH);
 }

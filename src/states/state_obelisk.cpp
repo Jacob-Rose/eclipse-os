@@ -74,7 +74,7 @@ void State_Obelisk_Theater::onStateBegin()
 {
     State::onStateBegin();
 
-    log::dbgLog("State_Obelisk_Theater::onStateBegin", log::Verbosity::Display, log::Category::StateInfo);
+    log::dbgLog("State_Obelisk_Theater::onStateBegin", log::Verbosity::Display, log::Category::State);
 }
 
 void State_Obelisk_Theater::tick(float deltaTime)

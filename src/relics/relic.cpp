@@ -43,9 +43,6 @@ void RelicIO::showLeds()
 {
     for(const auto& seg : strips)
     {
-        #if DEBUG_LOGGING_ENABLED
-        dbgLog("RelicIO::showLeds", Verbosity::Display, Category::StateInfo);
-    #endif
         seg.second.get()->show();
     }
 }

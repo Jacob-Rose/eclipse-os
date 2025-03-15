@@ -27,14 +27,17 @@ void setup() {
 
   pinMode(LED_PIN, OUTPUT);
   
-  delay(400); // wait for serial to be ready
-  Serial.println("Eclipse OS v0.1.0");
-  Serial.println("Copyright 2024 | Jake Rose\n");
+#if DEBUG_LOGGING_ENABLED
+  delay(1500); // wait for serial to be ready
+  Serial.println("Eclipse OS v0.7.0");
+  Serial.println("Copyright 2025 | Jake Rose\n");
   Serial.println("Initializing...");
 
-  relic = make_unique<ObeliskCore>();
+  Serial.println("Debug logging is enabled... Expect performance impact.");
+  Serial.println("Use #define DEBUG_LOGGING_ENABLED 0 to disable.\n");
+#endif
 
-  dbgLog("setup", Verbosity::Display, Category::StateInfo);
+  relic = make_unique<ObeliskCore>();
 
   if(relic)
   {

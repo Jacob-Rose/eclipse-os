@@ -26,27 +26,27 @@ State::State(const char *InStateName)
 void State::init()
 {
 #if DEBUG_LOGGING_ENABLED
-    std::string tickMsg = "init state: ";
-    tickMsg.append(GetStateName());
-    dbgLog(tickMsg.c_str(), Verbosity::Display, Category::StateInfo);
+    std::string msg = "init state: ";
+    msg.append(GetStateName());
+    dbgLog(msg.c_str(), Verbosity::Display, Category::State | Category::Library);
 #endif
 }
 
 void State::cleanup()
 {
 #if DEBUG_LOGGING_ENABLED
-    std::string tickMsg = "cleanup state: ";
-    tickMsg.append(GetStateName());
-    dbgLog(tickMsg.c_str(), Verbosity::Display, Category::StateInfo);
+    std::string msg = "cleanup state: ";
+    msg.append(GetStateName());
+    dbgLog(msg.c_str(), Verbosity::Display, Category::State | Category::Library);
 #endif
 }
 
 void esm::State::tick(float deltaTime)
 {
 #if DEBUG_LOGGING_ENABLED
-    std::string tickMsg = "ticking leds: ";
-    tickMsg.append(GetStateName());
-    dbgLog(tickMsg.c_str(), Verbosity::VeryVerbose, Category::OnTick/* | Category::StateInfo */);
+    std::string msg = "ticking leds: ";
+    msg.append(GetStateName());
+    dbgLog(msg.c_str(), Verbosity::VeryVerbose, Category::OnTick | Category::State | Category::Library);
 #endif
 
     timeStateActive += std::chrono::duration<double>(deltaTime);
@@ -56,9 +56,9 @@ void esm::State::tick(float deltaTime)
 void State::onStateBegin()
 {
 #if DEBUG_LOGGING_ENABLED
-    std::string tickMsg = "activating state: ";
-    tickMsg.append(GetStateName());
-    dbgLog(tickMsg.c_str(), Verbosity::Display, Category::StateInfo);
+    std::string msg = "activating state: ";
+    msg.append(GetStateName());
+    dbgLog(msg.c_str(), Verbosity::Display, Category::State | Category::Library);
 #endif
 
     timeStateActive = std::chrono::duration<double>(0);
@@ -67,9 +67,9 @@ void State::onStateBegin()
 void State::onStateEnd()
 {
 #if DEBUG_LOGGING_ENABLED
-    std::string tickMsg = "deactivating state: ";
-    tickMsg.append(GetStateName());
-    dbgLog(tickMsg.c_str(), Verbosity::Display, Category::StateInfo);
+    std::string msg = "deactivating state: ";
+    msg.append(GetStateName());
+    dbgLog(msg.c_str(), Verbosity::Display, Category::State | Category::Library);
 #endif
 }
 

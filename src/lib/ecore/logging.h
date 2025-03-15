@@ -13,9 +13,9 @@ namespace ecore
 {
     namespace log
     {
-        enum class Verbosity
+        enum class Verbosity // levels are self explanatory
         {
-            VeryVerbose,
+            VeryVerbose, 
             Verbose,
             Display,
             Warning,
@@ -24,19 +24,38 @@ namespace ecore
     
         enum class Category
         {
-            None        = 0b00000000,
-            OnTick      = 0b00000001,
-            StateInfo   = 0b00000010,
+            None        = 0b00000000, // none flag
+            OnTick      = 0b00000001, // logging flag for those activated on the tick function
+            State       = 0b00000010, // state related logging
+            IO          = 0b00000100, // IO related logging
+            Relic       = 0b00001000, // part of the relic core
+            Library     = 0b00010000, // part of the core eclipse library
         };
     
-        Category operator|(Category lhs, Category rhs);
-    
-        Category operator&(Category lhs, Category rhs);
+        // Enable bitwise operations
+        constexpr Category operator|(Category lhs, Category rhs) {
+            return static_cast<Category>(
+                static_cast<std::underlying_type_t<Category>>(lhs) |
+                static_cast<std::underlying_type_t<Category>>(rhs)
+            );
+        }
+
+        constexpr Category operator&(Category lhs, Category rhs) {
+            return static_cast<Category>(
+                static_cast<std::underlying_type_t<Category>>(lhs) &
+                static_cast<std::underlying_type_t<Category>>(rhs)
+            );
+        }
+
+        inline bool operator!=(Category lhs, Category rhs) {
+            return static_cast<std::underlying_type_t<Category>>(lhs) != 
+                   static_cast<std::underlying_type_t<Category>>(rhs);
+        }
     
         constexpr Verbosity ProjectVerbosity = Verbosity::VeryVerbose;
-        constexpr Category ProjectHideCategories { 
-            Category::OnTick
-        };
+        constexpr Category ProjectHideCategories (
+            Category::None// & Category::OnTick
+        );
     
         void dbgLog(const char *msg, Verbosity Verbosity = Verbosity::Display, Category HideCategories = Category::None);
     }
