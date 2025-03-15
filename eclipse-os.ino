@@ -12,15 +12,29 @@
 using namespace std;
 using namespace obelisk;
 using namespace ecore;
+using namespace ecore::log;
 
-unique_ptr<RelicCore> relic;
+#define LED_PIN 25  // Onboard LED for RP2040
+
+static unique_ptr<RelicCore> relic;
+
+static bool bLEDOn{false};
 
 void setup() {
-  Serial.begin(4800);
+  delay(300);
+
+  Serial.begin(9600);
+
+  pinMode(LED_PIN, OUTPUT);
   
-  delay(400);
+  delay(400); // wait for serial to be ready
+  Serial.println("Eclipse OS v0.1.0");
+  Serial.println("Copyright 2024 | Jake Rose\n");
+  Serial.println("Initializing...");
 
   relic = make_unique<ObeliskCore>();
+
+  dbgLog("setup", Verbosity::Display, Category::StateInfo);
 
   if(relic)
   {
@@ -29,10 +43,14 @@ void setup() {
 }
 
 void loop() {
+
   if(relic)
   {
     relic->runTick();
     delay(40);
+
+    digitalWrite(LED_PIN, bLEDOn ? HIGH : LOW);
+    bLEDOn = !bLEDOn; // toggle the LED every tick
   }
 }
 

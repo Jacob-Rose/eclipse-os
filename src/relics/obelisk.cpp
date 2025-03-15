@@ -24,8 +24,9 @@ void ObeliskIO::init()
 {
     RelicIO::init();
 
-    auto [mainStripIt, stripInserted] = strips.emplace(static_cast<uint8_t>(ObeliskStripID::STRIP_MAIN), make_unique<HSVStrip>(WALL_SIDE_LENGTH * 8, StripLEDPin));
 
+    auto [mainStripIt, stripInserted] = strips.emplace(static_cast<uint8_t>(ObeliskStripID::STRIP_MAIN), make_unique<HSVStrip>(WALL_SIDE_LENGTH * 8, StripLEDPin));
+    /*
     HSVStrip* mainStrip = mainStripIt->second.get();
     auto [it1, inserted1] = strip_segments.emplace(static_cast<uint8_t>(StripSegmentID::SideA_Up), make_unique<HSVStripSegment>(mainStrip));
     if (inserted1) it1->second->addNodes(HSVStripNodeFactory::GenerateAxisRow(0                , WALL_SIDE_LENGTH, Coord(0,0), Coord(0, 1.f)));
@@ -46,6 +47,7 @@ void ObeliskIO::init()
     if (inserted7) it7->second->addNodes(HSVStripNodeFactory::GenerateAxisRow(WALL_SIDE_LENGTH * 6, WALL_SIDE_LENGTH, Coord(6,0), Coord(0, 1.f)));
     auto [it8, inserted8] = strip_segments.emplace(static_cast<uint8_t>(StripSegmentID::SideD_Down), make_unique<HSVStripSegment>(mainStrip));
     if (inserted8) it8->second->addNodes(HSVStripNodeFactory::GenerateAxisRow(WALL_SIDE_LENGTH * 7, WALL_SIDE_LENGTH, Coord(7, WALL_SIDE_LENGTH), Coord(0, -1.f)));
+    */
     
     dbgLog("ObeliskIO::init", Verbosity::Display, Category::StateInfo);
 
@@ -64,6 +66,4 @@ ObeliskCore::ObeliskCore() : RelicCore()
 void obelisk::ObeliskCore::tick(float deltaTime)
 {
     RelicCore::tick(deltaTime); // runs tick on coreState
-
-
 }

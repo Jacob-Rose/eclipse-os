@@ -46,9 +46,7 @@ void esm::State::tick(float deltaTime)
 #if DEBUG_LOGGING_ENABLED
     std::string tickMsg = "ticking leds: ";
     tickMsg.append(GetStateName());
-    //dbgPrint(tickMsg.c_str(), Verbosity::VeryVerbose, Category::OnTick | Category::StateInfo);
-    
-    //dbgPrint(std::to_string(GetStateActiveDuration().count()));
+    dbgLog(tickMsg.c_str(), Verbosity::VeryVerbose, Category::OnTick/* | Category::StateInfo */);
 #endif
 
     timeStateActive += std::chrono::duration<double>(deltaTime);

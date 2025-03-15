@@ -75,8 +75,6 @@ void RelicCore::preTick()
 {
     lastFrameDT = std::chrono::system_clock::now() - tickStartTime;
     tickStartTime = std::chrono::system_clock::now();
-
-    tick(lastFrameDT.count());
 }
 
 void RelicCore::tick(float deltaTime)
@@ -109,6 +107,7 @@ void RelicCore::postTick()
 
 void RelicCore::runTick()
 {
+    dbgLog("RelicCore::runTick", Verbosity::Display, Category::OnTick);
     preTick();
     tick(lastFrameDT.count());
     postTick();

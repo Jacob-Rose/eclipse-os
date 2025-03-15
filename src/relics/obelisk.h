@@ -40,7 +40,7 @@ namespace obelisk
     
         virtual void init() override;
 
-        uint16_t StripLEDPin = 6; // GPIO 6
+        uint16_t StripLEDPin = 22; // GPIO 6
     };
     
     class ObeliskCore : public RelicCore
