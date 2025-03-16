@@ -14,6 +14,8 @@ using namespace eanim;
 using namespace ecore;
 using namespace ecore::log;
 
+#define OBELISK_DEBUG_ENABLED 0
+
 State_Obelisk_FourSeasons::State_Obelisk_FourSeasons(const char* InStateName) : State(InStateName)
 {
     coreNoise.noise.SetNoiseType(FastNoiseLite::NoiseType_OpenSimplex2);
@@ -40,23 +42,40 @@ void State_Obelisk_FourSeasons::tick(float deltaTime)
 
 void State_Obelisk_FourSeasons::render(HSVStripSegment *segment, HSVStripNode* node)
 {
+#if OBELISK_DEBUG_ENABLED
+    dbgLog("four-seasons ~ pre");
+#endif
     State::render(segment, node);
 
     HSV outColor;
     int x = 0, y = 0;
     int sideIdx;
 
+#if OBELISK_DEBUG_ENABLED
+    dbgLog("four-seasons ~ start");
+#endif
     if(node->GetStripNodeType() == StripNodeType::MAPPED2D)
     {
         HSVStripNode_Mapped2D* castedNode = static_cast<HSVStripNode_Mapped2D*>(node);
         x = castedNode->coord.x;
         y = castedNode->coord.y;
+#if OBELISK_DEBUG_ENABLED
+        dbgLog("four-seasons ~ mapped coords");
+#endif
 
         sideIdx = y / 2; // two strips per side
     }
-    
+
     float noiseAlpha = 0;//coreNoise.evaluate(x, y);
-    outColor = palettes[sideIdx].getColor(noiseAlpha);
+
+#if OBELISK_DEBUG_ENABLED
+    dbgLog("four-seasons ~ noise");
+#endif
+    outColor = p_fall.getColor(noiseAlpha);
+
+#if OBELISK_DEBUG_ENABLED
+    dbgLog("four-seasons ~ outcolor");
+#endif
 
     segment->setHSV(node, outColor);
 }
@@ -73,8 +92,6 @@ State_Obelisk_Theater::State_Obelisk_Theater(const char* InStateName) : State(In
 void State_Obelisk_Theater::onStateBegin()
 {
     State::onStateBegin();
-
-    log::dbgLog("State_Obelisk_Theater::onStateBegin", log::Verbosity::Display, log::Category::State);
 }
 
 void State_Obelisk_Theater::tick(float deltaTime)

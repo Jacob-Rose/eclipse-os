@@ -14,24 +14,33 @@ using namespace obelisk;
 using namespace ecore;
 using namespace ecore::log;
 
+#define USE_LED_FOR_TICK 1
 #define LED_PIN 25  // Onboard LED for RP2040
+
+#define DEBUG_LOGGING_ENABLED 1 // overwrites the one in logging.h
 
 static unique_ptr<RelicCore> relic;
 
+#if USE_LED_FOR_TICK
 static bool bLEDOn{false};
+#endif
 
 void setup() {
   delay(300);
 
   Serial.begin(9600);
 
+#if USE_LED_FOR_TICK
   pinMode(LED_PIN, OUTPUT);
+#endif
+
+  delay(300);
   
 #if DEBUG_LOGGING_ENABLED
-  delay(1500); // wait for serial to be ready
+  delay(4000); // wait for serial to be ready
   Serial.println("Eclipse OS v0.7.0");
-  Serial.println("Copyright 2025 | Jake Rose\n");
-  Serial.println("Initializing...");
+  Serial.println("Copyright 2025 | Jake Rose");
+  Serial.println("Initializing...\n");
 
   Serial.println("Debug logging is enabled... Expect performance impact.");
   Serial.println("Use #define DEBUG_LOGGING_ENABLED 0 to disable.\n");
@@ -52,8 +61,10 @@ void loop() {
     relic->runTick();
     delay(40);
 
+#if USE_LED_FOR_TICK
     digitalWrite(LED_PIN, bLEDOn ? HIGH : LOW);
     bLEDOn = !bLEDOn; // toggle the LED every tick
+#endif
   }
 }
 

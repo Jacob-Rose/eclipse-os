@@ -15,19 +15,19 @@ using namespace eio;
 using namespace std;
 using namespace ecore::log;
 
-/*
 #if USING_NEOPIXEL
-HSVStrip::HSVStrip(uint16_t inLedCount, uint16_t inLedPin, neoPixelType inPixelType) : HSVStrip(inLedCount, inLedPin)
-, strip(inLedCount, inLedPin, inPixelType)
+HSVStrip::HSVStrip(uint16_t inLedCount, uint16_t inLedPin, neoPixelType inPixelType) : strip(inLedCount, inLedPin, inPixelType)
 {
     strip_HSV = std::vector<HSV>(inLedCount);
 
     strip.begin();
 }
 #endif
-*/
 
-HSVStrip::HSVStrip(uint16_t inLedCount, uint16_t inLedPin)
+HSVStrip::HSVStrip(uint16_t inLedCount, uint16_t inLedPin) :
+#if USING_NEOPIXEL
+    HSVStrip(inLedCount, inLedPin, NEO_GRB + NEO_KHZ800)
+#endif
 {
 
 }
@@ -43,6 +43,12 @@ HSV HSVStrip::getHSV(uint16_t idx) const
 
 void HSVStrip::setHSV(uint16_t idx, const HSV& hsv)
 {
+    if(idx >= strip_HSV.size())
+    {
+        string str = "HSVStrip::setHSV - index out of range: " + to_string(idx) + " >= " + to_string(strip_HSV.size());
+        dbgLog(str.c_str(), Verbosity::Error, Category::Library);
+        return;
+    }
     strip_HSV[idx] = hsv;
 
     updateStripPixel(idx);
@@ -50,6 +56,13 @@ void HSVStrip::setHSV(uint16_t idx, const HSV& hsv)
 
 void HSVStrip::setHSV(uint16_t idx, float h, uint8_t s, uint8_t v)
 {
+    if(idx >= strip_HSV.size())
+    {
+        string str = "HSVStrip::setHSV - index out of range: " + to_string(idx) + " >= " + to_string(strip_HSV.size());
+        dbgLog(str.c_str(), Verbosity::Error, Category::Library);
+        return;
+    }
+    
     strip_HSV[idx].h = h;
     strip_HSV[idx].s = s;
     strip_HSV[idx].v = v;
@@ -85,6 +98,7 @@ void HSVStrip::updateStripPixel(uint16_t idx)
 void HSVStrip::show()
 {
 #if USING_NEOPIXEL
+    dbgLog("HSVStrip::show", Verbosity::VeryVerbose, Category::Library);
     strip.show();
 #endif
 }

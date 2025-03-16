@@ -226,8 +226,8 @@ HSV HSVPalette::getColor(float t) const
 }
 
 std::string HSV::to_string() const{
-    std::string str = "hue: " + std::to_string(h);
-    str += " sat: " + std::to_string(s);
-    str += " val: " + std::to_string(v);
+    std::string str = "hue: " + std::to_string(getHueAs16());
+    str += " sat: " + std::to_string(getSatAs8());
+    str += " val: " + std::to_string(getValAs8());
     return str;
 }

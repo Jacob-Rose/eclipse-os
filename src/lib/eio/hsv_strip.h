@@ -35,11 +35,9 @@ namespace eio
     class HSVStrip
     {
     public:
-/*
 #if USING_NEOPIXEL
         HSVStrip(uint16_t inLedCount, uint16_t inLedPin, neoPixelType inPixelType);
 #endif
-*/
         HSVStrip(uint16_t inLedCount, uint16_t inLedPin);
         ~HSVStrip();
 
