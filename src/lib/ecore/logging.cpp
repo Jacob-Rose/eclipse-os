@@ -15,7 +15,6 @@ using namespace std;
 
 void ecore::log::dbgLog(const char *InMsg, Verbosity InVerbosity, Category InHideCategories)
 {
-    
     if(ProjectVerbosity > InVerbosity)
     {
         return;

@@ -7,6 +7,7 @@
 
 #include <memory>
 
+#include "../ecore/core.h"
 #include "../ecore/logging.h"
 
 
@@ -43,12 +44,16 @@ HSV HSVStrip::getHSV(uint16_t idx) const
 
 void HSVStrip::setHSV(uint16_t idx, const HSV& hsv)
 {
+#if USE_ERROR_CHECKING
     if(idx >= strip_HSV.size())
     {
+#if DEBUG_LOGGING_ENABLED
         string str = "HSVStrip::setHSV - index out of range: " + to_string(idx) + " >= " + to_string(strip_HSV.size());
         dbgLog(str.c_str(), Verbosity::Error, Category::Library);
+#endif
         return;
     }
+#endif
     strip_HSV[idx] = hsv;
 
     updateStripPixel(idx);
@@ -56,12 +61,16 @@ void HSVStrip::setHSV(uint16_t idx, const HSV& hsv)
 
 void HSVStrip::setHSV(uint16_t idx, float h, uint8_t s, uint8_t v)
 {
+#if USE_ERROR_CHECKING
     if(idx >= strip_HSV.size())
     {
+#if DEBUG_LOGGING_ENABLED
         string str = "HSVStrip::setHSV - index out of range: " + to_string(idx) + " >= " + to_string(strip_HSV.size());
         dbgLog(str.c_str(), Verbosity::Error, Category::Library);
+#endif
         return;
     }
+#endif
     
     strip_HSV[idx].h = h;
     strip_HSV[idx].s = s;
@@ -98,7 +107,9 @@ void HSVStrip::updateStripPixel(uint16_t idx)
 void HSVStrip::show()
 {
 #if USING_NEOPIXEL
+#if DEBUG_LOGGING_ENABLED
     dbgLog("HSVStrip::show", Verbosity::VeryVerbose, Category::Library);
+#endif
     strip.show();
 #endif
 }

@@ -66,7 +66,7 @@ void State_Obelisk_FourSeasons::render(HSVStripSegment *segment, HSVStripNode* n
         sideIdx = y / 2; // two strips per side
     }
 
-    float noiseAlpha = 0;//coreNoise.evaluate(x, y);
+    float noiseAlpha = coreNoise.evaluate(x, y);
 
 #if OBELISK_DEBUG_ENABLED
     dbgLog("four-seasons ~ noise");
