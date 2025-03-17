@@ -16,6 +16,7 @@ using namespace ecore::log;
 
 #define USE_LED_FOR_TICK 1
 #define LED_PIN 25  // Onboard LED for RP2040
+#define USE_SERIAL_INPUT 1
 
 #define DEBUG_LOGGING_ENABLED 1 // overwrites the one in logging.h
 
@@ -65,7 +66,16 @@ void loop() {
     digitalWrite(LED_PIN, bLEDOn ? HIGH : LOW);
     bLEDOn = !bLEDOn; // toggle the LED every tick
 #endif
+
+#if USE_SERIAL_INPUT
+    if(Serial.available())
+    {
+      string msg = Serial.readString().c_str();
+      Serial.print("Received: ");
+      Serial.println(msg.c_str());
+    }
   }
+#endif
 }
 
 void setup1() {

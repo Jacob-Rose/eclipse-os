@@ -10,46 +10,24 @@
 
 #include "../ecore/core.h"
 
-#include "../ecore/hsv.h"
 #include "../ecore/coord.h"
+#include "../ecore/hsv.h"
 
+#include "hsv_strip.h"
 
 using namespace ecore;
 using namespace std;
+using namespace eio;
 
 namespace eio
 {
     ///
     /// 2d mapping of led strips used so states/patterns can query data as they see fit.
     ///
-
-
-    enum class StripNodeType
-    {
-        ROOT,
-        MAPPED1D,
-        MAPPED2D,
-    };
-
-    class HSVStripNode
-    {
-    public:
-        HSVStripNode();
-        virtual ~HSVStripNode() = default;
-
-        // since we dont support RTTI, we need to provide a way to check if a node is supported
-        virtual StripNodeType GetStripNodeType() const { return StripNodeType::ROOT; }
-
-    public:
-        //led index
-        int stripIdx; 
-    };
-
-
     class HSVStripNode_Mapped2D : public HSVStripNode
     {
     public:
-        HSVStripNode_Mapped2D();
+        HSVStripNode_Mapped2D(HSVStrip* inParentStrip, int inStripIdx) : HSVStripNode(inParentStrip, inStripIdx) {}
 
         virtual StripNodeType GetStripNodeType() const override { return StripNodeType::MAPPED2D; }
     public:
@@ -60,6 +38,6 @@ namespace eio
     class HSVStripNodeFactory
     {
     public:
-        static vector<shared_ptr<HSVStripNode>> GenerateAxisRow(int startIdx, int Length, const Coordinate& posStart, const Coordinate& posDelta);
+        static vector<shared_ptr<HSVStripNode>> GenerateAxisRow(HSVStrip* strip, int startIdx, int Length, const Coordinate& posStart, const Coordinate& posDelta);
     };
 }

@@ -40,12 +40,12 @@ void State_Obelisk_FourSeasons::tick(float deltaTime)
     coreNoise.tick(deltaTime);
 }
 
-void State_Obelisk_FourSeasons::render(HSVStripSegment *segment, HSVStripNode* node)
+void State_Obelisk_FourSeasons::render(HSVStripNode* node)
 {
 #if OBELISK_DEBUG_ENABLED
     dbgLog("four-seasons ~ pre");
 #endif
-    State::render(segment, node);
+    State::render(node);
 
     HSV outColor;
     int x = 0, y = 0;
@@ -71,13 +71,13 @@ void State_Obelisk_FourSeasons::render(HSVStripSegment *segment, HSVStripNode* n
 #if OBELISK_DEBUG_ENABLED
     dbgLog("four-seasons ~ noise");
 #endif
-    outColor = p_fall.getColor(noiseAlpha);
+    outColor = palettes[0].getColor(noiseAlpha);
 
 #if OBELISK_DEBUG_ENABLED
     dbgLog("four-seasons ~ outcolor");
 #endif
 
-    segment->setHSV(node, outColor);
+    node->setHSV(outColor);
 }
 
 State_Obelisk_Theater::State_Obelisk_Theater(const char* InStateName) : State(InStateName)
@@ -102,9 +102,9 @@ void State_Obelisk_Theater::tick(float deltaTime)
     paletteLFO.tick(deltaTime);
 }
 
-void State_Obelisk_Theater::render(HSVStripSegment *segment, HSVStripNode* node)
+void State_Obelisk_Theater::render(HSVStripNode* node)
 {
-    State::render(segment, node);
+    State::render(node);
 
     HSV outColor;
     int x = 0, y = 0;
@@ -122,5 +122,5 @@ void State_Obelisk_Theater::render(HSVStripSegment *segment, HSVStripNode* node)
     
     outColor = palettes[sideIdx].getColor(alpha);
 
-    segment->setHSV(node, outColor);
+    node->setHSV(outColor);
 }

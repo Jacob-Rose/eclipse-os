@@ -62,7 +62,7 @@ public:
     virtual void onStateBegin() override;
 
     virtual void tick(float deltaTime) override;
-    virtual void render(HSVStripSegment* segment, HSVStripNode* node) override;
+    virtual void render(HSVStripNode* node) override;
 
     std::shared_ptr<GeneratorHSV> generator;
 };
@@ -82,7 +82,7 @@ public:
     virtual void onStateBegin() override;
 
     virtual void tick(float deltaTIme) override;
-    virtual void render(HSVStripSegment* segment, HSVStripNode* node) override;
+    virtual void render(HSVStripNode* node) override;
 
     std::shared_ptr<GeneratorHSV> generator;
 };

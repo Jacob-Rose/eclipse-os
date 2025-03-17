@@ -16,8 +16,6 @@
 #include <Adafruit_NeoPixel.h>
 #endif
 
-#include "strip_projection.h"
-
 #include "../ecore/hsv.h"
 
 using namespace ecore;
@@ -72,6 +70,34 @@ namespace eio
     };
 
 
+    // see HSVStripNode:: 
+    enum class StripNodeType
+    {
+        ROOT,
+        MAPPED1D,
+        MAPPED2D,
+        // YOU CAN EXTEND WITH CASTING LOCALLY HERE
+    };
+
+    class HSVStripNode
+    {
+    public:
+        HSVStripNode(HSVStrip* inParentStrip, int inStripIdx);
+        // we need to provide a virtual destructor so we can delete derived classes safely;
+        virtual ~HSVStripNode() = default;
+        
+        void setHSV(const HSV& hsv);
+        void setHSV(float h, uint8_t s, uint8_t v);
+
+        // since we dont support RTTI (nor do I want to due to perf concerns), we need to provide a way to check if a node is supported
+        virtual StripNodeType GetStripNodeType() const { return StripNodeType::ROOT; }
+
+    public:
+        HSVStrip* parentStrip;
+        int stripIdx; 
+    };
+
+
     class HSVStripSegment
     {
     public:
@@ -79,9 +105,6 @@ namespace eio
 
         void addNode(shared_ptr<HSVStripNode> node);
         void addNodes(vector<shared_ptr<HSVStripNode>> inNodes);
-
-        void setHSV(HSVStripNode* node, const HSV& hsv);
-        void setHSV(HSVStripNode* node, float h, uint8_t s, uint8_t v);
 
         const vector<shared_ptr<HSVStripNode>>& getNodes() const;
     private:

@@ -19,8 +19,11 @@ namespace ecore
             Verbose,
             Display,
             Warning,
-            Error
+            Error,
+            Fatal,
         };
+
+        static std::string getVerbosityString(Verbosity inVerbosity);
     
         enum class Category
         {
@@ -38,23 +41,23 @@ namespace ecore
                 static_cast<std::underlying_type_t<Category>>(lhs) |
                 static_cast<std::underlying_type_t<Category>>(rhs)
             );
-        }
+        };
 
         constexpr Category operator&(Category lhs, Category rhs) {
             return static_cast<Category>(
                 static_cast<std::underlying_type_t<Category>>(lhs) &
                 static_cast<std::underlying_type_t<Category>>(rhs)
             );
-        }
+        };
 
         inline bool operator!=(Category lhs, Category rhs) {
             return static_cast<std::underlying_type_t<Category>>(lhs) != 
                    static_cast<std::underlying_type_t<Category>>(rhs);
-        }
+        };
     
-        constexpr Verbosity ProjectVerbosity = Verbosity::VeryVerbose;
+        constexpr Verbosity ProjectVerbosity = Verbosity::Verbose;
         constexpr Category ProjectHideCategories (
-            Category::None// & Category::OnTick
+            Category::None | Category::OnTick
         );
     
         void dbgLog(const char *msg, Verbosity Verbosity = Verbosity::Display, Category HideCategories = Category::None);
