@@ -8,7 +8,7 @@
 #define USE_ARDUINO 1
 #define USE_PICO_SDK 0
 
-#define USE_ERROR_CHECKING 1
+#define ERROR_CHECKING_ENABLED 1
 
 #if USE_ARDUINO
 #include <Arduino.h>

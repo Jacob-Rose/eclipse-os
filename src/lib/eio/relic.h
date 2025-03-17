@@ -10,13 +10,10 @@
 #include <vector>
 #include <map>
 
-#include "../lib/ecore/tickable.h"
-#include "../lib/eio/hsv_strip.h"
-
-#include "../lib/esm/state.h"
+#include "../ecore/tickable.h"
+#include "hsv_strip.h"
 
 using namespace ecore;
-using namespace esm;
 using namespace std;
 
 namespace eio
@@ -72,7 +69,6 @@ namespace eio
 
     protected:
         unique_ptr<RelicIO> coreIO;
-        unique_ptr<State> coreState;
     
     private:
         // used for accurately simulating time between frames

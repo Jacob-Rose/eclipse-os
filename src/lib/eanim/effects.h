@@ -50,7 +50,7 @@ namespace eanim
     *
     * TODO: Copy logic from drop state machine
     */
-    class DropGenerator : public GeneratorHSV, public Tickable
+    class DropGenerator : public GeneratorHSV
     {
     public:
         DropGenerator(uint16_t inLength);
@@ -63,7 +63,7 @@ namespace eanim
         virtual void tick(float deltaTime) override;
 
         // GeneratorHSV interface
-        virtual void applyEffectLogic(HSVStripNode* node, HSV& InOutColor) const override;
+        virtual void render(HSVStripNode* node, HSV& InOutColor) const override;
 
     private:
         struct Drop
@@ -82,7 +82,7 @@ namespace eanim
 
     // TODO: Implement this
     /* @brief A generator that will generate a laser scan effect like night rider */
-    class LaserScanGenerator : public Generator1D, public Tickable
+    class LaserScanGenerator : public Generator1D
     {
         std::shared_ptr<FloatAttribute> position;
         std::shared_ptr<FloatAttribute> falloffDistance;

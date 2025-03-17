@@ -7,7 +7,7 @@
 
 #include "../lib/esm/state.h"
 
-#include "relic.h"
+#include "../lib/eio/relic.h"
 
 using namespace ecore;
 using namespace eio;

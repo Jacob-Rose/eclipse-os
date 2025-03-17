@@ -50,25 +50,23 @@ inline HSVPalette p_neoncity {
 /*
 * Just runs the provided pattern
 */
-class State_Obelisk_FourSeasons : public State
+class Pattern_Obelisk_FourSeasons : public GeneratorHSV
 {
 public:
-    State_Obelisk_FourSeasons(const char* InStateName);
+    Pattern_Obelisk_FourSeasons();
 
     PerlinNoiseGenerator2D coreNoise;
 
     std::vector<ecore::HSVPalette> palettes = {p_fall, p_winter, p_spring, p_neoncity};
 
-    virtual void onStateBegin() override;
-
     virtual void tick(float deltaTime) override;
-    virtual void render(HSVStripNode* node) override;
+    virtual void render(HSVStripNode* inNode, HSV& inOutColor) const override;
 
     std::shared_ptr<GeneratorHSV> generator;
 };
 
 
-class State_Obelisk_Theater : public State 
+class Pattern_Obelisk_Theater : public GeneratorHSV 
 {
 public:
     LFO lfo;
@@ -77,12 +75,10 @@ public:
 
     std::vector<ecore::HSVPalette> palettes = {p_fall, p_winter, p_spring, p_neoncity};
 
-    State_Obelisk_Theater(const char* InStateName);
-
-    virtual void onStateBegin() override;
+    Pattern_Obelisk_Theater();
 
     virtual void tick(float deltaTIme) override;
-    virtual void render(HSVStripNode* node) override;
+    virtual void render(HSVStripNode* inNode, HSV& inOutColor) const override;
 
     std::shared_ptr<GeneratorHSV> generator;
 };

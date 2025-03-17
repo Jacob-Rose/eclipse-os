@@ -91,10 +91,10 @@ DropGenerator::DropGenerator(uint16_t inLength) : length(inLength)
 }
 
 void DropGenerator::tick(float deltaTime)
-{ 
+{
 }
 
-void DropGenerator::applyEffectLogic(HSVStripNode* node, HSV& InOutColor) const
+void DropGenerator::render(HSVStripNode* node, HSV& InOutColor) const
 {
 }
 

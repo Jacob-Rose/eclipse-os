@@ -6,7 +6,6 @@
 #include "state.h"
 
 #include "../ecore/logging.h"
-#include "state_machine.h"
 
 using namespace ecore;
 using namespace ecore::log;
@@ -96,7 +95,61 @@ weak_ptr<State> State::runStateTransitionTest() const
     return std::weak_ptr<State>(); // Return nullptr if no transition condition is met
 }
 
+void State::addStateTickLambda(int id, TickLambda Lambda)
+{
+#if ERROR_CHECKING_ENABLED
+    if (stateTickLambdas.find(id) != stateTickLambdas.end())
+    {
+        std::string msg = "State tick lambda with id: " + std::to_string(id) + " already exists!";
+        dbgLog(msg.c_str(), Verbosity::Error, Category::State | Category::Library);
+        return; // Prevent overwriting existing lambda
+    }
+#endif    
+    stateTickLambdas[id] = Lambda; // Add the lambda to the map with the provided id
+}
+
+void State::removeStateTickLambda(int id)
+{
+#if ERROR_CHECKING_ENABLED
+    if (stateTickLambdas.find(id) == stateTickLambdas.end())
+    {
+        std::string msg = "State tick lambda with id: " + std::to_string(id) + " does not exist!";
+        dbgLog(msg.c_str(), Verbosity::Error, Category::State | Category::Library);
+        return; // Prevent removing non-existing lambda
+    }
+#endif
+    stateTickLambdas.erase(id); // Remove the lambda from the map using the provided id
+}
+
+void State::runStateTickLambdas(float deltaTime) const
+{
+    for (const auto& tickLambda : stateTickLambdas)
+    {
+        tickLambda.second(deltaTime); // Call the lambda with a deltaTime of 0.0f
+    }
+}
+
 chrono::duration<double> State::GetStateActiveDuration() const
 {
     return timeStateActive;
+}
+
+
+void StateMachine::setActiveState(shared_ptr<State> InNextState)
+{
+    NextState = InNextState;
+    currentTransitionTime = 0.0f;
+}
+
+void StateMachine::init()
+{
+}
+
+void StateMachine::cleanup()
+{
+}
+
+void StateMachine::tick(float deltaTime)
+{
+    //TODO
 }

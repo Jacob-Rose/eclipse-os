@@ -8,10 +8,11 @@
 #include "../lib/ecore/core.h"
 #include "../lib/esm/state.h"
 
-#include "relic.h"
+#include "../lib/eio/relic.h"
 
 using namespace ecore;
 using namespace eio;
+using namespace esm;
 
 namespace obelisk
 {    
@@ -49,5 +50,8 @@ namespace obelisk
         ObeliskCore();
 
         virtual void tick(float deltaTime) override;
+
+    protected:
+        std::unique_ptr<State> coreState{ nullptr };
     };
 }

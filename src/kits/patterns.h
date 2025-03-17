@@ -28,7 +28,7 @@ using namespace eio;
 // features:
 // - dust particles from a palette
 // - background from a palette
-class Pattern_SpaceDust : public GeneratorHSV, public Tickable
+class Pattern_SpaceDust : public GeneratorHSV
 {
 public:
     HSVPalette mainPalette;
@@ -39,10 +39,10 @@ public:
 
     virtual void tick(float deltaTime) override;
 
-    virtual void applyEffectLogic(HSVStripNode* node, HSV& InOutColor) const override;
+    virtual void render(HSVStripNode* node, HSV& InOutColor) const override;
 };
 
-class Pattern_RitualFire : public GeneratorHSV, public Tickable
+class Pattern_RitualFire : public GeneratorHSV
 {
 public:
     HSVPalette mainPalette = jpalettes::p_bootgradient;
@@ -58,7 +58,7 @@ public:
     
     virtual void tick(float deltaTime) override;
 
-    virtual void applyEffectLogic(HSVStripNode* node, HSV& InOutColor) const override;
+    virtual void render(HSVStripNode* node, HSV& InOutColor) const override;
 private:
     float currentTime;
 };

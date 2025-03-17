@@ -8,6 +8,7 @@
 #include "../lib/eio/strip_projection.h"
 
 #include "../states/state_obelisk.h"
+#include "../lib/esm/state_generic.h"
 #include "../lib/ecore/logging.h"
 
 using namespace obelisk;
@@ -59,12 +60,17 @@ ObeliskCore::ObeliskCore() : RelicCore()
 {
     coreIO = make_unique<ObeliskIO>();
     coreIO->init();
-    coreState = make_unique<State_Obelisk_FourSeasons>("obelisk_four_seasons");
+    coreState = make_unique<State_GenericHSV>("mainState", coreIO.get());
+
+    State_GenericHSV* coreStateCasted = static_cast<State_GenericHSV*>(coreState.get());
+    coreStateCasted->setGenerator(make_shared<Pattern_Obelisk_FourSeasons>());
     coreState->init();
 }
 
 
 void obelisk::ObeliskCore::tick(float deltaTime)
 {
-    RelicCore::tick(deltaTime); // runs tick on coreState
+    RelicCore::tick(deltaTime);
+
+    coreState->tick(deltaTime); 
 }

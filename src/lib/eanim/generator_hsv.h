@@ -27,12 +27,13 @@ namespace eanim
 
     * frankly, partially going toward deprecation, use GeneratorHSV_Cont and GeneratorHSV_Cont2D if possible
     */
-    class GeneratorHSV
+    class GeneratorHSV : public Tickable
     {
     public:
         // generate color for provided index
         // node is provided for any required context
-        virtual void applyEffectLogic(HSVStripNode* node, HSV& InOutColor) const = 0;
+        virtual void render(HSVStripNode* node, HSV& InOutColor) const = 0;
+        virtual void tick(float deltaTime) {} // optional, if the generator needs to update any internal state
     
     };
 

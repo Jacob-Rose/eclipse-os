@@ -14,9 +14,9 @@ using namespace eanim;
 using namespace ecore;
 using namespace ecore::log;
 
-#define OBELISK_DEBUG_ENABLED 0
+#define OBELISK_DEBUG_ENABLED DEBUG_LOGGING_ENABLED && 0
 
-State_Obelisk_FourSeasons::State_Obelisk_FourSeasons(const char* InStateName) : State(InStateName)
+Pattern_Obelisk_FourSeasons::Pattern_Obelisk_FourSeasons()
 {
     coreNoise.noise.SetNoiseType(FastNoiseLite::NoiseType_OpenSimplex2);
     coreNoise.noise.SetCellularDistanceFunction(FastNoiseLite::CellularDistanceFunction_Manhattan);
@@ -28,24 +28,16 @@ State_Obelisk_FourSeasons::State_Obelisk_FourSeasons(const char* InStateName) : 
     coreNoise.imageScaleY = 1.0f;
 }
 
-void State_Obelisk_FourSeasons::onStateBegin()
+void Pattern_Obelisk_FourSeasons::tick(float deltaTime)
 {
-    State::onStateBegin();
-}
-
-void State_Obelisk_FourSeasons::tick(float deltaTime)
-{
-    State::tick(deltaTime);
-
     coreNoise.tick(deltaTime);
 }
 
-void State_Obelisk_FourSeasons::render(HSVStripNode* node)
+void Pattern_Obelisk_FourSeasons::render(HSVStripNode* inNode, HSV& inOutColor) const
 {
 #if OBELISK_DEBUG_ENABLED
     dbgLog("four-seasons ~ pre");
 #endif
-    State::render(node);
 
     HSV outColor;
     int x = 0, y = 0;
@@ -54,9 +46,9 @@ void State_Obelisk_FourSeasons::render(HSVStripNode* node)
 #if OBELISK_DEBUG_ENABLED
     dbgLog("four-seasons ~ start");
 #endif
-    if(node->GetStripNodeType() == StripNodeType::MAPPED2D)
+    if(inNode->GetStripNodeType() == StripNodeType::MAPPED2D)
     {
-        HSVStripNode_Mapped2D* castedNode = static_cast<HSVStripNode_Mapped2D*>(node);
+        HSVStripNode_Mapped2D* castedNode = static_cast<HSVStripNode_Mapped2D*>(inNode);
         x = castedNode->coord.x;
         y = castedNode->coord.y;
 #if OBELISK_DEBUG_ENABLED
@@ -77,10 +69,10 @@ void State_Obelisk_FourSeasons::render(HSVStripNode* node)
     dbgLog("four-seasons ~ outcolor");
 #endif
 
-    node->setHSV(outColor);
+    inOutColor = outColor;
 }
 
-State_Obelisk_Theater::State_Obelisk_Theater(const char* InStateName) : State(InStateName)
+Pattern_Obelisk_Theater::Pattern_Obelisk_Theater()
 {
     lfo.width = 24.f;
     lfo.speed = -1.5f;
@@ -89,30 +81,21 @@ State_Obelisk_Theater::State_Obelisk_Theater(const char* InStateName) : State(In
 
 }
 
-void State_Obelisk_Theater::onStateBegin()
+void Pattern_Obelisk_Theater::tick(float deltaTime)
 {
-    State::onStateBegin();
-}
-
-void State_Obelisk_Theater::tick(float deltaTime)
-{
-    State::tick(deltaTime);
-
     lfo.tick(deltaTime);
     paletteLFO.tick(deltaTime);
 }
 
-void State_Obelisk_Theater::render(HSVStripNode* node)
+void Pattern_Obelisk_Theater::render(HSVStripNode* inNode, HSV& inOutColor) const
 {
-    State::render(node);
-
     HSV outColor;
     int x = 0, y = 0;
     int sideIdx;
 
-    if(node->GetStripNodeType() == StripNodeType::MAPPED2D)
+    if(inNode->GetStripNodeType() == StripNodeType::MAPPED2D)
     {
-        HSVStripNode_Mapped2D* castedNode = static_cast<HSVStripNode_Mapped2D*>(node);
+        HSVStripNode_Mapped2D* castedNode = static_cast<HSVStripNode_Mapped2D*>(inNode);
         x = castedNode->coord.x;
         y = castedNode->coord.y;
 
@@ -122,5 +105,5 @@ void State_Obelisk_Theater::render(HSVStripNode* node)
     
     outColor = palettes[sideIdx].getColor(alpha);
 
-    node->setHSV(outColor);
+    inNode->setHSV(outColor);
 }

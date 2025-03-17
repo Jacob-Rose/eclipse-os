@@ -7,6 +7,7 @@
 
 #include <vector>
 #include <memory>
+#include <map>
 
 #include "../ecore/core.h"
 
@@ -94,7 +95,7 @@ namespace eio
 
     public:
         HSVStrip* parentStrip;
-        int stripIdx; 
+        int stripIdx;
     };
 
 

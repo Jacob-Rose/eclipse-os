@@ -7,8 +7,9 @@
 
 #include <memory>
 
-#include "../lib/esm/state.h"
-#include "../lib/eanim/generator_hsv.h"
+#include "state.h"
+#include "../eio/relic.h"
+#include "../eanim/generator_hsv.h"
 
 using namespace ecore;
 using namespace eanim;
@@ -18,14 +19,17 @@ using namespace std;
 /*
 * Just runs the provided pattern
 */
-class State_Generic : public State
+class State_GenericHSV : public State
 {
 public:
-    State_Generic(const char* InStateName);
+    State_GenericHSV(const char* InStateName, RelicIO* inIO) : io(inIO), State(InStateName) {}
+
+    void setGenerator(shared_ptr<GeneratorHSV> inGenerator) { generator = inGenerator; }
 
 protected:
     virtual void onStateBegin() override;
     virtual void tick(float deltaTime) override;
 
     shared_ptr<GeneratorHSV> generator;
+    RelicIO* io;
 };

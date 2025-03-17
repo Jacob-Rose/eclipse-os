@@ -17,7 +17,7 @@ void Pattern_SpaceDust::tick(float deltaTime)
     
 }
 
-void Pattern_SpaceDust::applyEffectLogic(HSVStripNode* node, HSV& InOutColor) const
+void Pattern_SpaceDust::render(HSVStripNode* node, HSV& InOutColor) const
 {
 
 }
@@ -51,7 +51,7 @@ void Pattern_RitualFire::tick(float deltaTime)
     //gasesPerlinNoise.tick(deltaTime);
 }
 
-void Pattern_RitualFire::applyEffectLogic(HSVStripNode* node, HSV& InOutColor) const
+void Pattern_RitualFire::render(HSVStripNode* node, HSV& InOutColor) const
 {
     HSV outColor;
 

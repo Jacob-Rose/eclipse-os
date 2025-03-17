@@ -37,19 +37,25 @@ namespace esm
         virtual void cleanup();
 
         virtual void tick(float deltaTime) override;
-        virtual void render(HSVStripNode* Node) {}
 
     protected:
         //logic level only, no rendering logic here
         virtual void onStateBegin();
         virtual void onStateEnd();
 
+        // runs all state transitions and returns first one that returns true
+        weak_ptr<State> runStateTransitionTest() const;
+        void runStateTickLambdas(float deltaTime) const;
+
+    public:
         using TransitionLambda = function<bool(State* TargetState, State* MyState)>;
+        using TickLambda = function<void(float deltaTime)>;
 
         // lambda passes in the owning state
         void addStateTransition(weak_ptr<State> State,  TransitionLambda Lambda);
-        // runs all state transitions and returns first one that returns true
-        weak_ptr<State> runStateTransitionTest() const;
+
+        void addStateTickLambda(int id, TickLambda Lambda);
+        void removeStateTickLambda(int id);
 
         const string& GetStateName() const { return stateName; }
 
@@ -57,10 +63,37 @@ namespace esm
 
     private:
         std::map<weak_ptr<State>, TransitionLambda, owner_less<weak_ptr<State>>> stateTransitions;
+        std::map<int, TickLambda> stateTickLambdas; // TODO int should be a hash or something and we should return a handle for people when they register
         chrono::duration<double> timeStateActive;
 
         std::string stateName;
 
         bool bInit = false;
+    };
+
+
+    class StateMachine : public Tickable
+    {
+    public:
+        StateMachine();
+
+        virtual void init();
+        virtual void cleanup();
+
+        virtual void tick(float deltaTime) override;
+
+        void addState(shared_ptr<State> NewState);
+
+    protected:
+        void setActiveState(shared_ptr<State> NextState);
+
+        float transitionTime = 8.0f;
+
+    private:
+        vector<shared_ptr<State>> States;
+        shared_ptr<State> ActiveState;
+        shared_ptr<State> NextState;
+
+        float currentTransitionTime;
     };
 }

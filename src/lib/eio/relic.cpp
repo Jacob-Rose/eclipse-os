@@ -1,11 +1,11 @@
 #include "relic.h"
 
-#include "../lib/ecore/logging.h"
+#include "../ecore/logging.h"
 
 using namespace eio;
 using namespace ecore::log;
 
-#define RELIC_DEBUG_ENABLED 1
+#define RELIC_DEBUG_ENABLED DEBUG_LOGGING_ENABLED && 1
 
 uint8_t eio::getEBrightnessAsByte(EBrightness inBrightness) {
     switch(inBrightness)
@@ -81,41 +81,6 @@ void RelicCore::preTick()
 
 void RelicCore::tick(float deltaTime)
 {
-    if(coreState)
-    {
-        // TODO make this take in the delta time and not self calculate somehow
-        coreState->tick(deltaTime);
-#if RELIC_DEBUG_ENABLED
-        dbgLog("coreState is valid", Verbosity::Verbose, Category::OnTick | Category::Relic);
-#endif
-
-        if(coreIO)
-        {
-#if RELIC_DEBUG_ENABLED
-            dbgLog("coreIO is valid", Verbosity::Verbose, Category::OnTick | Category::Relic);
-#endif
-            for(const auto& seg : coreIO->strip_segments)
-            {
-                for(const std::shared_ptr<HSVStripNode>& node : seg.second->getNodes())
-                {
-#if USE_ERROR_CHECKING
-                    HSVStripNode* nodePtr = node.get();
-                    if(nodePtr == nullptr)
-                    {
-                        dbgLog("nodePtr is null, skipping render", Verbosity::Error, Category::OnTick | Category::Relic);
-                        continue; // skip if nodePtr is null
-                    }
-                    if(coreState == nullptr)
-                    {
-                        dbgLog("coreState is null, skipping render", Verbosity::Error, Category::OnTick | Category::Relic);
-                        continue; // skip if coreState is null
-                    }
-#endif
-                    coreState->render(nodePtr);
-                }
-            }
-        }
-    }
 }
 
 void RelicCore::postTick()
