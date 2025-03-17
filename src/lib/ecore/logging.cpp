@@ -47,6 +47,10 @@ void ecore::log::dbgLog(const char *InMsg, Verbosity InVerbosity, Category InHid
     if((ProjectHideCategories & InHideCategories) != Category::None)
     {
         // easier for people to provide hide categories
+
+        // bitshift print each bit of the category to see if it is set
+        //dbgLog("dbgLog: " + std::to_string(static_cast<std::underlying_type_t<Category>>(InHideCategories)), Verbosity::Verbose, Category::None);
+        //dbgLog("dbgLog &: " + std::to_string(static_cast<std::underlying_type_t<Category>>((ProjectHideCategories & InHideCategories))), Verbosity::Verbose, Category::None);
         return;
     }
 
@@ -55,4 +59,9 @@ void ecore::log::dbgLog(const char *InMsg, Verbosity InVerbosity, Category InHid
     Serial.print(" | ");
     Serial.println(InMsg);
 #endif
+}
+
+void ecore::log::dbgLog(std::string msg, Verbosity InVerbosity, Category InHideCategories)
+{ 
+    dbgLog(msg.c_str(), InVerbosity, InHideCategories);
 }

@@ -5,7 +5,10 @@
 
 #include <string>
 
-#define DEBUG_LOGGING_ENABLED 1 // overwrites the one in logging.h
+#define DEPLOYMENT 0 // 0 = dev, 1 = production. Disables usb debugging usually due to low delay between ticks
+#define DEBUG_LOGGING_ENABLED 1 && !DEPLOYMENT // overwrites the one in logging.h
+#define USE_LED_FOR_TICK 1 && !DEPLOYMENT
+#define USE_SERIAL_INPUT 1 && !DEPLOYMENT
 
 #include "src/lib/ecore/core.h"
 #include "src/relics/obelisk.h"
@@ -16,11 +19,7 @@ using namespace obelisk;
 using namespace ecore;
 using namespace ecore::log;
 
-#define USE_LED_FOR_TICK 1
 #define LED_PIN 25  // Onboard LED for RP2040
-#define USE_SERIAL_INPUT 1
-
-
 
 static unique_ptr<RelicCore> relic;
 
@@ -62,7 +61,10 @@ void loop() {
   if(relic)
   {
     relic->runTick();
-    delay(40);
+    delay(15);
+#if !DEPLOYMENT
+    delay(35);
+#endif
 
 #if USE_LED_FOR_TICK
     digitalWrite(LED_PIN, bLEDOn ? HIGH : LOW);

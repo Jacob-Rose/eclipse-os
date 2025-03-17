@@ -38,6 +38,6 @@ namespace eio
     class HSVStripNodeFactory
     {
     public:
-        static vector<shared_ptr<HSVStripNode>> GenerateAxisRow(HSVStrip* strip, int startIdx, int Length, const Coordinate& posStart, const Coordinate& posDelta);
+        static vector<shared_ptr<HSVStripNode>> GenerateAxisRow(HSVStrip* strip, int startIdx, int Length, const Coordinate& posStart, const Coordinate& posDeltaPerIdx);
     };
 }

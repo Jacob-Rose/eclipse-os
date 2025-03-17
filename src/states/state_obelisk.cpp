@@ -16,6 +16,22 @@ using namespace ecore::log;
 
 #define OBELISK_DEBUG_ENABLED DEBUG_LOGGING_ENABLED && 0
 
+int getSideIndex(HSVStripNode_Mapped2D* inNode)
+{
+    int sideIdx = inNode->coord.x / 2; // two strips per side
+
+#if ERROR_CHECKING_ENABLED
+    if(sideIdx >= 4)
+    {
+        string str = "Pattern_Obelisk_Theater::render - sideIdx out of range: " + std::to_string(sideIdx) + " >= 4";
+        dbgLog(str.c_str(), Verbosity::Error, Category::Library);
+        return 0;
+    }
+#endif
+
+    return sideIdx;
+}
+
 Pattern_Obelisk_FourSeasons::Pattern_Obelisk_FourSeasons()
 {
     coreNoise.noise.SetNoiseType(FastNoiseLite::NoiseType_OpenSimplex2);
@@ -36,40 +52,32 @@ void Pattern_Obelisk_FourSeasons::tick(float deltaTime)
 void Pattern_Obelisk_FourSeasons::render(HSVStripNode* inNode, HSV& inOutColor) const
 {
 #if OBELISK_DEBUG_ENABLED
-    dbgLog("four-seasons ~ pre");
+    dbgLog("four-seasons ~ start");
+#endif
+#if ERROR_CHECKING_ENABLED
+    if(inNode->GetStripNodeType() != StripNodeType::MAPPED2D)
+    {
+        dbgLog("four-seasons ~ only supports mapped 2d nodes", Verbosity::Error, Category::Library);
+    }
 #endif
 
     HSV outColor;
-    int x = 0, y = 0;
-    int sideIdx;
+
+    HSVStripNode_Mapped2D* castedNode = static_cast<HSVStripNode_Mapped2D*>(inNode);
+    int x = castedNode->coord.x;
+    int y = castedNode->coord.y;
+    int sideIdx = getSideIndex(castedNode);
 
 #if OBELISK_DEBUG_ENABLED
-    dbgLog("four-seasons ~ start");
+    dbgLog("four-seasons ~ mapped coords");
 #endif
-    if(inNode->GetStripNodeType() == StripNodeType::MAPPED2D)
-    {
-        HSVStripNode_Mapped2D* castedNode = static_cast<HSVStripNode_Mapped2D*>(inNode);
-        x = castedNode->coord.x;
-        y = castedNode->coord.y;
-#if OBELISK_DEBUG_ENABLED
-        dbgLog("four-seasons ~ mapped coords");
-#endif
-
-        sideIdx = y / 2; // two strips per side
-    }
 
     float noiseAlpha = coreNoise.evaluate(x, y);
 
 #if OBELISK_DEBUG_ENABLED
     dbgLog("four-seasons ~ noise");
 #endif
-    outColor = palettes[0].getColor(noiseAlpha);
-
-#if OBELISK_DEBUG_ENABLED
-    dbgLog("four-seasons ~ outcolor");
-#endif
-
-    inOutColor = outColor;
+    inOutColor = palettes[sideIdx].getColor(noiseAlpha);
 }
 
 Pattern_Obelisk_Theater::Pattern_Obelisk_Theater()
@@ -90,8 +98,11 @@ void Pattern_Obelisk_Theater::tick(float deltaTime)
 void Pattern_Obelisk_Theater::render(HSVStripNode* inNode, HSV& inOutColor) const
 {
     HSV outColor;
-    int x = 0, y = 0;
-    int sideIdx;
+    
+    HSVStripNode_Mapped2D* castedNode = static_cast<HSVStripNode_Mapped2D*>(inNode);
+    int x = castedNode->coord.x;
+    int y = castedNode->coord.y;
+    int sideIdx = getSideIndex(castedNode);
 
     if(inNode->GetStripNodeType() == StripNodeType::MAPPED2D)
     {
@@ -99,11 +110,9 @@ void Pattern_Obelisk_Theater::render(HSVStripNode* inNode, HSV& inOutColor) cons
         x = castedNode->coord.x;
         y = castedNode->coord.y;
 
-        sideIdx = y / 2; // two strips per side
+
     }
     float alpha = lfo.evaluate(x);
     
-    outColor = palettes[sideIdx].getColor(alpha);
-
-    inNode->setHSV(outColor);
+    inOutColor = palettes[sideIdx].getColor(alpha);
 }

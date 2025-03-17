@@ -25,7 +25,7 @@ namespace ecore
 
         static std::string getVerbosityString(Verbosity inVerbosity);
     
-        enum class Category
+        enum class Category : uint64_t
         {
             None        = 0b00000000, // none flag
             OnTick      = 0b00000001, // logging flag for those activated on the tick function
@@ -57,9 +57,10 @@ namespace ecore
     
         constexpr Verbosity ProjectVerbosity = Verbosity::Verbose;
         constexpr Category ProjectHideCategories (
-            Category::None | Category::OnTick
+            Category::OnTick
         );
     
-        void dbgLog(const char *msg, Verbosity Verbosity = Verbosity::Display, Category HideCategories = Category::None);
+        void dbgLog(const char *msg, Verbosity InVerbosity = Verbosity::Display, Category InHideCategories = Category::None);
+        void dbgLog(std::string msg, Verbosity InVerbosity = Verbosity::Display, Category InHideCategories = Category::None);
     }
 }
