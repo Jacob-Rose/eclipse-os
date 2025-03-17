@@ -7,6 +7,7 @@
 
 #include "../lib/ecore/core.h"
 #include "../lib/esm/state.h"
+#include "../lib/esm/state_generic.h"
 
 #include "../lib/eio/relic.h"
 
@@ -50,8 +51,16 @@ namespace obelisk
         ObeliskCore();
 
         virtual void tick(float deltaTime) override;
+        virtual void handleCommand(const char* msg);
 
     protected:
-        std::unique_ptr<State> coreState{ nullptr };
+        std::unique_ptr<StateMachine> stateMachine{ nullptr };
+        std::unique_ptr<StateManager> stateManager{ nullptr };
+
+        
+        shared_ptr<State_GenericHSV> mainPatternState;
+        shared_ptr<State_GenericHSV> theaterPatternState;
+        int mainPatternId{0};
+        int theaterPatternId{0};
     };
 }

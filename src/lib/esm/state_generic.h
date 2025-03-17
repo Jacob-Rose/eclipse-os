@@ -27,9 +27,10 @@ public:
     void setGenerator(shared_ptr<GeneratorHSV> inGenerator) { generator = inGenerator; }
 
 protected:
-    virtual void onStateBegin() override;
+    virtual void onStateChangeState(StateStatus inStatus);
     virtual void tick(float deltaTime) override;
 
     shared_ptr<GeneratorHSV> generator;
+    bool bRenderToBuffer{false};
     RelicIO* io;
 };

@@ -63,7 +63,7 @@ void loop() {
     relic->runTick();
     delay(15);
 #if !DEPLOYMENT
-    delay(35);
+    delay(25);
 #endif
 
 #if USE_LED_FOR_TICK

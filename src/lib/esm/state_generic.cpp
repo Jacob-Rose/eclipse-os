@@ -11,10 +11,15 @@
 using namespace eanim;
 using namespace esm;
 
-
-void State_GenericHSV::onStateBegin()
+void State_GenericHSV::onStateChangeState(StateStatus inStatus)
 {
-    State::onStateBegin();
+    State::onStateChangeState(inStatus);
+
+    if(inStatus == StateStatus::TransitionIn)
+    {
+        // TODO Make this work
+        bRenderToBuffer = true;
+    }
 }
 
 void State_GenericHSV::tick(float deltaTime)

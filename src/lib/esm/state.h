@@ -24,6 +24,13 @@ using namespace eio;
 
 namespace esm
 {
+    enum StateStatus
+    {
+        Off,
+        TransitionIn,
+        TransitionOut,
+        Active
+    };
     /* @brief States are the structures that really handle all of the associated properties. They handle input themselves.
     * States support generalized lambda based transitions for easily writing inline setters
     */
@@ -39,36 +46,46 @@ namespace esm
         virtual void tick(float deltaTime) override;
 
     protected:
-        //logic level only, no rendering logic here
-        virtual void onStateBegin();
-        virtual void onStateEnd();
+        virtual void onStateChangeState(StateStatus inStatus);
 
-        // runs all state transitions and returns first one that returns true
-        weak_ptr<State> runStateTransitionTest() const;
         void runStateTickLambdas(float deltaTime) const;
 
     public:
-        using TransitionLambda = function<bool(State* TargetState, State* MyState)>;
+        using ShouldTransitionLambda = function<bool(State* TargetState, State* MyState)>;
         using TickLambda = function<void(float deltaTime)>;
 
         // lambda passes in the owning state
-        void addStateTransition(weak_ptr<State> State,  TransitionLambda Lambda);
+        void addStateTransition(weak_ptr<State> State,  ShouldTransitionLambda Lambda);
 
-        void addStateTickLambda(int id, TickLambda Lambda);
+        int addStateTickLambda(TickLambda Lambda);
         void removeStateTickLambda(int id);
+
+        // runs all state transitions and returns first one that returns true
+        weak_ptr<State> runStateTransitionTest() const;
+
+        int getStateID() const; // set by owning state manager
 
         const string& GetStateName() const { return stateName; }
 
         chrono::duration<double> GetStateActiveDuration() const;     // returned in seconds
 
     private:
-        std::map<weak_ptr<State>, TransitionLambda, owner_less<weak_ptr<State>>> stateTransitions;
-        std::map<int, TickLambda> stateTickLambdas; // TODO int should be a hash or something and we should return a handle for people when they register
+        std::map<weak_ptr<State>, ShouldTransitionLambda, owner_less<weak_ptr<State>>> stateTransitions;
+        std::map<int, TickLambda> stateTickLambdas;
         chrono::duration<double> timeStateActive;
 
-        std::string stateName;
+        int stateTickLambdaIdIncrementer{1}; // unique id for each tick lambda, incremented for each new lambda added
 
+        std::string stateName;
         bool bInit = false;
+
+        StateStatus status;
+
+        int stateManagerId {0}; // set by state manager
+
+    public:
+        friend class StateMachine;
+        friend class StateManager;
     };
 
 
@@ -81,19 +98,36 @@ namespace esm
         virtual void cleanup();
 
         virtual void tick(float deltaTime) override;
+    
+        void setActiveState(shared_ptr<State> inNewState);
+        void setNextState(shared_ptr<State> inNextState);
 
-        void addState(shared_ptr<State> NewState);
+        bool isInTransition() const;
 
     protected:
-        void setActiveState(shared_ptr<State> NextState);
 
         float transitionTime = 8.0f;
 
     private:
-        vector<shared_ptr<State>> States;
         shared_ptr<State> ActiveState;
         shared_ptr<State> NextState;
 
         float currentTransitionTime;
+    };
+
+
+    class StateManager
+    {
+    public:
+        StateManager() = default;
+
+        int addState(shared_ptr<State> state);
+        void removeState(int id);
+
+        shared_ptr<State> getStateForId(int id) const;
+
+    protected:
+        int idIncrement{1}; // unique id for each state, incremented for each new state added
+        std::map<int, shared_ptr<State>> states; // map of state id to state object
     };
 }

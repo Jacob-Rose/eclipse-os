@@ -12,6 +12,18 @@ using namespace ecore::log;
 using namespace esm;
 using namespace std;
 
+string getStateStatusAsString(StateStatus inStatus)
+{
+    switch(inStatus)
+    {
+        case Off: return "Off";
+        case TransitionIn: return "TransitionIn";
+        case TransitionOut: return "TransitionOut";
+        case Active: return "Active";
+    }
+    return "";
+}
+
 State::State() : State("untitled")
 {
 }
@@ -53,27 +65,22 @@ void esm::State::tick(float deltaTime)
     runStateTickLambdas(deltaTime);
 }
 
-void State::onStateBegin()
+void State::onStateChangeState(StateStatus inNewStatus)
 {
 #if DEBUG_LOGGING_ENABLED
-    std::string msg = "activating state: ";
+    std::string msg = "state status changed: ";
     msg.append(GetStateName());
+    msg.append(getStateStatusAsString(inNewStatus));
     dbgLog(msg.c_str(), Verbosity::Display, Category::State | Category::Library);
 #endif
 
-    timeStateActive = std::chrono::duration<double>(0);
+    if(inNewStatus == StateStatus::Active)
+    {
+        timeStateActive = std::chrono::duration<double>(0);
+    }
 }
 
-void State::onStateEnd()
-{
-#if DEBUG_LOGGING_ENABLED
-    std::string msg = "deactivating state: ";
-    msg.append(GetStateName());
-    dbgLog(msg.c_str(), Verbosity::Display, Category::State | Category::Library);
-#endif
-}
-
-void State::addStateTransition(weak_ptr<State> inState, TransitionLambda lambda)
+void State::addStateTransition(weak_ptr<State> inState, ShouldTransitionLambda lambda)
 {
     stateTransitions[inState] = lambda;
 }
@@ -96,17 +103,16 @@ weak_ptr<State> State::runStateTransitionTest() const
     return std::weak_ptr<State>(); // Return nullptr if no transition condition is met
 }
 
-void State::addStateTickLambda(int id, TickLambda Lambda)
+int State::getStateID() const
 {
-#if ERROR_CHECKING_ENABLED
-    if (stateTickLambdas.find(id) != stateTickLambdas.end())
-    {
-        std::string msg = "State tick lambda with id: " + std::to_string(id) + " already exists!";
-        dbgLog(msg.c_str(), Verbosity::Error, Category::State | Category::Library);
-        return; // Prevent overwriting existing lambda
-    }
-#endif    
-    stateTickLambdas[id] = Lambda;
+    return stateManagerId;
+}
+
+int State::addStateTickLambda(TickLambda Lambda)
+{
+    ++stateTickLambdaIdIncrementer; // Increment the id for the new lambda
+    stateTickLambdas[stateTickLambdaIdIncrementer] = Lambda;
+    return stateTickLambdaIdIncrementer;
 }
 
 void State::removeStateTickLambda(int id)
@@ -135,11 +141,38 @@ chrono::duration<double> State::GetStateActiveDuration() const
     return timeStateActive;
 }
 
-
-void StateMachine::setActiveState(shared_ptr<State> InNextState)
+void StateMachine::setActiveState(shared_ptr<State> inNewState)
 {
-    NextState = InNextState;
+    if(ActiveState)
+    {
+        ActiveState->onStateChangeState(StateStatus::Off);
+    }
+    inNewState->onStateChangeState(StateStatus::Active);
     currentTransitionTime = 0.0f;
+    NextState = nullptr;
+
+    ActiveState = inNewState;
+}
+
+void StateMachine::setNextState(shared_ptr<State> inNextState)
+{
+    if(ActiveState)
+    {
+        ActiveState->onStateChangeState(StateStatus::TransitionOut);
+    }
+    inNextState->onStateChangeState(StateStatus::TransitionIn);
+    currentTransitionTime = 0.0f;
+
+    NextState = inNextState;
+}
+
+bool StateMachine::isInTransition() const
+{
+    return NextState.get() != nullptr;
+}
+
+StateMachine::StateMachine()
+{
 }
 
 void StateMachine::init()
@@ -152,5 +185,57 @@ void StateMachine::cleanup()
 
 void StateMachine::tick(float deltaTime)
 {
-    //TODO
+    if(NextState != nullptr)
+    {
+        currentTransitionTime += deltaTime;
+        if(currentTransitionTime > transitionTime)
+        {
+            setActiveState(NextState);
+        }
+        //TODO
+
+        //NextState->tick(deltaTime);
+    }
+    else
+    {
+        std::weak_ptr<State> nextState = ActiveState->runStateTransitionTest();
+        if(!nextState.expired())
+        {
+            setNextState(nextState.lock());
+        }
+    }
+
+    if(ActiveState != nullptr)
+    {
+        ActiveState->tick(deltaTime);
+    }
+}
+
+int StateManager::addState(shared_ptr<State> inState)
+{
+#if ERROR_CHECKING_ENABLED
+    if(inState->stateManagerId != 0)
+    {
+        return 0;
+    }
+#endif
+    idIncrement++;
+    states[idIncrement] = inState; // Add the state to the map with a unique id
+    inState->stateManagerId = idIncrement;
+    return idIncrement;
+}
+
+shared_ptr<State> esm::StateManager::getStateForId(int id) const
+{ 
+    auto it = states.find(id); 
+    return (it != states.end()) ? it->second : nullptr;
+}
+
+void StateManager::removeState(int id)
+{
+    auto it = states.find(id);
+    if (it != states.end())
+    {
+        states.erase(it);
+    }
 }

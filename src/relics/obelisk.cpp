@@ -5,10 +5,11 @@
 
 #include "obelisk.h"
 
+#include <string>
+
 #include "../lib/eio/strip_projection.h"
 
 #include "../states/state_obelisk.h"
-#include "../lib/esm/state_generic.h"
 #include "../lib/ecore/logging.h"
 
 using namespace obelisk;
@@ -60,11 +61,24 @@ ObeliskCore::ObeliskCore() : RelicCore()
 {
     coreIO = make_unique<ObeliskIO>();
     coreIO->init();
-    coreState = make_unique<State_GenericHSV>("mainState", coreIO.get());
 
-    State_GenericHSV* coreStateCasted = static_cast<State_GenericHSV*>(coreState.get());
-    coreStateCasted->setGenerator(make_shared<Pattern_Obelisk_FourSeasons>());
-    coreState->init();
+    stateMachine = make_unique<StateMachine>();
+    stateManager = make_unique<StateManager>();
+
+    mainPatternState = make_shared<State_GenericHSV>("mainState", coreIO.get());
+    mainPatternState->setGenerator(make_shared<Pattern_Obelisk_FourSeasons>());
+    mainPatternState->init();
+
+    theaterPatternState = make_shared<State_GenericHSV>("theaterState", coreIO.get());
+    theaterPatternState->setGenerator(make_shared<Pattern_Obelisk_Theater>());
+    theaterPatternState->init();
+
+    mainPatternId = stateManager->addState(mainPatternState);
+    theaterPatternId = stateManager->addState(theaterPatternState);
+
+    // Start State Machine
+    stateMachine->setActiveState(mainPatternState);
+    stateMachine->init();
 }
 
 
@@ -72,5 +86,13 @@ void obelisk::ObeliskCore::tick(float deltaTime)
 {
     RelicCore::tick(deltaTime);
 
-    coreState->tick(deltaTime); 
+    stateMachine->tick(deltaTime); 
+}
+
+void obelisk::ObeliskCore::handleCommand(const char *msg)
+{
+    if (strcmp(msg, "switch") == 0)  // strcmp returns 0 if strings are equal
+    {
+        stateMachine->setNextState(theaterPatternState);
+    }
 }
