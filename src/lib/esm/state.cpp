@@ -106,7 +106,7 @@ void State::addStateTickLambda(int id, TickLambda Lambda)
         return; // Prevent overwriting existing lambda
     }
 #endif    
-    stateTickLambdas[id] = Lambda; // Add the lambda to the map with the provided id
+    stateTickLambdas[id] = Lambda;
 }
 
 void State::removeStateTickLambda(int id)
@@ -119,14 +119,14 @@ void State::removeStateTickLambda(int id)
         return; // Prevent removing non-existing lambda
     }
 #endif
-    stateTickLambdas.erase(id); // Remove the lambda from the map using the provided id
+    stateTickLambdas.erase(id);
 }
 
 void State::runStateTickLambdas(float deltaTime) const
 {
     for (const auto& tickLambda : stateTickLambdas)
     {
-        tickLambda.second(deltaTime); // Call the lambda with a deltaTime of 0.0f
+        tickLambda.second(deltaTime);
     }
 }
 
