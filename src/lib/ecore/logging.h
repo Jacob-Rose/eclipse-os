@@ -7,7 +7,7 @@
 
 #include <string>
 
-#define DEBUG_LOGGING_ENABLED 1
+#include "core.h"
 
 namespace ecore
 {

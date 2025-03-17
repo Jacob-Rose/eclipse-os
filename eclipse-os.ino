@@ -5,6 +5,8 @@
 
 #include <string>
 
+#define DEBUG_LOGGING_ENABLED 1 // overwrites the one in logging.h
+
 #include "src/lib/ecore/core.h"
 #include "src/relics/obelisk.h"
 #include "src/lib/ecore/logging.h"
@@ -18,7 +20,7 @@ using namespace ecore::log;
 #define LED_PIN 25  // Onboard LED for RP2040
 #define USE_SERIAL_INPUT 1
 
-#define DEBUG_LOGGING_ENABLED 1 // overwrites the one in logging.h
+
 
 static unique_ptr<RelicCore> relic;
 

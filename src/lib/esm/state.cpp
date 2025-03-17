@@ -50,6 +50,7 @@ void esm::State::tick(float deltaTime)
 
     timeStateActive += std::chrono::duration<double>(deltaTime);
     runStateTransitionTest();
+    runStateTickLambdas(deltaTime);
 }
 
 void State::onStateBegin()

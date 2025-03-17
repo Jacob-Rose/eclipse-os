@@ -5,10 +5,21 @@
 
 #pragma once
 
+#ifndef USE_ARDUINO
 #define USE_ARDUINO 1
-#define USE_PICO_SDK 0
+#endif
 
-#define ERROR_CHECKING_ENABLED 1
+#ifndef USE_PICO_SDK
+#define USE_PICO_SDK 0
+#endif
+
+#ifndef ERROR_CHECKING_ENABLED
+#define ERROR_CHECKING_ENABLED 0
+#endif
+
+#ifndef DEBUG_LOGGING_ENABLED
+#define DEBUG_LOGGING_ENABLED 0
+#endif
 
 #if USE_ARDUINO
 #include <Arduino.h>
