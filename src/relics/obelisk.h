@@ -60,7 +60,9 @@ namespace obelisk
         
         shared_ptr<State_GenericHSV> mainPatternState;
         shared_ptr<State_GenericHSV> theaterPatternState;
+        shared_ptr<State_GenericHSV> testPatternState;
         int mainPatternId{0};
         int theaterPatternId{0};
+        int testPatternId{0};
     };
 }

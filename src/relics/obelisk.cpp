@@ -74,11 +74,16 @@ ObeliskCore::ObeliskCore() : RelicCore()
     theaterPatternState->setGenerator(make_shared<Pattern_Obelisk_Theater>());
     theaterPatternState->init();
 
+    testPatternState = make_shared<State_GenericHSV>("testState", coreIO.get());
+    testPatternState->setGenerator(make_shared<Pattern_Obelisk_Monocolor>());
+    testPatternState->init();
+
     mainPatternId = stateManager->addState(mainPatternState);
     theaterPatternId = stateManager->addState(theaterPatternState);
+    testPatternId = stateManager->addState(testPatternState);
 
     // Start State Machine
-    stateMachine->setActiveState(theaterPatternState);
+    stateMachine->setActiveState(testPatternState);
     stateMachine->init();
 }
 

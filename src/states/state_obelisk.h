@@ -61,10 +61,18 @@ public:
 
     virtual void tick(float deltaTime) override;
     virtual void render(HSVStripNode* inNode, HSV& inOutColor) const override;
-
-    std::shared_ptr<GeneratorHSV> generator;
 };
 
+
+class Pattern_Obelisk_Monocolor : public GeneratorHSV
+{
+public:
+    Pattern_Obelisk_Monocolor();
+
+    HSV color = HSV(100.0f, 0.5f, 0.5f);
+
+    virtual void render(HSVStripNode* inNode, HSV& inOutColor) const override;
+};
 
 class Pattern_Obelisk_Theater : public GeneratorHSV 
 {
@@ -79,6 +87,4 @@ public:
 
     virtual void tick(float deltaTIme) override;
     virtual void render(HSVStripNode* inNode, HSV& inOutColor) const override;
-
-    std::shared_ptr<GeneratorHSV> generator;
 };

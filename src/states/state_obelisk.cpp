@@ -108,3 +108,12 @@ void Pattern_Obelisk_Theater::render(HSVStripNode* inNode, HSV& inOutColor) cons
     
     inOutColor = palettes[3].getColor(alpha);
 }
+
+Pattern_Obelisk_Monocolor::Pattern_Obelisk_Monocolor()
+{
+}
+
+void Pattern_Obelisk_Monocolor::render(HSVStripNode *inNode, HSV &inOutColor) const
+{
+    inOutColor = color;
+}
