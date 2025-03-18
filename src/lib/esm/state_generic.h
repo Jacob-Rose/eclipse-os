@@ -31,6 +31,20 @@ protected:
     virtual void tick(float deltaTime) override;
 
     shared_ptr<GeneratorHSV> generator;
-    bool bRenderToBuffer{false};
     RelicIO* io;
+};
+
+class StateMachine_GenericHSV : public StateMachine
+{
+public:
+    StateMachine_GenericHSV() = default;
+
+    virtual void tick(float deltaTime) override;
+
+    void setRelicIO(RelicIO* inIO) { io = inIO; }
+    RelicIO* getRelicIO() const { return io; }
+
+private:
+    RelicIO* io{nullptr};
+
 };

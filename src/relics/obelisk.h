@@ -51,10 +51,10 @@ namespace obelisk
         ObeliskCore();
 
         virtual void tick(float deltaTime) override;
-        virtual void handleCommand(const char* msg);
+        virtual void handleCommand(string msg) override;
 
     protected:
-        std::unique_ptr<StateMachine> stateMachine{ nullptr };
+        std::unique_ptr<StateMachine_GenericHSV> stateMachine{ nullptr };
         std::unique_ptr<StateManager> stateManager{ nullptr };
 
         

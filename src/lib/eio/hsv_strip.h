@@ -90,12 +90,22 @@ namespace eio
         void setHSV(const HSV& hsv);
         void setHSV(float h, uint8_t s, uint8_t v);
 
+        void setBuffer(int idx, const HSV& inHSV);
+        HSV getBuffer(int idx) const;
+        void clearBuffer(int idx);
+        // get all the buffers in a map pair key list
+        vector<pair<int, HSV>> getBufferMap() const;
+
         // since we dont support RTTI (nor do I want to due to perf concerns), we need to provide a way to check if a node is supported
         virtual StripNodeType GetStripNodeType() const { return StripNodeType::ROOT; }
 
-    public:
+        int getStripIdx() const { return stripIdx; }
+
+    private:
         HSVStrip* parentStrip;
         int stripIdx;
+
+        std::map<int, HSV> bufferMap;
     };
 
 

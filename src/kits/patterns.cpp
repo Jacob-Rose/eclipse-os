@@ -67,7 +67,7 @@ void Pattern_RitualFire::render(HSVStripNode* node, HSV& InOutColor) const
         }
         else
         {
-            x = node->stripIdx;
+            x = node->getStripIdx();
         }
     }
 

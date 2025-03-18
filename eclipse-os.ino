@@ -77,6 +77,7 @@ void loop() {
       string msg = Serial.readString().c_str();
       Serial.print("Received: ");
       Serial.println(msg.c_str());
+      relic->handleCommand(msg);
     }
   }
 #endif

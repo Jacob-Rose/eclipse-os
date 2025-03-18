@@ -82,7 +82,7 @@ void Pattern_Obelisk_FourSeasons::render(HSVStripNode* inNode, HSV& inOutColor) 
 
 Pattern_Obelisk_Theater::Pattern_Obelisk_Theater()
 {
-    lfo.width = 24.f;
+    lfo.width = 2.f;
     lfo.speed = -1.5f;
 
     paletteLFO.speed = 0.1f;
@@ -104,15 +104,7 @@ void Pattern_Obelisk_Theater::render(HSVStripNode* inNode, HSV& inOutColor) cons
     int y = castedNode->coord.y;
     int sideIdx = getSideIndex(castedNode);
 
-    if(inNode->GetStripNodeType() == StripNodeType::MAPPED2D)
-    {
-        HSVStripNode_Mapped2D* castedNode = static_cast<HSVStripNode_Mapped2D*>(inNode);
-        x = castedNode->coord.x;
-        y = castedNode->coord.y;
-
-
-    }
     float alpha = lfo.evaluate(x);
     
-    inOutColor = palettes[sideIdx].getColor(alpha);
+    inOutColor = palettes[3].getColor(alpha);
 }

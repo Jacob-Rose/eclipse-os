@@ -78,6 +78,8 @@ void State::onStateChangeState(StateStatus inNewStatus)
     {
         timeStateActive = std::chrono::duration<double>(0);
     }
+
+    status = inNewStatus;
 }
 
 void State::addStateTransition(weak_ptr<State> inState, ShouldTransitionLambda lambda)
@@ -143,6 +145,21 @@ chrono::duration<double> State::GetStateActiveDuration() const
 
 void StateMachine::setActiveState(shared_ptr<State> inNewState)
 {
+#if ERROR_CHECKING_ENABLED
+    if(inNewState == nullptr)
+    {
+        std::string msg = "StateMachine::setActiveState - inNewState is null!";
+        dbgLog(msg.c_str(), Verbosity::Error, Category::State | Category::Library);
+        return;
+    }
+    if(inNewState == ActiveState)
+    {
+        std::string msg = "StateMachine::setActiveState - inNewState is the same as ActiveState!";
+        dbgLog(msg.c_str(), Verbosity::Error, Category::State | Category::Library);
+        return;
+    }
+#endif
+
     if(ActiveState)
     {
         ActiveState->onStateChangeState(StateStatus::Off);
@@ -156,6 +173,21 @@ void StateMachine::setActiveState(shared_ptr<State> inNewState)
 
 void StateMachine::setNextState(shared_ptr<State> inNextState)
 {
+#if ERROR_CHECKING_ENABLED
+    if(inNextState == nullptr)
+    {
+        std::string msg = "StateMachine::setNextState - inNextState is null!";
+        dbgLog(msg.c_str(), Verbosity::Error, Category::State | Category::Library);
+        return;
+    }
+    if(inNextState == ActiveState)
+    {
+        std::string msg = "StateMachine::setNextState - inNextState is the same as ActiveState!";
+        dbgLog(msg.c_str(), Verbosity::Error, Category::State | Category::Library);
+        return;
+    }
+#endif
+
     if(ActiveState)
     {
         ActiveState->onStateChangeState(StateStatus::TransitionOut);
@@ -185,16 +217,18 @@ void StateMachine::cleanup()
 
 void StateMachine::tick(float deltaTime)
 {
-    if(NextState != nullptr)
+
+    if(NextState)
     {
         currentTransitionTime += deltaTime;
         if(currentTransitionTime > transitionTime)
         {
             setActiveState(NextState);
         }
-        //TODO
-
-        //NextState->tick(deltaTime);
+        else
+        {
+            NextState->tick(deltaTime);
+        }
     }
     else
     {

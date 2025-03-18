@@ -65,6 +65,8 @@ namespace eio
         virtual void tick(float deltaTime) override;
         virtual void postTick();
 
+        virtual void handleCommand(string msg) {};
+
         void runTick();
 
     protected:

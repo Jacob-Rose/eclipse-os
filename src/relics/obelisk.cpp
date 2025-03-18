@@ -62,7 +62,8 @@ ObeliskCore::ObeliskCore() : RelicCore()
     coreIO = make_unique<ObeliskIO>();
     coreIO->init();
 
-    stateMachine = make_unique<StateMachine>();
+    stateMachine = make_unique<StateMachine_GenericHSV>();
+    stateMachine->setRelicIO(coreIO.get());
     stateManager = make_unique<StateManager>();
 
     mainPatternState = make_shared<State_GenericHSV>("mainState", coreIO.get());
@@ -77,7 +78,7 @@ ObeliskCore::ObeliskCore() : RelicCore()
     theaterPatternId = stateManager->addState(theaterPatternState);
 
     // Start State Machine
-    stateMachine->setActiveState(mainPatternState);
+    stateMachine->setActiveState(theaterPatternState);
     stateMachine->init();
 }
 
@@ -89,10 +90,11 @@ void obelisk::ObeliskCore::tick(float deltaTime)
     stateMachine->tick(deltaTime); 
 }
 
-void obelisk::ObeliskCore::handleCommand(const char *msg)
+void obelisk::ObeliskCore::handleCommand(string msg)
 {
-    if (strcmp(msg, "switch") == 0)  // strcmp returns 0 if strings are equal
+    if (strcmp(msg.c_str(), "switch") == 0)  // strcmp returns 0 if strings are equal
     {
-        stateMachine->setNextState(theaterPatternState);
+        dbgLog("ObeliskCore::handleCommand - switching patterns", Verbosity::Display, Category::Relic);
+        stateMachine->setNextState(mainPatternState);
     }
 }

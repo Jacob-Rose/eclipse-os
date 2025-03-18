@@ -10,16 +10,11 @@
 
 using namespace eanim;
 using namespace esm;
+using namespace ecore::log;
 
 void State_GenericHSV::onStateChangeState(StateStatus inStatus)
 {
     State::onStateChangeState(inStatus);
-
-    if(inStatus == StateStatus::TransitionIn)
-    {
-        // TODO Make this work
-        bRenderToBuffer = true;
-    }
 }
 
 void State_GenericHSV::tick(float deltaTime)
@@ -37,7 +32,43 @@ void State_GenericHSV::tick(float deltaTime)
                 HSVStripNode* nodePtr = node.get();
                 HSV color;
                 generator->render(nodePtr, color);
-                nodePtr->setHSV(color); // set the color on the node
+                if(GetStatus() == StateStatus::TransitionIn || GetStatus() == StateStatus::TransitionOut)
+                {
+                    nodePtr->setBuffer(getStateID(), color);
+                }
+                
+                if(GetStatus() == StateStatus::Active)
+                {
+                    nodePtr->setHSV(color);
+                }
+            }
+        }
+    }
+}
+
+void StateMachine_GenericHSV::tick(float deltaTime)
+{
+    StateMachine::tick(deltaTime);
+
+    if(!io)
+    {
+        return;
+    }
+
+    if(getNextState())
+    {
+        //dbgLog("should be transitioning now");
+        for(const auto& seg : io->strip_segments)
+        {
+            for(const std::shared_ptr<HSVStripNode>& node : seg.second->getNodes())
+            {
+                float alpha = currentTransitionTime / transitionTime;
+                alpha = clamp(alpha, 0.0f, 1.0f); // ensure alpha is between 0 and 1
+
+                HSV color = node->getBuffer(ActiveState->getStateID());
+                HSV color2 = node->getBuffer(NextState->getStateID());
+                color.blendWith(color2, alpha); // blend the current color with the buffer color
+                node->setHSV(color); // set the blended color to the node
             }
         }
     }

@@ -66,6 +66,7 @@ namespace esm
         int getStateID() const; // set by owning state manager
 
         const string& GetStateName() const { return stateName; }
+        StateStatus GetStatus() const { return status; } // returns current state status
 
         chrono::duration<double> GetStateActiveDuration() const;     // returned in seconds
 
@@ -79,8 +80,9 @@ namespace esm
         std::string stateName;
         bool bInit = false;
 
+    
         StateStatus status;
-
+    protected:
         int stateManagerId {0}; // set by state manager
 
     public:
@@ -97,22 +99,24 @@ namespace esm
         virtual void init();
         virtual void cleanup();
 
+        float transitionTime = 2.0f;
+
         virtual void tick(float deltaTime) override;
     
         void setActiveState(shared_ptr<State> inNewState);
         void setNextState(shared_ptr<State> inNextState);
+        shared_ptr<State> getActiveState() const { return ActiveState; } // returns the currently active state
+        shared_ptr<State> getNextState() const { return NextState; }
 
         bool isInTransition() const;
 
     protected:
-
-        float transitionTime = 8.0f;
-
-    private:
         shared_ptr<State> ActiveState;
         shared_ptr<State> NextState;
 
         float currentTransitionTime;
+    private:
+        bool bTickedNextStateLast{false};
     };
 
 

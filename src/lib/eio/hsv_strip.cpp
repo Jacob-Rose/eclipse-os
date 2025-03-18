@@ -44,7 +44,7 @@ HSV HSVStrip::getHSV(uint16_t idx) const
 
 void HSVStrip::setHSV(uint16_t idx, const HSV& hsv)
 {
-#if USE_ERROR_CHECKING
+#if ERROR_CHECKING_ENABLED
     if(idx >= strip_HSV.size())
     {
 #if DEBUG_LOGGING_ENABLED
@@ -61,7 +61,7 @@ void HSVStrip::setHSV(uint16_t idx, const HSV& hsv)
 
 void HSVStrip::setHSV(uint16_t idx, float h, uint8_t s, uint8_t v)
 {
-#if USE_ERROR_CHECKING
+#if ERROR_CHECKING_ENABLED
     if(idx >= strip_HSV.size())
     {
 #if DEBUG_LOGGING_ENABLED
@@ -158,6 +158,34 @@ void HSVStripNode::setHSV(float h, uint8_t s, uint8_t v)
     parentStrip->setHSV(stripIdx, h, s, v);
 }
 
+void eio::HSVStripNode::setBuffer(int idx, const HSV &inHSV)
+{
+    bufferMap[idx] = inHSV;
+}
+
+HSV eio::HSVStripNode::getBuffer(int idx) const
+{
+    auto it = bufferMap.find(idx);
+    if(it == bufferMap.end())
+    {
+#if DEBUG_LOGGING_ENABLED
+        string str = "HSVStripNode::getBuffer - no buffer found for index: " + to_string(idx);
+        dbgLog(str.c_str(), Verbosity::Error, Category::Library);
+#endif
+        return HSV(); // Return a default HSV if not found
+    }
+    return it->second;
+}
+
+void eio::HSVStripNode::clearBuffer(int idx)
+{
+    bufferMap.erase(idx); // Remove the entry from the buffer map
+}
+
+vector<pair<int, HSV>> eio::HSVStripNode::getBufferMap() const
+{
+    return vector<pair<int, HSV>>(bufferMap.begin(), bufferMap.end());
+}
 
 eio::HSVStripSegment::HSVStripSegment(HSVStrip* inParentStrip) : parentStrip(inParentStrip)
 {
