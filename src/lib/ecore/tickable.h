@@ -18,18 +18,4 @@ namespace ecore
     public:
         virtual void tick(float deltaTime) = 0;
     };
-
-
-    class Timer : public Tickable
-    {
-    public:
-        // returns true when the timer went off on the last tick
-        // once it returns true it resets and will return false until timer goes off
-        bool pollEvent();
-        void startTimer(float timerTime);
-
-        virtual void tick(float deltaTime);
-    private:
-        float timerStartTime = -1.f;
-    };
 }

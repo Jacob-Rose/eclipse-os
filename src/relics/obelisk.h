@@ -6,6 +6,7 @@
 #pragma once
 
 #include "../lib/ecore/core.h"
+#include "../lib/ecore/timer.h"
 #include "../lib/esm/state.h"
 #include "../lib/esm/state_generic.h"
 
@@ -56,6 +57,8 @@ namespace obelisk
     protected:
         std::unique_ptr<StateMachine_GenericHSV> stateMachine{ nullptr };
         std::unique_ptr<StateManager> stateManager{ nullptr };
+
+        Timer stateChangeTimer; // timer for state transitions
 
         
         shared_ptr<State_GenericHSV> mainPatternState;

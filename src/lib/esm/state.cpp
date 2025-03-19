@@ -69,7 +69,7 @@ void State::onStateChangeState(StateStatus inNewStatus)
 {
 #if DEBUG_LOGGING_ENABLED
     std::string msg = "state status changed: ";
-    msg.append(GetStateName());
+    msg.append(GetStateName() + " | ");
     msg.append(getStateStatusAsString(inNewStatus));
     dbgLog(msg.c_str(), Verbosity::Display, Category::State | Category::Library);
 #endif

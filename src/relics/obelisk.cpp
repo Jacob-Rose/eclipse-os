@@ -85,6 +85,22 @@ ObeliskCore::ObeliskCore() : RelicCore()
     // Start State Machine
     stateMachine->setActiveState(testPatternState);
     stateMachine->init();
+
+    stateChangeTimer.onTimerEvent.add([this]() {
+        dbgLog("ObeliskCore::stateChangeTimer - switching patterns", Verbosity::Display, Category::Relic);
+        // Switch to the next state after the timer expires
+        if (stateMachine->getActiveState() == mainPatternState) {
+            stateMachine->setNextState(theaterPatternState);
+        } else if (stateMachine->getActiveState() == theaterPatternState) {
+            stateMachine->setNextState(testPatternState);
+        } else {
+            stateMachine->setNextState(mainPatternState);
+        }
+
+        stateChangeTimer.startTimer(5.0f);  // Reset the timer for the next state change
+    });
+
+    stateChangeTimer.startTimer(5.0f);  // Start the timer for the first state change
 }
 
 
@@ -92,7 +108,9 @@ void obelisk::ObeliskCore::tick(float deltaTime)
 {
     RelicCore::tick(deltaTime);
 
-    stateMachine->tick(deltaTime); 
+    stateMachine->tick(deltaTime);
+
+    stateChangeTimer.tick(deltaTime);
 }
 
 void obelisk::ObeliskCore::handleCommand(string msg)
