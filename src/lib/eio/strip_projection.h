@@ -16,7 +16,6 @@
 #include "hsv_strip.h"
 
 using namespace ecore;
-using namespace std;
 using namespace eio;
 
 namespace eio
@@ -38,6 +37,6 @@ namespace eio
     class HSVStripNodeFactory
     {
     public:
-        static vector<shared_ptr<HSVStripNode>> GenerateAxisRow(HSVStrip* strip, int startIdx, int Length, const Coordinate& posStart, const Coordinate& posDeltaPerIdx);
+        static std::vector<std::shared_ptr<HSVStripNode>> GenerateAxisRow(HSVStrip* strip, int startIdx, int Length, const Coordinate& posStart, const Coordinate& posDeltaPerIdx);
     };
 }

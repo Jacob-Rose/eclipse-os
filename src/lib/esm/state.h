@@ -18,7 +18,6 @@
 
 #include "../eio/hsv_strip.h"
 
-using namespace std;
 using namespace ecore;
 using namespace eio;
 
@@ -51,29 +50,29 @@ namespace esm
         void runStateTickLambdas(float deltaTime) const;
 
     public:
-        using ShouldTransitionLambda = function<bool(State* TargetState, State* MyState)>;
-        using TickLambda = function<void(float deltaTime)>;
+        using ShouldTransitionLambda = std::function<bool(State* TargetState, State* MyState)>;
+        using TickLambda = std::function<void(float deltaTime)>;
 
         // lambda passes in the owning state
-        void addStateTransition(weak_ptr<State> State,  ShouldTransitionLambda Lambda);
+        void addStateTransition(std::weak_ptr<State> State,  ShouldTransitionLambda Lambda);
 
         int addStateTickLambda(TickLambda Lambda);
         void removeStateTickLambda(int id);
 
         // runs all state transitions and returns first one that returns true
-        weak_ptr<State> runStateTransitionTest() const;
+        std::weak_ptr<State> runStateTransitionTest() const;
 
         int getStateID() const; // set by owning state manager
 
-        const string& GetStateName() const { return stateName; }
+        const std::string& GetStateName() const { return stateName; }
         StateStatus GetStatus() const { return status; } // returns current state status
 
-        chrono::duration<double> GetStateActiveDuration() const;     // returned in seconds
+        std::chrono::duration<double> GetStateActiveDuration() const;     // returned in seconds
 
     private:
-        std::map<weak_ptr<State>, ShouldTransitionLambda, owner_less<weak_ptr<State>>> stateTransitions;
+        std::map<std::weak_ptr<State>, ShouldTransitionLambda, std::owner_less<std::weak_ptr<State>>> stateTransitions;
         std::map<int, TickLambda> stateTickLambdas;
-        chrono::duration<double> timeStateActive;
+        std::chrono::duration<double> timeStateActive;
 
         int stateTickLambdaIdIncrementer{1}; // unique id for each tick lambda, incremented for each new lambda added
 
@@ -103,16 +102,16 @@ namespace esm
 
         virtual void tick(float deltaTime) override;
     
-        void setActiveState(shared_ptr<State> inNewState);
-        void setNextState(shared_ptr<State> inNextState);
-        shared_ptr<State> getActiveState() const { return ActiveState; } // returns the currently active state
-        shared_ptr<State> getNextState() const { return NextState; }
+        void setActiveState(std::shared_ptr<State> inNewState);
+        void setNextState(std::shared_ptr<State> inNextState);
+        std::shared_ptr<State> getActiveState() const { return ActiveState; } // returns the currently active state
+        std::shared_ptr<State> getNextState() const { return NextState; }
 
         bool isInTransition() const;
 
     protected:
-        shared_ptr<State> ActiveState;
-        shared_ptr<State> NextState;
+        std::shared_ptr<State> ActiveState;
+        std::shared_ptr<State> NextState;
 
         float currentTransitionTime;
     private:
@@ -125,13 +124,13 @@ namespace esm
     public:
         StateManager() = default;
 
-        int addState(shared_ptr<State> state);
+        int addState(std::shared_ptr<State> state);
         void removeState(int id);
 
-        shared_ptr<State> getStateForId(int id) const;
+        std::shared_ptr<State> getStateForId(int id) const;
 
     protected:
         int idIncrement{1}; // unique id for each state, incremented for each new state added
-        std::map<int, shared_ptr<State>> states; // map of state id to state object
+        std::map<int, std::shared_ptr<State>> states; // map of state id to state object
     };
 }

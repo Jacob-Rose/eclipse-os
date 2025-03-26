@@ -14,7 +14,6 @@
 using namespace ecore;
 using namespace eanim;
 using namespace esm;
-using namespace std;
 
 /*
 * Just runs the provided pattern
@@ -24,13 +23,13 @@ class State_GenericHSV : public State
 public:
     State_GenericHSV(const char* InStateName, RelicIO* inIO) : io(inIO), State(InStateName) {}
 
-    void setGenerator(shared_ptr<GeneratorHSV> inGenerator) { generator = inGenerator; }
+    void setGenerator(std::shared_ptr<GeneratorHSV> inGenerator) { generator = inGenerator; }
 
 protected:
     virtual void onStateChangeState(StateStatus inStatus);
     virtual void tick(float deltaTime) override;
 
-    shared_ptr<GeneratorHSV> generator;
+    std::shared_ptr<GeneratorHSV> generator;
     RelicIO* io;
 };
 

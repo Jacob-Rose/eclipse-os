@@ -8,8 +8,6 @@
 #include <vector>
 #include <memory>
 
-using namespace std;
-
 namespace ecore
 {
     struct Coordinate

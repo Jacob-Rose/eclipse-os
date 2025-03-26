@@ -10,8 +10,6 @@
 #include "tickable.h"
 #include "delegate.h"
 
-using namespace std;
-
 
 namespace ecore
 {
@@ -24,6 +22,6 @@ namespace ecore
 
         MulticastDelegate<> onTimerEvent; // event to call when the timer goes off
 
-        chrono::time_point<chrono::high_resolution_clock> timerEndTime; // start time of the timer
+        std::chrono::time_point<std::chrono::high_resolution_clock> timerEndTime; // start time of the timer
     };
 }

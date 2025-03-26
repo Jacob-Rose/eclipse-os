@@ -10,9 +10,8 @@
 using namespace ecore;
 using namespace ecore::log;
 using namespace esm;
-using namespace std;
 
-string getStateStatusAsString(StateStatus inStatus)
+std::string getStateStatusAsString(StateStatus inStatus)
 {
     switch(inStatus)
     {
@@ -82,12 +81,12 @@ void State::onStateChangeState(StateStatus inNewStatus)
     status = inNewStatus;
 }
 
-void State::addStateTransition(weak_ptr<State> inState, ShouldTransitionLambda lambda)
+void State::addStateTransition(std::weak_ptr<State> inState, ShouldTransitionLambda lambda)
 {
     stateTransitions[inState] = lambda;
 }
 
-weak_ptr<State> State::runStateTransitionTest() const
+std::weak_ptr<State> State::runStateTransitionTest() const
 {
     for (const auto& transition : stateTransitions)
     {
@@ -138,12 +137,12 @@ void State::runStateTickLambdas(float deltaTime) const
     }
 }
 
-chrono::duration<double> State::GetStateActiveDuration() const
+std::chrono::duration<double> State::GetStateActiveDuration() const
 {
     return timeStateActive;
 }
 
-void StateMachine::setActiveState(shared_ptr<State> inNewState)
+void StateMachine::setActiveState(std::shared_ptr<State> inNewState)
 {
 #if ERROR_CHECKING_ENABLED
     if(inNewState == nullptr)
@@ -171,7 +170,7 @@ void StateMachine::setActiveState(shared_ptr<State> inNewState)
     ActiveState = inNewState;
 }
 
-void StateMachine::setNextState(shared_ptr<State> inNextState)
+void StateMachine::setNextState(std::shared_ptr<State> inNextState)
 {
 #if ERROR_CHECKING_ENABLED
     if(inNextState == nullptr)
@@ -245,7 +244,7 @@ void StateMachine::tick(float deltaTime)
     }
 }
 
-int StateManager::addState(shared_ptr<State> inState)
+int StateManager::addState(std::shared_ptr<State> inState)
 {
 #if ERROR_CHECKING_ENABLED
     if(inState->stateManagerId != 0)
@@ -259,7 +258,7 @@ int StateManager::addState(shared_ptr<State> inState)
     return idIncrement;
 }
 
-shared_ptr<State> esm::StateManager::getStateForId(int id) const
+std::shared_ptr<State> esm::StateManager::getStateForId(int id) const
 { 
     auto it = states.find(id); 
     return (it != states.end()) ? it->second : nullptr;

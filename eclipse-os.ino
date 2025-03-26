@@ -11,17 +11,15 @@
 #define USE_SERIAL_INPUT 1 && !DEPLOYMENT
 
 #include "src/lib/ecore/core.h"
-#include "src/relics/obelisk.h"
+#include "src/relics/jacket.h"
 #include "src/lib/ecore/logging.h"
 
-using namespace std;
-using namespace obelisk;
 using namespace ecore;
 using namespace ecore::log;
 
 #define LED_PIN 25  // Onboard LED for RP2040
 
-static unique_ptr<RelicCore> relic;
+static unique_ptr<jacket::JacketCore> relic;
 
 #if USE_LED_FOR_TICK
 static bool bLEDOn{false};
@@ -48,7 +46,7 @@ void setup() {
   Serial.println("Use #define DEBUG_LOGGING_ENABLED 0 to disable.\n");
 #endif
 
-  relic = make_unique<ObeliskCore>();
+  relic = make_unique<jacket::JacketCore>();
 
   if(relic)
   {
@@ -90,6 +88,7 @@ void setup1() {
 void loop1()
 {
 
+  relic->tick2();
 }
 
 // not called anywhere, since when would it be? but worth including for knowledge

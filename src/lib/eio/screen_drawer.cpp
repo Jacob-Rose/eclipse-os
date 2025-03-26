@@ -5,7 +5,6 @@
 
 #include "screen_drawer.h"
 
-
 #ifdef USE_SCREEN
 
 #include "../ecore/logging.h"
@@ -65,13 +64,21 @@ void ScreenDrawer::tick(float deltaTime)
 #endif
 }
 
-void ScreenDrawer::setScreenGif(uint8_t* data, int size)
+void ScreenDrawer::setScreenGif(const uint8_t* data, int size)
 {
     bWasCancelled = true;
     bImgReady = false;
 
+    //TODO BAD CASTING
+    // this is a hack to get around the fact that AnimatedGIF wants a uint8_t* and we have a const uint8_t*
+    // this is a bad idea, but it works for now
+    // we should probably create a new hash of data
+    uint8_t* castData = const_cast<uint8_t*>(data);
+
+    
+
 #if USE_SCREEN
-    img.open(data, size, eio::ScreenDrawer::GIFDraw_UpscaleScreen);
+    img.open(castData, size, eio::ScreenDrawer::GIFDraw_UpscaleScreen);
 
     bImgReady = true;
 #endif

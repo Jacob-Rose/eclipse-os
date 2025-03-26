@@ -20,7 +20,6 @@
 #include "../ecore/hsv.h"
 
 using namespace ecore;
-using namespace std;
 
 namespace eio
 {
@@ -94,7 +93,7 @@ namespace eio
         HSV getBuffer(int idx) const;
         void clearBuffer(int idx);
         // get all the buffers in a map pair key list
-        vector<pair<int, HSV>> getBufferMap() const;
+        std::vector<std::pair<int, HSV>> getBufferMap() const;
 
         // since we dont support RTTI (nor do I want to due to perf concerns), we need to provide a way to check if a node is supported
         virtual StripNodeType GetStripNodeType() const { return StripNodeType::ROOT; }
@@ -104,6 +103,7 @@ namespace eio
     private:
         HSVStrip* parentStrip;
         int stripIdx;
+        int stripSegmentId;
 
         std::map<int, HSV> bufferMap;
     };
@@ -114,13 +114,13 @@ namespace eio
     public:
         HSVStripSegment(HSVStrip* parent);
 
-        void addNode(shared_ptr<HSVStripNode> node);
-        void addNodes(vector<shared_ptr<HSVStripNode>> inNodes);
+        void addNode(std::shared_ptr<HSVStripNode> node);
+        void addNodes(std::vector<std::shared_ptr<HSVStripNode>> inNodes);
 
-        const vector<shared_ptr<HSVStripNode>>& getNodes() const;
+        const std::vector<std::shared_ptr<HSVStripNode>>& getNodes() const;
     private:
         HSVStrip* parentStrip{nullptr};
-        vector<shared_ptr<HSVStripNode>> Nodes;
+        std::vector<std::shared_ptr<HSVStripNode>> Nodes;
 
     };
 }

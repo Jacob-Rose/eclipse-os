@@ -10,10 +10,7 @@
 #include "../ecore/core.h"
 #include "../ecore/logging.h"
 
-
-
 using namespace eio;
-using namespace std;
 using namespace ecore::log;
 
 #if USING_NEOPIXEL
@@ -48,7 +45,7 @@ void HSVStrip::setHSV(uint16_t idx, const HSV& hsv)
     if(idx >= strip_HSV.size())
     {
 #if DEBUG_LOGGING_ENABLED
-        string str = "HSVStrip::setHSV - index out of range: " + to_string(idx) + " >= " + to_string(strip_HSV.size());
+        std::string str = "HSVStrip::setHSV - index out of range: " + std::to_string(idx) + " >= " + std::to_string(strip_HSV.size());
         dbgLog(str.c_str(), Verbosity::Error, Category::Library);
 #endif
         return;
@@ -65,7 +62,7 @@ void HSVStrip::setHSV(uint16_t idx, float h, uint8_t s, uint8_t v)
     if(idx >= strip_HSV.size())
     {
 #if DEBUG_LOGGING_ENABLED
-        string str = "HSVStrip::setHSV - index out of range: " + to_string(idx) + " >= " + to_string(strip_HSV.size());
+        std::string str = "HSVStrip::setHSV - index out of range: " + std::to_string(idx) + " >= " + std::to_string(strip_HSV.size());
         dbgLog(str.c_str(), Verbosity::Error, Category::Library);
 #endif
         return;
@@ -169,7 +166,7 @@ HSV eio::HSVStripNode::getBuffer(int idx) const
     if(it == bufferMap.end())
     {
 #if DEBUG_LOGGING_ENABLED
-        string str = "HSVStripNode::getBuffer - no buffer found for index: " + to_string(idx);
+        std::string str = "HSVStripNode::getBuffer - no buffer found for index: " + std::to_string(idx);
         dbgLog(str.c_str(), Verbosity::Error, Category::Library);
 #endif
         return HSV(); // Return a default HSV if not found
@@ -182,27 +179,27 @@ void eio::HSVStripNode::clearBuffer(int idx)
     bufferMap.erase(idx); // Remove the entry from the buffer map
 }
 
-vector<pair<int, HSV>> eio::HSVStripNode::getBufferMap() const
+std::vector<std::pair<int, HSV>> eio::HSVStripNode::getBufferMap() const
 {
-    return vector<pair<int, HSV>>(bufferMap.begin(), bufferMap.end());
+    return std::vector<std::pair<int, HSV>>(bufferMap.begin(), bufferMap.end());
 }
 
 eio::HSVStripSegment::HSVStripSegment(HSVStrip* inParentStrip) : parentStrip(inParentStrip)
 {
 }
 
-void eio::HSVStripSegment::addNode(shared_ptr<HSVStripNode> node)
+void eio::HSVStripSegment::addNode(std::shared_ptr<HSVStripNode> node)
 {
     Nodes.push_back(node);
 }
 
-void eio::HSVStripSegment::addNodes(vector<shared_ptr<HSVStripNode>> inNodes)
+void eio::HSVStripSegment::addNodes(std::vector<std::shared_ptr<HSVStripNode>> inNodes)
 {
     Nodes.insert(Nodes.end(), inNodes.begin(), inNodes.end());
 }
 
 
-const vector<shared_ptr<HSVStripNode>> &eio::HSVStripSegment::getNodes() const
+const std::vector<std::shared_ptr<HSVStripNode>> &eio::HSVStripSegment::getNodes() const
 { 
     return Nodes; 
 }

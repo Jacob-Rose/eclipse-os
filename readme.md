@@ -19,6 +19,9 @@ contains advanced generator system for creating led animations
 ### eio
 contains io device wrappers
 
+### esm
+a simple generic state machine
+
 
 
 ## Legalese
@@ -41,6 +44,10 @@ Welp, found graphics to be quite difficult using the provided pico library, but 
    >  [Arduino-Pico GitHub w/ Install Instructions](https://github.com/earlephilhower/arduino-pico) 
 3. Get Adafruit GC9A01 and AnimatedGif libraries in Arduino IDE
    > Can be downloaded + auto-setup in Arduino IDE Library Manager
+4. SPI Fixes (IMPORTANT)
+   - SPI had some bs fixes
+      - SPI.h: line 50 -> convert byte to uint_8
+      - SPIHelper.h: line 6 -> needed to add #pragma once
 
 
 ### Raspberry Pico / This software Programming Tips

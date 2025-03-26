@@ -18,11 +18,6 @@ using namespace esm;
 
 namespace obelisk
 {    
-    enum class ObeliskStripID
-    {
-        STRIP_MAIN
-    };
-    
     enum class StripSegmentID
     {
         SideA_Up,
@@ -52,7 +47,7 @@ namespace obelisk
         ObeliskCore();
 
         virtual void tick(float deltaTime) override;
-        virtual void handleCommand(string msg) override;
+        virtual bool handleCommand(string msg) override;
 
     protected:
         std::unique_ptr<StateMachine_GenericHSV> stateMachine{ nullptr };

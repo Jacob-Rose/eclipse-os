@@ -7,7 +7,7 @@
 
 #include "../ecore/core.h"
 
-#define USE_SCREEN USE_ARDUINO && 0
+#define USE_SCREEN 1
 
 #if USE_SCREEN
 #include <AnimatedGIF.h>
@@ -25,6 +25,9 @@ using namespace ecore;
 
 namespace eio
 {
+
+    const int ScreenWidth = 240;
+    const int ScreenHeight = 240;
     // screen drawer for drawing pixel art
     // has performance solutions that optimize for pixel art on multiple stages
     class ScreenDrawer : public Tickable
@@ -45,7 +48,7 @@ namespace eio
         uint16_t getPixelColor(uint16_t x, uint16_t y);
         void setPixelColor(uint16_t x, uint16_t y, uint16_t color);
 
-        void setScreenGif(uint8_t* data, int size);
+        void setScreenGif(const uint8_t* data, int size);
         void cancelGifRender();
 
     private:
@@ -62,4 +65,4 @@ namespace eio
     private:
         bool bWasCancelled = false;
     };
-};
+}

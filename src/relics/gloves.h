@@ -11,7 +11,6 @@
 
 using namespace ecore;
 using namespace eio;
-using namespace std;
 
 class GloveIO : public RelicIO
 {

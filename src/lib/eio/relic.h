@@ -65,7 +65,8 @@ namespace eio
         virtual void tick(float deltaTime) override;
         virtual void postTick();
 
-        virtual void handleCommand(string msg) {};
+        // returns if the command was handled/consumed
+        virtual bool handleCommand(string msg) { return false; }
 
         void runTick();
 

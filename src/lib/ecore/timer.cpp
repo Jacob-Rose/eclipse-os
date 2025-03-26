@@ -20,7 +20,7 @@ void Timer::tick(float deltaTime)
         return; // nothing to do
     }
 
-    chrono::duration<float> elapsed = std::chrono::high_resolution_clock::now() - timerEndTime;
+    std::chrono::duration<float> elapsed = std::chrono::high_resolution_clock::now() - timerEndTime;
     if (elapsed.count() >= 0) // timer has gone off
     {
         timerEndTime = std::chrono::time_point<std::chrono::high_resolution_clock>();
