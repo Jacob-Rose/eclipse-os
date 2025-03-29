@@ -10,6 +10,7 @@
 #include "../ecore/logging.h"
 
 using namespace eio;
+using namespace ecore::log;
 
 ScreenDrawer::ScreenDrawer()
 {
@@ -59,6 +60,11 @@ void ScreenDrawer::tick(float deltaTime)
     ScreenRef->startWrite();
 
     int playFrameResult = img.playFrame(true, NULL, this);
+    img.getLastError();
+    if(playFrameResult == -1)
+    {
+        dbgLog("ScreenDrawer::tick - playFrameResult == -1", Verbosity::Error, Category::OnTick | Category::Screen);
+    }
 
     ScreenRef->endWrite();
 #endif

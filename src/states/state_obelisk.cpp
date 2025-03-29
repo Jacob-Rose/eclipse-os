@@ -24,7 +24,7 @@ int getSideIndex(HSVStripNode_Mapped2D* inNode)
     if(sideIdx >= 4)
     {
         string str = "Pattern_Obelisk_Theater::render - sideIdx out of range: " + std::to_string(sideIdx) + " >= 4";
-        dbgLog(str.c_str(), Verbosity::Error, Category::Library);
+        //dbgLog(str.c_str(), Verbosity::Warning);
         return 0;
     }
 #endif
@@ -57,7 +57,7 @@ void Pattern_Obelisk_FourSeasons::render(HSVStripNode* inNode, HSV& inOutColor) 
 #if ERROR_CHECKING_ENABLED
     if(inNode->GetStripNodeType() != StripNodeType::MAPPED2D)
     {
-        dbgLog("four-seasons ~ only supports mapped 2d nodes", Verbosity::Error, Category::Library);
+        dbgLog("four-seasons ~ only supports mapped 2d nodes", Verbosity::Error);
     }
 #endif
 

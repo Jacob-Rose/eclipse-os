@@ -79,7 +79,7 @@ namespace pendant
 
         virtual void init() override;
         virtual void tick(float deltaTime) override;
-        void tick2();
+        virtual void tick2();
         virtual void cleanup();
 
     private:

@@ -20,12 +20,15 @@ void pendant::PendantIO::init()
 
     screenDrawer = std::make_unique<ScreenDrawer>();
     screenDrawer->setScreenRef(std::make_shared<Adafruit_GC9A01A>(ScreenSDA, ScreenSCL, ScreenDC, ScreenCS, ScreenRST));
+    screenDrawer->setCanvasSize(64, 64);
     screenDrawer->setScreenGif(campfire, sizeof(campfire));
 
     int RingOneLength = 12;
     int RingTwoLength = 16;
     int RingStripLength = RingOneLength + RingTwoLength;
-    auto [mainStripIt, stripInserted] = strips.emplace(static_cast<uint8_t>(0), make_unique<HSVStrip>(RingStripLength, RingLEDPin));
+
+    int mainStripIdx = 2; //magic number, id only
+    auto [mainStripIt, stripInserted] = strips.emplace(static_cast<uint8_t>(mainStripIdx), make_unique<HSVStrip>(RingStripLength, RingLEDPin, NEO_RBG + NEO_KHZ800));
 
     HSVStrip* mainStrip = mainStripIt->second.get();
 
@@ -73,7 +76,6 @@ void pendant::PendantCore::init()
 void pendant::PendantCore::tick(float deltaTime)
 {
     RelicCore::tick(deltaTime);
-
 }
 
 void pendant::PendantCore::tick2()

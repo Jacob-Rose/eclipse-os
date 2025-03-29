@@ -25,6 +25,9 @@ void State_GenericHSV::tick(float deltaTime)
     {
         generator->tick(deltaTime);
 
+        dbgLog("ticking leds", Verbosity::Display);
+        dbgLog("seg count: " + std::to_string(io->strip_segments.size()), Verbosity::Display);
+
         for(const auto& seg : io->strip_segments)
         {
             for(const std::shared_ptr<HSVStripNode>& node : seg.second->getNodes())

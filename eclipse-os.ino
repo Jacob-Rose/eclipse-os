@@ -87,8 +87,8 @@ void setup1() {
 
 void loop1()
 {
-
   relic->tick2();
+  delay(20);
 }
 
 // not called anywhere, since when would it be? but worth including for knowledge

@@ -47,25 +47,23 @@ namespace jacket
     constexpr bool RING_SIX_FORWARD = true;
     constexpr bool RING_SEVEN_FORWARD = true;
 
-    class JacketIO : public RelicIO
+    class JacketIO : public PendantIO
     {
     public:
         JacketIO();
 
         virtual void init() override;
 
-        void tick2();
-
-    protected:
-        std::unique_ptr<PendantIO> pendant;
+        virtual void tick(float deltaTime) override;
     };
 
-    class JacketCore : public RelicCore
+    class JacketCore : public PendantCore
     {
     public:
         JacketCore();
 
         virtual void init() override;
+        virtual void tick(float deltaTime) override;
 
         void tick2();
         

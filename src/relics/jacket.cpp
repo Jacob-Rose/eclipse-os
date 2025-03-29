@@ -21,11 +21,11 @@ JacketIO::JacketIO()
 
 void JacketIO::init()
 {
-    RelicIO::init();
+    PendantIO::init();
 
     int LENGTH = jacket::RING_ONE_LENGTH + jacket::RING_TWO_LENGTH + jacket::RING_THREE_LENGTH + jacket::RING_FOUR_LENGTH + jacket::RING_FIVE_LENGTH + jacket::RING_SIX_LENGTH + jacket::RING_SEVEN_LENGTH + jacket::MONOWIRE_LENGTH;
     //TODO Replace pin #22
-    auto [mainStripIt, stripInserted] = strips.emplace(static_cast<uint8_t>(0), make_unique<HSVStrip>(LENGTH, 22));
+    auto [mainStripIt, stripInserted] = strips.emplace(static_cast<uint8_t>(0), make_unique<HSVStrip>(LENGTH, 7));
 
 
     HSVStrip* mainStrip = mainStripIt->second.get();
@@ -75,19 +75,15 @@ void JacketIO::init()
     float yMonowireScalar = 1.0f; // TODO - calibrate this to be the same as the last ring, or something close to it
     if (inserted8) it8->second->addNodes(HSVStripNodeFactory::GenerateAxisRow(mainStrip, currentPixelIdx, jacket::MONOWIRE_LENGTH, Coord(0,0), Coord(0.0, yMonowireOffset + (increment8 * yMonowireScalar))));
     currentPixelIdx += jacket::MONOWIRE_LENGTH;
-
-    pendant = make_unique<PendantIO>();
-    pendant->init(); // Initialize the pendant IO, which may include setting up its own segments and strips
     
     dbgLog("ObeliskIO::init finished", Verbosity::Verbose, Category::Relic);
 
     setGlobalBrightness(EBrightness::HIGH);
 }
 
-void jacket::JacketIO::tick2()
+void jacket::JacketIO::tick(float deltaTime)
 {
-    // The actual meat and potatoes
-    pendant->tick2(); 
+    PendantIO::tick(deltaTime);
 }
 
 JacketCore::JacketCore()
@@ -96,23 +92,32 @@ JacketCore::JacketCore()
 
 void jacket::JacketCore::init()
 {
-    RelicCore::init();
-
+    PendantCore::init();
+    
     coreIO = std::make_unique<JacketIO>();
-    coreIO->init();
-
+    JacketIO* jacketIO = static_cast<JacketIO*>(coreIO.get());
+    jacketIO->init();
 
     stateMachine = std::make_unique<StateMachine_GenericHSV>();
-    stateMachine->setRelicIO(coreIO.get());
+    stateMachine->setRelicIO(jacketIO);
 
-    mainPatternState = std::make_shared<State_GenericHSV>("mainState", coreIO.get());
+    mainPatternState = std::make_shared<State_GenericHSV>("mainState", jacketIO);
     mainPatternState->setGenerator(make_shared<Pattern_Obelisk_FourSeasons>());
     mainPatternState->init();
 
     // Start State Machine
     stateManager = std::make_unique<StateManager>();
+    int mainPatternStateID = stateManager->addState(mainPatternState);
     stateMachine->setActiveState(mainPatternState);
     stateMachine->init();
+}
+
+void jacket::JacketCore::tick(float deltaTime)
+{
+    if (stateMachine)
+    {
+        stateMachine->tick(deltaTime);
+    }
 }
 
 void jacket::JacketCore::tick2()

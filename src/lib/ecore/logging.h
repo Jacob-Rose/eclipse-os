@@ -32,7 +32,8 @@ namespace ecore
             State       = 0b00000010, // state related logging
             IO          = 0b00000100, // IO related logging
             Relic       = 0b00001000, // part of the relic core
-            Library     = 0b00010000, // part of the core eclipse library
+            Screen      = 0b00010000, // part of the screen core
+            Library     = 0b00100000, // part of the core eclipse library
         };
     
         // Enable bitwise operations
@@ -55,9 +56,11 @@ namespace ecore
                    static_cast<std::underlying_type_t<Category>>(rhs);
         };
     
-        constexpr Verbosity ProjectVerbosity = Verbosity::Verbose;
-        constexpr Category ProjectHideCategories (
-            Category::OnTick
+        constexpr Verbosity ProjectVerbosity = Verbosity::Display;
+        constexpr Category ProjectHideCategories = (
+            Category::None &
+            Category::Library
+            //Category::OnTick
         );
     
         void dbgLog(const char *msg, Verbosity InVerbosity = Verbosity::Display, Category InHideCategories = Category::None);
