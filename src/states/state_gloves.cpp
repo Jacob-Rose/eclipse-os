@@ -2,7 +2,7 @@
 //
 // This file is part of project necklace_code_c
 // See readme.md for full license details.
-#include "state_boxing.h"
+#include "state_gloves.h"
 
 #include "../lib/ecore/math.h"
 #include "../lib/ecore/logging.h"

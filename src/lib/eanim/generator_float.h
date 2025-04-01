@@ -50,7 +50,9 @@ namespace eanim
 
         float speed = 1.0f;
         float width = 1.0f;
-        float initialOffset = 0.0f;
+        float amplitude = 1.0f;
+        float heightOffset = 0.0f;
+        float valueOffset = 0.0f; // offsets on evaluate
     private:
         float currentOffset = 0.0f;
     };

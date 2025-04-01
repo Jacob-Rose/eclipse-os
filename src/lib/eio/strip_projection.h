@@ -15,8 +15,7 @@
 
 #include "hsv_strip.h"
 
-using namespace ecore;
-using namespace eio;
+using namespace ecore; 
 
 namespace eio
 {
