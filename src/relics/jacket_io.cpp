@@ -77,8 +77,6 @@ void JacketIO::init()
     yMonowireScalar *= 7.0f * (1.0f / MONOWIRE_LENGTH);
     if (inserted8) it8->second->addNodes(HSVStripNodeFactory::GenerateAxisRow(mainStrip, currentPixelIdx, jacket::MONOWIRE_LENGTH, Coord(0.9f,7.f + yMonowireOffset), Coord(0.0, -yMonowireScalar)));
     currentPixelIdx += jacket::MONOWIRE_LENGTH;
-    
-    dbgLog("ObeliskIO::init finished", Verbosity::Verbose, Category::Relic);
 
     setGlobalBrightness(EBrightness::HIGH);
 }

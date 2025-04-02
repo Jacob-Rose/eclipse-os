@@ -1,7 +1,7 @@
 // code taken from https://github.com/nicolausYes/easing-functions/tree/master
 #pragma once 
 
-enum easing_functions
+enum class easing_functions
 {
 	EaseInSine,
 	EaseOutSine,

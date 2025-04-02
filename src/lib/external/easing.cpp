@@ -178,36 +178,36 @@ easingFunction getEasingFunction( easing_functions function )
 	static std::map< easing_functions, easingFunction > easingFunctions;
 	if( easingFunctions.empty() )
 	{
-		easingFunctions.insert( std::make_pair( EaseInSine, 	easeInSine ) );
-		easingFunctions.insert( std::make_pair( EaseOutSine, 	easeOutSine ) );
-		easingFunctions.insert( std::make_pair( EaseInOutSine, 	easeInOutSine ) );
-		easingFunctions.insert( std::make_pair( EaseInQuad, 	easeInQuad ) );
-		easingFunctions.insert( std::make_pair( EaseOutQuad, 	easeOutQuad ) );
-		easingFunctions.insert( std::make_pair( EaseInOutQuad, 	easeInOutQuad ) );
-		easingFunctions.insert( std::make_pair( EaseInCubic, 	easeInCubic ) );
-		easingFunctions.insert( std::make_pair( EaseOutCubic, 	easeOutCubic ) );
-		easingFunctions.insert( std::make_pair( EaseInOutCubic, easeInOutCubic ) );
-		easingFunctions.insert( std::make_pair( EaseInQuart, 	easeInQuart ) );
-		easingFunctions.insert( std::make_pair( EaseOutQuart, 	easeOutQuart ) );
-		easingFunctions.insert( std::make_pair( EaseInOutQuart, easeInOutQuart) );
-		easingFunctions.insert( std::make_pair( EaseInQuint, 	easeInQuint ) );
-		easingFunctions.insert( std::make_pair( EaseOutQuint, 	easeOutQuint ) );
-		easingFunctions.insert( std::make_pair( EaseInOutQuint, easeInOutQuint ) );
-		easingFunctions.insert( std::make_pair( EaseInExpo, 	easeInExpo ) );
-		easingFunctions.insert( std::make_pair( EaseOutExpo, 	easeOutExpo ) );
-		easingFunctions.insert( std::make_pair( EaseInOutExpo,	easeInOutExpo ) );
-		easingFunctions.insert( std::make_pair( EaseInCirc, 	easeInCirc ) );
-		easingFunctions.insert( std::make_pair( EaseOutCirc, 	easeOutCirc ) );
-		easingFunctions.insert( std::make_pair( EaseInOutCirc,	easeInOutCirc ) );
-		easingFunctions.insert( std::make_pair( EaseInBack, 	easeInBack ) );
-		easingFunctions.insert( std::make_pair( EaseOutBack, 	easeOutBack ) );
-		easingFunctions.insert( std::make_pair( EaseInOutBack,	easeInOutBack ) );
-		easingFunctions.insert( std::make_pair( EaseInElastic, 	easeInElastic ) );
-		easingFunctions.insert( std::make_pair( EaseOutElastic, easeOutElastic ) );
-		easingFunctions.insert( std::make_pair( EaseInOutElastic, easeInOutElastic ) );
-		easingFunctions.insert( std::make_pair( EaseInBounce, 	easeInBounce ) );
-		easingFunctions.insert( std::make_pair( EaseOutBounce, 	easeOutBounce ) );
-		easingFunctions.insert( std::make_pair( EaseInOutBounce, easeInOutBounce ) );
+		easingFunctions.insert( std::make_pair( easing_functions::EaseInSine, 	easeInSine ) );
+		easingFunctions.insert( std::make_pair( easing_functions::EaseOutSine, 	easeOutSine ) );
+		easingFunctions.insert( std::make_pair( easing_functions::EaseInOutSine, 	easeInOutSine ) );
+		easingFunctions.insert( std::make_pair( easing_functions::EaseInQuad, 	easeInQuad ) );
+		easingFunctions.insert( std::make_pair( easing_functions::EaseOutQuad, 	easeOutQuad ) );
+		easingFunctions.insert( std::make_pair( easing_functions::EaseInOutQuad, 	easeInOutQuad ) );
+		easingFunctions.insert( std::make_pair( easing_functions::EaseInCubic, 	easeInCubic ) );
+		easingFunctions.insert( std::make_pair( easing_functions::EaseOutCubic, 	easeOutCubic ) );
+		easingFunctions.insert( std::make_pair( easing_functions::EaseInOutCubic, easeInOutCubic ) );
+		easingFunctions.insert( std::make_pair( easing_functions::EaseInQuart, 	easeInQuart ) );
+		easingFunctions.insert( std::make_pair( easing_functions::EaseOutQuart, 	easeOutQuart ) );
+		easingFunctions.insert( std::make_pair( easing_functions::EaseInOutQuart, easeInOutQuart) );
+		easingFunctions.insert( std::make_pair( easing_functions::EaseInQuint, 	easeInQuint ) );
+		easingFunctions.insert( std::make_pair( easing_functions::EaseOutQuint, 	easeOutQuint ) );
+		easingFunctions.insert( std::make_pair( easing_functions::EaseInOutQuint, easeInOutQuint ) );
+		easingFunctions.insert( std::make_pair( easing_functions::EaseInExpo, 	easeInExpo ) );
+		easingFunctions.insert( std::make_pair( easing_functions::EaseOutExpo, 	easeOutExpo ) );
+		easingFunctions.insert( std::make_pair( easing_functions::EaseInOutExpo,	easeInOutExpo ) );
+		easingFunctions.insert( std::make_pair( easing_functions::EaseInCirc, 	easeInCirc ) );
+		easingFunctions.insert( std::make_pair( easing_functions::EaseOutCirc, 	easeOutCirc ) );
+		easingFunctions.insert( std::make_pair( easing_functions::EaseInOutCirc,	easeInOutCirc ) );
+		easingFunctions.insert( std::make_pair( easing_functions::EaseInBack, 	easeInBack ) );
+		easingFunctions.insert( std::make_pair( easing_functions::EaseOutBack, 	easeOutBack ) );
+		easingFunctions.insert( std::make_pair( easing_functions::EaseInOutBack,	easeInOutBack ) );
+		easingFunctions.insert( std::make_pair( easing_functions::EaseInElastic, 	easeInElastic ) );
+		easingFunctions.insert( std::make_pair( easing_functions::EaseOutElastic, easeOutElastic ) );
+		easingFunctions.insert( std::make_pair( easing_functions::EaseInOutElastic, easeInOutElastic ) );
+		easingFunctions.insert( std::make_pair( easing_functions::EaseInBounce, 	easeInBounce ) );
+		easingFunctions.insert( std::make_pair( easing_functions::EaseOutBounce, 	easeOutBounce ) );
+		easingFunctions.insert( std::make_pair( easing_functions::EaseInOutBounce, easeInOutBounce ) );
 
 	}
 

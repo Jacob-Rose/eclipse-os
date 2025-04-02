@@ -31,31 +31,6 @@ namespace eanim
     };
 
 
-    /* @brief Spring will help round out values and give things that bounciness that UX designers love
-    *
-    */
-    class LFO : public Generator1D, public Tickable
-    {
-    public:
-        LFO();
-        LFO(float inSpeed, float inWidth);
-
-        // Tickable interface
-        virtual void tick(float deltaTime) override;
-
-        // Generator1D interface
-        virtual float evaluate(float val) const override;
-
-        float getCurrentOffset() const { return currentOffset; }
-
-        float speed = 1.0f;
-        float width = 1.0f;
-        float amplitude = 1.0f;
-        float heightOffset = 0.0f;
-        float valueOffset = 0.0f; // offsets on evaluate
-    private:
-        float currentOffset = 0.0f;
-    };
 
 
     /* @brief Similar to an LFO, but linearly grows between 0-1, then clamps and resets back to zero 

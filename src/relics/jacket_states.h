@@ -9,6 +9,7 @@
 
 #include "../lib/esm/state.h"
 #include "../lib/eanim/effects.h"
+#include "../lib/eanim/lfo.h"
 #include "../lib/ecore/hsv.h"
 #include "../lib/eanim/generator_hsv.h"
 #include "../kits/palettes.h"

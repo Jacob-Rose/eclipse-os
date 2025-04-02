@@ -96,6 +96,8 @@ void jacket::Pattern_Jacket_RainbowRoad::init()
 
     cogLFO.heightOffset = 0.25f;
     cogLFO.amplitude = 0.5f;
+    cogLFO.bUseEasingFunction = true;
+    cogLFO.easingFunction = easing_functions::EaseInOutSine;
 
     cogSpeedLFO.width = 0.3f;
     cogSpeedLFO.heightOffset = 6.0f;
@@ -135,7 +137,7 @@ void Pattern_Jacket_RainbowRoad::render(HSVStripNode *inNode, HSV &inOutColor) c
 
 
     HSV outColor = rainbowPalette.getColor(y / 6.0f);
-    //outColor.setBrightnessAlpha(clamp(outColor.getValFloat() - cogLFOEval, 0.f, 1.0f));
+    outColor.setBrightnessAlpha(clamp(outColor.getValFloat() - cogLFOEval, 0.f, 1.0f));
     outColor.setSaturationAlpha(clamp(outColor.getSatFloat() + cogLFOEval, 0.f, 1.0f));
     inOutColor = outColor;
 }
