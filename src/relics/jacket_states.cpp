@@ -60,8 +60,11 @@ Pattern_Jacket_WarpTurbines::Pattern_Jacket_WarpTurbines()
 
 void Pattern_Jacket_WarpTurbines::init()
 {
-    turbineLFO.speed = 0.5f;
-    turbineLFO.width = 2.0f;
+    turbineLFO.speed = 3.5f;
+    turbineLFO.width = 0.3f;
+
+    turbineLFO.bUseEasingFunction = true;
+    turbineLFO.easingFunction = easing_functions::EaseInCubic;
 }
 
 void Pattern_Jacket_WarpTurbines::tick(float deltaTime)
@@ -83,6 +86,19 @@ void Pattern_Jacket_WarpTurbines::render(HSVStripNode *inNode, HSV &inOutColor) 
         return;
     }
     HSVStripNode_Mapped2D *castedNode = static_cast<HSVStripNode_Mapped2D*>(inNode);
+
+    const float x = castedNode->coord.x;
+    const float y = castedNode->coord.y;
+
+    //constexpr float scalar = (1.f / 7.f) * 0.3f;
+    bool bIsTurbineA = ((int)y) % 2 == 0;
+
+    float turbineLFOEval = turbineLFO.evaluate(x * (bIsTurbineA ? -1.f : 1.f));
+    turbineLFOEval = turbineLFOEval - turbineLFO.heightOffset < 0.0f ? turbineLFOEval : turbineLFOEval - turbineLFO.heightOffset;
+
+
+    HSV outColor = bIsTurbineA ? turbinePaletteA.getColor(1.0f - turbineLFOEval) : turbinePaletteB.getColor(1.0f - turbineLFOEval);
+    inOutColor = outColor;
 
 }
 

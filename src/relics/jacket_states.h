@@ -72,8 +72,8 @@ namespace jacket
         Pattern_Jacket_WarpTurbines();
     
     public:
-        HSVPalette turbinePaletteA { HSV(35.f, 0.75f, 0.9f), HSV(35.f, 0.05f, 0.5f) };
-        HSVPalette turbinePaletteB { HSV(190.f, 0.75f, 0.9f), HSV(190.f, 0.05f, 0.5f)};
+        HSVPalette turbinePaletteA { HSV(35.f, 0.9f, 0.9f), HSV(35.f, 0.05f, 0.5f) };
+        HSVPalette turbinePaletteB { HSV(190.f, 0.9f, 0.9f), HSV(190.f, 0.05f, 0.5f)};
     
         LFO turbineLFO;
     

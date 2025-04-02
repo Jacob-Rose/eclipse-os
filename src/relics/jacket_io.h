@@ -38,7 +38,7 @@ namespace jacket
     constexpr int RING_FIVE_LENGTH = 21;
     constexpr int RING_SIX_LENGTH = 20;
     constexpr int RING_SEVEN_LENGTH = 18;
-    constexpr int MONOWIRE_LENGTH = 48;
+    constexpr int MONOWIRE_LENGTH = 52;
 
     constexpr bool RING_ONE_FORWARD = true;
     constexpr bool RING_TWO_FORWARD = true;

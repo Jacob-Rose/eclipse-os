@@ -36,7 +36,7 @@ void JacketCore::init()
     stateMachine = std::make_unique<StateMachine_GenericHSV>();
     stateMachine->setRelicIO(jacketIO);
 
-    std::shared_ptr<Pattern_Jacket_RainbowRoad> mainPattern = std::make_shared<Pattern_Jacket_RainbowRoad>();
+    std::shared_ptr<Pattern_Jacket_WarpTurbines> mainPattern = std::make_shared<Pattern_Jacket_WarpTurbines>();
     mainPattern->init();
 
     mainPatternState = std::make_shared<State_GenericHSV>("mainState", jacketIO);
