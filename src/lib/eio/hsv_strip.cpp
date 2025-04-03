@@ -143,16 +143,19 @@ void HSVStrip::updateStripPixels()
     }
 }
 
-HSVStripNode::HSVStripNode(HSVStrip *inParentStrip, int inStripIdx) : parentStrip(inParentStrip), stripIdx(inStripIdx) {}
+HSVStripNode::HSVStripNode(HSVStripSegment *inParentStripSegment, int inStripIdx) : parentStripSegment(inParentStripSegment), stripIdx(inStripIdx) 
+{
+
+}
 
 void HSVStripNode::setHSV(const HSV &hsv)
 {
-    parentStrip->setHSV(stripIdx, hsv);
+    parentStripSegment->getParentStrip()->setHSV(stripIdx, hsv);
 }
 
 void HSVStripNode::setHSV(float h, uint8_t s, uint8_t v)
 {
-    parentStrip->setHSV(stripIdx, h, s, v);
+    parentStripSegment->getParentStrip()->setHSV(stripIdx, h, s, v);
 }
 
 void eio::HSVStripNode::setBuffer(int idx, const HSV &inHSV)
@@ -184,9 +187,10 @@ std::vector<std::pair<int, HSV>> eio::HSVStripNode::getBufferMap() const
     return std::vector<std::pair<int, HSV>>(bufferMap.begin(), bufferMap.end());
 }
 
-eio::HSVStripSegment::HSVStripSegment(HSVStrip* inParentStrip) : parentStrip(inParentStrip)
+eio::HSVStripSegment::HSVStripSegment(HSVStrip* inParentStrip, int inId) : parentStrip(inParentStrip), id(inId)
 {
 }
+
 
 void eio::HSVStripSegment::addNode(std::shared_ptr<HSVStripNode> node)
 {

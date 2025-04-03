@@ -25,7 +25,7 @@ namespace eio
     class HSVStripNode_Mapped2D : public HSVStripNode
     {
     public:
-        HSVStripNode_Mapped2D(HSVStrip* inParentStrip, int inStripIdx) : HSVStripNode(inParentStrip, inStripIdx) {}
+        HSVStripNode_Mapped2D(HSVStripSegment* inParentStripSegment, int inStripIdx) : HSVStripNode(inParentStripSegment, inStripIdx) {}
 
         virtual StripNodeType GetStripNodeType() const override { return StripNodeType::MAPPED2D; }
     public:
@@ -36,6 +36,6 @@ namespace eio
     class HSVStripNodeFactory
     {
     public:
-        static std::vector<std::shared_ptr<HSVStripNode>> GenerateAxisRow(HSVStrip* strip, int startIdx, int Length, const Coordinate& posStart, const Coordinate& posDeltaPerIdx);
+        static std::vector<std::shared_ptr<HSVStripNode>> GenerateAxisRow(HSVStripSegment* strip_segment, int startIdx, int Length, const Coordinate& posStart, const Coordinate& posDeltaPerIdx);
     };
 }

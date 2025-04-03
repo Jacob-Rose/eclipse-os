@@ -29,26 +29,45 @@ void ObeliskIO::init()
 
     HSVStrip* mainStrip = mainStripIt->second.get();
 
-    auto [it1, inserted1] = strip_segments.emplace(static_cast<uint8_t>(StripSegmentID::SideA_Up), make_unique<HSVStripSegment>(mainStrip));
-    if (inserted1) it1->second->addNodes(HSVStripNodeFactory::GenerateAxisRow(mainStrip, 0                , WALL_SIDE_LENGTH, Coord(0,0), Coord(0, 1.f)));
+    // Side A
 
-    auto [it2, inserted2] = strip_segments.emplace(static_cast<uint8_t>(StripSegmentID::SideA_Down), make_unique<HSVStripSegment>(mainStrip));
-    if (inserted2) it2->second->addNodes(HSVStripNodeFactory::GenerateAxisRow(mainStrip, WALL_SIDE_LENGTH , WALL_SIDE_LENGTH, Coord(1, WALL_SIDE_LENGTH), Coord(0, -1.f)));
+    int id1 = static_cast<uint8_t>(StripSegmentID::SideA_Up);
+    auto [it1, inserted1] = strip_segments.emplace(id1, make_unique<HSVStripSegment>(mainStrip, id1));
+    if (inserted1) HSVStripNodeFactory::GenerateAxisRow(it1->second.get(), 0                , WALL_SIDE_LENGTH, Coord(0,0), Coord(0, 1.f));
+
+    int id2 = static_cast<uint8_t>(StripSegmentID::SideA_Down);
+    auto [it2, inserted2] = strip_segments.emplace(id2, make_unique<HSVStripSegment>(mainStrip, id2));
+    if (inserted2) HSVStripNodeFactory::GenerateAxisRow(it2->second.get(), WALL_SIDE_LENGTH , WALL_SIDE_LENGTH, Coord(1, WALL_SIDE_LENGTH), Coord(0, -1.f));
     
-    auto [it3, inserted3] = strip_segments.emplace(static_cast<uint8_t>(StripSegmentID::SideB_Up), make_unique<HSVStripSegment>(mainStrip));
-    if (inserted3) it3->second->addNodes(HSVStripNodeFactory::GenerateAxisRow(mainStrip, WALL_SIDE_LENGTH * 2, WALL_SIDE_LENGTH, Coord(2,0), Coord(0, 1.f)));
-    auto [it4, inserted4] = strip_segments.emplace(static_cast<uint8_t>(StripSegmentID::SideB_Down), make_unique<HSVStripSegment>(mainStrip));
-    if (inserted4) it4->second->addNodes(HSVStripNodeFactory::GenerateAxisRow(mainStrip, WALL_SIDE_LENGTH * 3, WALL_SIDE_LENGTH, Coord(3, WALL_SIDE_LENGTH), Coord(0, -1.f)));
+    // Side B
+
+    int id3 = static_cast<uint8_t>(StripSegmentID::SideB_Up);
+    auto [it3, inserted3] = strip_segments.emplace(id3, make_unique<HSVStripSegment>(mainStrip, id3));
+    if (inserted3) HSVStripNodeFactory::GenerateAxisRow(it3->second.get(), WALL_SIDE_LENGTH * 2, WALL_SIDE_LENGTH, Coord(2,0), Coord(0, 1.f));
+
+    int id4 = static_cast<uint8_t>(StripSegmentID::SideB_Down);
+    auto [it4, inserted4] = strip_segments.emplace(id4, make_unique<HSVStripSegment>(mainStrip, id4));
+    if (inserted4) HSVStripNodeFactory::GenerateAxisRow(it4->second.get(), WALL_SIDE_LENGTH * 3, WALL_SIDE_LENGTH, Coord(3, WALL_SIDE_LENGTH), Coord(0, -1.f));
     
-    auto [it5, inserted5] = strip_segments.emplace(static_cast<uint8_t>(StripSegmentID::SideC_Up), make_unique<HSVStripSegment>(mainStrip));
-    if (inserted5) it5->second->addNodes(HSVStripNodeFactory::GenerateAxisRow(mainStrip, WALL_SIDE_LENGTH * 4, WALL_SIDE_LENGTH, Coord(4,0), Coord(0, 1.f)));
-    auto [it6, inserted6] = strip_segments.emplace(static_cast<uint8_t>(StripSegmentID::SideC_Down), make_unique<HSVStripSegment>(mainStrip));
-    if (inserted6) it6->second->addNodes(HSVStripNodeFactory::GenerateAxisRow(mainStrip, WALL_SIDE_LENGTH * 5, WALL_SIDE_LENGTH, Coord(5, WALL_SIDE_LENGTH), Coord(0, -1.f)));
+    // Side C
+
+    int id5 = static_cast<uint8_t>(StripSegmentID::SideC_Up);
+    auto [it5, inserted5] = strip_segments.emplace(id5, make_unique<HSVStripSegment>(mainStrip, id5));
+    if (inserted5) HSVStripNodeFactory::GenerateAxisRow(it5->second.get(), WALL_SIDE_LENGTH * 4, WALL_SIDE_LENGTH, Coord(4,0), Coord(0, 1.f));
+
+    int id6 = static_cast<uint8_t>(StripSegmentID::SideC_Down);
+    auto [it6, inserted6] = strip_segments.emplace(id6, make_unique<HSVStripSegment>(mainStrip, id6));
+    if (inserted6) HSVStripNodeFactory::GenerateAxisRow(it6->second.get(), WALL_SIDE_LENGTH * 5, WALL_SIDE_LENGTH, Coord(5, WALL_SIDE_LENGTH), Coord(0, -1.f));
     
-    auto [it7, inserted7] = strip_segments.emplace(static_cast<uint8_t>(StripSegmentID::SideD_Up), make_unique<HSVStripSegment>(mainStrip));
-    if (inserted7) it7->second->addNodes(HSVStripNodeFactory::GenerateAxisRow(mainStrip, WALL_SIDE_LENGTH * 6, WALL_SIDE_LENGTH, Coord(6,0), Coord(0, 1.f)));
-    auto [it8, inserted8] = strip_segments.emplace(static_cast<uint8_t>(StripSegmentID::SideD_Down), make_unique<HSVStripSegment>(mainStrip));
-    if (inserted8) it8->second->addNodes(HSVStripNodeFactory::GenerateAxisRow(mainStrip, WALL_SIDE_LENGTH * 7, WALL_SIDE_LENGTH, Coord(7, WALL_SIDE_LENGTH), Coord(0, -1.f)));
+    // Side D
+
+    int id7 = static_cast<uint8_t>(StripSegmentID::SideD_Up);
+    auto [it7, inserted7] = strip_segments.emplace(id7, make_unique<HSVStripSegment>(mainStrip, id7));
+    if (inserted7) HSVStripNodeFactory::GenerateAxisRow(it7->second.get(), WALL_SIDE_LENGTH * 6, WALL_SIDE_LENGTH, Coord(6,0), Coord(0, 1.f));
+
+    int id8 = static_cast<uint8_t>(StripSegmentID::SideD_Down);
+    auto [it8, inserted8] = strip_segments.emplace(id8, make_unique<HSVStripSegment>(mainStrip, id8));
+    if (inserted8) HSVStripNodeFactory::GenerateAxisRow(it8->second.get(), WALL_SIDE_LENGTH * 7, WALL_SIDE_LENGTH, Coord(7, WALL_SIDE_LENGTH), Coord(0, -1.f));
     
     dbgLog("ObeliskIO::init", Verbosity::Verbose, Category::Relic);
 

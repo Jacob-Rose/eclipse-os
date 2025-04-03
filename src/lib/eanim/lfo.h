@@ -18,7 +18,7 @@ using namespace ecore;
 
 namespace eanim
 {
-    
+
     /* @brief Spring will help round out values and give things that bounciness that UX designers love
     *
     */
@@ -39,11 +39,13 @@ namespace eanim
        float speed = 1.0f;
        float width = 1.0f;
        float amplitude = 1.0f;
-       float heightOffset = 0.0f;
-       float valueOffset = 0.0f; // offsets on evaluate
+       float yOffset = 0.0f;
+       float xOffset = 0.0f; // offsets on evaluate
 
        bool bUseEasingFunction{false};
        easing_functions easingFunction = easing_functions::EaseInOutElastic; // default to linear
+
+       bool bShouldReflect{false};
    private:
        float currentOffset = 0.0f;
    };

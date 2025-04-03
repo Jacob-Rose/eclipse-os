@@ -82,7 +82,7 @@ namespace eio
     class HSVStripNode
     {
     public:
-        HSVStripNode(HSVStrip* inParentStrip, int inStripIdx);
+        HSVStripNode(class HSVStripSegment* inParentStrip, int inStripIdx);
         // we need to provide a virtual destructor so we can delete derived classes safely;
         virtual ~HSVStripNode() = default;
         
@@ -98,21 +98,22 @@ namespace eio
         // since we dont support RTTI (nor do I want to due to perf concerns), we need to provide a way to check if a node is supported
         virtual StripNodeType GetStripNodeType() const { return StripNodeType::ROOT; }
 
-        int getStripIdx() const { return stripIdx; }
-
     private:
-        HSVStrip* parentStrip;
-        int stripIdx;
-        int stripSegmentId;
+        class HSVStripSegment* parentStripSegment;
+        int stripIdx{0}; // led index on the strip
 
         std::map<int, HSV> bufferMap;
+
+    public:
+        int getStripIdx() const { return stripIdx; }
+        class HSVStripSegment* getStripSegment() const { return parentStripSegment; }
     };
 
 
     class HSVStripSegment
     {
     public:
-        HSVStripSegment(HSVStrip* parent);
+        HSVStripSegment(HSVStrip* parent, int inId);
 
         void addNode(std::shared_ptr<HSVStripNode> node);
         void addNodes(std::vector<std::shared_ptr<HSVStripNode>> inNodes);
@@ -121,6 +122,12 @@ namespace eio
     private:
         HSVStrip* parentStrip{nullptr};
         std::vector<std::shared_ptr<HSVStripNode>> Nodes;
+
+        int id;
+
+    public:
+        HSVStrip* getParentStrip() const { return parentStrip; }
+        int getId() const { return id; }
 
     };
 }

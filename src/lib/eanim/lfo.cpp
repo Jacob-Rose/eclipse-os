@@ -27,10 +27,17 @@ void LFO::tick(float deltaTime)
 float LFO::evaluate(float inVal) const
 {
     float evaluatedOffset = (inVal / width * 3.14159265 * 2.f); // 2. makes it so that the width goes a full cycle instead of half
-    float sinVal = std::sin(evaluatedOffset + currentOffset + valueOffset);
+    float sinVal = std::sin(evaluatedOffset + currentOffset + xOffset);
+
     if(bUseEasingFunction)
     {
         sinVal = getEasingFunction(easingFunction)(sinVal);
     }
-    return (std::clamp((sinVal / 2) + 0.5f, 0.f, 1.0f) * amplitude) + heightOffset;
+
+    if(bShouldReflect)
+    {
+        sinVal = std::abs(sinVal);
+    }
+
+    return (std::clamp((sinVal / 2) + 0.5f, 0.f, 1.0f) * amplitude) + yOffset;
 }
