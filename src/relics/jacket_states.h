@@ -8,7 +8,7 @@
 #include <memory>
 
 #include "../lib/esm/state.h"
-#include "../lib/eanim/effects.h"
+#include "../kits/effects.h"
 #include "../lib/eanim/lfo.h"
 #include "../lib/eanim/noise.h"
 

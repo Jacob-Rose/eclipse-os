@@ -7,8 +7,8 @@
 
 #include <cmath>
 
-#include "../ecore/logging.h"
-#include "../ecore/math.h"
+#include "../lib/ecore/logging.h"
+#include "../lib/ecore/math.h"
 
 using namespace ecore;
 using namespace eanim;
@@ -93,6 +93,7 @@ DropGenerator::DropGenerator(uint16_t inLength) : length(inLength)
 void DropGenerator::tick(float deltaTime)
 {
 }
+
 
 void DropGenerator::render(HSVStripNode* node, HSV& InOutColor) const
 {

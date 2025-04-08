@@ -68,8 +68,8 @@ void StateMachine_GenericHSV::tick(float deltaTime)
                 float alpha = currentTransitionTime / transitionTime;
                 alpha = clamp(alpha, 0.0f, 1.0f); // ensure alpha is between 0 and 1
 
-                HSV color = node->getBuffer(ActiveState->getStateID());
-                HSV color2 = node->getBuffer(NextState->getStateID());
+                HSV color = getActiveState() == nullptr ? HSV(0.f, 0.f, 0.f) : node->getBuffer(ActiveState->getStateID());
+                HSV color2 = getNextState() == nullptr ? HSV(0.f, 0.f, 0.f) : node->getBuffer(NextState->getStateID());
                 color.blendWith(color2, alpha); // blend the current color with the buffer color
                 node->setHSV(color); // set the blended color to the node
             }

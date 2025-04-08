@@ -8,11 +8,12 @@
 #include <memory>
 
 #include "../lib/esm/state.h"
-#include "../lib/eanim/effects.h"
 #include "../lib/eanim/lfo.h"
 #include "../lib/eanim/noise.h"
 #include "../lib/ecore/hsv.h"
 #include "../lib/eanim/generator_hsv.h"
+
+#include "../kits/effects.h"
 
 using namespace ecore;
 using namespace eanim;

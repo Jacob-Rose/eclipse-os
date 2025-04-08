@@ -1,14 +1,21 @@
 
 # Introduction
 
-Hello World!
+Welcome to Eclipse OS, a modern, modular, and scalable library for controlling Adressable LEDs in a performant yet convinent manner. 
 
-## What is this?
+There are a lot of useful structures/classes, paradigms, and content all developed together.
 
-A custom microcontroller prop's code. This logic is made to be a universal hook in for many future projects, where this can be the starting library/template
+Written in C++
 
+## Project Goal
 
-The library code is currently broken into three modules:
+The goal of the project comes from a need to generate unique patterns with controls similar to DMX (and hopefully compatible with DMX soon), but allowing us to create configurations at the lower level, create our knobs and controls accesible and custom per device setup, while letting maximum flexibility in sharing code among projects. This system promotes scalable development and lets me expand the featureset gradually.
+
+# Features
+
+## Core Library
+
+The library is broken down in a simple, modular setup to allow selective usage as best as possible. Most modules are dependent on ecore.
 
 ### ecore
 contains core system functionality and types. nothing in ecore has any dependencies
@@ -22,6 +29,8 @@ contains io device wrappers
 ### esm
 a simple generic state machine
 
+### external
+gathered from other projects, possible conversions. See credits on respective files.
 
 
 ## Legalese
@@ -35,7 +44,6 @@ License Info is located in the [license file](license.md). GNU GPLv3
 
 # Setup + Guide
 
-Welp, found graphics to be quite difficult using the provided pico library, but building with Adafruit/Arduino libraries means were locked into Arduino IDE for now and makes this not support cleaner coding with cmake.
 
 ## Arduino IDE Setup (easiest)
 
@@ -45,7 +53,7 @@ Welp, found graphics to be quite difficult using the provided pico library, but 
 3. Get Adafruit GC9A01 and AnimatedGif libraries in Arduino IDE
    > Can be downloaded + auto-setup in Arduino IDE Library Manager
 4. SPI Fixes (IMPORTANT)
-   - SPI had some bs fixes
+   - SPI had some bs fixes. I just modified these. Try and see if necessary as they maybe fix this soon.
       - SPI.h: line 50 -> convert byte to uint_8
       - SPIHelper.h: line 6 -> needed to add #pragma once
 

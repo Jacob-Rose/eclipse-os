@@ -7,11 +7,11 @@
 
 #include <list>
 
-#include "../ecore/core.h"
-#include "../ecore/range.h"
+#include "../lib/ecore/core.h"
+#include "../lib/ecore/range.h"
 
-#include "generator_float.h"
-#include "generator_hsv.h"
+#include "../lib/eanim/generator_float.h"
+#include "../lib/eanim/generator_hsv.h"
 
 using namespace ecore;
 
@@ -70,10 +70,14 @@ namespace eanim
         {
             int idx;
             float size;
+            HSV color;
+            float speed;
         };
 
-        std::list<Drop> drops;
+        std::list<std::shared_ptr<Drop>> drops;
         float timeSinceLastDrop = 0.0f;
+
+        std::vector<HSV> renderBuffer;
 
 
         int length;
