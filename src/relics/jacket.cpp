@@ -11,6 +11,8 @@
 #include "jacket_patterns.h"
 #include "jacket_io.h"
 
+#include "pendant_generic_state.h"
+
 using namespace jacket;
 using namespace eio;
 using namespace ecore;
@@ -32,21 +34,37 @@ void JacketCore::init()
     coreIO = std::make_unique<JacketIO>();
     JacketIO* jacketIO = static_cast<JacketIO*>(coreIO.get());
     jacketIO->init();
-
+    stateManager = std::make_unique<StateManager>();
     stateMachine = std::make_unique<StateMachine_GenericHSV>();
     stateMachine->setRelicIO(jacketIO);
 
-    std::shared_ptr<Pattern_Jacket_WarpTurbines> mainPattern = std::make_shared<Pattern_Jacket_WarpTurbines>();
-    mainPattern->init();
+    std::shared_ptr<Pattern_Jacket_WarpTurbines> mainPattern1 = std::make_shared<Pattern_Jacket_WarpTurbines>();
+    mainPattern1->init();
 
-    mainPatternState = std::make_shared<State_GenericHSV>("mainState", jacketIO);
-    mainPatternState->setGenerator(mainPattern);
-    mainPatternState->init();
+    std::shared_ptr<State_PendantGeneric> mainPatternState1 = std::make_shared<State_PendantGeneric>("mainState", jacketIO);
+    mainPatternState1->setGenerator(mainPattern1);
+    mainPatternState1->init();
 
-    // Start State Machine
-    stateManager = std::make_unique<StateManager>();
-    int mainPatternStateID = stateManager->addState(mainPatternState);
-    stateMachine->setActiveState(mainPatternState);
+    std::shared_ptr<Pattern_Jacket_WarpTurbines> mainPattern2 = std::make_shared<Pattern_Jacket_WarpTurbines>();
+    mainPattern2->init();
+
+    std::shared_ptr<State_PendantGeneric> mainPatternState2 = std::make_shared<State_PendantGeneric>("mainState2", jacketIO);
+    mainPatternState2->setGenerator(mainPattern2);
+    mainPatternState2->init();
+
+    std::shared_ptr<Pattern_Jacket_WarpTurbines> mainPattern3 = std::make_shared<Pattern_Jacket_WarpTurbines>();
+    mainPattern3->init();
+
+    std::shared_ptr<State_PendantGeneric> mainPatternState3 = std::make_shared<State_PendantGeneric>("mainState3", jacketIO);
+    mainPatternState3->setGenerator(mainPattern3);
+    mainPatternState3->init();
+
+    int mainPattern1StateID = stateManager->addState(mainPatternState1);
+    int mainPattern2StateID = stateManager->addState(mainPatternState1);
+    int mainPattern3StateID = stateManager->addState(mainPatternState1);
+
+
+    stateMachine->setActiveState(mainPatternState1);
     stateMachine->init();
 }
 

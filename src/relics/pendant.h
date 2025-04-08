@@ -85,6 +85,8 @@ namespace pendant
         virtual void tick2();
         virtual void cleanup();
 
+        virtual ScreenDrawer* getScreenDrawer() const { return screenDrawer.get(); }
+
     private:
         std::chrono::duration<double> lastFrameDT;
         std::chrono::time_point<std::chrono::system_clock> tickStartTime;

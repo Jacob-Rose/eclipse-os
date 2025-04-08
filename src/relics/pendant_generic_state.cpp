@@ -5,20 +5,29 @@
 
 #include "pendant_generic_state.h"
 
-void State_PendantGeneric::init() 
+
+void State_PendantGeneric::onStateChangeState(StateStatus inStatus)
 {
-    State::init();
-    if (io)
+    if(inStatus == StateStatus::TransitionIn)
     {
-        io->init();
+        if (io && gifData && gifDataSize > 0)
+        {
+            io->getScreenDrawer()->setScreenGif(gifData, gifDataSize);
+        }
     }
 }
 
-void State_PendantGeneric::tick(float deltaTime) 
+void State_PendantGeneric::tick(float deltaTime)
 {
     State::tick(deltaTime);
     if (io)
     {
         io->tick(deltaTime);
     }
+}
+
+void State_PendantGeneric::setGifData(uint8_t *inGifData, int inGifDataSize)
+{
+    gifData = inGifData;
+    gifDataSize = inGifDataSize;
 }

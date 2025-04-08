@@ -19,10 +19,18 @@ using namespace eio;
 class State_PendantGeneric : public State_GenericHSV
 {
 public:
-    State_PendantGeneric(const char* inStateName, RelicIO* inIO) : State_GenericHSV(inStateName, io) {}
+    State_PendantGeneric(const char* inStateName, RelicIO* inIO) : State_GenericHSV(inStateName, inIO) {}
 
-    virtual void init();
+    virtual void onStateChangeState(StateStatus inStatus);
 
     virtual void tick(float deltaTime) override;
+
+    void setGifData(uint8_t* inGifData, int inGifDataSize);
+
+private:
+    uint8_t* gifData;
+    int gifDataSize;
+
+    std::shared_ptr<GeneratorHSV> generator;
 
 };

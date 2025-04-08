@@ -31,8 +31,6 @@ namespace jacket
     protected:
         std::unique_ptr<StateMachine_GenericHSV> stateMachine{ nullptr };
         std::unique_ptr<StateManager> stateManager{ nullptr };
-        
-        std::shared_ptr<State_GenericHSV> mainPatternState;
     };
 }
 

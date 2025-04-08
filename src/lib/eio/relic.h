@@ -11,6 +11,7 @@
 #include <map>
 
 #include "../ecore/tickable.h"
+#include "../eio/screen_drawer.h"
 #include "hsv_strip.h"
 
 using namespace ecore;
@@ -41,7 +42,7 @@ namespace eio
 
         virtual void tick(float deltaTime) override;
 
-        virtual bool hasScreenDrawer() const { return false; }
+        virtual ScreenDrawer* getScreenDrawer() const { return nullptr; }
         void showLeds();
         
         EBrightness getGlobalBrightness() const;
