@@ -2,7 +2,7 @@
 //
 // This file is part of project necklace_code_c
 // See readme.md for full license details.
-#include "jacket_states.h"
+#include "jacket_patterns.h"
 
 #include "../lib/ecore/math.h"
 #include "../lib/ecore/logging.h"

@@ -50,3 +50,4 @@ namespace eanim
        float currentOffset = 0.0f;
    };
 } // namespace eanim
+ 

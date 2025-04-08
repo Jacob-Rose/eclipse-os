@@ -8,7 +8,7 @@
 #include "../lib/eio/strip_projection.h"
 #include "../lib/ecore/logging.h"
 
-#include "jacket_states.h"
+#include "jacket_patterns.h"
 #include "jacket_io.h"
 
 using namespace jacket;

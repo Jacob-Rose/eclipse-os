@@ -35,11 +35,11 @@ void pendant::PendantIO::init()
     // TODO make circular mapping
     int id1 = static_cast<uint8_t>(EPendantSegmentID::InnerRing);
     auto [it1, inserted1] = strip_segments.emplace(id1, make_unique<HSVStripSegment>(mainStrip, id1));
-    if (inserted1) HSVStripNodeFactory::GenerateAxisRow(it1->second.get(), 0, RingOneLength, Coord(0,0), Coord(0, 1.f));
+    if (inserted1) HSVStripNodeFactory::GenerateAxisRow(it1->second.get(), 0, RingOneLength, Coord(0,0), Coord(0, 1.f / RingOneLength));
 
     int id2 = static_cast<uint8_t>(EPendantSegmentID::OuterRing);
     auto [it2, inserted2] = strip_segments.emplace(id2, make_unique<HSVStripSegment>(mainStrip, id2));
-    if (inserted2) HSVStripNodeFactory::GenerateAxisRow(it2->second.get(), RingOneLength, RingTwoLength, Coord(0,0), Coord(0, 1.f));
+    if (inserted2) HSVStripNodeFactory::GenerateAxisRow(it2->second.get(), RingTwoLength, RingTwoLength, Coord(0,0), Coord(0, 1.f / RingTwoLength));
 }
 
 void pendant::PendantIO::tick(float deltaTime)

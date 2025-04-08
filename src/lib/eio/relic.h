@@ -40,6 +40,8 @@ namespace eio
         virtual void init();
 
         virtual void tick(float deltaTime) override;
+
+        virtual bool hasScreenDrawer() const { return false; }
         void showLeds();
         
         EBrightness getGlobalBrightness() const;

@@ -10,9 +10,6 @@
 #include "../lib/eio/relic.h"
 
 #include "pendant.h"
-#include "jacket_states.h"
-
-#include "jacket_io.h"
 
 using namespace ecore;
 using namespace eio;

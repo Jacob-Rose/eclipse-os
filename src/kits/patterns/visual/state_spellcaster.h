@@ -1,0 +1,34 @@
+// Copyright 2024 | Jake Rose 
+//
+// This file is part of project necklace_code_c
+// See readme.md for full license details.
+
+#pragma once
+
+#if 0
+
+#include "../state_base.h"
+
+#include "../../lib/j/janim.h"
+#include "../../lib/j/jpalettes.h"
+
+#include <AnimatedGIF.h>
+
+
+
+class State_Spellcaster : public State
+{
+public:
+    State_Spellcaster(const char* InStateName);
+
+    virtual void onStateBegin() override;
+
+    virtual void tick() override;
+
+    j::HSVPalette palette = j::p_naturenight;
+
+    j::LFO lfo1 = j::LFO(5.0f, 8.0f);
+    j::LFO lfo2 = j::LFO(-5.0f, 6.0f);
+};
+
+#endif

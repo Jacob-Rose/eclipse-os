@@ -58,6 +58,9 @@ namespace pendant
     constexpr int RemoteWhiteButtonPin = 13; // GPIO 9
     constexpr int RemoteBlackButtonPin = 12; // GPIO 8
 
+    constexpr int InnerRingLength = 12;
+    constexpr int OuterRingLength = 16;
+
     constexpr int ScreenDC = 1;
     constexpr int ScreenCS = 0; // GPIO 0
     constexpr int ScreenRST = -1; // GPIO 2
