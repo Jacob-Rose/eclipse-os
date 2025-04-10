@@ -12,8 +12,9 @@ void State_PendantGeneric::onStateChangeState(StateStatus inStatus)
 
     if(inStatus == StateStatus::Active)
     {
-        if (io && gifData && !bHasSetGif)
+        if (io && io->getScreenDrawer() && gifData && !bHasSetGif)
         {
+            io->getScreenDrawer()->cancelGifRender();
             io->getScreenDrawer()->setScreenGif(gifData, gifDataSize);
         }
     }

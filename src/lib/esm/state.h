@@ -98,7 +98,7 @@ namespace esm
         virtual void init();
         virtual void cleanup();
 
-        float transitionTime = 2.0f;
+        float transitionTime = 20.5f;
 
         virtual void tick(float deltaTime) override;
     

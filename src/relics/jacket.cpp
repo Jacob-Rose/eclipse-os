@@ -9,6 +9,7 @@
 #include "../lib/ecore/logging.h"
 
 #include "../imgs/squid.h"
+#include "../imgs/kirby.h"
 
 #include "jacket_patterns.h"
 #include "jacket_io.h"
@@ -48,11 +49,12 @@ void JacketCore::init()
     mainPatternState1->setGifData((uint8_t *)squid, sizeof(squid));
     mainPatternState1->init();
 
-    std::shared_ptr<Pattern_Jacket_WarpTurbines> mainPattern2 = std::make_shared<Pattern_Jacket_WarpTurbines>();
-    mainPattern2->init();
+    std::shared_ptr<Pattern_Jacket_TheaterLFO> mainPattern2 = std::make_shared<Pattern_Jacket_TheaterLFO>();
+    //mainPattern2->init();
 
     std::shared_ptr<State_PendantGeneric> mainPatternState2 = std::make_shared<State_PendantGeneric>("mainState2", jacketIO);
     mainPatternState2->setGenerator(mainPattern2);
+    mainPatternState2->setGifData((uint8_t *)kirby, sizeof(kirby));
     mainPatternState2->init();
 
     std::shared_ptr<Pattern_Jacket_WarpTurbines> mainPattern3 = std::make_shared<Pattern_Jacket_WarpTurbines>();
@@ -65,6 +67,11 @@ void JacketCore::init()
     int mainPattern1StateID = stateManager->addState(mainPatternState1);
     int mainPattern2StateID = stateManager->addState(mainPatternState2);
     int mainPattern3StateID = stateManager->addState(mainPatternState3);
+
+    mainPatternState1->addStateTransition(mainPatternState2, [jacketIO](State* current, State* target){
+        Button* button = jacketIO->getWhiteButton();
+        return button->runButtonPressedScan();
+    });
 
 
     stateMachine->setActiveState(mainPatternState1);

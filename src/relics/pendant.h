@@ -8,6 +8,7 @@
 #include <memory>
 
 #include "../lib/ecore/core.h"
+#include "../lib/eio/button.h"
 #include "../lib/eio/relic.h"
 #include "../lib/eio/screen_drawer.h"
 
@@ -85,6 +86,13 @@ namespace pendant
         virtual void tick2();
         virtual void cleanup();
 
+        virtual Button* getGreenButton() const { return greenButton.get(); }
+        virtual Button* getRedButton() const { return redButton.get(); }
+        virtual Button* getBlueButton() const { return blueButton.get(); }
+        virtual Button* getWhiteButton() const { return whiteButton.get(); }
+        virtual Button* getRemoteWhiteButton() const { return remoteWhiteButton.get(); }
+        virtual Button* getRemoteBlackButton() const { return remoteBlackButton.get(); }
+
         virtual ScreenDrawer* getScreenDrawer() const { return screenDrawer.get(); }
 
     private:
@@ -93,6 +101,18 @@ namespace pendant
 
         std::shared_ptr<Adafruit_GC9A01A> screen;
         std::unique_ptr<ScreenDrawer> screenDrawer;
+
+        std::unique_ptr<HSVStrip> ringStrip;
+        std::unique_ptr<HSVStripSegment> innerRingSegment;
+        std::unique_ptr<HSVStripSegment> outerRingSegment;
+
+        std::unique_ptr<Button> greenButton;
+        std::unique_ptr<Button> redButton;
+        std::unique_ptr<Button> blueButton;
+        std::unique_ptr<Button> whiteButton;
+
+        std::unique_ptr<Button> remoteWhiteButton;
+        std::unique_ptr<Button> remoteBlackButton;
     };
 
     class PendantCore : public RelicCore

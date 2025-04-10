@@ -39,7 +39,7 @@ void State_GenericHSV::tick(float deltaTime)
                 {
                     nodePtr->setBuffer(getStateID(), color);
                 }
-                
+                else
                 if(GetStatus() == StateStatus::Active)
                 {
                     nodePtr->setHSV(color);
