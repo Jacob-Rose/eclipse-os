@@ -85,6 +85,11 @@ void ScreenDrawer::setScreenGif(const uint8_t* data, int size)
 
 #if USE_SCREEN
     img.open(castData, size, eio::ScreenDrawer::GIFDraw_UpscaleScreen);
+    int lastError = img.getLastError();
+    if(lastError != 0)
+    {
+        dbgLog("ScreenDrawer::setScreenGif - lastError == " + std::to_string(lastError), Verbosity::Error, Category::OnTick | Category::Screen);
+    }
 
     bImgReady = true;
 #endif
@@ -152,17 +157,6 @@ void ScreenDrawer::cancelGifRender()
         int startingScreenPixelX = (xImagePixel * ScalarFloatX);
         int endingScreenPixelX = ((xImagePixel + 1) * ScalarFloatX);
         int xScreenToPixelSize = endingScreenPixelX - startingScreenPixelX;
-
-        /*
-        Serial.print("spx: ");
-        Serial.print(startingPixelX);
-        Serial.print(" epx: ");
-        Serial.print(endingPixelX);
-        Serial.print(" sz: ");
-        Serial.print(xSize);
-        Serial.print(" c: ");
-        Serial.print(c);
-        */
 
         SD->setPixelColor(xImagePixel, yImagePixel, c);
         Screen->writeFillRect(startingScreenPixelX, yStartingScreenPixel, xScreenToPixelSize, yScreenToPixelSize, c);

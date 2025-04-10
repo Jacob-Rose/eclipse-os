@@ -4,7 +4,6 @@
 // See readme.md for full license details.
 
 #include "pendant.h"
-#include "../imgs/campfire.h"
 
 #include "../lib/eio/strip_projection.h"
 
@@ -18,10 +17,12 @@ void pendant::PendantIO::init()
 {
     RelicIO::init();
 
+    screen = std::make_shared<Adafruit_GC9A01A>(ScreenCS, ScreenDC, ScreenSDA, ScreenSCL, ScreenRST);
+    screen->begin();
+    screen->setRotation(0);
+
     screenDrawer = std::make_unique<ScreenDrawer>();
-    screenDrawer->setScreenRef(std::make_shared<Adafruit_GC9A01A>(ScreenSDA, ScreenSCL, ScreenDC, ScreenCS, ScreenRST));
-    screenDrawer->setCanvasSize(64, 64);
-    screenDrawer->setScreenGif(campfire, sizeof(campfire));
+    screenDrawer->setScreenRef(screen);
 
     int RingOneLength = 12;
     int RingTwoLength = 16;
@@ -35,11 +36,11 @@ void pendant::PendantIO::init()
     // TODO make circular mapping
     int id1 = static_cast<uint8_t>(EPendantSegmentID::InnerRing);
     auto [it1, inserted1] = strip_segments.emplace(id1, make_unique<HSVStripSegment>(mainStrip, id1));
-    if (inserted1) HSVStripNodeFactory::GenerateAxisRow(it1->second.get(), 0, RingOneLength, Coord(0,0), Coord(0, 1.f / RingOneLength));
+    if (inserted1) HSVStripNodeFactory::GenerateAxisRow(it1->second.get(), 0, RingOneLength, Coord(0,0), Coord(1.f / RingOneLength, 0.0f));
 
     int id2 = static_cast<uint8_t>(EPendantSegmentID::OuterRing);
     auto [it2, inserted2] = strip_segments.emplace(id2, make_unique<HSVStripSegment>(mainStrip, id2));
-    if (inserted2) HSVStripNodeFactory::GenerateAxisRow(it2->second.get(), RingTwoLength, RingTwoLength, Coord(0,0), Coord(0, 1.f / RingTwoLength));
+    if (inserted2) HSVStripNodeFactory::GenerateAxisRow(it2->second.get(), RingOneLength, RingTwoLength, Coord(0,0), Coord(1.f / RingTwoLength, 1.0f));
 }
 
 void pendant::PendantIO::tick(float deltaTime)
@@ -82,8 +83,9 @@ void pendant::PendantCore::tick(float deltaTime)
 
 void pendant::PendantCore::tick2()
 {
-    if (pendant::PendantIO* pendantIO = static_cast<pendant::PendantIO*>(coreIO.get()))
+    if (coreIO)
     {
+        pendant::PendantIO* pendantIO = static_cast<pendant::PendantIO*>(coreIO.get());
         pendantIO->tick2();
     }
 }

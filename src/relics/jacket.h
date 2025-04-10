@@ -25,8 +25,6 @@ namespace jacket
 
         virtual void init() override;
         virtual void tick(float deltaTime) override;
-
-        void tick2();
         
     protected:
         std::unique_ptr<StateMachine_GenericHSV> stateMachine{ nullptr };

@@ -63,4 +63,3 @@ public:
 private:
     float currentTime;
 };
-

@@ -82,12 +82,16 @@ void loop() {
 }
 
 void setup1() {
-
 }
 
 void loop1()
 {
-  relic->tick2();
+  //Serial.println("Core 1 running...");
+  if(relic.get())
+  {
+    relic->tick2();
+  }
+
   delay(20);
 }
 

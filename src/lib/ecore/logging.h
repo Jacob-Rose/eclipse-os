@@ -56,11 +56,11 @@ namespace ecore
                    static_cast<std::underlying_type_t<Category>>(rhs);
         };
     
-        constexpr Verbosity ProjectVerbosity = Verbosity::Display;
+        constexpr Verbosity ProjectVerbosity = Verbosity::Warning;
         constexpr Category ProjectHideCategories = (
             Category::None &
-            Category::Library
-            //Category::OnTick
+            Category::Library &
+            Category::OnTick
         );
     
         void dbgLog(const char *msg, Verbosity InVerbosity = Verbosity::Display, Category InHideCategories = Category::None);

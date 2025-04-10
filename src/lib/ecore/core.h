@@ -21,11 +21,7 @@
 #define DEBUG_LOGGING_ENABLED 1
 #endif
 
-#if USE_ARDUINO
-#include <Arduino.h>
-#endif
-
-#if USE_PICO_SDK
 #include <stdio.h>
+#include <Arduino.h>
 #include "pico/stdlib.h"
-#endif
+#include "pico/multicore.h"

@@ -21,7 +21,7 @@ class State_PendantGeneric : public State_GenericHSV
 public:
     State_PendantGeneric(const char* inStateName, RelicIO* inIO) : State_GenericHSV(inStateName, inIO) {}
 
-    virtual void onStateChangeState(StateStatus inStatus);
+    virtual void onStateChangeState(StateStatus inStatus) override;
 
     virtual void tick(float deltaTime) override;
 
@@ -30,6 +30,8 @@ public:
 private:
     uint8_t* gifData;
     int gifDataSize;
+
+    bool bHasSetGif = false;
 
     std::shared_ptr<GeneratorHSV> generator;
 

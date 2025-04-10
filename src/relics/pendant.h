@@ -50,7 +50,7 @@ namespace pendant
     };
 
     constexpr int RingLEDPin = 11; //GPIO 11
-    constexpr int OutfitLEDPin = 6; // GPIO 6
+    constexpr int OutfitLEDPin = 7; // GPIO 6
     constexpr int GreenButtonPin = A3; // GPIO 12
     constexpr int RedButtonPin = A0; // GPIO 13
     constexpr int BlueButtonPin = A1; // GPIO 26
@@ -91,6 +91,7 @@ namespace pendant
         std::chrono::duration<double> lastFrameDT;
         std::chrono::time_point<std::chrono::system_clock> tickStartTime;
 
+        std::shared_ptr<Adafruit_GC9A01A> screen;
         std::unique_ptr<ScreenDrawer> screenDrawer;
     };
 

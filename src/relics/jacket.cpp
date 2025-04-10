@@ -8,6 +8,8 @@
 #include "../lib/eio/strip_projection.h"
 #include "../lib/ecore/logging.h"
 
+#include "../imgs/squid.h"
+
 #include "jacket_patterns.h"
 #include "jacket_io.h"
 
@@ -43,6 +45,7 @@ void JacketCore::init()
 
     std::shared_ptr<State_PendantGeneric> mainPatternState1 = std::make_shared<State_PendantGeneric>("mainState", jacketIO);
     mainPatternState1->setGenerator(mainPattern1);
+    mainPatternState1->setGifData((uint8_t *)squid, sizeof(squid));
     mainPatternState1->init();
 
     std::shared_ptr<Pattern_Jacket_WarpTurbines> mainPattern2 = std::make_shared<Pattern_Jacket_WarpTurbines>();
@@ -60,8 +63,8 @@ void JacketCore::init()
     mainPatternState3->init();
 
     int mainPattern1StateID = stateManager->addState(mainPatternState1);
-    int mainPattern2StateID = stateManager->addState(mainPatternState1);
-    int mainPattern3StateID = stateManager->addState(mainPatternState1);
+    int mainPattern2StateID = stateManager->addState(mainPatternState2);
+    int mainPattern3StateID = stateManager->addState(mainPatternState3);
 
 
     stateMachine->setActiveState(mainPatternState1);
@@ -73,13 +76,5 @@ void jacket::JacketCore::tick(float deltaTime)
     if (stateMachine)
     {
         stateMachine->tick(deltaTime);
-    }
-}
-
-void jacket::JacketCore::tick2()
-{
-    if (JacketIO* jacketIO = static_cast<JacketIO*>(coreIO.get()))
-    {
-        jacketIO->tick2();
     }
 }

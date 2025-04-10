@@ -8,18 +8,27 @@
 
 void State_PendantGeneric::onStateChangeState(StateStatus inStatus)
 {
-    if(inStatus == StateStatus::TransitionIn)
+    State_GenericHSV::onStateChangeState(inStatus);
+
+    if(inStatus == StateStatus::Active)
     {
-        if (io && gifData && gifDataSize > 0)
+        if (io && gifData && !bHasSetGif)
         {
             io->getScreenDrawer()->setScreenGif(gifData, gifDataSize);
+        }
+    }
+    if(inStatus == StateStatus::Off)
+    {
+        if (bHasSetGif)
+        {
+            bHasSetGif = false;
         }
     }
 }
 
 void State_PendantGeneric::tick(float deltaTime)
 {
-    State::tick(deltaTime);
+    State_GenericHSV::tick(deltaTime);
     if (io)
     {
         io->tick(deltaTime);

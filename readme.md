@@ -3,7 +3,7 @@
 
 Welcome to Eclipse OS, a modern, modular, and scalable library for controlling Adressable LEDs in a performant yet convinent manner. 
 
-There are a lot of useful structures/classes, paradigms, and content all developed together.
+There are a lot of useful structures/classes, paradigms, and content all developed together. Hopefully you can extend to suit your needs.=
 
 Written in C++
 
@@ -33,6 +33,11 @@ a simple generic state machine
 gathered from other projects, possible conversions. See credits on respective files.
 
 
+## Kits
+
+These are more content specific and usually just a lot of cool presets. They are made as generically as possible.
+
+
 ## Legalese
 I take great pride in my work. With much of this work being the "game-systems" side of things, I found showing/reproing this full stack setup from the top down was vital for me to continue redoing/expanding these types of projects. I understand the importance of open source work and sharing knowledge, which is why this is provided.
 
@@ -59,7 +64,7 @@ License Info is located in the [license file](license.md). GNU GPLv3
 
 
 ### Raspberry Pico / This software Programming Tips
-   - A picoprobe might be preferred as there is currently no way to serial output if a crash occurs. This makes a lot of sense as well an unhandled exception could occur. There is a plan to address in the [todos readme]()
+   - A picoprobe might be preferred as there is currently no way to serial output if a crash occurs. This makes a lot of sense as well an unhandled exception could occur. There is a plan to address in the [todos readme](todo.md)
 
 
 #### CMAKE Instructions [incomplete]
