@@ -17,7 +17,9 @@
 #include "visual/state_rainbowroad.h"
 #include "visual/state_bluemagic.h"
 #include "visual/state_warpturbines.h"
-#include "visual/state_drip.h"
+#include "visual/state_campfire.h"
+#include "visual/state_hitstop.h"
+#include "visual/state_redrum.h"
 #include "visual/state_enchantedforest.h"
 #include "visual/state_datamine.h"
 #include "visual/state_breathewithme.h"
@@ -49,6 +51,7 @@ void JacketCore::init()
     jacketIO->init();
     stateManager = std::make_unique<StateManager>();
     stateMachine = std::make_unique<StateMachine_GenericHSV>();
+    stateMachine->transitionTime = 0.75f;
     stateMachine->setRelicIO(jacketIO);
 
     std::shared_ptr<State_WarpTurbines> warpTurbinesState = std::make_shared<State_WarpTurbines>("warp_turbines", jacketIO);
@@ -78,6 +81,12 @@ void JacketCore::init()
     std::shared_ptr<State_DigitalVoid> digitalVoidState = std::make_shared<State_DigitalVoid>("digital_void", jacketIO);
     digitalVoidState->init();
 
+    std::shared_ptr<State_Hitstop> hitstopState = std::make_shared<State_Hitstop>("hitstop", jacketIO);
+    hitstopState->init();
+
+    std::shared_ptr<State_Campfire> campfireState = std::make_shared<State_Campfire>("campfire", jacketIO);
+    campfireState->init();
+
 
     stateManager->addState(warpTurbinesState);
     stateManager->addState(rainbowRoadState);
@@ -88,20 +97,45 @@ void JacketCore::init()
     stateManager->addState(enchantedForestState);
     stateManager->addState(blueMagicState);
     stateManager->addState(digitalVoidState);
+    stateManager->addState(hitstopState);
+    stateManager->addState(campfireState);
     
+    //
+    // DIGITAL VOID STATE
+    //
 
-    warpTurbinesState->addStateTransition(rainbowRoadState, [jacketIO](State* current, State* target){
+    digitalVoidState->addStateTransition(enchantedForestState, [jacketIO](State* current, State* target){
+        Button* button = jacketIO->getBlueButton();
+        return button->runButtonPressedScan();
+    });
+    
+    digitalVoidState->addStateTransition(settingsState, [jacketIO](State* current, State* target){
+        Button* button = jacketIO->getWhiteButton();
+        return button->runButtonPressedScan();
+    });
+    
+    digitalVoidState->addStateTransition(datamineState, [jacketIO](State* current, State* target){
+        Button* button = jacketIO->getRedButton();
+        return button->runButtonPressedScan();
+    });
+
+    //
+    // DATAMINE
+    //
+
+    datamineState->addStateTransition(digitalVoidState, [jacketIO](State* current, State* target){
+        Button* button = jacketIO->getBlueButton();
+        return button->runButtonPressedScan();
+    });
+    
+    datamineState->addStateTransition(settingsState, [jacketIO](State* current, State* target){
         Button* button = jacketIO->getWhiteButton();
         return button->runButtonPressedScan();
     });
 
-    rainbowRoadState->addStateTransition(rainbowRoadState, [jacketIO](State* current, State* target){
-        Button* button = jacketIO->getWhiteButton();
-        return button->runButtonPressedScan();
-    });
 
 
-    stateMachine->setActiveState(warpTurbinesState);
+    stateMachine->setActiveState(digitalVoidState);
     stateMachine->init();
 }
 
