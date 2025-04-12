@@ -2,7 +2,7 @@
 //
 // This file is part of project eclipse-os
 // See readme.md for full license details.
-#include "state_enchantedforest.h"
+#include "state_breathewithme.h"
 
 #include "../../../lib/ecore/logging.h"
 
@@ -14,22 +14,22 @@ using namespace ecore;
 using namespace ecore::log;
 
 
-State_EnchantedForest::State_EnchantedForest(const char *InStateName, RelicIO *inIO) : State_PendantGeneric(InStateName, inIO)
+State_BreatheWithMe::State_BreatheWithMe(const char *InStateName, RelicIO *inIO) : State_PendantGeneric(InStateName, inIO)
 {
 
 }
 
-void State_EnchantedForest::init()
+void State_BreatheWithMe::init()
 {
     setStateStartGifData((uint8_t *)enchanted_forest, sizeof(enchanted_forest));
 
-    std::shared_ptr<Pattern_EnchantedForest> pattern = std::make_shared<Pattern_EnchantedForest>();
+    std::shared_ptr<Pattern_BreatheWithMe> pattern = std::make_shared<Pattern_BreatheWithMe>();
     pattern->init();
     setGenerator(pattern);
 }
 
 
-void Pattern_EnchantedForest::render(HSVStripNode *node, HSV &inOutColor) const
+void Pattern_BreatheWithMe::render(HSVStripNode *node, HSV &inOutColor) const
 {
     if(!node)
     {
@@ -52,7 +52,7 @@ void Pattern_EnchantedForest::render(HSVStripNode *node, HSV &inOutColor) const
 }
 
 
-void Pattern_EnchantedForest::init()
+void Pattern_BreatheWithMe::init()
 {
     lfo1.width = 0.25f;
     lfo1.amplitude = 1.0f;
@@ -65,7 +65,7 @@ void Pattern_EnchantedForest::init()
     lfo2.speed = 0.5f;
 }
 
-void Pattern_EnchantedForest::tick(float deltaTime)
+void Pattern_BreatheWithMe::tick(float deltaTime)
 {
     lfo1.tick(deltaTime);
     lfo2.tick(deltaTime);

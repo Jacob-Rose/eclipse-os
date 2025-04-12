@@ -31,7 +31,7 @@ public:
     void setStateStartGifData(uint8_t* inGifData, int inGifDataSize);
 
 private:
-    uint8_t* gifData;
+    uint8_t* gifData{nullptr};
     int gifDataSize;
 
     bool bHasSetGif = false;

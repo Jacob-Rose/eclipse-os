@@ -18,7 +18,7 @@ using namespace ecore;
 
 using namespace eanim;
 
-class Pattern_EnchantedForest : public GeneratorHSV
+class Pattern_BreatheWithMe : public GeneratorHSV
 {
 public:
 
@@ -33,10 +33,10 @@ public:
     LFO lfo2;
 };
 
-class State_EnchantedForest : public State_PendantGeneric
+class State_BreatheWithMe : public State_PendantGeneric
 {
 public:
-    State_EnchantedForest(const char* InStateName, RelicIO* inIO);
+    State_BreatheWithMe(const char* InStateName, RelicIO* inIO);
 
     virtual void init() override;
 };

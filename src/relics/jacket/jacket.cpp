@@ -20,6 +20,8 @@
 #include "visual/state_drip.h"
 #include "visual/state_enchantedforest.h"
 #include "visual/state_datamine.h"
+#include "visual/state_breathewithme.h"
+#include "visual/state_digitalvoid.h"
 
 #include "../pendant/pendant_generic_state.h"
 
@@ -58,12 +60,42 @@ void JacketCore::init()
     std::shared_ptr<State_Datamine> datamineState = std::make_shared<State_Datamine>("datamine", jacketIO);
     datamineState->init();
 
+    std::shared_ptr<State_Sleep> sleepState = std::make_shared<State_Sleep>("sleep", jacketIO);
+    sleepState->init();
 
-    int mainPattern1StateID = stateManager->addState(warpTurbinesState);
-    int mainPattern2StateID = stateManager->addState(rainbowRoadState);
-    int mainPattern3StateID = stateManager->addState(datamineState);
+    std::shared_ptr<State_Settings> settingsState = std::make_shared<State_Settings>("settings", jacketIO);
+    settingsState->init();
+
+    std::shared_ptr<State_BreatheWithMe> breatheWithMeState = std::make_shared<State_BreatheWithMe>("breathe_with_me", jacketIO);
+    breatheWithMeState->init();
+
+    std::shared_ptr<State_EnchantedForest> enchantedForestState = std::make_shared<State_EnchantedForest>("enchanted_forest", jacketIO);
+    enchantedForestState->init();
+
+    std::shared_ptr<State_BlueMagic> blueMagicState = std::make_shared<State_BlueMagic>("blue_magic", jacketIO);
+    blueMagicState->init();
+
+    std::shared_ptr<State_DigitalVoid> digitalVoidState = std::make_shared<State_DigitalVoid>("digital_void", jacketIO);
+    digitalVoidState->init();
+
+
+    stateManager->addState(warpTurbinesState);
+    stateManager->addState(rainbowRoadState);
+    stateManager->addState(datamineState);
+    stateManager->addState(sleepState);
+    stateManager->addState(settingsState);
+    stateManager->addState(breatheWithMeState);
+    stateManager->addState(enchantedForestState);
+    stateManager->addState(blueMagicState);
+    stateManager->addState(digitalVoidState);
+    
 
     warpTurbinesState->addStateTransition(rainbowRoadState, [jacketIO](State* current, State* target){
+        Button* button = jacketIO->getWhiteButton();
+        return button->runButtonPressedScan();
+    });
+
+    rainbowRoadState->addStateTransition(rainbowRoadState, [jacketIO](State* current, State* target){
         Button* button = jacketIO->getWhiteButton();
         return button->runButtonPressedScan();
     });

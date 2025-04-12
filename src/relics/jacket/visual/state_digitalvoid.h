@@ -28,7 +28,7 @@ public:
     PerlinNoiseGenerator2D coreNoise;
     PerlinNoiseGenerator2D hueShiftNoise;
 
-    virtual void init();
+    void init();
 
     virtual void tick(float deltaTime) override;
     virtual void render(HSVStripNode* inNode, HSV& inOutColor) const override;
@@ -39,5 +39,7 @@ public:
 class State_DigitalVoid : public State_PendantGeneric
 {
 public:
+    State_DigitalVoid(const char* InStateName, RelicIO* inIO);
+
     virtual void init() override;
 };

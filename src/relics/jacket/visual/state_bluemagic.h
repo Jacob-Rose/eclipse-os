@@ -42,5 +42,4 @@ public:
     State_BlueMagic(const char* InStateName, RelicIO* inIO);
 
     virtual void init() override;
-    virtual void tick(float deltaTime) override;
 };
