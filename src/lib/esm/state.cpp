@@ -133,6 +133,7 @@ void State::runStateTickLambdas(float deltaTime) const
 {
     for (const auto& tickLambda : stateTickLambdas)
     {
+        dbgLog("Running state tick lambda");
         tickLambda.second(deltaTime);
     }
 }

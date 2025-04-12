@@ -11,7 +11,7 @@
 #define USE_SERIAL_INPUT 1 && !DEPLOYMENT
 
 #include "src/lib/ecore/core.h"
-#include "src/relics/jacket.h"
+#include "src/relics/jacket/jacket.h"
 #include "src/lib/ecore/logging.h"
 
 using namespace ecore;

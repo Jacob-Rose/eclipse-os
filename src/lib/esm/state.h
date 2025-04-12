@@ -71,7 +71,7 @@ namespace esm
 
     private:
         std::map<std::weak_ptr<State>, ShouldTransitionLambda, std::owner_less<std::weak_ptr<State>>> stateTransitions;
-        std::map<int, TickLambda> stateTickLambdas;
+        std::map<int, TickLambda> stateTickLambdas; // todo make this a array of structs with id and lambda
         std::chrono::duration<double> timeStateActive;
 
         int stateTickLambdaIdIncrementer{1}; // unique id for each tick lambda, incremented for each new lambda added
@@ -98,7 +98,7 @@ namespace esm
         virtual void init();
         virtual void cleanup();
 
-        float transitionTime = 20.5f;
+        float transitionTime = 2.5f;
 
         virtual void tick(float deltaTime) override;
     

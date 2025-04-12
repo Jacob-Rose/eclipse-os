@@ -25,24 +25,40 @@ void State_GenericHSV::tick(float deltaTime)
     {
         generator->tick(deltaTime);
 
-        dbgLog("ticking leds", Verbosity::Display);
-        dbgLog("seg count: " + std::to_string(io->strip_segments.size()), Verbosity::Display);
-
         for(const auto& seg : io->strip_segments)
         {
             for(const std::shared_ptr<HSVStripNode>& node : seg.second->getNodes())
             {
-                HSVStripNode* nodePtr = node.get();
-                HSV color;
-                generator->render(nodePtr, color);
+#if ERROR_CHECKING_ENABLED
+                if(!node)
+                {
+                    std::string str = "State_GenericHSV::tick - node is null";
+                    dbgLog(str.c_str(), Verbosity::Error, Category::Library);
+                    continue;
+                }
+                if(!node->getStripSegment())
+                {
+                    std::string str = "State_GenericHSV::tick - node->getStripSegment() is null";
+                    dbgLog(str.c_str(), Verbosity::Error, Category::Library);
+                    continue;
+                }
+                if(!node->getStripSegment()->getParentStrip())
+                {
+                    std::string str = "State_GenericHSV::tick - node->getStripSegment()->getParentStrip() is null";
+                    dbgLog(str.c_str(), Verbosity::Error, Category::Library);
+                    continue;
+                }
+#endif
+                HSV color = node->getStripSegment()->getParentStrip()->getHSV(node->getStripIdx());
+                generator->render(node.get(), color);
                 if(GetStatus() == StateStatus::TransitionIn || GetStatus() == StateStatus::TransitionOut)
                 {
-                    nodePtr->setBuffer(getStateID(), color);
+                    node->setBuffer(getStateID(), color);
                 }
                 else
                 if(GetStatus() == StateStatus::Active)
                 {
-                    nodePtr->setHSV(color);
+                    node->setHSV(color);
                 }
             }
         }

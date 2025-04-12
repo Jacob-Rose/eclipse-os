@@ -8,6 +8,9 @@
 #include <memory>
 
 #include "state.h"
+
+#include "../ecore/core.h"
+#include "../ecore/delegate.h"
 #include "../eio/relic.h"
 #include "../eanim/generator_hsv.h"
 
@@ -24,6 +27,7 @@ public:
     State_GenericHSV(const char* InStateName, RelicIO* inIO) : io(inIO), State(InStateName) {}
 
     void setGenerator(std::shared_ptr<GeneratorHSV> inGenerator) { generator = inGenerator; }
+    std::shared_ptr<GeneratorHSV> getGenerator() const { return generator; }
 
 protected:
     virtual void onStateChangeState(StateStatus inStatus);
