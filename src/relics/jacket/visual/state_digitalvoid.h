@@ -22,8 +22,8 @@ public:
     Pattern_DigitalVoid();
 
 public:
-    HSV targetColor = HSV(0.f, 0.55f, 0.7f);
-    float hueShiftVariance = 30.0f;
+    HSV targetColor = HSV(270.f, 0.55f, 0.7f);
+    float hueShiftVariance = 40.0f;
 
     PerlinNoiseGenerator2D coreNoise;
     PerlinNoiseGenerator2D hueShiftNoise;

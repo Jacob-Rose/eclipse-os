@@ -71,8 +71,9 @@ void State_BlueMagic::init()
 {
     State_PendantGeneric::init();
 
+    setStateStartGifData((uint8_t *)mage_spell, sizeof(mage_spell));
+
     std::shared_ptr<Pattern_BlueMagic> newGenerator = std::make_shared<Pattern_BlueMagic>();
     setGenerator(newGenerator);
     newGenerator->init();
-    setStateStartGifData((uint8_t *)mage_spell, sizeof(mage_spell));
 }

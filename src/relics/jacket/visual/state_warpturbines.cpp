@@ -62,20 +62,18 @@ void Pattern_Jacket_WarpTurbines::render(HSVStripNode *inNode, HSV &inOutColor) 
     bool bIsTurbineA = ((int)y) % 2 == 0;
     float heightLFOEval = heightLFO.evaluate(y);
 
+    float turbineLFOEval = turbineLFO.evaluate(x * (bIsTurbineA ? -1.f : 1.f));
+
+    HSV outColor = bIsTurbineA ? turbinePaletteA.getColor(1.0f - turbineLFOEval) : turbinePaletteB.getColor(1.0f - turbineLFOEval);
+    inOutColor = outColor;
+
     if(inNode->getStripSegment()->getId() == (int)jacket::JacketSegmentID::MONOWIRE)
     {
-        HSV outColorA = turbinePaletteA.getColor(0.0f);
-        HSV outColorB = turbinePaletteB.getColor(0.0f);
 
-        inOutColor = HSV::blend(outColorA, outColorB, heightLFOEval);
-        return;
     }
     else 
     {
-        float turbineLFOEval = turbineLFO.evaluate(x * (bIsTurbineA ? -1.f : 1.f));
 
-        HSV outColor = bIsTurbineA ? turbinePaletteA.getColor(1.0f - turbineLFOEval) : turbinePaletteB.getColor(1.0f - turbineLFOEval);
-        inOutColor = outColor;
     }
 }
 
@@ -87,8 +85,9 @@ void State_WarpTurbines::init()
 {
     State_PendantGeneric::init();
 
+    setStateStartGifData((uint8_t *)mage_spell, sizeof(mage_spell));
+
     std::shared_ptr<Pattern_Jacket_WarpTurbines> newGenerator = std::make_shared<Pattern_Jacket_WarpTurbines>();
     setGenerator(newGenerator);
     newGenerator->init();
-    setStateStartGifData((uint8_t *)mage_spell, sizeof(mage_spell));
 }

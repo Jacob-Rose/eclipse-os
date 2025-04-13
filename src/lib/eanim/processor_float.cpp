@@ -56,3 +56,14 @@ std::shared_ptr<FloatAttribute> AttributeBuilder::makeLiteral(float value)
     literalFloatAtt->setTargetValue(value);
     return literalFloatAtt;
 }
+
+void eanim::Lerper::tick(float deltaTime)
+{
+    timeInLerp += deltaTime;
+}
+
+float Lerper::getValue() const
+{
+    float timeInLerpLocal = std::clamp(timeInLerp, 0.0f, lerpTime);
+    return startLerpPos + ((lerpTargetPos - startLerpPos) * timeInLerpLocal / lerpTime); 
+}

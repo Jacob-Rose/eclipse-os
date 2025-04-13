@@ -45,18 +45,18 @@ void pendant::PendantIO::init()
     int RingStripLength = InnerRingLength + OuterRingLength;
 
     int mainStripId = 5667; //magic number, id only, trying not to conflict with possible parent
-    auto [mainStripIt, stripInserted] = strips.emplace(mainStripId, make_unique<HSVStrip>(RingStripLength, RingLEDPin, NEO_RBG + NEO_KHZ800));
+    auto [mainStripIt, stripInserted] = strips.emplace(mainStripId, make_unique<HSVStrip>(RingStripLength, RingLEDPin, NEO_GRB + NEO_KHZ800));
 
     HSVStrip* mainStrip = mainStripIt->second.get();
 
     // TODO make circular mapping
     int id1 = static_cast<uint8_t>(EPendantSegmentID::InnerRing);
     auto [it1, inserted1] = strip_segments.emplace(id1, make_unique<HSVStripSegment>(mainStrip, id1));
-    if (inserted1) HSVStripNodeFactory::GenerateAxisRow(it1->second.get(), 0, InnerRingLength, Coord(0,0), Coord(1.f / InnerRingLength, 0.0f));
+    if (inserted1) HSVStripNodeFactory::GenerateAxisRow(it1->second.get(), 0, InnerRingLength, Coord(0.0f,0.0f), Coord(1.f / InnerRingLength, 0.0f));
 
     int id2 = static_cast<uint8_t>(EPendantSegmentID::OuterRing);
     auto [it2, inserted2] = strip_segments.emplace(id2, make_unique<HSVStripSegment>(mainStrip, id2));
-    if (inserted2) HSVStripNodeFactory::GenerateAxisRow(it2->second.get(), InnerRingLength, OuterRingLength, Coord(0,0), Coord(1.f / OuterRingLength, 1.0f));
+    if (inserted2) HSVStripNodeFactory::GenerateAxisRow(it2->second.get(), InnerRingLength, OuterRingLength, Coord(0.0f,1.0f), Coord(1.f / OuterRingLength, 0.0f));
 }
 
 void pendant::PendantIO::tick(float deltaTime)

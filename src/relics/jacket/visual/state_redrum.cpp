@@ -9,7 +9,7 @@
 #include "../../../lib/eio/relic.h"
 #include "../../../lib/eio/strip_projection.h"
 
-#include "../../../imgs/mage-spell.h"
+#include "../../../imgs/ritual-fast.h"
 
 
 #include "../jacket_io.h"
@@ -53,10 +53,11 @@ void State_RedRum::init()
 {
     State_PendantGeneric::init();
 
+    setStateStartGifData((uint8_t *)ritual_fast, sizeof(ritual_fast));
+
     std::shared_ptr<Pattern_RedRum> newGenerator = std::make_shared<Pattern_RedRum>();
     setGenerator(newGenerator);
     newGenerator->init();
-    setStateStartGifData((uint8_t *)mage_spell, sizeof(mage_spell));
 }
 
 

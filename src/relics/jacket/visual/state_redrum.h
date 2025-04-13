@@ -27,7 +27,7 @@ public:
 
     //j::FireEmitter fireEmitter;
 
-    HSVPalette firePalette = jpalettes::p_bluemagic;
+    HSVPalette firePalette = jpalettes::p_ritual;
 
     LFO fireOffset;
 
@@ -39,7 +39,7 @@ public:
 class State_RedRum : public State_PendantGeneric
 {
 public:
-State_RedRum(const char* InStateName, RelicIO* inIO);
+    State_RedRum(const char* InStateName, RelicIO* inIO);
 
     virtual void init() override;
 };

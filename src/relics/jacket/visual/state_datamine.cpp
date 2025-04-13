@@ -11,6 +11,8 @@
 #include "../../../lib/eio/relic.h"
 #include "../../../lib/eio/strip_projection.h"
 
+#include "../../../imgs/cyberpunk.h"
+
 #include "../jacket_io.h"
 
 using namespace ecore;
@@ -150,22 +152,28 @@ void Pattern_Datamine::render(HSVStripNode* inNode, HSV& inOutColor) const
 
 void State_Datamine::init()
 {
+    State_PendantGeneric::init();
+
+    setStateStartGifData((uint8_t *)cyberpunk, sizeof(cyberpunk));
+
     std::shared_ptr<Pattern_Datamine> newGenerator = std::make_shared<Pattern_Datamine>();
     setGenerator(newGenerator);
     newGenerator->init();
 }
 
 void State_Datamine::tick(float deltaTime)
-{    
+{   
+    State_PendantGeneric::tick(deltaTime);
+
     JacketIO* jacketIO = static_cast<JacketIO*>(io);
     Pattern_Datamine* dataminePattern = static_cast<Pattern_Datamine*>(getGenerator().get());
 
 
-    if(jacketIO->getBlueButton()->isPressed())
+    if(jacketIO->getRemoteBlackButton()->isPressed())
     {
         dataminePattern->currentState = EDatamineInputState::Uploading;
     }
-    else if(jacketIO->getRedButton()->isPressed())
+    else if(jacketIO->getRemoteWhiteButton()->isPressed())
     {
         dataminePattern->currentState = EDatamineInputState::Downloading;
     }

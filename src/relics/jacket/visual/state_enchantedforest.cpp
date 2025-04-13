@@ -21,6 +21,8 @@ State_EnchantedForest::State_EnchantedForest(const char *InStateName, RelicIO *i
 
 void State_EnchantedForest::init()
 {
+    State_PendantGeneric::init();
+
     setStateStartGifData((uint8_t *)enchanted_forest, sizeof(enchanted_forest));
 
     std::shared_ptr<Pattern_EnchantedForest> pattern = std::make_shared<Pattern_EnchantedForest>();
@@ -57,12 +59,12 @@ void Pattern_EnchantedForest::init()
     lfo1.width = 0.25f;
     lfo1.amplitude = 1.0f;
     lfo1.yOffset = 0.5f;
-    lfo1.speed = 0.5f;
+    lfo1.speed = 3.5f;
 
     lfo2.width = 0.25f;
     lfo2.amplitude = 1.0f;
     lfo2.yOffset = 0.5f;
-    lfo2.speed = 0.5f;
+    lfo2.speed = -1.5f;
 }
 
 void Pattern_EnchantedForest::tick(float deltaTime)

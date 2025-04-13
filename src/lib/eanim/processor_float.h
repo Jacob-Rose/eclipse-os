@@ -92,6 +92,24 @@ namespace eanim
         float currentValue = 0.0f;
     };
 
+
+    class Lerper : public FloatProcessor, public Tickable
+    {
+    public:
+        Lerper(float inSpeed = 1.0f, float inMaxSpeed = 1.0f);
+
+        virtual void tick(float deltaTime) override;
+        virtual float getValue() const override;
+
+
+        void startLerp(float inTargetPos, float inLerpTime = 1.0f);
+    private:
+        float startLerpPos;
+        float lerpTargetPos;
+        float lerpTime = 1.0f;
+        float timeInLerp = 99.9f;
+    };
+
     /* @brief Wrapper for Float Attribute so that we can make these work similar to instanced uobjects in unreal
     */
     class AttributeBuilder

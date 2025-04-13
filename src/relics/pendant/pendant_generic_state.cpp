@@ -10,7 +10,7 @@ void State_PendantGeneric::onStateChangeState(StateStatus inStatus)
 {
     State_GenericHSV::onStateChangeState(inStatus);
 
-    if(inStatus == StateStatus::Active)
+    if(inStatus == StateStatus::TransitionIn)
     {
         if (io && io->getScreenDrawer() && gifData && !bHasSetGif)
         {

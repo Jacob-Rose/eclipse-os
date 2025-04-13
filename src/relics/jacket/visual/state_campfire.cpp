@@ -53,8 +53,9 @@ void State_Campfire::init()
 {
     State_PendantGeneric::init();
 
+    setStateStartGifData((uint8_t *)campfire, sizeof(campfire));
+
     std::shared_ptr<Pattern_Campfire> newGenerator = std::make_shared<Pattern_Campfire>();
     setGenerator(newGenerator);
     newGenerator->init();
-    setStateStartGifData((uint8_t *)campfire, sizeof(campfire));
 }

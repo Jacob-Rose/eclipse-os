@@ -8,7 +8,7 @@
 
 #include "../../../lib/ecore/math.h"
 
-#include "../../../imgs/enchanted-forest.h"
+#include "../../../imgs/flicker-stars.h"
 
 using namespace ecore;
 using namespace ecore::log;
@@ -21,7 +21,9 @@ State_BreatheWithMe::State_BreatheWithMe(const char *InStateName, RelicIO *inIO)
 
 void State_BreatheWithMe::init()
 {
-    setStateStartGifData((uint8_t *)enchanted_forest, sizeof(enchanted_forest));
+    State_PendantGeneric::init();
+
+    setStateStartGifData((uint8_t *)flicker_stars, sizeof(flicker_stars));
 
     std::shared_ptr<Pattern_BreatheWithMe> pattern = std::make_shared<Pattern_BreatheWithMe>();
     pattern->init();

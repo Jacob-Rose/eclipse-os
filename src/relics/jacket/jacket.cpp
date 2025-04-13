@@ -87,6 +87,8 @@ void JacketCore::init()
     std::shared_ptr<State_Campfire> campfireState = std::make_shared<State_Campfire>("campfire", jacketIO);
     campfireState->init();
 
+    std::shared_ptr<State_RedRum> redRumState = std::make_shared<State_RedRum>("redrum", jacketIO);
+    redRumState->init();
 
     stateManager->addState(warpTurbinesState);
     stateManager->addState(rainbowRoadState);
@@ -99,6 +101,7 @@ void JacketCore::init()
     stateManager->addState(digitalVoidState);
     stateManager->addState(hitstopState);
     stateManager->addState(campfireState);
+    stateManager->addState(redRumState);
     
     //
     // DIGITAL VOID STATE
@@ -124,18 +127,130 @@ void JacketCore::init()
     //
 
     datamineState->addStateTransition(digitalVoidState, [jacketIO](State* current, State* target){
-        Button* button = jacketIO->getBlueButton();
+        Button* button = jacketIO->getWhiteButton();
         return button->runButtonPressedScan();
     });
     
-    datamineState->addStateTransition(settingsState, [jacketIO](State* current, State* target){
+    datamineState->addStateTransition(redRumState, [jacketIO](State* current, State* target){
+        Button* button = jacketIO->getRedButton();
+        return button->runButtonPressedScan();
+    });
+
+
+    //
+    // Red Rum
+    //
+
+    redRumState->addStateTransition(datamineState, [jacketIO](State* current, State* target){
+        Button* button = jacketIO->getWhiteButton();
+        return button->runButtonPressedScan();
+    });
+    
+    redRumState->addStateTransition(hitstopState, [jacketIO](State* current, State* target){
+        Button* button = jacketIO->getBlueButton();
+        return button->runButtonPressedScan();
+    });
+
+    
+    //
+    // Hitstop
+    //
+
+    hitstopState->addStateTransition(redRumState, [jacketIO](State* current, State* target){
+        Button* button = jacketIO->getWhiteButton();
+        return button->runButtonPressedScan();
+    });
+
+    //
+    // Sleep
+    //
+
+    sleepState->addStateTransition(settingsState, [jacketIO](State* current, State* target){
+        Button* button = jacketIO->getWhiteButton();
+        return button->runButtonPressedScan();
+    });
+
+    //
+    // Settings
+    //
+
+    settingsState->addStateTransition(sleepState, [jacketIO](State* current, State* target){
+        Button* button = jacketIO->getRedButton();
+        return button->runButtonPressedScan();
+    });
+
+    settingsState->addStateTransition(digitalVoidState, [jacketIO](State* current, State* target){
+        Button* button = jacketIO->getWhiteButton();
+        return button->runButtonPressedScan();
+    });
+
+    //
+    // Enchanted Forest
+    //
+
+    enchantedForestState->addStateTransition(digitalVoidState, [jacketIO](State* current, State* target){
+        Button* button = jacketIO->getWhiteButton();
+        return button->runButtonPressedScan();
+    });
+
+    enchantedForestState->addStateTransition(warpTurbinesState, [jacketIO](State* current, State* target){
+        Button* button = jacketIO->getBlueButton();
+        return button->runButtonPressedScan();
+    });
+
+    enchantedForestState->addStateTransition(rainbowRoadState, [jacketIO](State* current, State* target){
+        Button* button = jacketIO->getRedButton();
+        return button->runButtonPressedScan();
+    });
+
+    //
+    // Warp Turbine
+    //
+
+    warpTurbinesState->addStateTransition(enchantedForestState, [jacketIO](State* current, State* target){
+        Button* button = jacketIO->getWhiteButton();
+        return button->runButtonPressedScan();
+    });
+
+    warpTurbinesState->addStateTransition(breatheWithMeState, [jacketIO](State* current, State* target){
+        Button* button = jacketIO->getBlueButton();
+        return button->runButtonPressedScan();
+    });
+
+    //
+    // Breathe with me
+    //
+
+    breatheWithMeState->addStateTransition(warpTurbinesState, [jacketIO](State* current, State* target){
+        Button* button = jacketIO->getWhiteButton();
+        return button->runButtonPressedScan();
+    });
+
+    //
+    // Rainbow Road
+    //
+
+    rainbowRoadState->addStateTransition(campfireState, [jacketIO](State* current, State* target){
+        Button* button = jacketIO->getBlueButton();
+        return button->runButtonPressedScan();
+    });
+
+    rainbowRoadState->addStateTransition(enchantedForestState, [jacketIO](State* current, State* target){
+        Button* button = jacketIO->getWhiteButton();
+        return button->runButtonPressedScan();
+    });
+
+    //
+    // Campfire
+    //
+
+    campfireState->addStateTransition(rainbowRoadState, [jacketIO](State* current, State* target){
         Button* button = jacketIO->getWhiteButton();
         return button->runButtonPressedScan();
     });
 
 
-
-    stateMachine->setActiveState(digitalVoidState);
+    stateMachine->setNextState(digitalVoidState);
     stateMachine->init();
 }
 

@@ -24,6 +24,11 @@ public:
     virtual void tick(float deltaTime) override;
     virtual void render(HSVStripNode* node, HSV& inOutColor) const override;
 
+    void activateHitstopA();
+
+private:
+    float timeSinceHitActivate = 9999.0f;
+
 };
 
 class State_Hitstop : public State_PendantGeneric

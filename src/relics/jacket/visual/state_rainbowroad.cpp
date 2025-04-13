@@ -8,6 +8,8 @@
 #include "../../../lib/ecore/logging.h"
 #include "../../../imgs/kirby.h"
 
+#include "../jacket_io.h"
+
 
 using namespace ecore;
 using namespace ecore::log;
@@ -21,15 +23,15 @@ void Pattern_Jacket_RainbowRoad::init()
 {
     cogLFO.width = 1.0f;
 
-    cogLFO.yOffset = 0.25f;
-    cogLFO.amplitude = 0.5f;
+    cogLFO.yOffset = 0.5f;
+    cogLFO.amplitude = 1.0f;
     cogLFO.bUseEasingFunction = true;
-    cogLFO.easingFunction = easing_functions::EaseInOutSine;
-    cogLFO.bShouldReflect = true;
+    cogLFO.easingFunction = easing_functions::EaseInOutExpo;
 
     cogSpeedLFO.width = 0.3f;
     cogSpeedLFO.yOffset = 6.0f;
-    cogSpeedLFO.amplitude = 2.0f;
+    cogSpeedLFO.amplitude = 3.0f;
+    cogLFO.speed = 1.5f;
 }
 
 void Pattern_Jacket_RainbowRoad::tick(float deltaTime)
@@ -55,16 +57,23 @@ void Pattern_Jacket_RainbowRoad::render(HSVStripNode *inNode, HSV &inOutColor) c
     }
     HSVStripNode_Mapped2D *castedNode = static_cast<HSVStripNode_Mapped2D*>(inNode);
 
-    float y = castedNode->coord.y;
+    float cogLFOEval = cogLFO.evaluate(castedNode->coord.x + (castedNode->coord.y * 0.1f));
+    float satCogLFOEval = cogLFO.evaluate(castedNode->coord.x + (castedNode->coord.y * 0.1f) + 0.5f);
 
-    constexpr float scalar = (1.f / 7.f) * 0.3f;
+    HSV outColor;
+    if(castedNode->getStripSegment()->getId() == (int)pendant::EPendantSegmentID::InnerRing)
+    {
+        outColor = HSV(360.0f * castedNode->coord.x, 0.0f, 0.0f);
+    }
+    else
+    {
+        outColor = rainbowPalette.getColor(castedNode->coord.y / 6.0f);
+    }
 
-    float cogLFOEval = cogLFO.evaluate(castedNode->coord.x + (castedNode->coord.y * scalar));
 
-
-    HSV outColor = rainbowPalette.getColor(y / 6.0f);
-    outColor.setBrightnessAlpha(clamp(outColor.getValFloat() - cogLFOEval, 0.f, 1.0f));
-    outColor.setSaturationAlpha(clamp(outColor.getSatFloat() + cogLFOEval, 0.f, 1.0f));
+     
+    outColor.setBrightnessAlpha(clamp(outColor.getValFloat() * cogLFOEval, 0.f, 1.0f));
+    outColor.setSaturationAlpha(clamp(outColor.getSatFloat() * satCogLFOEval, 0.f, 1.0f));
     inOutColor = outColor;
 }
 
@@ -76,6 +85,9 @@ void State_Jacket_RainbowRoad::init()
 {
     State_PendantGeneric::init();
 
-    setGenerator(std::make_shared<Pattern_Jacket_RainbowRoad>());
     setStateStartGifData((uint8_t *)kirby, sizeof(kirby));
+
+    std::shared_ptr<Pattern_Jacket_RainbowRoad> newGenerator = std::make_shared<Pattern_Jacket_RainbowRoad>();
+    setGenerator(newGenerator);
+    newGenerator->init();
 }

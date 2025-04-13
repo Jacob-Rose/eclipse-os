@@ -9,7 +9,7 @@
 #include "../../../lib/eio/relic.h"
 #include "../../../lib/eio/strip_projection.h"
 
-#include "../../../imgs/mage-spell.h"
+#include "../../../imgs/praise-man.h"
 
 
 #include "../jacket_io.h"
@@ -45,6 +45,11 @@ void Pattern_Hitstop::render(HSVStripNode *inNode, HSV &inOutColor) const
 
 }
 
+void Pattern_Hitstop::activateHitstopA()
+{
+    timeSinceHitActivate = 0.0f;
+}
+
 State_Hitstop::State_Hitstop(const char *InStateName, RelicIO *inIO) : State_PendantGeneric(InStateName, inIO)
 {
 }
@@ -53,8 +58,9 @@ void State_Hitstop::init()
 {
     State_PendantGeneric::init();
 
+    setStateStartGifData((uint8_t *)praise_man, sizeof(praise_man));
+
     std::shared_ptr<Pattern_Hitstop> newGenerator = std::make_shared<Pattern_Hitstop>();
     setGenerator(newGenerator);
     newGenerator->init();
-    setStateStartGifData((uint8_t *)mage_spell, sizeof(mage_spell));
 }
