@@ -84,9 +84,6 @@ void JacketCore::init()
     std::shared_ptr<State_Hitstop> hitstopState = std::make_shared<State_Hitstop>("hitstop", jacketIO);
     hitstopState->init();
 
-    std::shared_ptr<State_Campfire> campfireState = std::make_shared<State_Campfire>("campfire", jacketIO);
-    campfireState->init();
-
     std::shared_ptr<State_RedRum> redRumState = std::make_shared<State_RedRum>("redrum", jacketIO);
     redRumState->init();
 
@@ -100,7 +97,6 @@ void JacketCore::init()
     stateManager->addState(blueMagicState);
     stateManager->addState(digitalVoidState);
     stateManager->addState(hitstopState);
-    stateManager->addState(campfireState);
     stateManager->addState(redRumState);
     
     //
@@ -230,21 +226,7 @@ void JacketCore::init()
     // Rainbow Road
     //
 
-    rainbowRoadState->addStateTransition(campfireState, [jacketIO](State* current, State* target){
-        Button* button = jacketIO->getBlueButton();
-        return button->runButtonPressedScan();
-    });
-
     rainbowRoadState->addStateTransition(enchantedForestState, [jacketIO](State* current, State* target){
-        Button* button = jacketIO->getWhiteButton();
-        return button->runButtonPressedScan();
-    });
-
-    //
-    // Campfire
-    //
-
-    campfireState->addStateTransition(rainbowRoadState, [jacketIO](State* current, State* target){
         Button* button = jacketIO->getWhiteButton();
         return button->runButtonPressedScan();
     });
