@@ -29,7 +29,7 @@ void Pattern_Datamine::init()
 
     lfoArm.amplitude = 1.0f;
     lfoArm.yOffset = 0.5f;
-    lfoArm.width = 0.6f;
+    lfoArm.width = 0.9f;
 }
 
 void Pattern_Datamine::tick(float deltaTime)
@@ -42,15 +42,15 @@ void Pattern_Datamine::tick(float deltaTime)
     {
         if(currentState == EDatamineInputState::Idle)
         {
-            activationSpeedRamp.startLerp(0.0f, 0.4f);
+            activationSpeedRamp.startLerp(0.0f, 0.10f);
         }
         else if(currentState == EDatamineInputState::Uploading)
         {
-            activationSpeedRamp.startLerp(1.0f, 0.4f);
+            activationSpeedRamp.startLerp(1.0f, 0.15f);
         }
         else if(currentState == EDatamineInputState::Downloading)
         {
-            activationSpeedRamp.startLerp(-1.0f, 0.4f);
+            activationSpeedRamp.startLerp(-1.0f, 0.15f);
         }
         lastInputState = currentState;
     }

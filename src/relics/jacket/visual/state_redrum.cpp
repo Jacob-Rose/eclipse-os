@@ -20,11 +20,15 @@ using namespace eio;
 
 void Pattern_RedRum::init()
 {
+    fireOffset.amplitude = 0.5f;
+    fireOffset.yOffset = 0.5f;
 }
 
 void Pattern_RedRum::tick(float deltaTime)
 {
     GeneratorHSV::tick(deltaTime);
+
+    fireOffset.tick(deltaTime);
 
 }
 
@@ -43,6 +47,8 @@ void Pattern_RedRum::render(HSVStripNode *inNode, HSV &inOutColor) const
     }
     HSVStripNode_Mapped2D *castedNode = static_cast<HSVStripNode_Mapped2D*>(inNode);
 
+    HSV color = firePalette.getColor(fireOffset.evaluate(castedNode->coord.x));
+    inOutColor = color;
 }
 
 State_RedRum::State_RedRum(const char *InStateName, RelicIO *inIO) : State_PendantGeneric(InStateName, inIO)

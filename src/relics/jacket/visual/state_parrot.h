@@ -15,7 +15,7 @@
 using namespace ecore;
 using namespace eanim;
 
-class Pattern_RedRum : public GeneratorHSV
+class Pattern_Parrot : public GeneratorHSV
 {
 public:
 
@@ -24,19 +24,19 @@ public:
     virtual void tick(float deltaTime) override;
     virtual void render(HSVStripNode* node, HSV& inOutColor) const override;
 
-    HSVPalette firePalette = jpalettes::p_ritual;
+    HSVPalette palette = jpalettes::p_parrot;
 
-    LFO fireOffset;
+    LFO offset;
 
     LFO lfoNecklaceOuter;
     LFO lfoInchwormSpeed;
     float inchwormSpeed;
 };
 
-class State_RedRum : public State_PendantGeneric
+class State_Parrot : public State_PendantGeneric
 {
 public:
-    State_RedRum(const char* InStateName, RelicIO* inIO);
+    State_Parrot(const char* InStateName, RelicIO* inIO);
 
     virtual void init() override;
 };

@@ -61,6 +61,13 @@ namespace jpalettes
         HSV(53.0f, 0.863f, 0.973f),
     };
 
+    inline HSVPalette p_parrot {
+        HSV(337.0f, 0.917f, 0.565f),
+        HSV(343.0f, 1.f, 0.78f),
+        HSV(15.0f, 0.936f, 0.976f),
+        HSV(53.0f, 0.863f, 0.973f),
+    };
+
     inline HSVPalette p_naturenight {
         HSV(224.0f, 0.667f, 0.388f),
         HSV(166.0f, 0.742f, 0.349f),

@@ -20,7 +20,7 @@ void Pattern_Settings::init()
 {
     lfoGear.amplitude = 1.0f;
     lfoGear.yOffset = 0.5f;
-    lfoGear.width = 0.0833f;
+    lfoGear.width = 0.00833f;
 }
 
 void Pattern_Settings::tick(float deltaTime)

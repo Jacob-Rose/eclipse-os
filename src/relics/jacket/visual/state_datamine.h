@@ -55,8 +55,8 @@ public:
     };
 
     HSVPalette downloadPalette = {
-        HSV(0.3f, 1.f, 1.f),
-        HSV(0.4f, 0.5f, 1.f)
+        HSV(108.0f, 1.f, 1.f),
+        HSV(144.0f, 0.5f, 1.f)
     };
 
     private:

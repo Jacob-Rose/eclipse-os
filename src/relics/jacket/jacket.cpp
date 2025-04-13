@@ -24,6 +24,7 @@
 #include "visual/state_datamine.h"
 #include "visual/state_breathewithme.h"
 #include "visual/state_digitalvoid.h"
+#include "visual/state_parrot.h"
 
 #include "../pendant/pendant_generic_state.h"
 
@@ -87,6 +88,9 @@ void JacketCore::init()
     std::shared_ptr<State_RedRum> redRumState = std::make_shared<State_RedRum>("redrum", jacketIO);
     redRumState->init();
 
+    std::shared_ptr<State_Parrot> parrotState = std::make_shared<State_Parrot>("parrot", jacketIO);
+    parrotState->init();
+
     stateManager->addState(warpTurbinesState);
     stateManager->addState(rainbowRoadState);
     stateManager->addState(datamineState);
@@ -98,6 +102,7 @@ void JacketCore::init()
     stateManager->addState(digitalVoidState);
     stateManager->addState(hitstopState);
     stateManager->addState(redRumState);
+    stateManager->addState(parrotState);
     
     //
     // DIGITAL VOID STATE
@@ -127,7 +132,7 @@ void JacketCore::init()
         return button->runButtonPressedScan();
     });
     
-    datamineState->addStateTransition(redRumState, [jacketIO](State* current, State* target){
+    datamineState->addStateTransition(parrotState, [jacketIO](State* current, State* target){
         Button* button = jacketIO->getRedButton();
         return button->runButtonPressedScan();
     });
@@ -227,6 +232,15 @@ void JacketCore::init()
     //
 
     rainbowRoadState->addStateTransition(enchantedForestState, [jacketIO](State* current, State* target){
+        Button* button = jacketIO->getWhiteButton();
+        return button->runButtonPressedScan();
+    });
+
+    //
+    // Parrot
+    //
+
+    parrotState->addStateTransition(datamineState, [jacketIO](State* current, State* target){
         Button* button = jacketIO->getWhiteButton();
         return button->runButtonPressedScan();
     });
