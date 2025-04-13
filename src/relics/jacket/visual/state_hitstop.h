@@ -7,6 +7,7 @@
 
 #include "../../../lib/eanim/lfo.h"
 #include "../../../lib/eanim/generator_hsv.h"
+#include "../../../lib/eanim/processor_float.h"
 
 #include "../../pendant/pendant_generic_state.h"
 
@@ -27,6 +28,8 @@ public:
     void activateHitstopA();
 
 private:
+    Lerper hitstopALerper;
+
     float timeSinceHitActivate = 9999.0f;
 
 };

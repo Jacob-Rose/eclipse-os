@@ -5,6 +5,7 @@
 #pragma once
 
 #include "../../../lib/eanim/lfo.h"
+#include "../../../lib/eanim/processor_float.h"
 #include "../../../lib/eanim/generator_hsv.h"
 
 #include "../../pendant/pendant_generic_state.h"
@@ -27,6 +28,8 @@ public:
     LFO turbineLFO;
     LFO heightLFO;
 
+    Lerper turbineSpeedLerper;
+
 public:
     virtual void init();
 
@@ -40,4 +43,6 @@ public:
     State_WarpTurbines(const char* InStateName, RelicIO* inIO);
 
     virtual void init() override;
+
+    virtual void tick(float deltaTime) override;
 };

@@ -10,6 +10,7 @@
 
 #include "../../../imgs/mage-spell.h"
 
+using namespace eanim;
 using namespace ecore;
 using namespace ecore::log;
 using namespace eio;
@@ -38,6 +39,7 @@ void Pattern_Jacket_WarpTurbines::init()
 void Pattern_Jacket_WarpTurbines::tick(float deltaTime)
 {
     turbineLFO.tick(deltaTime);
+    turbineSpeedLerper.tick(deltaTime);
 }
 
 void Pattern_Jacket_WarpTurbines::render(HSVStripNode *inNode, HSV &inOutColor) const
@@ -90,4 +92,15 @@ void State_WarpTurbines::init()
     std::shared_ptr<Pattern_Jacket_WarpTurbines> newGenerator = std::make_shared<Pattern_Jacket_WarpTurbines>();
     setGenerator(newGenerator);
     newGenerator->init();
+}
+
+void State_WarpTurbines::tick(float deltaTime)
+{
+    State_PendantGeneric::tick(deltaTime);
+
+    if(!io)
+    {
+        return;
+    }
+
 }

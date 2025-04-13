@@ -40,9 +40,9 @@ public:
     EDatamineInputState currentState = EDatamineInputState::Idle;
 
     float idleSpeed = 4.0f;
-    float uploadSpeed = 16.0f;
-    float downloadSpeed = -16.0f;
-    Momentum activationSpeedRamp = Momentum(50000.0f, 10000.0f);
+    float uploadSpeed = 24.0f;
+    float downloadSpeed = -18.0f;
+    Lerper activationSpeedRamp;
 
     HSVPalette idlePalette = {
         HSV(180.f, 1.f, 1.f),
@@ -60,6 +60,8 @@ public:
     };
 
     private:
+        float currentActivationAmount = 0.0f;
+        EDatamineInputState lastInputState;
         float idlePaletteBuffer = 400.0f;
 };
 

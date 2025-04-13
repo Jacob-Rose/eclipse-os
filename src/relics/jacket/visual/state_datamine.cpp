@@ -36,22 +36,36 @@ void Pattern_Datamine::tick(float deltaTime)
 {
     GeneratorHSV::tick(deltaTime);
 
-    float newArmSpeed = 0.0f;//activationSpeedRamp.getValue();
+    
 
-    if(currentState == EDatamineInputState::Uploading)
+    if(currentState != lastInputState)
     {
-        newArmSpeed = 3.5f;
+        if(currentState == EDatamineInputState::Idle)
+        {
+            activationSpeedRamp.startLerp(0.0f, 0.4f);
+        }
+        else if(currentState == EDatamineInputState::Uploading)
+        {
+            activationSpeedRamp.startLerp(1.0f, 0.4f);
+        }
+        else if(currentState == EDatamineInputState::Downloading)
+        {
+            activationSpeedRamp.startLerp(-1.0f, 0.4f);
+        }
+        lastInputState = currentState;
     }
-    else if(currentState == EDatamineInputState::Downloading)
+
+    currentActivationAmount = activationSpeedRamp.getValue();
+    float newArmSpeed;
+    if(currentActivationAmount > 0.0f)
     {
-        newArmSpeed = -2.5f;
+        newArmSpeed = remap(0.0f, 1.0f, idleSpeed, uploadSpeed, currentActivationAmount);
     }
     else
     {
-        newArmSpeed = 1.2f;
+        newArmSpeed = remap(-1.0f, 0.0f, downloadSpeed, idleSpeed, currentActivationAmount);
     }
 
-    
     lfoArm.speed = newArmSpeed;
     lfoNecklace.speed = newArmSpeed;
 
@@ -80,38 +94,24 @@ void Pattern_Datamine::render(HSVStripNode* inNode, HSV& inOutColor) const
 
     if(castedNode->getStripSegment()->getId() == (int)pendant::EPendantSegmentID::InnerRing)
     {
-        float lfo = lfoNecklace.evaluate(castedNode->coord.x);
-        //lfo = easingFunction(lfo);
+        float lfo = lfoNecklace.evaluate(castedNode->coord.x * 4.0f);
         float pixelBrightness = lfo;
-        HSV color = idlePalette.getColor(lfo);
-        color.setBrightnessAlpha(color.getValFloat() * pixelBrightness);
-        inOutColor = color;
-
-        return;
-    }
-
-    else if(castedNode->getStripSegment()->getId() == (int)pendant::EPendantSegmentID::OuterRing)
-    {
-        float alphaPercent = lfoNecklace.evaluate(castedNode->coord.x);
-
-        HSV uploadColor = uploadPalette.getColor(alphaPercent);
-        HSV downloadColor = downloadPalette.getColor(alphaPercent);
-        HSV idleColor = idlePalette.getColor(alphaPercent);
 
         HSV newColor;
-        if(currentState == EDatamineInputState::Uploading)
+        if(currentActivationAmount > 0.0f)
         {
-            newColor = uploadColor;
-        }
-        else if(currentState == EDatamineInputState::Downloading)
-        {
-            newColor = downloadColor;
+            HSV uploadColor = uploadPalette.getColor(lfo);
+            HSV idleColor = idlePalette.getColor(lfo);
+            newColor = HSV::blend(idleColor, uploadColor, currentActivationAmount);
         }
         else
         {
-            newColor = idleColor;
+            HSV downloadColor = downloadPalette.getColor(lfo);
+            HSV idleColor = idlePalette.getColor(lfo);
+            newColor = HSV::blend(idleColor, downloadColor, std::abs(currentActivationAmount));
         }
 
+        newColor.setBrightnessAlpha(pixelBrightness);
         inOutColor = newColor;
     }
     else if(castedNode->getStripSegment()->getId() == (int)jacket::JacketSegmentID::MONOWIRE)
@@ -119,24 +119,18 @@ void Pattern_Datamine::render(HSVStripNode* inNode, HSV& inOutColor) const
         float lfo = lfoArm.evaluate(castedNode->coord.y);
         float pixelBrightness = lfo;
 
-        float percentThrough = 0.0f;//(float)idx / WHIP_LED_LENGTH; // TODO FIX
-
-        HSV uploadColor = uploadPalette.getColor(lfo);
-        HSV downloadColor = downloadPalette.getColor(lfo);
-        HSV idleColor = idlePalette.getColor(lfo);
-
         HSV newColor;
-        if(currentState == EDatamineInputState::Uploading)
+        if(currentActivationAmount > 0.0f)
         {
-            newColor = uploadColor;
-        }
-        else if(currentState == EDatamineInputState::Downloading)
-        {
-            newColor = downloadColor;
+            HSV uploadColor = uploadPalette.getColor(lfo);
+            HSV idleColor = idlePalette.getColor(lfo);
+            newColor = HSV::blend(idleColor, uploadColor, currentActivationAmount);
         }
         else
         {
-            newColor = idleColor;
+            HSV downloadColor = downloadPalette.getColor(lfo);
+            HSV idleColor = idlePalette.getColor(lfo);
+            newColor = HSV::blend(idleColor, downloadColor, std::abs(currentActivationAmount));
         }
 
         newColor.setBrightnessAlpha(pixelBrightness);

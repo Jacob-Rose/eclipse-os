@@ -96,10 +96,15 @@ namespace eanim
     class Lerper : public FloatProcessor, public Tickable
     {
     public:
-        Lerper(float inSpeed = 1.0f, float inMaxSpeed = 1.0f);
+        Lerper();
+
+        void init(float initialValue);
 
         virtual void tick(float deltaTime) override;
         virtual float getValue() const override;
+
+        bool isLerping() const { return timeInLerp < lerpTime; }
+        virtual void setTargetValue(float inTargetValue) override { startLerp(inTargetValue); }
 
 
         void startLerp(float inTargetPos, float inLerpTime = 1.0f);
