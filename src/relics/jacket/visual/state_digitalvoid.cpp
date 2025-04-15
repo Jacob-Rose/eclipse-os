@@ -57,12 +57,12 @@ void Pattern_DigitalVoid::tick(float deltaTime)
     }
 
 
-    coreNoise.imageScaleX = remap(0.0f, 1.0f, 100.0f, 1000.f, buttonALerper.getValue());
-    coreNoise.imageScaleY = remap(0.0f, 1.0f, 6.0f, 60.0f, buttonALerper.getValue());
+    coreNoise.imageScaleX = remap(0.0f, 1.0f, 100.0f, 10000.f, buttonALerper.getValue());
+    coreNoise.imageScaleY = remap(0.0f, 1.0f, 6.0f, 600.0f, buttonALerper.getValue());
 
     //coreNoise.noise.SetFrequency(remap(0.0f, 1.0f, 0.05f, 1.0f, buttonALerper.getValue()));
 
-    coreNoise.timeScale = remap(0.0f, 1.0f, 1.5f, 4.5f, buttonBLerper.getValue());
+    coreNoise.timeScale = remap(0.0f, 1.0f, 1.5f, 8.5f, buttonBLerper.getValue());
 
     coreNoise.tick(deltaTime);
     hueShiftNoise.tick(deltaTime);
@@ -124,8 +124,6 @@ void State_DigitalVoid::tick(float deltaTime)
 
     jacket::JacketIO* jacketIO = static_cast<jacket::JacketIO*>(io);
     Pattern_DigitalVoid* enchantedPattern = static_cast<Pattern_DigitalVoid*>(getGenerator().get());
-
-    dbgLog("State_DigitalVoid::tick() - bIsButtonAActive:" + std::to_string(jacketIO->getRemoteBlackButton()->isPressed()));
 
     enchantedPattern->bIsButtonAActive = jacketIO->getRemoteBlackButton()->isPressed();
     enchantedPattern->bIsButtonBActive = jacketIO->getRemoteWhiteButton()->isPressed();

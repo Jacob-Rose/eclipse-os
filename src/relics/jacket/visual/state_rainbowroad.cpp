@@ -21,25 +21,46 @@ Pattern_Jacket_RainbowRoad::Pattern_Jacket_RainbowRoad()
 
 void Pattern_Jacket_RainbowRoad::init()
 {
-    cogLFO.width = 1.0f;
+    cogLFO.width = 0.50f;
 
-    cogLFO.yOffset = 0.5f;
-    cogLFO.amplitude = 1.0f;
-    cogLFO.bUseEasingFunction = true;
-    cogLFO.easingFunction = easing_functions::EaseInOutExpo;
+    cogLFO.yOffset = 0.75f;
+    cogLFO.amplitude = 0.5f;
+
+    hueLFO.width = 0.50f;
+
+    hueLFO.yOffset = 0.25f;
+    hueLFO.amplitude = 0.5f;
 
     cogSpeedLFO.width = 0.3f;
-    cogSpeedLFO.yOffset = 6.0f;
-    cogSpeedLFO.amplitude = 3.0f;
-    cogLFO.speed = 1.5f;
+    cogSpeedLFO.yOffset = 2.0f;
+    cogSpeedLFO.amplitude = 6.0f;
+    cogSpeedLFO.speed = 0.5f;
+    cogLFO.speed = 4.5f;
 }
 
 void Pattern_Jacket_RainbowRoad::tick(float deltaTime)
 {
     cogLFO.speed = cogSpeedLFO.evaluate(0.0f);
+    hueLFO.speed = cogSpeedLFO.evaluate(0.0f);
+
+    
+    if(bIsButtonAActive != bIsButtonAActiveLast)
+    {
+        bIsButtonAActiveLast = bIsButtonAActive;
+        buttonALerper.startLerp(bIsButtonAActive ? 1.0f : 0.0f, 0.1f);
+    }
+    if(bIsButtonBActive != bIsButtonBActiveLast)
+    {
+        bIsButtonBActiveLast = bIsButtonBActive;
+        buttonBLerper.startLerp(bIsButtonBActive ? 1.0f : 0.0f, 1.0f);
+    }
 
     cogLFO.tick(deltaTime);
+    hueLFO.tick(deltaTime);
     cogSpeedLFO.tick(deltaTime);
+
+    buttonALerper.tick(deltaTime);
+    buttonBLerper.tick(deltaTime);
 }
 
 void Pattern_Jacket_RainbowRoad::render(HSVStripNode *inNode, HSV &inOutColor) const
@@ -58,22 +79,24 @@ void Pattern_Jacket_RainbowRoad::render(HSVStripNode *inNode, HSV &inOutColor) c
     HSVStripNode_Mapped2D *castedNode = static_cast<HSVStripNode_Mapped2D*>(inNode);
 
     float cogLFOEval = cogLFO.evaluate(castedNode->coord.x + (castedNode->coord.y * 0.1f));
-    float satCogLFOEval = cogLFO.evaluate(castedNode->coord.x + (castedNode->coord.y * 0.1f) + 0.5f);
+    float satCogLFOEval = hueLFO.evaluate(castedNode->coord.x + (castedNode->coord.y * 0.1f));
 
     HSV outColor;
     if(castedNode->getStripSegment()->getId() == (int)pendant::EPendantSegmentID::InnerRing)
     {
-        outColor = HSV(360.0f * castedNode->coord.x, 0.0f, 0.0f);
+        outColor = HSV(0.0f, 0.0f, 0.0f);
+    }
+    else if(castedNode->getStripSegment()->getId() == (int)pendant::EPendantSegmentID::OuterRing)
+    {
+        outColor = rainbowPalette.getColor(castedNode->coord.x);
     }
     else
     {
         outColor = rainbowPalette.getColor(castedNode->coord.y / 6.0f);
     }
 
-
-     
-    outColor.setBrightnessAlpha(clamp(outColor.getValFloat() * cogLFOEval, 0.f, 1.0f));
-    outColor.setSaturationAlpha(clamp(outColor.getSatFloat() * satCogLFOEval, 0.f, 1.0f));
+    //outColor.setBrightnessAlpha(outColor.getValFloat() * (cogLFOEval * (1.0f - buttonALerper.getValue()) ));
+    outColor.setHueDegree(outColor.getHueFloat() + (satCogLFOEval * 60.0f));
     inOutColor = outColor;
 }
 
@@ -90,4 +113,15 @@ void State_Jacket_RainbowRoad::init()
     std::shared_ptr<Pattern_Jacket_RainbowRoad> newGenerator = std::make_shared<Pattern_Jacket_RainbowRoad>();
     setGenerator(newGenerator);
     newGenerator->init();
+}
+
+void State_Jacket_RainbowRoad::tick(float deltaTime)
+{
+    State_PendantGeneric::tick(deltaTime);
+
+    jacket::JacketIO* jacketIO = static_cast<jacket::JacketIO*>(io);
+    Pattern_Jacket_RainbowRoad* pattern = static_cast<Pattern_Jacket_RainbowRoad*>(getGenerator().get());
+
+    pattern->bIsButtonAActive = jacketIO->getRemoteBlackButton()->isPressed();
+    pattern->bIsButtonBActive = jacketIO->getRemoteWhiteButton()->isPressed();
 }

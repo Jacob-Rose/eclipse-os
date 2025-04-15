@@ -6,6 +6,7 @@
 
 #include "../../../lib/eanim/lfo.h"
 #include "../../../lib/eanim/generator_hsv.h"
+#include "../../../lib/eanim/processor_float.h"
 
 #include "../../pendant/pendant_generic_state.h"
 
@@ -21,7 +22,17 @@ public:
     HSVPalette rainbowPalette { HSV(0.f, 0.55f, 0.7f), HSV(270.f, 0.55f, 0.7f) };
 
     LFO cogLFO;
+    LFO hueLFO;
     LFO cogSpeedLFO;
+
+    Lerper buttonALerper;
+    Lerper buttonBLerper;
+
+    bool bIsButtonAActive = false; 
+    bool bIsButtonBActive = false;
+
+    bool bIsButtonAActiveLast = false;
+    bool bIsButtonBActiveLast = false;
 
     virtual void init();
 
@@ -36,4 +47,5 @@ public:
     State_Jacket_RainbowRoad(const char* InStateName, RelicIO* inIO);
 
     virtual void init() override;
+    virtual void tick(float deltaTime) override;
 };
