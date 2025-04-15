@@ -94,3 +94,15 @@ https://github.com/queezythegreat/arduino-cmake/tree/master~~
 Related systems include [jelly_main](https://github.com/Jacob-Rose/pico-jelly) and [afterglow](https://github.com/Jacob-Rose/afterglow)
 
 Making images to c code: https://javl.github.io/image2cpp/
+
+
+## Baking Images
+
+Ok, so this sucks a bit, gonna be honest. This is the worst code of the project and im sorry, but it does the job.
+
+I made images as small as possible, but then had major issues with using the transparency layers and optimized gifs. 
+
+Right now, the process I have is to go here. https://ezgif.com/repair/
+
+Click Gifscicle unoptimize as well as ImageMagick coalesce. This can the size a lot. (+62.33%) Maybe you can just fix the code and do a PR if you want!
+I might at some point, but im also lazy.

@@ -27,7 +27,11 @@ public:
 
     void activateHitstopA();
 
+    HSVPalette mainPalette = jpalettes::p_bootgradient;
+    HSV hitColor = HSV(0.0f, 0.0f, 1.0f);
+
 private:
+    LFO lfo1;
     Lerper hitstopALerper;
 
     float timeSinceHitActivate = 9999.0f;
@@ -40,4 +44,5 @@ public:
     State_Hitstop(const char* InStateName, RelicIO* inIO);
 
     virtual void init() override;
+    virtual void tick(float deltaTime) override;
 };

@@ -6,8 +6,12 @@
 #include "state_digitalvoid.h"
 
 #include "../../../lib/ecore/math.h"
+#include "../../../lib/ecore/hsv.h"
 #include "../../../lib/ecore/logging.h"
+#include "../../../lib/eio/relic.h"
+#include "../../../lib/eio/strip_projection.h"
 
+#include "../jacket_io.h"
 
 #include "../../../imgs/eclipse.h"
 
@@ -25,10 +29,12 @@ void Pattern_DigitalVoid::init()
     coreNoise.timeScale = 2.0f;
 
     coreNoise.noise.SetNoiseType(FastNoiseLite::NoiseType_Perlin);
+    coreNoise.noise.SetFrequency(0.05f);
+    
 
     hueShiftNoise.imageScaleX = 100.0f;
-    hueShiftNoise.imageScaleY = 10.0f;
-    hueShiftNoise.tick(12.0f);
+    hueShiftNoise.imageScaleY = 1.0f;
+    hueShiftNoise.tick(10.0f);
 
     hueShiftNoise.noise.SetNoiseType(FastNoiseLite::NoiseType_Perlin);
     //hueShiftNoise.noise.SetFrequency(0.05f);
@@ -37,8 +43,33 @@ void Pattern_DigitalVoid::init()
 
 void Pattern_DigitalVoid::tick(float deltaTime)
 {
+    GeneratorHSV::tick(deltaTime);
+
+    if(bIsButtonAActive != bIsButtonAActiveLast)
+    {
+        bIsButtonAActiveLast = bIsButtonAActive;
+        buttonALerper.startLerp(bIsButtonAActive ? 1.0f : 0.0f, 0.1f);
+    }
+    if(bIsButtonBActive != bIsButtonBActiveLast)
+    {
+        bIsButtonBActiveLast = bIsButtonBActive;
+        buttonBLerper.startLerp(bIsButtonBActive ? 1.0f : 0.0f, 1.0f);
+    }
+
+
+    coreNoise.imageScaleX = remap(0.0f, 1.0f, 100.0f, 1000.f, buttonALerper.getValue());
+    coreNoise.imageScaleY = remap(0.0f, 1.0f, 6.0f, 60.0f, buttonALerper.getValue());
+
+    //coreNoise.noise.SetFrequency(remap(0.0f, 1.0f, 0.05f, 1.0f, buttonALerper.getValue()));
+
+    coreNoise.timeScale = remap(0.0f, 1.0f, 1.5f, 4.5f, buttonBLerper.getValue());
+
     coreNoise.tick(deltaTime);
     hueShiftNoise.tick(deltaTime);
+
+    buttonALerper.tick(deltaTime);
+    buttonBLerper.tick(deltaTime);
+
 }
 
 void Pattern_DigitalVoid::render(HSVStripNode *inNode, HSV &inOutColor) const
@@ -85,4 +116,17 @@ void State_DigitalVoid::init()
     std::shared_ptr<Pattern_DigitalVoid> pattern = std::make_shared<Pattern_DigitalVoid>();
     pattern->init();
     setGenerator(pattern);
+}
+
+void State_DigitalVoid::tick(float deltaTime)
+{
+    State_PendantGeneric::tick(deltaTime);
+
+    jacket::JacketIO* jacketIO = static_cast<jacket::JacketIO*>(io);
+    Pattern_DigitalVoid* enchantedPattern = static_cast<Pattern_DigitalVoid*>(getGenerator().get());
+
+    dbgLog("State_DigitalVoid::tick() - bIsButtonAActive:" + std::to_string(jacketIO->getRemoteBlackButton()->isPressed()));
+
+    enchantedPattern->bIsButtonAActive = jacketIO->getRemoteBlackButton()->isPressed();
+    enchantedPattern->bIsButtonBActive = jacketIO->getRemoteWhiteButton()->isPressed();
 }

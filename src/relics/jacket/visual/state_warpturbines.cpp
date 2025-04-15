@@ -8,7 +8,7 @@
 #include "../jacket_io.h"
 
 
-#include "../../../imgs/mage-spell.h"
+#include "../../../imgs/portal-blue.h"
 
 using namespace eanim;
 using namespace ecore;
@@ -87,7 +87,7 @@ void State_WarpTurbines::init()
 {
     State_PendantGeneric::init();
 
-    setStateStartGifData((uint8_t *)mage_spell, sizeof(mage_spell));
+    setStateStartGifData((uint8_t *)portal_blue_fix, sizeof(portal_blue_fix));
 
     std::shared_ptr<Pattern_Jacket_WarpTurbines> newGenerator = std::make_shared<Pattern_Jacket_WarpTurbines>();
     setGenerator(newGenerator);

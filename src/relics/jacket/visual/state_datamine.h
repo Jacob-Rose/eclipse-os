@@ -40,8 +40,8 @@ public:
     EDatamineInputState currentState = EDatamineInputState::Idle;
 
     float idleSpeed = 4.0f;
-    float uploadSpeed = 24.0f;
-    float downloadSpeed = -18.0f;
+    float uploadSpeed = 30.0f;
+    float downloadSpeed = -24.0f;
     Lerper activationSpeedRamp;
 
     HSVPalette idlePalette = {

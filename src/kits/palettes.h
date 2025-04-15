@@ -48,10 +48,10 @@ namespace jpalettes
     };
 
     inline HSVPalette p_iceCream {
-        HSV(321.0f, 0.537f, 1.f),
-        HSV(62.0f, 0.239f, 1.f),
-        HSV(158.0f, 0.42f, 1.f),
-        HSV(205.0f, 0.361f, 1.f),
+        HSV(321.0f, 0.537f, 0.7f),
+        HSV(62.0f, 0.6f, 1.f),
+        HSV(158.0f, 0.7f, 0.85f),
+        HSV(205.0f, 0.81f, 1.f),
     };
 
     inline HSVPalette p_ritual {

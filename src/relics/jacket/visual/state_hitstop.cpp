@@ -26,6 +26,13 @@ void Pattern_Hitstop::tick(float deltaTime)
 {
     GeneratorHSV::tick(deltaTime);
 
+    timeSinceHitActivate += deltaTime;
+    lfo1.tick(deltaTime);
+
+    lfo1.amplitude = 1.0f;
+    lfo1.yOffset = 0.5f;
+    lfo1.width = 0.5f;
+
 }
 
 void Pattern_Hitstop::render(HSVStripNode *inNode, HSV &inOutColor) const
@@ -42,6 +49,28 @@ void Pattern_Hitstop::render(HSVStripNode *inNode, HSV &inOutColor) const
         return;
     }
     HSVStripNode_Mapped2D *castedNode = static_cast<HSVStripNode_Mapped2D*>(inNode);
+
+    float lfoEval = lfo1.evaluate(castedNode->coord.y);
+
+    float waveEval = timeSinceHitActivate * 7.5f;
+    float waveHitstopFlashAlpha = std::max(1.0f - timeSinceHitActivate, 0.0f);
+
+    
+    if(waveEval > 0.0f && waveEval < 4.0f)
+    {
+        inOutColor = hitColor;
+        //inOutColor.setBrightnessAlpha(pixelBrightness * inOutColor.getValFloat());
+    }
+    else
+    {
+        float remover = waveHitstopFlashAlpha * 0.4f;
+        float pixelBrightness = lfoEval * 0.5f - remover;
+        inOutColor = mainPalette.getColor(lfoEval);
+        inOutColor.setBrightnessAlpha(pixelBrightness * inOutColor.getValFloat());
+    }
+
+
+
 
 }
 
@@ -63,4 +92,25 @@ void State_Hitstop::init()
     std::shared_ptr<Pattern_Hitstop> newGenerator = std::make_shared<Pattern_Hitstop>();
     setGenerator(newGenerator);
     newGenerator->init();
+}
+
+
+void State_Hitstop::tick(float deltaTime)
+{
+    State_PendantGeneric::tick(deltaTime);
+
+    jacket::JacketIO* jacketIO = static_cast<jacket::JacketIO*>(io);
+    if(!jacketIO)
+    {
+        return;
+    }
+
+    if(jacketIO->getRemoteWhiteButton()->runButtonPressedScan())
+    {
+        std::shared_ptr<Pattern_Hitstop> pattern = std::static_pointer_cast<Pattern_Hitstop>(getGenerator());
+        if(pattern)
+        {
+            pattern->activateHitstopA();
+        }
+    }
 }

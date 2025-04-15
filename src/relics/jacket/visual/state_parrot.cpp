@@ -9,7 +9,7 @@
 #include "../../../lib/eio/relic.h"
 #include "../../../lib/eio/strip_projection.h"
 
-#include "../../../imgs/squid.h"
+#include "../../../imgs/skull-laser-eyes.h"
 
 
 #include "../jacket_io.h"
@@ -59,7 +59,7 @@ void State_Parrot::init()
 {
     State_PendantGeneric::init();
 
-    setStateStartGifData((uint8_t *)squid, sizeof(squid));
+    setStateStartGifData((uint8_t *)skull_laser_eyes, sizeof(skull_laser_eyes));
 
     std::shared_ptr<Pattern_Parrot> newGenerator = std::make_shared<Pattern_Parrot>();
     setGenerator(newGenerator);

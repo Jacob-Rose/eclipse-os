@@ -15,12 +15,12 @@ void PerlinNoiseGenerator2D::init()
 
 void PerlinNoiseGenerator2D::tick(float deltaTime)
 {
-    currentTime += deltaTime;
+    currentTime += deltaTime * timeScale;
 }
 
 float PerlinNoiseGenerator2D::evaluate(float x, float y) const
 {
     float freqScalar = 1.0f / noise.GetFrequency();
 
-    return noise.GetNoise<float>(x * imageScaleX, y * imageScaleY, currentTime * timeScale * freqScalar);
+    return noise.GetNoise<float>(x * imageScaleX, y * imageScaleY, currentTime * freqScalar);
 }

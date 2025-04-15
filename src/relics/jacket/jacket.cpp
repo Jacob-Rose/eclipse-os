@@ -137,6 +137,11 @@ void JacketCore::init()
         return button->runButtonPressedScan();
     });
 
+    datamineState->addStateTransition(hitstopState, [jacketIO](State* current, State* target){
+        Button* button = jacketIO->getBlueButton();
+        return button->runButtonPressedScan();
+    });
+
 
     //
     // Red Rum
@@ -157,7 +162,7 @@ void JacketCore::init()
     // Hitstop
     //
 
-    hitstopState->addStateTransition(redRumState, [jacketIO](State* current, State* target){
+    hitstopState->addStateTransition(datamineState, [jacketIO](State* current, State* target){
         Button* button = jacketIO->getWhiteButton();
         return button->runButtonPressedScan();
     });

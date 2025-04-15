@@ -116,7 +116,7 @@ void Pattern_Datamine::render(HSVStripNode* inNode, HSV& inOutColor) const
     }
     else if(castedNode->getStripSegment()->getId() == (int)jacket::JacketSegmentID::MONOWIRE)
     {
-        float lfo = lfoArm.evaluate(castedNode->coord.y);
+        float lfo = lfoArm.evaluate(-castedNode->coord.y);
         float pixelBrightness = lfo;
 
         HSV newColor;
