@@ -52,11 +52,11 @@ void Pattern_Hitstop::render(HSVStripNode *inNode, HSV &inOutColor) const
 
     float lfoEval = lfo1.evaluate(castedNode->coord.y);
 
-    float waveEval = timeSinceHitActivate * 7.5f;
+    float waveEval = timeSinceHitActivate;
     float waveHitstopFlashAlpha = std::max(1.0f - timeSinceHitActivate, 0.0f);
 
     
-    if(waveEval > 0.0f && waveEval < 4.0f)
+    if((waveEval > 0.0f && waveEval < 0.6f) || (waveEval > 0.8f && waveEval < 1.05f))
     {
         inOutColor = hitColor;
         //inOutColor.setBrightnessAlpha(pixelBrightness * inOutColor.getValFloat());

@@ -109,8 +109,8 @@ namespace eanim
 
         void startLerp(float inTargetPos, float inLerpTime = 1.0f);
     private:
-        float startLerpPos;
-        float lerpTargetPos;
+        float startLerpPos{0.0f};
+        float lerpTargetPos{0.0f};
         float lerpTime = 1.0f;
         float timeInLerp = 99.9f;
     };

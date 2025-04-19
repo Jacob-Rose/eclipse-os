@@ -36,6 +36,9 @@ void Pattern_DigitalVoid::init()
     hueShiftNoise.imageScaleY = 1.0f;
     hueShiftNoise.tick(10.0f);
 
+    buttonALerper.setTargetValue(0.0f);
+    buttonBLerper.setTargetValue(0.0f);
+
     hueShiftNoise.noise.SetNoiseType(FastNoiseLite::NoiseType_Perlin);
     //hueShiftNoise.noise.SetFrequency(0.05f);
     //hueShiftNoise.noise.SetCellularJitter(1.0f);
@@ -53,7 +56,7 @@ void Pattern_DigitalVoid::tick(float deltaTime)
     if(bIsButtonBActive != bIsButtonBActiveLast)
     {
         bIsButtonBActiveLast = bIsButtonBActive;
-        buttonBLerper.startLerp(bIsButtonBActive ? 1.0f : 0.0f, 1.0f);
+        buttonBLerper.startLerp(bIsButtonBActive ? 1.0f : 0.0f, 0.7f);
     }
 
 
@@ -62,7 +65,7 @@ void Pattern_DigitalVoid::tick(float deltaTime)
 
     //coreNoise.noise.SetFrequency(remap(0.0f, 1.0f, 0.05f, 1.0f, buttonALerper.getValue()));
 
-    coreNoise.timeScale = remap(0.0f, 1.0f, 1.5f, 8.5f, buttonBLerper.getValue());
+    coreNoise.timeScale = remap(0.0f, 1.0f, 1.5f, 14.5f, buttonBLerper.getValue());
 
     coreNoise.tick(deltaTime);
     hueShiftNoise.tick(deltaTime);

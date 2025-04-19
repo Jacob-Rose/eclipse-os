@@ -38,8 +38,23 @@ void Pattern_Jacket_WarpTurbines::init()
 
 void Pattern_Jacket_WarpTurbines::tick(float deltaTime)
 {
+    if(bIsButtonAActive != bIsButtonAActiveLast)
+    {
+        bIsButtonAActiveLast = bIsButtonAActive;
+        buttonALerper.startLerp(bIsButtonAActive ? 1.0f : 0.0f, 7.0f);
+    }
+    if(bIsButtonBActive != bIsButtonBActiveLast)
+    {
+        bIsButtonBActiveLast = bIsButtonBActive;
+        buttonBLerper.startLerp(bIsButtonBActive ? 1.0f : 0.0f, 1.0f);
+    }
+
+    buttonALerper.tick(deltaTime);
+    buttonBLerper.tick(deltaTime);
+
+    turbineLFO.speed = buttonALerper.getValue() * 4.0f + 3.0f;
+
     turbineLFO.tick(deltaTime);
-    turbineSpeedLerper.tick(deltaTime);
 }
 
 void Pattern_Jacket_WarpTurbines::render(HSVStripNode *inNode, HSV &inOutColor) const
@@ -67,16 +82,8 @@ void Pattern_Jacket_WarpTurbines::render(HSVStripNode *inNode, HSV &inOutColor) 
     float turbineLFOEval = turbineLFO.evaluate(x * (bIsTurbineA ? -1.f : 1.f));
 
     HSV outColor = bIsTurbineA ? turbinePaletteA.getColor(1.0f - turbineLFOEval) : turbinePaletteB.getColor(1.0f - turbineLFOEval);
+    //HSV altColor = !bIsTurbineA ? turbinePaletteA.getColor(1.0f - turbineLFOEval) : turbinePaletteB.getColor(1.0f - turbineLFOEval);
     inOutColor = outColor;
-
-    if(inNode->getStripSegment()->getId() == (int)jacket::JacketSegmentID::MONOWIRE)
-    {
-
-    }
-    else 
-    {
-
-    }
 }
 
 State_WarpTurbines::State_WarpTurbines(const char *InStateName, RelicIO *inIO) : State_PendantGeneric(InStateName, inIO)
@@ -102,5 +109,13 @@ void State_WarpTurbines::tick(float deltaTime)
     {
         return;
     }
+
+    State_PendantGeneric::tick(deltaTime);
+
+    jacket::JacketIO* jacketIO = static_cast<jacket::JacketIO*>(io);
+    Pattern_Jacket_WarpTurbines* pattern = static_cast<Pattern_Jacket_WarpTurbines*>(getGenerator().get());
+
+    pattern->bIsButtonAActive = jacketIO->getRemoteBlackButton()->isPressed();
+    pattern->bIsButtonBActive = jacketIO->getRemoteWhiteButton()->isPressed();
 
 }

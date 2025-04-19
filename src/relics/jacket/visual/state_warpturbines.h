@@ -25,10 +25,17 @@ public:
     HSVPalette turbinePaletteA { HSV(35.f, 0.9f, 0.9f), HSV(35.f, 0.05f, 0.5f) };
     HSVPalette turbinePaletteB { HSV(190.f, 0.9f, 0.9f), HSV(190.f, 0.05f, 0.5f)};
 
+    Lerper buttonALerper;
+    Lerper buttonBLerper;
+
+    bool bIsButtonAActive = false; 
+    bool bIsButtonBActive = false;
+
+    bool bIsButtonAActiveLast = false;
+    bool bIsButtonBActiveLast = false;
+
     LFO turbineLFO;
     LFO heightLFO;
-
-    Lerper turbineSpeedLerper;
 
 public:
     virtual void init();
