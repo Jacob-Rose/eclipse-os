@@ -26,7 +26,7 @@ static bool bLEDOn{false};
 #endif
 
 void setup() {
-  delay(300);
+  delay(1000);
 
   Serial.begin(9600);
 
@@ -59,9 +59,10 @@ void loop() {
   if(relic)
   {
     relic->runTick();
-    delay(15);
 #if !DEPLOYMENT
-    delay(25);
+    delay(30);
+#else
+    delay(10);
 #endif
 
 #if USE_LED_FOR_TICK
