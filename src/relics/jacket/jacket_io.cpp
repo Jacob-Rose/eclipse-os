@@ -87,5 +87,5 @@ void JacketIO::init()
     if (inserted8) HSVStripNodeFactory::GenerateAxisRow(it8->second.get(), currentPixelIdx, jacket::MONOWIRE_LENGTH, Coord(0.75f,yMonowireOffset), Coord(xShift, yMonowireScalar));
     currentPixelIdx += jacket::MONOWIRE_LENGTH;
 
-    setGlobalBrightness(EBrightness::HIGH);
+    setGlobalBrightness(EBrightness::MED);
 }

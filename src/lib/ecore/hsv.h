@@ -55,6 +55,8 @@ namespace ecore
         void blendWith(const HSV& otherColor, float alphaAsFloat);
         static HSV blend(const HSV& a, const HSV& b, float alphaAsFloat);
 
+        static HSV add(const HSV& a, const HSV& b);
+
         // set between 0.f - 360.f
         void setHueDegree(float val);
         void setSaturationAlpha(float val);

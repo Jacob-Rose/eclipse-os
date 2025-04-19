@@ -5,7 +5,7 @@
 
 #include <string>
 
-#define DEPLOYMENT 0 // 0 = dev, 1 = production. Disables usb debugging usually due to low delay between ticks
+#define DEPLOYMENT 1 // 0 = dev, 1 = production. Disables usb debugging usually due to low delay between ticks
 #define DEBUG_LOGGING_ENABLED 1 && !DEPLOYMENT // overwrites the one in logging.h
 #define USE_LED_FOR_TICK 1 && !DEPLOYMENT
 #define USE_SERIAL_INPUT 1 && !DEPLOYMENT
@@ -59,10 +59,21 @@ void loop() {
   if(relic)
   {
     relic->runTick();
+    
 #if !DEPLOYMENT
     delay(30);
 #else
-    delay(10);
+    auto tickStartTime = relic->getTickStartTime();
+    auto now = std::chrono::system_clock::now();
+    auto elapsed = now - tickStartTime;
+
+    // convert to milliseconds:
+    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
+    float delayTime = 16.67f - ms;
+    if(delayTime > 0.0f)
+    {
+      delay(delayTime);
+    }
 #endif
 
 #if USE_LED_FOR_TICK
@@ -78,11 +89,12 @@ void loop() {
       Serial.println(msg.c_str());
       relic->handleCommand(msg);
     }
-  }
 #endif
+  }
 }
 
-void setup1() {
+void setup1() 
+{
 }
 
 void loop1()
@@ -93,7 +105,7 @@ void loop1()
     relic->tick2();
   }
 
-  delay(20);
+  delay(10);
 }
 
 // not called anywhere, since when would it be? but worth including for knowledge

@@ -20,11 +20,49 @@ using namespace eio;
 
 void Pattern_SystemOverload::init()
 {
+    staticNoise.imageScaleX = 10000000;
+    staticNoise.imageScaleY = 10000000;
+    staticNoise.timeScale = 6.0f;
+
+    staticNoise.noise.SetNoiseType(FastNoiseLite::NoiseType_Perlin);
+
+    lightningNoise.imageScaleX = 100.0f;
+    lightningNoise.imageScaleY = 100.0f;
+    lightningNoise.timeScale = 3.0f;
 }
 
 void Pattern_SystemOverload::tick(float deltaTime)
 {
     GeneratorHSV::tick(deltaTime);
+
+    buttonALerper.tick(deltaTime);
+    buttonBLerper.tick(deltaTime);
+
+    if(bIsButtonAActive != bIsButtonAActiveLast)
+    {
+        bIsButtonAActiveLast = bIsButtonAActive;
+        buttonALerper.startLerp(bIsButtonAActive ? 1.0f : 0.0f, 0.5f);
+    }
+    if(bIsButtonBActive != bIsButtonBActiveLast)
+    {
+        bIsButtonBActiveLast = bIsButtonBActive;
+        buttonBLerper.startLerp(bIsButtonBActive ? 1.0f : 0.0f, 0.5f);
+    }
+
+    if(bStopStrobing)
+    {
+        staticNoise.timeScale = 1.0f;
+        lightningNoise.timeScale = 0.5f;
+    }
+    else
+    {
+        staticNoise.timeScale = 6.0f;
+        lightningNoise.timeScale = 2.5f;
+    }
+
+    staticNoise.tick(deltaTime);
+
+    lightningNoise.tick(deltaTime);
 
 }
 
@@ -43,6 +81,23 @@ void Pattern_SystemOverload::render(HSVStripNode *inNode, HSV &inOutColor) const
     }
     HSVStripNode_Mapped2D *castedNode = static_cast<HSVStripNode_Mapped2D*>(inNode);
 
+    float staticNoiseVal = staticNoise.evaluate(castedNode->coord.x, castedNode->coord.y);
+    // staticNoiseVal = getEasingFunction(easing_functions::EaseInOutCubic)(staticNoiseVal);
+    float lightningNoiseVal = lightningNoise.evaluate(castedNode->coord.x, castedNode->coord.y);
+
+    HSV colorA = staticColor;
+    colorA.setBrightnessAlpha(colorA.getValFloat() * (staticNoiseVal * 0.2f) + 0.3f);
+    inOutColor = colorA;
+
+    HSV colorB = lightningColor;
+    float threshold = 0.7f;
+    threshold -= buttonALerper.getValue() * 0.3f;
+    if(lightningNoiseVal > threshold)
+    {
+        colorB.setBrightnessAlpha(colorB.getValFloat() * lightningNoiseVal);
+        inOutColor = colorB;
+    }
+    
 }
 
 State_SystemOverload::State_SystemOverload(const char *InStateName, RelicIO *inIO) : State_PendantGeneric(InStateName, inIO)
@@ -58,4 +113,34 @@ void State_SystemOverload::init()
     std::shared_ptr<Pattern_SystemOverload> newGenerator = std::make_shared<Pattern_SystemOverload>();
     setGenerator(newGenerator);
     newGenerator->init();
+}
+
+void State_SystemOverload::tick(float deltaTime)
+{   
+    State_PendantGeneric::tick(deltaTime);
+
+    jacket::JacketIO* jacketIO = static_cast<jacket::JacketIO*>(io);
+    Pattern_SystemOverload* enchantedPattern = static_cast<Pattern_SystemOverload*>(getGenerator().get());
+
+    enchantedPattern->bIsButtonAActive = jacketIO->getRemoteBlackButton()->isPressed();
+    enchantedPattern->bIsButtonBActive = jacketIO->getRemoteWhiteButton()->isPressed();
+
+    if(jacketIO->getRedButton()->runButtonPressedScan())
+    {
+        enchantedPattern->bStopStrobing = false;
+    }
+    
+}
+
+void State_SystemOverload::onStateChangeState(StateStatus inStatus)
+{
+    State_PendantGeneric::onStateChangeState(inStatus);
+
+    if(inStatus == StateStatus::Active)
+    {
+        jacket::JacketIO* jacketIO = static_cast<jacket::JacketIO*>(io);
+        Pattern_SystemOverload* enchantedPattern = static_cast<Pattern_SystemOverload*>(getGenerator().get());
+
+        enchantedPattern->bStopStrobing = true;
+    }
 }

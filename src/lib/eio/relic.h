@@ -73,6 +73,8 @@ namespace eio
 
         void runTick();
 
+        std::chrono::time_point<std::chrono::system_clock> getTickStartTime() { return tickStartTime; }
+
     protected:
         unique_ptr<RelicIO> coreIO;
     

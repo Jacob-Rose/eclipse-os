@@ -7,6 +7,7 @@
 
 #include "../../../lib/eanim/lfo.h"
 #include "../../../lib/eanim/generator_hsv.h"
+#include "../../../lib/eanim/processor_float.h"
 
 #include "../../pendant/pendant_generic_state.h"
 
@@ -26,7 +27,18 @@ public:
 
     HSVPalette palette = jpalettes::p_parrot;
 
+    Lerper buttonALerper;
+    Lerper buttonBLerper;
+
+    bool bIsButtonAActive = false; 
+    bool bIsButtonBActive = false;
+
+    bool bIsButtonAActiveLast = false;
+    bool bIsButtonBActiveLast = false;
+
     LFO offset;
+
+    LFO flapSpeedLFO;
 
     LFO lfoNecklaceOuter;
     LFO lfoInchwormSpeed;
@@ -39,4 +51,5 @@ public:
     State_Parrot(const char* InStateName, RelicIO* inIO);
 
     virtual void init() override;
+    virtual void tick(float deltaTime) override;
 };

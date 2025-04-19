@@ -10,6 +10,7 @@
 #include "../../../lib/eio/strip_projection.h"
 
 #include "../../../imgs/praise-man.h"
+#include "../../../imgs/winking-skull.h"
 
 
 #include "../jacket_io.h"
@@ -87,7 +88,7 @@ void State_Hitstop::init()
 {
     State_PendantGeneric::init();
 
-    setStateStartGifData((uint8_t *)praise_man, sizeof(praise_man));
+    setStateStartGifData((uint8_t *)winking_skull, sizeof(winking_skull));
 
     std::shared_ptr<Pattern_Hitstop> newGenerator = std::make_shared<Pattern_Hitstop>();
     setGenerator(newGenerator);

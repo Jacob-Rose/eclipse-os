@@ -21,14 +21,36 @@ using namespace eio;
 void Pattern_Parrot::init()
 {
     offset.amplitude = 0.5f;
+    offset.speed = 3.0f;
     offset.yOffset = 0.5f;
+
+    flapSpeedLFO.width = 0.25f; //overritten by buttonA
+    flapSpeedLFO.amplitude = 8.0f;
+    flapSpeedLFO.yOffset = -3.5f;
+    flapSpeedLFO.speed = 6.5f;
 }
 
 void Pattern_Parrot::tick(float deltaTime)
 {
     GeneratorHSV::tick(deltaTime);
 
+    buttonALerper.tick(deltaTime);
+    buttonBLerper.tick(deltaTime);
+
+    if(bIsButtonAActive != bIsButtonAActiveLast)
+    {
+        bIsButtonAActiveLast = bIsButtonAActive;
+        buttonALerper.startLerp(bIsButtonAActive ? 1.0f : 0.0f, 0.5f);
+    }
+    if(bIsButtonBActive != bIsButtonBActiveLast)
+    {
+        bIsButtonBActiveLast = bIsButtonBActive;
+        buttonBLerper.startLerp(bIsButtonBActive ? 1.0f : 0.0f, 0.5f);
+    }
+
     offset.tick(deltaTime);
+    offset.speed = 2.0f + (flapSpeedLFO.evaluate(0.0f) * buttonALerper.getValue());
+    flapSpeedLFO.tick(deltaTime);
 
 }
 
@@ -64,4 +86,15 @@ void State_Parrot::init()
     std::shared_ptr<Pattern_Parrot> newGenerator = std::make_shared<Pattern_Parrot>();
     setGenerator(newGenerator);
     newGenerator->init();
+}
+
+void State_Parrot::tick(float deltaTime)
+{   
+    State_PendantGeneric::tick(deltaTime);
+
+    jacket::JacketIO* jacketIO = static_cast<jacket::JacketIO*>(io);
+    Pattern_Parrot* enchantedPattern = static_cast<Pattern_Parrot*>(getGenerator().get());
+
+    enchantedPattern->bIsButtonAActive = jacketIO->getRemoteBlackButton()->isPressed();
+    enchantedPattern->bIsButtonBActive = jacketIO->getRemoteWhiteButton()->isPressed();
 }

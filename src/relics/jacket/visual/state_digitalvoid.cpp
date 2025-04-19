@@ -51,7 +51,7 @@ void Pattern_DigitalVoid::tick(float deltaTime)
     if(bIsButtonAActive != bIsButtonAActiveLast)
     {
         bIsButtonAActiveLast = bIsButtonAActive;
-        buttonALerper.startLerp(bIsButtonAActive ? 1.0f : 0.0f, 0.1f);
+        buttonALerper.startLerp(bIsButtonAActive ? 1.0f : 0.0f, 0.5f);
     }
     if(bIsButtonBActive != bIsButtonBActiveLast)
     {

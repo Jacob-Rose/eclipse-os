@@ -57,6 +57,8 @@ void pendant::PendantIO::init()
     int id2 = static_cast<uint8_t>(EPendantSegmentID::OuterRing);
     auto [it2, inserted2] = strip_segments.emplace(id2, make_unique<HSVStripSegment>(mainStrip, id2));
     if (inserted2) HSVStripNodeFactory::GenerateAxisRow(it2->second.get(), InnerRingLength, OuterRingLength, Coord(0.0f,1.0f), Coord(1.f / OuterRingLength, 0.0f));
+
+    setGlobalBrightness(EBrightness::MED);
 }
 
 void pendant::PendantIO::tick(float deltaTime)

@@ -59,6 +59,31 @@ HSV HSV::blend(const HSV& a, const HSV& b, float alphaAsFloat)
     return blendedColor;
 }
 
+// Utility: Wrap angle between 0 and 360
+float wrapHueFp(fpInt h) {
+    while (h < 0) h += SCALE_FACTOR;
+    while (h >= SCALE_FACTOR) h -= SCALE_FACTOR;
+    return h;
+}
+
+// Utility: Shortest hue distance for blending
+float blendHueFp(fpInt h1, fpInt h2) {
+    fpInt delta = h2 - h1;
+
+    if (delta > SCALE_FACTOR / 2) delta -= SCALE_FACTOR;
+    else if (delta < -SCALE_FACTOR/2) delta += SCALE_FACTOR;
+    return wrapHueFp(h1 + delta / 2);
+}
+
+HSV ecore::HSV::add(const HSV &a, const HSV &b)
+{
+    HSV out;
+    out.h = blendHueFp(a.h, b.h); // Circular blend
+    out.setSaturationAlpha(std::min(a.getSatFloat() + b.getSatFloat(), 1.0f)); // Clamped addition
+    out.setBrightnessAlpha(std::min(a.getValFloat() + b.getValFloat(), 1.0f)); // Clamped addition
+    return out;
+}
+
 // Perform the radial lerp in fixed-point (using integers)
 fpInt HSV::radialLerp(fpInt a, fpInt b, float tAsFloat) {
     fpInt tAsInt = tAsFloat * SCALE_FACTOR;

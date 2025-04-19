@@ -19,12 +19,13 @@
 #include "visual/state_warpturbines.h"
 #include "visual/state_campfire.h"
 #include "visual/state_hitstop.h"
-#include "visual/state_redrum.h"
 #include "visual/state_enchantedforest.h"
 #include "visual/state_datamine.h"
 #include "visual/state_breathewithme.h"
 #include "visual/state_digitalvoid.h"
 #include "visual/state_parrot.h"
+#include "visual/state_systemoverload.h"
+#include "visual/state_cybertoxin.h"
 
 #include "../pendant/pendant_generic_state.h"
 
@@ -52,7 +53,7 @@ void JacketCore::init()
     jacketIO->init();
     stateManager = std::make_unique<StateManager>();
     stateMachine = std::make_unique<StateMachine_GenericHSV>();
-    stateMachine->transitionTime = 0.75f;
+    stateMachine->transitionTime = 0.4f;
     stateMachine->setRelicIO(jacketIO);
 
     std::shared_ptr<State_WarpTurbines> warpTurbinesState = std::make_shared<State_WarpTurbines>("warp_turbines", jacketIO);
@@ -85,11 +86,14 @@ void JacketCore::init()
     std::shared_ptr<State_Hitstop> hitstopState = std::make_shared<State_Hitstop>("hitstop", jacketIO);
     hitstopState->init();
 
-    std::shared_ptr<State_RedRum> redRumState = std::make_shared<State_RedRum>("redrum", jacketIO);
-    redRumState->init();
-
     std::shared_ptr<State_Parrot> parrotState = std::make_shared<State_Parrot>("parrot", jacketIO);
     parrotState->init();
+
+    std::shared_ptr<State_SystemOverload> systemOverloadState = std::make_shared<State_SystemOverload>("system_overload", jacketIO);
+    systemOverloadState->init();
+
+    std::shared_ptr<State_CyberToxin> cyberToxinState = std::make_shared<State_CyberToxin>("cyber_toxin", jacketIO);
+    cyberToxinState->init();
 
     stateManager->addState(warpTurbinesState);
     stateManager->addState(rainbowRoadState);
@@ -101,8 +105,9 @@ void JacketCore::init()
     stateManager->addState(blueMagicState);
     stateManager->addState(digitalVoidState);
     stateManager->addState(hitstopState);
-    stateManager->addState(redRumState);
     stateManager->addState(parrotState);
+    stateManager->addState(systemOverloadState);
+    stateManager->addState(cyberToxinState);
     
     //
     // DIGITAL VOID STATE
@@ -132,27 +137,26 @@ void JacketCore::init()
         return button->runButtonPressedScan();
     });
     
-    datamineState->addStateTransition(parrotState, [jacketIO](State* current, State* target){
+    datamineState->addStateTransition(systemOverloadState, [jacketIO](State* current, State* target){
         Button* button = jacketIO->getRedButton();
         return button->runButtonPressedScan();
     });
 
-    datamineState->addStateTransition(hitstopState, [jacketIO](State* current, State* target){
+    datamineState->addStateTransition(cyberToxinState, [jacketIO](State* current, State* target){
         Button* button = jacketIO->getBlueButton();
         return button->runButtonPressedScan();
     });
 
-
     //
-    // Red Rum
+    // System Overload State
     //
 
-    redRumState->addStateTransition(datamineState, [jacketIO](State* current, State* target){
+    systemOverloadState->addStateTransition(datamineState, [jacketIO](State* current, State* target){
         Button* button = jacketIO->getWhiteButton();
         return button->runButtonPressedScan();
     });
-    
-    redRumState->addStateTransition(hitstopState, [jacketIO](State* current, State* target){
+
+    systemOverloadState->addStateTransition(hitstopState, [jacketIO](State* current, State* target){
         Button* button = jacketIO->getBlueButton();
         return button->runButtonPressedScan();
     });
@@ -162,7 +166,17 @@ void JacketCore::init()
     // Hitstop
     //
 
-    hitstopState->addStateTransition(datamineState, [jacketIO](State* current, State* target){
+    hitstopState->addStateTransition(systemOverloadState, [jacketIO](State* current, State* target){
+        Button* button = jacketIO->getWhiteButton();
+        return button->runButtonPressedScan();
+    });
+
+
+    //
+    // Cyber Toxin
+    //
+
+    cyberToxinState->addStateTransition(datamineState, [jacketIO](State* current, State* target){
         Button* button = jacketIO->getWhiteButton();
         return button->runButtonPressedScan();
     });
@@ -241,11 +255,16 @@ void JacketCore::init()
         return button->runButtonPressedScan();
     });
 
+    rainbowRoadState->addStateTransition(parrotState, [jacketIO](State* current, State* target){
+        Button* button = jacketIO->getBlueButton();
+        return button->runButtonPressedScan();
+    });
+
     //
     // Parrot
     //
 
-    parrotState->addStateTransition(datamineState, [jacketIO](State* current, State* target){
+    parrotState->addStateTransition(rainbowRoadState, [jacketIO](State* current, State* target){
         Button* button = jacketIO->getWhiteButton();
         return button->runButtonPressedScan();
     });
