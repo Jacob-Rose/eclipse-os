@@ -46,13 +46,13 @@ void Pattern_Jacket_WarpTurbines::tick(float deltaTime)
     if(bIsButtonBActive != bIsButtonBActiveLast)
     {
         bIsButtonBActiveLast = bIsButtonBActive;
-        buttonBLerper.startLerp(bIsButtonBActive ? 1.0f : 0.0f, 1.0f);
+        buttonBLerper.startLerp(bIsButtonBActive ? 1.0f : 0.0f, 4.0f);
     }
 
     buttonALerper.tick(deltaTime);
     buttonBLerper.tick(deltaTime);
 
-    turbineLFO.speed = buttonALerper.getValue() * 4.0f + 3.0f;
+    turbineLFO.speed = buttonALerper.getValue() * 8.0f + 3.0f;
 
     turbineLFO.tick(deltaTime);
 }

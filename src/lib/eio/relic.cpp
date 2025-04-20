@@ -75,8 +75,8 @@ RelicCore::RelicCore()
 
 void RelicCore::preTick()
 {
-    lastFrameDT = std::chrono::system_clock::now() - tickStartTime;
-    tickStartTime = std::chrono::system_clock::now();
+    lastFrameDT = std::chrono::steady_clock::now() - tickStartTime;
+    tickStartTime = std::chrono::steady_clock::now();
 }
 
 void RelicCore::tick(float deltaTime)

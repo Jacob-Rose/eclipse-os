@@ -6,6 +6,7 @@
 #include "hsv_strip.h"
 
 #include <memory>
+#include <algorithm>
 
 #include "../ecore/core.h"
 #include "../ecore/logging.h"
@@ -68,22 +69,17 @@ void HSVStrip::setHSV(uint16_t idx, float h, uint8_t s, uint8_t v)
         return;
     }
 #endif
-    
-    strip_HSV[idx].h = h;
-    strip_HSV[idx].s = s;
-    strip_HSV[idx].v = v;
 
-    updateStripPixel(idx);
-}
+    uint32_t v32 = ((uint32_t)v * 255u) / SCALE_FACTOR;
+    strip_HSV[idx].v = static_cast<uint8_t>(std::clamp(v32, static_cast<uint32_t>(0), static_cast<uint32_t>(255)));
 
-uint8_t HSVStrip::getBrightness(uint16_t idx) const
-{
-    return strip_HSV[idx].v;
-}
+    uint32_t s32 = ((uint32_t)s * 255u) / SCALE_FACTOR;
+    strip_HSV[idx].s = static_cast<uint8_t>(std::clamp(s32, static_cast<uint32_t>(0), static_cast<uint32_t>(255)));
 
-void HSVStrip::setBrightness(uint16_t idx, uint8_t val)
-{
-    strip_HSV[idx].v = val;
+    h = std::fmod(h, 360.0f);
+    h /= 360.0f;
+    uint64_t h64 = ((uint64_t)h * static_cast<uint64_t>(UINT16_MAX)) / SCALE_FACTOR;
+    strip_HSV[idx].h = static_cast<uint16_t>(std::clamp(h64, static_cast<uint64_t>(0), static_cast<uint64_t>(UINT16_MAX)));
 
     updateStripPixel(idx);
 }

@@ -149,20 +149,20 @@ float HSV::getValFloat() const
 
 uint8_t HSV::getValAs8() const
 {
-    uint32_t v32 = (((uint32_t)v) * 255) / SCALE_FACTOR;
-    return v32;
+    uint32_t v32 = ((uint32_t)v * 255u) / SCALE_FACTOR;
+    return static_cast<uint8_t>(std::clamp(v32, static_cast<uint32_t>(0), static_cast<uint32_t>(255)));
 }
 
 uint8_t HSV::getSatAs8() const
 {
-    uint32_t s32 = (((uint32_t)s) * 255) / SCALE_FACTOR;
-    return s32;
+    uint32_t s32 = ((uint32_t)s * 255u) / SCALE_FACTOR;
+    return static_cast<uint8_t>(std::clamp(s32, static_cast<uint32_t>(0), static_cast<uint32_t>(255)));
 }
 
 uint16_t HSV::getHueAs16() const
 {
-    uint32_t h32 = (static_cast<uint32_t>(h) * UINT16_MAX) / SCALE_FACTOR;
-    return static_cast<uint16_t>(h32);
+    uint32_t h32 = ((uint32_t)h * static_cast<uint32_t>(UINT16_MAX)) / SCALE_FACTOR;
+    return static_cast<uint16_t>(std::clamp(h32, static_cast<uint32_t>(0), static_cast<uint32_t>(UINT16_MAX)));
 }
 
 

@@ -43,9 +43,6 @@ namespace eio
         void setHSV(uint16_t idx, const HSV& hsv);
         void setHSV(uint16_t idx, float h, uint8_t s, uint8_t v);
 
-        uint8_t getBrightness(uint16_t idx) const;
-        void setBrightness(uint16_t idx, uint8_t val);
-
         uint8_t getStripBrightness() const;
         void setStripBrightness(uint8_t brightness);
 

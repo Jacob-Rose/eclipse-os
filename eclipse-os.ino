@@ -64,12 +64,12 @@ void loop() {
     delay(30);
 #else
     auto tickStartTime = relic->getTickStartTime();
-    auto now = std::chrono::system_clock::now();
+    auto now = std::chrono::steady_clock::now();
     auto elapsed = now - tickStartTime;
 
     // convert to milliseconds:
     auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
-    float delayTime = 16.67f - ms;
+    float delayTime = std::max(20.0f - ms, 8.0f);
     if(delayTime > 0.0f)
     {
       delay(delayTime);

@@ -26,7 +26,7 @@ void Pattern_DigitalVoid::init()
 {
     coreNoise.imageScaleX = 100.0f;
     coreNoise.imageScaleY = 10.0f;
-    coreNoise.timeScale = 2.0f;
+    coreNoise.timeScale = 1.6f;
 
     coreNoise.noise.SetNoiseType(FastNoiseLite::NoiseType_Perlin);
     coreNoise.noise.SetFrequency(0.05f);
@@ -65,7 +65,7 @@ void Pattern_DigitalVoid::tick(float deltaTime)
 
     //coreNoise.noise.SetFrequency(remap(0.0f, 1.0f, 0.05f, 1.0f, buttonALerper.getValue()));
 
-    coreNoise.timeScale = remap(0.0f, 1.0f, 1.5f, 14.5f, buttonBLerper.getValue());
+    coreNoise.timeScale = remap(0.0f, 1.0f, 1.7f, 14.5f, buttonBLerper.getValue());
 
     coreNoise.tick(deltaTime);
     hueShiftNoise.tick(deltaTime);

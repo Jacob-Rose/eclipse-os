@@ -73,7 +73,7 @@ namespace eio
 
         void runTick();
 
-        std::chrono::time_point<std::chrono::system_clock> getTickStartTime() { return tickStartTime; }
+        std::chrono::time_point<std::chrono::steady_clock> getTickStartTime() { return tickStartTime; }
 
     protected:
         unique_ptr<RelicIO> coreIO;
@@ -81,6 +81,6 @@ namespace eio
     private:
         // used for accurately simulating time between frames
         std::chrono::duration<double> lastFrameDT;
-        std::chrono::time_point<std::chrono::system_clock> tickStartTime;
+        std::chrono::time_point<std::chrono::steady_clock> tickStartTime;
     };
 }
