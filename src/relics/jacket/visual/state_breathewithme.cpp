@@ -17,33 +17,6 @@ using namespace ecore;
 using namespace ecore::log;
 
 
-State_BreatheWithMe::State_BreatheWithMe(const char *InStateName, RelicIO *inIO) : State_PendantGeneric(InStateName, inIO)
-{
-
-}
-
-void State_BreatheWithMe::init()
-{
-    State_PendantGeneric::init();
-
-    setStateStartGifData((uint8_t *)flicker_stars, sizeof(flicker_stars));
-
-    std::shared_ptr<Pattern_BreatheWithMe> pattern = std::make_shared<Pattern_BreatheWithMe>();
-    pattern->init();
-    setGenerator(pattern);
-}
-
-void State_BreatheWithMe::tick(float deltaTime)
-{
-    State_PendantGeneric::tick(deltaTime);
-
-    jacket::JacketIO* jacketIO = static_cast<jacket::JacketIO*>(io);
-    Pattern_BreatheWithMe* enchantedPattern = static_cast<Pattern_BreatheWithMe*>(getGenerator().get());
-
-    enchantedPattern->bIsButtonAActive = jacketIO->getRemoteBlackButton()->isPressed();
-    enchantedPattern->bIsButtonBActive = jacketIO->getRemoteWhiteButton()->isPressed();
-}
-
 void Pattern_BreatheWithMe::render(HSVStripNode *node, HSV &inOutColor) const
 {
     if(!node)
@@ -64,9 +37,14 @@ void Pattern_BreatheWithMe::render(HSVStripNode *node, HSV &inOutColor) const
     alpha /= 2.0f;
 
     inOutColor = palette.getColor(alpha);
-    float hueShift = buttonALerper.getValue() * 120.0f * rainbowLFO.getValue();
+
+    float hueShift = buttonALerper.getValue() * 120.0f;
     inOutColor.setHueDegree(inOutColor.getHueFloat() + hueShift);
-    float brightnessScalar = lerp( 0.7f, 1.0f, buttonALerper.getValue());
+
+    float sat = (buttonALerper.getValue() * 0.6f + 0.4f) * inOutColor.getSatFloat();
+    inOutColor.setSaturationAlpha(sat);
+
+    float brightnessScalar = lerp(0.4f, 1.0f, buttonALerper.getValue());
     inOutColor.setBrightnessAlpha(inOutColor.getValFloat() * brightnessScalar);
 }
 
@@ -98,7 +76,7 @@ void Pattern_BreatheWithMe::tick(float deltaTime)
     if(bIsButtonAActive != bIsButtonAActiveLast)
     {
         bIsButtonAActiveLast = bIsButtonAActive;
-        buttonALerper.startLerp(bIsButtonAActive ? 1.0f : 0.0f, 7.0f);
+        buttonALerper.startLerp(bIsButtonAActive ? 1.0f : 0.0f, 4.0f);
     }
     if(bIsButtonBActive != bIsButtonBActiveLast)
     {
@@ -108,4 +86,32 @@ void Pattern_BreatheWithMe::tick(float deltaTime)
 
     buttonALerper.tick(deltaTime);
     buttonBLerper.tick(deltaTime);
+}
+
+
+State_BreatheWithMe::State_BreatheWithMe(const char *InStateName, RelicIO *inIO) : State_PendantGeneric(InStateName, inIO)
+{
+
+}
+
+void State_BreatheWithMe::init()
+{
+    State_PendantGeneric::init();
+
+    setStateStartGifData((uint8_t *)flicker_stars, sizeof(flicker_stars));
+
+    std::shared_ptr<Pattern_BreatheWithMe> pattern = std::make_shared<Pattern_BreatheWithMe>();
+    pattern->init();
+    setGenerator(pattern);
+}
+
+void State_BreatheWithMe::tick(float deltaTime)
+{
+    State_PendantGeneric::tick(deltaTime);
+
+    jacket::JacketIO* jacketIO = static_cast<jacket::JacketIO*>(io);
+    Pattern_BreatheWithMe* pattern = static_cast<Pattern_BreatheWithMe*>(getGenerator().get());
+
+    pattern->bIsButtonAActive = jacketIO->getRemoteBlackButton()->isPressed();
+    pattern->bIsButtonBActive = jacketIO->getRemoteWhiteButton()->isPressed();
 }

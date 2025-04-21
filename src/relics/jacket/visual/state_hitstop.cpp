@@ -21,6 +21,15 @@ using namespace eio;
 
 void Pattern_Hitstop::init()
 {
+    brightnessLFO.amplitude = 0.5f;
+    brightnessLFO.yOffset = 0.75f;
+    brightnessLFO.width = 2.2f;
+    brightnessLFO.speed = 2.75f;
+
+    colorLFO.amplitude = 1.0f;
+    colorLFO.yOffset = 0.5f;
+    colorLFO.width = 0.8578f;
+    colorLFO.speed = 1.42f;
 }
 
 void Pattern_Hitstop::tick(float deltaTime)
@@ -28,12 +37,9 @@ void Pattern_Hitstop::tick(float deltaTime)
     GeneratorHSV::tick(deltaTime);
 
     timeSinceHitActivate += deltaTime;
-    lfo1.tick(deltaTime);
 
-    lfo1.amplitude = 1.0f;
-    lfo1.yOffset = 0.5f;
-    lfo1.width = 0.5f;
-
+    brightnessLFO.tick(deltaTime);
+    colorLFO.tick(deltaTime);
 }
 
 void Pattern_Hitstop::render(HSVStripNode *inNode, HSV &inOutColor) const
@@ -51,7 +57,8 @@ void Pattern_Hitstop::render(HSVStripNode *inNode, HSV &inOutColor) const
     }
     HSVStripNode_Mapped2D *castedNode = static_cast<HSVStripNode_Mapped2D*>(inNode);
 
-    float lfoEval = lfo1.evaluate(castedNode->coord.y);
+    float brightnessLFOEval = brightnessLFO.evaluate(castedNode->coord.y);
+    float colorLFOEval = colorLFO.evaluate(castedNode->coord.y);
 
     float waveEval = timeSinceHitActivate;
     float waveHitstopFlashAlpha = std::max(1.0f - timeSinceHitActivate, 0.0f);
@@ -65,14 +72,10 @@ void Pattern_Hitstop::render(HSVStripNode *inNode, HSV &inOutColor) const
     else
     {
         float remover = waveHitstopFlashAlpha * 0.4f;
-        float pixelBrightness = lfoEval * 0.5f - remover;
-        inOutColor = mainPalette.getColor(lfoEval);
+        float pixelBrightness = brightnessLFOEval * 0.5f - remover;
+        inOutColor = mainPalette.getColor(colorLFOEval);
         inOutColor.setBrightnessAlpha(pixelBrightness * inOutColor.getValFloat());
     }
-
-
-
-
 }
 
 void Pattern_Hitstop::activateHitstopA()

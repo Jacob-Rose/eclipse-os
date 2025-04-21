@@ -16,6 +16,11 @@
 using namespace ecore;
 using namespace eanim;
 
+inline HSVPalette p_hitstop {
+    HSV(2.0f, 0.88f, 1.0f),
+    HSV(30.0f, 0.6f, 1.0f),
+};
+
 class Pattern_Hitstop : public GeneratorHSV
 {
 public:
@@ -27,11 +32,12 @@ public:
 
     void activateHitstopA();
 
-    HSVPalette mainPalette = jpalettes::p_bootgradient;
+    HSVPalette mainPalette = p_hitstop;
     HSV hitColor = HSV(0.0f, 0.0f, 1.0f);
 
 private:
-    LFO lfo1;
+    LFO brightnessLFO;
+    LFO colorLFO;
     Lerper hitstopALerper;
 
     float timeSinceHitActivate = 9999.0f;

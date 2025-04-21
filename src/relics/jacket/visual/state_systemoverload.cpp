@@ -51,13 +51,13 @@ void Pattern_SystemOverload::tick(float deltaTime)
 
     if(bStopStrobing)
     {
-        staticNoise.timeScale = 1.0f;
-        lightningNoise.timeScale = 0.5f;
+        staticNoise.timeScale = 1.65f;
+        lightningNoise.timeScale = 1.15f;
     }
     else
     {
-        staticNoise.timeScale = 6.0f;
-        lightningNoise.timeScale = 2.5f;
+        staticNoise.timeScale = 8.0f;
+        lightningNoise.timeScale = 3.0f;
     }
 
     staticNoise.tick(deltaTime);
@@ -90,8 +90,8 @@ void Pattern_SystemOverload::render(HSVStripNode *inNode, HSV &inOutColor) const
     inOutColor = colorA;
 
     HSV colorB = lightningColor;
-    float threshold = 0.7f;
-    threshold -= buttonALerper.getValue() * 0.3f;
+    float threshold = 0.75f;
+    threshold -= buttonALerper.getValue() * 0.5f;
     if(lightningNoiseVal > threshold)
     {
         colorB.setBrightnessAlpha(colorB.getValFloat() * lightningNoiseVal);
