@@ -31,8 +31,8 @@ namespace jacket
         MAX
     };
 
-    constexpr int RING_ONE_LENGTH = 35;
-    constexpr int RING_TWO_LENGTH = 28;
+    constexpr int RING_ONE_LENGTH = 34;
+    constexpr int RING_TWO_LENGTH = 27;
     constexpr int RING_THREE_LENGTH = 24;
     constexpr int RING_FOUR_LENGTH = 24;
     constexpr int RING_FIVE_LENGTH = 21;
