@@ -25,7 +25,7 @@ void ObeliskIO::init()
 {
     RelicIO::init();
 
-    auto [mainStripIt, stripInserted] = strips.emplace(static_cast<uint8_t>(0), make_unique<HSVStrip>(WALL_SIDE_LENGTH * 8, 22));
+    auto [mainStripIt, stripInserted] = strips.emplace(static_cast<uint8_t>(0), make_unique<HSVStrip>(WALL_SIDE_LENGTH * 8, StripLEDPin));
 
     HSVStrip* mainStrip = mainStripIt->second.get();
 
@@ -100,10 +100,13 @@ ObeliskCore::ObeliskCore() : RelicCore()
     testPatternId = stateManager->addState(testPatternState);
 
     // Start State Machine
-    stateMachine->setActiveState(testPatternState);
+    stateMachine->setActiveState(mainPatternState);
     stateMachine->init();
 
+#if 0
     stateChangeTimer.onTimerEvent.add([this]() {
+
+
         dbgLog("ObeliskCore::stateChangeTimer - switching patterns", Verbosity::Display, Category::Relic);
         // Switch to the next state after the timer expires
         if (stateMachine->getActiveState() == mainPatternState) {
@@ -116,6 +119,7 @@ ObeliskCore::ObeliskCore() : RelicCore()
 
         stateChangeTimer.startTimer(5.0f);  // Reset the timer for the next state change
     });
+#endif
 
     stateChangeTimer.startTimer(5.0f);  // Start the timer for the first state change
 }
