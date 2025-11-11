@@ -4,3 +4,4 @@ _deps
 cmake-*
 build
 .DS_Store
+secrets.h

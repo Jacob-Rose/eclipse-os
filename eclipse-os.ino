@@ -5,25 +5,63 @@
 
 #include <string>
 
-#define DEPLOYMENT 1 // 0 = dev, 1 = production. Disables usb debugging usually due to low delay between ticks
+#define DEPLOYMENT 0 // 0 = dev, 1 = production. Disables usb debugging usually due to low delay between ticks
 #define DEBUG_LOGGING_ENABLED 1 && !DEPLOYMENT // overwrites the one in logging.h
 #define USE_LED_FOR_TICK 1 && !DEPLOYMENT
 #define USE_SERIAL_INPUT 1 && !DEPLOYMENT
 
+#define USE_SERIAL_MQTT 0 // 0 = WiFi MQTT, 1 = Serial MQTT (via serial2mqtt gateway)
+
 #include "src/lib/ecore/core.h"
-#include "src/relics/obelisk/obelisk.h"
+#include "src/relics/todoist_whiteboard/todoist_whiteboard.h"
+#include "src/lib/emqtt/mqtt_client.h"
 #include "src/lib/ecore/logging.h"
+#include "secrets.h"
+
+#if USE_SERIAL_MQTT
+  #include "src/lib/emqtt/mqtt_transport_serial.h"
+#else
+  #include "src/lib/ewifi/wifi_manager.h"
+  #include "src/lib/emqtt/mqtt_transport_wifi.h"
+#endif
 
 using namespace ecore;
 using namespace ecore::log;
+using namespace emqtt;
+
+#if !USE_SERIAL_MQTT
+  using namespace ewifi;
+#endif
 
 #define LED_PIN 25  // Onboard LED for RP2040
 
-static unique_ptr<obelisk::ObeliskCore> relic;
+#if !USE_SERIAL_MQTT
+  static unique_ptr<WiFiManager> wifiManager;
+#endif
+
+static unique_ptr<MqttClient> mqttClient;
+static unique_ptr<todoist_whiteboard::WhiteboardCore> relic;
 
 #if USE_LED_FOR_TICK
 static bool bLEDOn{false};
 #endif
+
+// Helper function to create MQTT configuration from secrets.h
+MqttConfig createMqttConfig() {
+  MqttConfig config(MQTT_SERVER, MQTT_CLIENT_ID);
+  config.port = MQTT_PORT;
+  config.username = MQTT_USERNAME;
+  config.password = MQTT_PASSWORD;
+  config.keepAlive = MQTT_KEEP_ALIVE;
+  config.cleanSession = MQTT_CLEAN_SESSION;
+  return config;
+}
+
+// Helper function to configure MQTT client settings
+void configureMqttClient(MqttClient& client) {
+  client.setAutoReconnect(MQTT_AUTO_RECONNECT);
+  client.setReconnectInterval(MQTT_RECONNECT_INTERVAL);
+}
 
 void setup() {
   delay(1000);
@@ -46,7 +84,41 @@ void setup() {
   Serial.println("Use #define DEBUG_LOGGING_ENABLED 0 to disable.\n");
 #endif
 
-  relic = make_unique<obelisk::ObeliskCore>();
+#if USE_SERIAL_MQTT
+  // Setup Serial MQTT transport
+  Serial.println("Using Serial MQTT transport (via serial2mqtt gateway)");
+  auto transport = make_unique<MqttTransportSerial>();
+  mqttClient = make_unique<MqttClient>(std::move(transport));
+
+  mqttClient->init(createMqttConfig());
+  configureMqttClient(*mqttClient);
+  mqttClient->connect();
+#else
+  // Initialize and connect WiFi
+  wifiManager = make_unique<WiFiManager>();
+  wifiManager->init(WIFI_SSID, WIFI_PASSWORD);
+  wifiManager->setAutoReconnect(WIFI_AUTO_RECONNECT);
+  wifiManager->setReconnectInterval(WIFI_RECONNECT_INTERVAL);
+
+  if (wifiManager->connect(WIFI_MAX_CONNECT_ATTEMPTS)) {
+    Serial.println("WiFi connected!");
+    Serial.print("IP address: ");
+    Serial.println(wifiManager->getLocalIP());
+  } else {
+    Serial.println("WiFi connection failed!");
+  }
+
+  // Setup WiFi MQTT transport
+  auto transport = make_unique<MqttTransportWiFi>(wifiManager->getClient());
+  mqttClient = make_unique<MqttClient>(std::move(transport));
+
+  mqttClient->init(createMqttConfig());
+  configureMqttClient(*mqttClient);
+  mqttClient->connect();
+#endif
+
+  // Create relic with MQTT client
+  relic = make_unique<todoist_whiteboard::WhiteboardCore>(*mqttClient);
 
   if(relic)
   {
@@ -55,6 +127,20 @@ void setup() {
 }
 
 void loop() {
+
+#if !USE_SERIAL_MQTT
+  // Tick WiFi manager for auto-reconnect (only needed for WiFi mode)
+  if(wifiManager)
+  {
+    wifiManager->tick(0.03f);  // ~30ms tick
+  }
+#endif
+
+  // Tick MQTT client for connection management
+  if(mqttClient)
+  {
+    mqttClient->tick(0.03f);  // ~30ms tick
+  }
 
   if(relic)
   {

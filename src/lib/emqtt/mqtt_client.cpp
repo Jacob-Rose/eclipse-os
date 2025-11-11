@@ -1,0 +1,191 @@
+// Copyright 2024 | Jake Rose
+//
+// This file is part of project eclipse-os
+// See readme.md for full license details.
+
+#include "mqtt_client.h"
+
+using namespace emqtt;
+
+MqttClient::MqttClient(std::unique_ptr<IMqttTransport> inTransport)
+    : transport(std::move(inTransport))
+    , config("", "")
+    , status(ConnectionStatus::DISCONNECTED)
+    , bAutoReconnect(true)
+    , reconnectInterval(5.0f)
+    , timeSinceLastReconnect(0.0f)
+{
+    transport->setCallback([this](const char* topic, uint8_t* payload, unsigned int length) {
+        if (userCallback)
+        {
+            userCallback(topic, payload, length);
+        }
+    });
+}
+
+void MqttClient::init(const MqttConfig& inConfig)
+{
+    config = inConfig;
+    transport->init(config.server, config.port, config.clientId, config.username, config.password);
+    transport->setKeepAlive(config.keepAlive);
+
+    log::dbgLog("MQTT client initialized", log::Verbosity::Display, log::Category::IO);
+}
+
+void MqttClient::setTopics(const TopicConfig& inTopics)
+{
+    topics = inTopics;
+}
+
+void MqttClient::setCallback(MqttCallback callback)
+{
+    userCallback = callback;
+}
+
+bool MqttClient::connect()
+{
+    if (isConnected())
+    {
+        return true;
+    }
+
+    status = ConnectionStatus::CONNECTING;
+    log::dbgLog("Connecting to MQTT broker", log::Verbosity::Display, log::Category::IO);
+
+    bool connected = transport->connect();
+
+    if (connected)
+    {
+        status = ConnectionStatus::CONNECTED;
+        log::dbgLog("Connected to MQTT broker", log::Verbosity::Display, log::Category::IO);
+
+        subscribeToTopics();
+
+        if (topics.availabilityTopic)
+        {
+            publish(topics.availabilityTopic, "online", true);
+        }
+
+        return true;
+    }
+    else
+    {
+        status = ConnectionStatus::FAILED;
+        log::dbgLog("Failed to connect to MQTT broker", log::Verbosity::Error, log::Category::IO);
+        return false;
+    }
+}
+
+void MqttClient::disconnect()
+{
+    if (topics.availabilityTopic)
+    {
+        publish(topics.availabilityTopic, "offline", true);
+    }
+
+    transport->disconnect();
+    status = ConnectionStatus::DISCONNECTED;
+    log::dbgLog("Disconnected from MQTT broker", log::Verbosity::Display, log::Category::IO);
+}
+
+bool MqttClient::publish(const char* topic, const char* payload, bool retained)
+{
+    if (!isConnected())
+    {
+        log::dbgLog("Cannot publish - not connected", log::Verbosity::Warning, log::Category::IO);
+        return false;
+    }
+
+    bool success = transport->publish(topic, payload, retained);
+
+    if (success)
+    {
+        log::dbgLog("MQTT message published", log::Verbosity::Verbose, log::Category::IO);
+    }
+    else
+    {
+        log::dbgLog("Failed to publish MQTT message", log::Verbosity::Error, log::Category::IO);
+    }
+
+    return success;
+}
+
+bool MqttClient::subscribe(const char* topic, uint8_t qos)
+{
+    if (!isConnected())
+    {
+        log::dbgLog("Cannot subscribe - not connected", log::Verbosity::Warning, log::Category::IO);
+        return false;
+    }
+
+    bool success = transport->subscribe(topic, qos);
+
+    if (success)
+    {
+        log::dbgLog("Subscribed to MQTT topic", log::Verbosity::Display, log::Category::IO);
+    }
+    else
+    {
+        log::dbgLog("Failed to subscribe to MQTT topic", log::Verbosity::Error, log::Category::IO);
+    }
+
+    return success;
+}
+
+bool MqttClient::isConnected()
+{
+    return transport->isConnected();
+}
+
+ConnectionStatus MqttClient::getStatus() const
+{
+    return status;
+}
+
+void MqttClient::tick(float deltaTime)
+{
+    if (isConnected())
+    {
+        transport->loop();
+        status = ConnectionStatus::CONNECTED;
+    }
+    else
+    {
+        status = ConnectionStatus::DISCONNECTED;
+
+        if (bAutoReconnect)
+        {
+            timeSinceLastReconnect += deltaTime;
+
+            if (timeSinceLastReconnect >= reconnectInterval)
+            {
+                timeSinceLastReconnect = 0.0f;
+                attemptReconnect();
+            }
+        }
+    }
+}
+
+void MqttClient::attemptReconnect()
+{
+    log::dbgLog("Attempting to reconnect to MQTT broker", log::Verbosity::Display, log::Category::IO);
+    connect();
+}
+
+void MqttClient::subscribeToTopics()
+{
+    if (topics.commandTopic)
+    {
+        subscribe(topics.commandTopic, topics.qos);
+    }
+    
+    if (topics.brightnessTopic)
+    {
+        subscribe(topics.brightnessTopic, topics.qos);
+    }
+    
+    if (topics.effectTopic)
+    {
+        subscribe(topics.effectTopic, topics.qos);
+    }
+}
