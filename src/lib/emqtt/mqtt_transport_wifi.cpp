@@ -21,6 +21,11 @@ MqttTransportWiFi::MqttTransportWiFi(Client& client)
 {
     instance = this;
     mqttClient.setCallback(MqttTransportWiFi::internalCallback);
+
+    // Set buffer size for larger messages (HA discovery payloads can be 500-1500 bytes)
+    mqttClient.setBufferSize(2048);
+
+    dbgLog("MQTT buffer size set to 2048 bytes", Verbosity::Display, Category::IO);
 }
 
 bool MqttTransportWiFi::init(const char* server, uint16_t port, const char* clientId,

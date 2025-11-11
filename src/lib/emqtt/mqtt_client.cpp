@@ -96,6 +96,12 @@ bool MqttClient::publish(const char* topic, const char* payload, bool retained)
         return false;
     }
 
+    // Log topic and payload size for debugging
+    char debugMsg[128];
+    int payloadLen = strlen(payload);
+    snprintf(debugMsg, sizeof(debugMsg), "Publishing to %s (%d bytes)", topic, payloadLen);
+    log::dbgLog(debugMsg, log::Verbosity::Verbose, log::Category::IO);
+
     bool success = transport->publish(topic, payload, retained);
 
     if (success)
@@ -104,7 +110,8 @@ bool MqttClient::publish(const char* topic, const char* payload, bool retained)
     }
     else
     {
-        log::dbgLog("Failed to publish MQTT message", log::Verbosity::Error, log::Category::IO);
+        snprintf(debugMsg, sizeof(debugMsg), "Failed to publish to %s (%d bytes)", topic, payloadLen);
+        log::dbgLog(debugMsg, log::Verbosity::Error, log::Category::IO);
     }
 
     return success;

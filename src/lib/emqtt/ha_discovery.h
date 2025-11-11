@@ -42,9 +42,16 @@ namespace emqtt
             const char* name
         );
 
+        bool publishSelectDiscovery(
+            const char* uniqueId,
+            const char* name,
+            const std::vector<std::string>& options
+        );
+
         bool removeDiscovery(const char* component, const char* uniqueId);
 
         std::string buildDeviceInfo() const;
+        std::string buildOriginInfo() const;
         std::string getDiscoveryTopic(const char* component, const char* uniqueId) const;
 
     private:

@@ -63,6 +63,25 @@ void configureMqttClient(MqttClient& client) {
   client.setReconnectInterval(MQTT_RECONNECT_INTERVAL);
 }
 
+// Helper function to create Home Assistant configuration from secrets.h
+HomeAssistantConfig createHomeAssistantConfig() {
+  HomeAssistantConfig config;
+  config.enabled = true;
+  config.discoveryPrefix = HA_DISCOVERY_PREFIX;
+  config.deviceName = HA_DEVICE_NAME;
+  config.deviceId = HA_DEVICE_ID;
+  config.manufacturer = HA_MANUFACTURER;
+  config.model = HA_MODEL;
+  config.swVersion = HA_SW_VERSION;
+  config.hwVersion = HA_HW_VERSION;
+  config.serialNumber = HA_SERIAL_NUMBER;
+  config.configurationUrl = HA_CONFIG_URL;
+  config.originName = HA_ORIGIN_NAME;
+  config.originSwVersion = HA_ORIGIN_SW_VERSION;
+  config.originSupportUrl = HA_ORIGIN_SUPPORT_URL;
+  return config;
+}
+
 void setup() {
   delay(1000);
 
@@ -114,7 +133,13 @@ void setup() {
 
   mqttClient->init(createMqttConfig());
   configureMqttClient(*mqttClient);
-  mqttClient->connect();
+
+  Serial.println("Connecting to MQTT broker...");
+  if (mqttClient->connect()) {
+    Serial.println("MQTT connected successfully!");
+  } else {
+    Serial.println("MQTT connection failed - discovery will retry on reconnect");
+  }
 #endif
 
   // Create relic with MQTT client
@@ -123,6 +148,8 @@ void setup() {
   if(relic)
   {
     relic->init();
+    // Set HA config - will publish discovery now or retry on reconnect
+    relic->setHomeAssistantConfig(createHomeAssistantConfig());
   }
 }
 

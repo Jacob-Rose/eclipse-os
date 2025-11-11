@@ -63,12 +63,18 @@ bool HomeAssistantDiscovery::publishLightDiscovery(
     }
     
     config << "\"availability_topic\":\"eclipse/" << escapeJson(uniqueId) << "/available\",";
-    config << "\"device\":" << buildDeviceInfo();
+    config << "\"device\":" << buildDeviceInfo() << ",";
+    config << "\"origin\":" << buildOriginInfo();
     config << "}";
-    
+
     std::string payload = config.str();
+
+    char logMsg[128];
+    snprintf(logMsg, sizeof(logMsg), "Light discovery payload: %d bytes", (int)payload.length());
+    log::dbgLog(logMsg, log::Verbosity::Display, log::Category::IO);
+
     bool success = mqttClient.publish(topic.c_str(), payload.c_str(), true);
-    
+
     if (success)
     {
         log::dbgLog("Published light discovery", log::Verbosity::Display, log::Category::IO);
@@ -77,7 +83,7 @@ bool HomeAssistantDiscovery::publishLightDiscovery(
     {
         log::dbgLog("Failed to publish light discovery", log::Verbosity::Error, log::Category::IO);
     }
-    
+
     return success;
 }
 
@@ -103,9 +109,10 @@ bool HomeAssistantDiscovery::publishSensorDiscovery(
     config << "\"device_class\":\"" << escapeJson(deviceClass) << "\",";
     config << "\"unit_of_measurement\":\"" << escapeJson(unit) << "\",";
     config << "\"availability_topic\":\"eclipse/" << escapeJson(uniqueId) << "/available\",";
-    config << "\"device\":" << buildDeviceInfo();
+    config << "\"device\":" << buildDeviceInfo() << ",";
+    config << "\"origin\":" << buildOriginInfo();
     config << "}";
-    
+
     std::string payload = config.str();
     return mqttClient.publish(topic.c_str(), payload.c_str(), true);
 }
@@ -121,7 +128,7 @@ bool HomeAssistantDiscovery::publishSwitchDiscovery(
     }
 
     std::string topic = getDiscoveryTopic("switch", uniqueId);
-    
+
     std::ostringstream config;
     config << "{";
     config << "\"name\":\"" << escapeJson(name) << "\",";
@@ -129,11 +136,70 @@ bool HomeAssistantDiscovery::publishSwitchDiscovery(
     config << "\"command_topic\":\"eclipse/" << escapeJson(uniqueId) << "/set\",";
     config << "\"state_topic\":\"eclipse/" << escapeJson(uniqueId) << "/state\",";
     config << "\"availability_topic\":\"eclipse/" << escapeJson(uniqueId) << "/available\",";
-    config << "\"device\":" << buildDeviceInfo();
+    config << "\"device\":" << buildDeviceInfo() << ",";
+    config << "\"origin\":" << buildOriginInfo();
     config << "}";
-    
+
     std::string payload = config.str();
     return mqttClient.publish(topic.c_str(), payload.c_str(), true);
+}
+
+bool HomeAssistantDiscovery::publishSelectDiscovery(
+    const char* uniqueId,
+    const char* name,
+    const std::vector<std::string>& options)
+{
+    if (!bInitialized)
+    {
+        log::dbgLog("Home Assistant discovery not initialized", log::Verbosity::Error, log::Category::IO);
+        return false;
+    }
+
+    if (options.empty())
+    {
+        log::dbgLog("Select entity requires at least one option", log::Verbosity::Error, log::Category::IO);
+        return false;
+    }
+
+    std::string topic = getDiscoveryTopic("select", uniqueId);
+
+    std::ostringstream config;
+    config << "{";
+    config << "\"name\":\"" << escapeJson(name) << "\",";
+    config << "\"unique_id\":\"" << escapeJson(uniqueId) << "\",";
+    config << "\"command_topic\":\"eclipse/" << escapeJson(uniqueId) << "/set\",";
+    config << "\"state_topic\":\"eclipse/" << escapeJson(uniqueId) << "/state\",";
+    config << "\"options\":[";
+    for (size_t i = 0; i < options.size(); ++i)
+    {
+        config << "\"" << escapeJson(options[i]) << "\"";
+        if (i < options.size() - 1)
+            config << ",";
+    }
+    config << "],";
+    config << "\"availability_topic\":\"eclipse/" << escapeJson(uniqueId) << "/available\",";
+    config << "\"device\":" << buildDeviceInfo() << ",";
+    config << "\"origin\":" << buildOriginInfo();
+    config << "}";
+
+    std::string payload = config.str();
+
+    char logMsg[128];
+    snprintf(logMsg, sizeof(logMsg), "Select discovery payload: %d bytes", (int)payload.length());
+    log::dbgLog(logMsg, log::Verbosity::Display, log::Category::IO);
+
+    bool success = mqttClient.publish(topic.c_str(), payload.c_str(), true);
+
+    if (success)
+    {
+        log::dbgLog("Published select discovery", log::Verbosity::Display, log::Category::IO);
+    }
+    else
+    {
+        log::dbgLog("Failed to publish select discovery", log::Verbosity::Error, log::Category::IO);
+    }
+
+    return success;
 }
 
 bool HomeAssistantDiscovery::removeDiscovery(const char* component, const char* uniqueId)
@@ -151,8 +217,31 @@ std::string HomeAssistantDiscovery::buildDeviceInfo() const
     device << "\"manufacturer\":\"" << escapeJson(haConfig.manufacturer) << "\",";
     device << "\"model\":\"" << escapeJson(haConfig.model) << "\",";
     device << "\"sw_version\":\"" << escapeJson(haConfig.swVersion) << "\"";
+
+    // Optional fields
+    if (haConfig.hwVersion) {
+        device << ",\"hw_version\":\"" << escapeJson(haConfig.hwVersion) << "\"";
+    }
+    if (haConfig.serialNumber) {
+        device << ",\"serial_number\":\"" << escapeJson(haConfig.serialNumber) << "\"";
+    }
+    if (haConfig.configurationUrl) {
+        device << ",\"configuration_url\":\"" << escapeJson(haConfig.configurationUrl) << "\"";
+    }
+
     device << "}";
     return device.str();
+}
+
+std::string HomeAssistantDiscovery::buildOriginInfo() const
+{
+    std::ostringstream origin;
+    origin << "{";
+    origin << "\"name\":\"" << escapeJson(haConfig.originName) << "\",";
+    origin << "\"sw\":\"" << escapeJson(haConfig.originSwVersion) << "\",";
+    origin << "\"support_url\":\"" << escapeJson(haConfig.originSupportUrl) << "\"";
+    origin << "}";
+    return origin.str();
 }
 
 std::string HomeAssistantDiscovery::getDiscoveryTopic(const char* component, const char* uniqueId) const

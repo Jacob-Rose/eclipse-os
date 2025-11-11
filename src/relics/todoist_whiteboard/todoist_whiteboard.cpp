@@ -142,11 +142,13 @@ public:
     }
 };
 
-WhiteboardCore::WhiteboardCore(MqttClient& mqtt) 
-    : RelicCore(), 
+WhiteboardCore::WhiteboardCore(MqttClient& mqtt)
+    : RelicCore(),
       mqttClient(mqtt),
       currentPattern(WhiteboardPattern::Noise),
-      bPowerOn(true)
+      bPowerOn(true),
+      bDiscoveryPublished(false),
+      bHasHAConfig(false)
 {
     coreIO = std::make_unique<WhiteboardIO>();
     coreIO->init();
@@ -178,10 +180,55 @@ WhiteboardCore::WhiteboardCore(MqttClient& mqtt)
 
     stateMachine->setActiveState(noiseState);
     stateMachine->init();
+}
+
+void WhiteboardCore::setHomeAssistantConfig(const HomeAssistantConfig& config)
+{
+    haConfig = config;
+    bHasHAConfig = true;
 
     setupMQTT();
 
+    // Initialize HA discovery with config
+    haDiscovery = std::make_unique<HomeAssistantDiscovery>(mqttClient);
+    haDiscovery->init(haConfig);
+
+    // Try to publish discovery
+    publishDiscovery();
+
     dbgLog("WhiteboardCore::init complete", Verbosity::Display, Category::Relic);
+}
+
+void WhiteboardCore::publishDiscovery()
+{
+    if (!bHasHAConfig || !haDiscovery)
+    {
+        dbgLog("HA config not set, skipping discovery", Verbosity::Warning, Category::Relic);
+        return;
+    }
+
+    if (!mqttClient.isConnected())
+    {
+        dbgLog("MQTT not connected, will retry discovery on reconnect", Verbosity::Warning, Category::Relic);
+        bDiscoveryPublished = false;
+        return;
+    }
+
+    dbgLog("Publishing HA discovery messages", Verbosity::Display, Category::Relic);
+
+    // Publish light entity with effects
+    std::vector<std::string> effects = {"noise", "monocolor", "rainbow", "fire"};
+    haDiscovery->publishLightDiscovery("whiteboard_light_01", "Todoist Whiteboard", effects);
+
+    // Publish select entity for mode control
+    std::vector<std::string> modes = {"noise", "monocolor", "rainbow", "fire"};
+    haDiscovery->publishSelectDiscovery("whiteboard_mode", "Whiteboard Mode", modes);
+
+    publishState();
+    publishModeState();
+
+    bDiscoveryPublished = true;
+    dbgLog("HA discovery published successfully", Verbosity::Display, Category::Relic);
 }
 
 void WhiteboardCore::setupMQTT()
@@ -189,7 +236,7 @@ void WhiteboardCore::setupMQTT()
     mqttClient.setCallback([this](const char* topic, uint8_t* payload, unsigned int length) {
         mqttHandler.handleMessage(topic, payload, length);
     });
-    
+
     mqttClient.subscribe("whiteboard/pattern");
     mqttClient.subscribe("whiteboard/brightness");
     mqttClient.subscribe("whiteboard/power");
@@ -206,12 +253,11 @@ void WhiteboardCore::setupMQTT()
         onPowerCommand(payload);
     });
 
-    haDiscovery = std::make_unique<HomeAssistantDiscovery>(mqttClient);
-    
-    std::vector<std::string> effects = {"noise", "monocolor", "rainbow", "fire"};
-    haDiscovery->publishLightDiscovery("whiteboard_light_01", "Todoist Whiteboard", effects);
-
-    publishState();
+    // Subscribe to mode command topic
+    mqttClient.subscribe("eclipse/whiteboard_mode/set");
+    mqttHandler.registerHandler("eclipse/whiteboard_mode/set", [this](const std::string& payload) {
+        onModeCommand(payload);
+    });
 
     dbgLog("WhiteboardCore::setupMQTT complete", Verbosity::Display, Category::Relic);
 }
@@ -231,6 +277,7 @@ void WhiteboardCore::onPatternCommand(const std::string& payload)
     }
 
     publishState();
+    // Note: publishModeState() is already called in setPattern()
 }
 
 void WhiteboardCore::onBrightnessCommand(const std::string& payload)
@@ -258,7 +305,7 @@ void WhiteboardCore::onPowerCommand(const std::string& payload)
     bool newPowerState;
     if (!PayloadParser::parseBool(payload, newPowerState))
         return;
-    
+
     bPowerOn = newPowerState;
 
     if (bPowerOn) {
@@ -268,6 +315,23 @@ void WhiteboardCore::onPowerCommand(const std::string& payload)
     }
 
     publishState();
+}
+
+void WhiteboardCore::onModeCommand(const std::string& payload)
+{
+    dbgLog(("Mode command: " + payload).c_str(), Verbosity::Display, Category::Relic);
+
+    if (payload == "noise") {
+        setPattern(WhiteboardPattern::Noise);
+    } else if (payload == "monocolor") {
+        setPattern(WhiteboardPattern::Monocolor);
+    } else if (payload == "rainbow") {
+        setPattern(WhiteboardPattern::Rainbow);
+    } else if (payload == "fire") {
+        setPattern(WhiteboardPattern::Fire);
+    }
+
+    publishModeState();
 }
 
 void WhiteboardCore::publishState()
@@ -296,6 +360,30 @@ void WhiteboardCore::publishState()
     mqttClient.publish("whiteboard/pattern/state", patternName.c_str());
 }
 
+void WhiteboardCore::publishModeState()
+{
+    std::string modeName;
+    switch (currentPattern) {
+        case WhiteboardPattern::Noise:
+            modeName = "noise";
+            break;
+        case WhiteboardPattern::Monocolor:
+            modeName = "monocolor";
+            break;
+        case WhiteboardPattern::Rainbow:
+            modeName = "rainbow";
+            break;
+        case WhiteboardPattern::Fire:
+            modeName = "fire";
+            break;
+        default:
+            modeName = "noise";
+            break;
+    }
+
+    mqttClient.publish("eclipse/whiteboard_mode/state", modeName.c_str());
+}
+
 void WhiteboardCore::setPattern(WhiteboardPattern pattern)
 {
     currentPattern = pattern;
@@ -318,12 +406,19 @@ void WhiteboardCore::setPattern(WhiteboardPattern pattern)
     }
 
     dbgLog(("Pattern switched to: " + std::to_string(static_cast<int>(pattern))).c_str(), Verbosity::Display, Category::Relic);
+    publishModeState();
 }
 
 void WhiteboardCore::tick(float deltaTime)
 {
     RelicCore::tick(deltaTime);
     stateMachine->tick(deltaTime);
+
+    // Republish discovery if MQTT reconnected and we haven't published yet
+    if (bHasHAConfig && !bDiscoveryPublished && mqttClient.isConnected())
+    {
+        publishDiscovery();
+    }
 }
 
 bool WhiteboardCore::handleCommand(string msg)

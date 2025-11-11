@@ -46,6 +46,14 @@ namespace emqtt
         const char* manufacturer = "Eclipse OS";
         const char* model = "LED Controller";
         const char* swVersion = "1.0.0";
+        const char* hwVersion = nullptr;
+        const char* serialNumber = nullptr;
+        const char* configurationUrl = nullptr;
+
+        // Origin information (recommended by HA)
+        const char* originName = "Eclipse OS";
+        const char* originSwVersion = "1.0.0";
+        const char* originSupportUrl = "https://github.com/your-repo";
     };
 
     enum class ConnectionStatus

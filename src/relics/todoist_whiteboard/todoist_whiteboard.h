@@ -45,6 +45,8 @@ namespace todoist_whiteboard
     public:
         WhiteboardCore(MqttClient& mqtt);
 
+        void setHomeAssistantConfig(const HomeAssistantConfig& config);
+
         virtual void tick(float deltaTime) override;
         virtual bool handleCommand(string msg) override;
 
@@ -53,10 +55,13 @@ namespace todoist_whiteboard
 
     private:
         void setupMQTT();
+        void publishDiscovery();
         void onPatternCommand(const std::string& payload);
         void onBrightnessCommand(const std::string& payload);
         void onPowerCommand(const std::string& payload);
+        void onModeCommand(const std::string& payload);
         void publishState();
+        void publishModeState();
 
         std::unique_ptr<StateMachine_GenericHSV> stateMachine{ nullptr };
         std::unique_ptr<StateManager> stateManager{ nullptr };
@@ -69,8 +74,11 @@ namespace todoist_whiteboard
         MqttClient& mqttClient;
         MqttHandler mqttHandler;
         std::unique_ptr<HomeAssistantDiscovery> haDiscovery;
+        HomeAssistantConfig haConfig;
 
         WhiteboardPattern currentPattern;
         bool bPowerOn;
+        bool bDiscoveryPublished;
+        bool bHasHAConfig;
     };
 }
