@@ -5,3 +5,5 @@ cmake-*
 build
 .DS_Store
 secrets.h
+
+opencodetmp/*
