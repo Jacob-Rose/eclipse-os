@@ -86,6 +86,12 @@ void setup() {
   delay(1000);
 
   Serial.begin(9600);
+  
+  // Wait for USB Serial to be ready (required for proper USB reset handling)
+  // This allows arduino-cli to reset the device into bootloader mode automatically
+  while (!Serial && millis() < 3000) {
+    delay(10);
+  }
 
 #if USE_LED_FOR_TICK
   pinMode(LED_PIN, OUTPUT);

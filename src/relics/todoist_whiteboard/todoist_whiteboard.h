@@ -36,8 +36,8 @@ namespace todoist_whiteboard
         WhiteboardIO();
         virtual void init() override;
 
-        uint16_t stripLEDPin = 13;
-        uint16_t stripLength = 60;
+        uint16_t stripLEDPin = 5;
+        uint16_t stripLength = 300;
     };
 
     class WhiteboardCore : public RelicCore
