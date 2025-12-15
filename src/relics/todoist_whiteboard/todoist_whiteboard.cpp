@@ -29,7 +29,7 @@ void WhiteboardIO::init()
 
     auto [mainStripIt, stripInserted] = strips.emplace(
         static_cast<uint8_t>(0), 
-        make_unique<HSVStrip>(stripLength, stripLEDPin)
+        make_unique<HSVStrip>(stripLength, stripLEDPin, NEO_BGR + NEO_KHZ800)
     );
 
     HSVStrip* mainStrip = mainStripIt->second.get();
@@ -148,7 +148,9 @@ WhiteboardCore::WhiteboardCore(MqttClient& mqtt)
       currentPattern(WhiteboardPattern::Noise),
       bPowerOn(true),
       bDiscoveryPublished(false),
-      bHasHAConfig(false)
+      bHasHAConfig(false),
+      gradientColor1(309.0f, 0.92f, 0.98f),  // Default purple-pink
+      gradientColor2(255.0f, 1.0f, 0.39f)     // Default blue
 {
     coreIO = std::make_unique<WhiteboardIO>();
     coreIO->init();
@@ -224,8 +226,38 @@ void WhiteboardCore::publishDiscovery()
     std::vector<std::string> modes = {"noise", "monocolor", "rainbow", "fire"};
     haDiscovery->publishSelectDiscovery("whiteboard_mode", "Whiteboard Mode", modes);
 
+    // Publish color picker entities for gradient control
+    haDiscovery->publishLightDiscovery("whiteboard_color1", "Gradient Color 1", {});
+    haDiscovery->publishLightDiscovery("whiteboard_color2", "Gradient Color 2", {});
+
     publishState();
     publishModeState();
+
+    // Publish availability for color pickers
+    mqttClient.publish("eclipse/whiteboard_color1/available", "online");
+    mqttClient.publish("eclipse/whiteboard_color2/available", "online");
+    
+    // Publish initial color picker states as "ON" so they're editable
+    mqttClient.publish("eclipse/whiteboard_color1/state", "ON");
+    mqttClient.publish("eclipse/whiteboard_color2/state", "ON");
+    
+    // Publish initial brightness (convert 0-1 to 0-255)
+    char brightBuf[8];
+    snprintf(brightBuf, sizeof(brightBuf), "%d", (int)(gradientColor1.getValFloat() * 255.0f));
+    mqttClient.publish("eclipse/whiteboard_color1/brightness", brightBuf);
+    
+    snprintf(brightBuf, sizeof(brightBuf), "%d", (int)(gradientColor2.getValFloat() * 255.0f));
+    mqttClient.publish("eclipse/whiteboard_color2/brightness", brightBuf);
+    
+    // Publish initial color values
+    char colorBuf[32];
+    snprintf(colorBuf, sizeof(colorBuf), "%.1f,%.1f", 
+             gradientColor1.getHueFloat(), gradientColor1.getSatFloat() * 100.0f);
+    mqttClient.publish("eclipse/whiteboard_color1/hs", colorBuf);
+    
+    snprintf(colorBuf, sizeof(colorBuf), "%.1f,%.1f", 
+             gradientColor2.getHueFloat(), gradientColor2.getSatFloat() * 100.0f);
+    mqttClient.publish("eclipse/whiteboard_color2/hs", colorBuf);
 
     bDiscoveryPublished = true;
     dbgLog("HA discovery published successfully", Verbosity::Display, Category::Relic);
@@ -257,6 +289,41 @@ void WhiteboardCore::setupMQTT()
     mqttClient.subscribe("eclipse/whiteboard_mode/set");
     mqttHandler.registerHandler("eclipse/whiteboard_mode/set", [this](const std::string& payload) {
         onModeCommand(payload);
+    });
+
+    // Subscribe to gradient color topics
+    mqttClient.subscribe("eclipse/whiteboard_color1/hs/set");
+    mqttHandler.registerHandler("eclipse/whiteboard_color1/hs/set", [this](const std::string& payload) {
+        onColor1Command(payload);
+    });
+
+    mqttClient.subscribe("eclipse/whiteboard_color2/hs/set");
+    mqttHandler.registerHandler("eclipse/whiteboard_color2/hs/set", [this](const std::string& payload) {
+        onColor2Command(payload);
+    });
+
+    // Subscribe to gradient color brightness topics
+    mqttClient.subscribe("eclipse/whiteboard_color1/brightness/set");
+    mqttHandler.registerHandler("eclipse/whiteboard_color1/brightness/set", [this](const std::string& payload) {
+        onColor1BrightnessCommand(payload);
+    });
+
+    mqttClient.subscribe("eclipse/whiteboard_color2/brightness/set");
+    mqttHandler.registerHandler("eclipse/whiteboard_color2/brightness/set", [this](const std::string& payload) {
+        onColor2BrightnessCommand(payload);
+    });
+
+    // Subscribe to color picker power commands (they need to respond to ON/OFF)
+    mqttClient.subscribe("eclipse/whiteboard_color1/set");
+    mqttHandler.registerHandler("eclipse/whiteboard_color1/set", [this](const std::string& payload) {
+        // Just acknowledge the state, these are always "on"
+        mqttClient.publish("eclipse/whiteboard_color1/state", "ON");
+    });
+
+    mqttClient.subscribe("eclipse/whiteboard_color2/set");
+    mqttHandler.registerHandler("eclipse/whiteboard_color2/set", [this](const std::string& payload) {
+        // Just acknowledge the state, these are always "on"
+        mqttClient.publish("eclipse/whiteboard_color2/state", "ON");
     });
 
     dbgLog("WhiteboardCore::setupMQTT complete", Verbosity::Display, Category::Relic);
@@ -332,6 +399,122 @@ void WhiteboardCore::onModeCommand(const std::string& payload)
     }
 
     publishModeState();
+}
+
+void WhiteboardCore::onColor1Command(const std::string& payload)
+{
+    dbgLog(("Color1 command: " + payload).c_str(), Verbosity::Display, Category::Relic);
+    
+    // Parse "hue,saturation" format (hue: 0-360, saturation: 0-100)
+    size_t commaPos = payload.find(',');
+    if (commaPos == std::string::npos) return;
+    
+    float hue = std::stof(payload.substr(0, commaPos));
+    float sat = std::stof(payload.substr(commaPos + 1)) / 100.0f;  // Convert 0-100 to 0-1
+    
+    gradientColor1.setHueDegree(hue);
+    gradientColor1.setSaturationAlpha(sat);
+    // Keep existing brightness
+    
+    updatePatternColors();
+    
+    // Publish state back to HA so it shows the current color
+    char colorBuf[32];
+    snprintf(colorBuf, sizeof(colorBuf), "%.1f,%.1f", 
+             gradientColor1.getHueFloat(), gradientColor1.getSatFloat() * 100.0f);
+    mqttClient.publish("eclipse/whiteboard_color1/hs", colorBuf);
+}
+
+void WhiteboardCore::onColor2Command(const std::string& payload)
+{
+    dbgLog(("Color2 command: " + payload).c_str(), Verbosity::Display, Category::Relic);
+    
+    // Parse "hue,saturation" format (hue: 0-360, saturation: 0-100)
+    size_t commaPos = payload.find(',');
+    if (commaPos == std::string::npos) return;
+    
+    float hue = std::stof(payload.substr(0, commaPos));
+    float sat = std::stof(payload.substr(commaPos + 1)) / 100.0f;  // Convert 0-100 to 0-1
+    
+    gradientColor2.setHueDegree(hue);
+    gradientColor2.setSaturationAlpha(sat);
+    // Keep existing brightness
+    
+    updatePatternColors();
+    
+    // Publish state back to HA so it shows the current color
+    char colorBuf[32];
+    snprintf(colorBuf, sizeof(colorBuf), "%.1f,%.1f", 
+             gradientColor2.getHueFloat(), gradientColor2.getSatFloat() * 100.0f);
+    mqttClient.publish("eclipse/whiteboard_color2/hs", colorBuf);
+}
+
+void WhiteboardCore::onColor1BrightnessCommand(const std::string& payload)
+{
+    dbgLog(("Color1 brightness command: " + payload).c_str(), Verbosity::Display, Category::Relic);
+    
+    // Parse brightness (0-255)
+    int brightness = std::stoi(payload);
+    float brightnessAlpha = brightness / 255.0f;  // Convert 0-255 to 0-1
+    
+    gradientColor1.setBrightnessAlpha(brightnessAlpha);
+    
+    updatePatternColors();
+    
+    // Publish state back to HA
+    mqttClient.publish("eclipse/whiteboard_color1/brightness", payload.c_str());
+}
+
+void WhiteboardCore::onColor2BrightnessCommand(const std::string& payload)
+{
+    dbgLog(("Color2 brightness command: " + payload).c_str(), Verbosity::Display, Category::Relic);
+    
+    // Parse brightness (0-255)
+    int brightness = std::stoi(payload);
+    float brightnessAlpha = brightness / 255.0f;  // Convert 0-255 to 0-1
+    
+    gradientColor2.setBrightnessAlpha(brightnessAlpha);
+    
+    updatePatternColors();
+    
+    // Publish state back to HA
+    mqttClient.publish("eclipse/whiteboard_color2/brightness", payload.c_str());
+}
+
+void WhiteboardCore::updatePatternColors()
+{
+    // Update the noise pattern's palette
+    if (noiseState && noiseState->getGenerator())
+    {
+        Pattern_Whiteboard_Noise* noisePattern = 
+            static_cast<Pattern_Whiteboard_Noise*>(noiseState->getGenerator().get());
+        if (noisePattern)
+        {
+            noisePattern->palette = HSVPalette({gradientColor1, gradientColor2});
+        }
+    }
+    
+    // Update the monocolor pattern to use first gradient color
+    if (monoState && monoState->getGenerator())
+    {
+        Pattern_Whiteboard_Monocolor* monoPattern = 
+            static_cast<Pattern_Whiteboard_Monocolor*>(monoState->getGenerator().get());
+        if (monoPattern)
+        {
+            monoPattern->color = gradientColor1;
+        }
+    }
+    
+    // Update the fire pattern's palette  
+    if (fireState && fireState->getGenerator())
+    {
+        Pattern_Whiteboard_Fire* firePattern = 
+            static_cast<Pattern_Whiteboard_Fire*>(fireState->getGenerator().get());
+        if (firePattern)
+        {
+            firePattern->palette = HSVPalette({gradientColor1, gradientColor2});
+        }
+    }
 }
 
 void WhiteboardCore::publishState()

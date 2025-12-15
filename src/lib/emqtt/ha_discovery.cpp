@@ -45,8 +45,8 @@ bool HomeAssistantDiscovery::publishLightDiscovery(
     config << "\"brightness_command_topic\":\"eclipse/" << escapeJson(uniqueId) << "/brightness/set\",";
     config << "\"brightness_state_topic\":\"eclipse/" << escapeJson(uniqueId) << "/brightness\",";
     config << "\"brightness_scale\":255,";
-    config << "\"rgb_command_topic\":\"eclipse/" << escapeJson(uniqueId) << "/rgb/set\",";
-    config << "\"rgb_state_topic\":\"eclipse/" << escapeJson(uniqueId) << "/rgb\",";
+    config << "\"hs_command_topic\":\"eclipse/" << escapeJson(uniqueId) << "/hs/set\",";
+    config << "\"hs_state_topic\":\"eclipse/" << escapeJson(uniqueId) << "/hs\",";
     
     if (!effectList.empty())
     {
@@ -197,6 +197,62 @@ bool HomeAssistantDiscovery::publishSelectDiscovery(
     else
     {
         log::dbgLog("Failed to publish select discovery", log::Verbosity::Error, log::Category::IO);
+    }
+
+    return success;
+}
+
+bool HomeAssistantDiscovery::publishNumberDiscovery(
+    const char* uniqueId,
+    const char* name,
+    float min,
+    float max,
+    float step,
+    const char* unit)
+{
+    if (!bInitialized)
+    {
+        log::dbgLog("Home Assistant discovery not initialized", log::Verbosity::Error, log::Category::IO);
+        return false;
+    }
+
+    std::string topic = getDiscoveryTopic("number", uniqueId);
+
+    std::ostringstream config;
+    config << "{";
+    config << "\"name\":\"" << escapeJson(name) << "\",";
+    config << "\"unique_id\":\"" << escapeJson(uniqueId) << "\",";
+    config << "\"command_topic\":\"eclipse/" << escapeJson(uniqueId) << "/set\",";
+    config << "\"state_topic\":\"eclipse/" << escapeJson(uniqueId) << "/state\",";
+    config << "\"min\":" << min << ",";
+    config << "\"max\":" << max << ",";
+    config << "\"step\":" << step << ",";
+    
+    if (unit)
+    {
+        config << "\"unit_of_measurement\":\"" << escapeJson(unit) << "\",";
+    }
+    
+    config << "\"availability_topic\":\"eclipse/" << escapeJson(uniqueId) << "/available\",";
+    config << "\"device\":" << buildDeviceInfo() << ",";
+    config << "\"origin\":" << buildOriginInfo();
+    config << "}";
+
+    std::string payload = config.str();
+
+    char logMsg[128];
+    snprintf(logMsg, sizeof(logMsg), "Number discovery payload: %d bytes", (int)payload.length());
+    log::dbgLog(logMsg, log::Verbosity::Display, log::Category::IO);
+
+    bool success = mqttClient.publish(topic.c_str(), payload.c_str(), true);
+
+    if (success)
+    {
+        log::dbgLog("Published number discovery", log::Verbosity::Display, log::Category::IO);
+    }
+    else
+    {
+        log::dbgLog("Failed to publish number discovery", log::Verbosity::Error, log::Category::IO);
     }
 
     return success;

@@ -48,6 +48,15 @@ namespace emqtt
             const std::vector<std::string>& options
         );
 
+        bool publishNumberDiscovery(
+            const char* uniqueId,
+            const char* name,
+            float min,
+            float max,
+            float step,
+            const char* unit = nullptr
+        );
+
         bool removeDiscovery(const char* component, const char* uniqueId);
 
         std::string buildDeviceInfo() const;

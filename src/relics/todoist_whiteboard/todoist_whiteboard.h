@@ -60,8 +60,13 @@ namespace todoist_whiteboard
         void onBrightnessCommand(const std::string& payload);
         void onPowerCommand(const std::string& payload);
         void onModeCommand(const std::string& payload);
+        void onColor1Command(const std::string& payload);
+        void onColor2Command(const std::string& payload);
+        void onColor1BrightnessCommand(const std::string& payload);
+        void onColor2BrightnessCommand(const std::string& payload);
         void publishState();
         void publishModeState();
+        void updatePatternColors();
 
         std::unique_ptr<StateMachine_GenericHSV> stateMachine{ nullptr };
         std::unique_ptr<StateManager> stateManager{ nullptr };
@@ -80,5 +85,8 @@ namespace todoist_whiteboard
         bool bPowerOn;
         bool bDiscoveryPublished;
         bool bHasHAConfig;
+        
+        HSV gradientColor1;
+        HSV gradientColor2;
     };
 }
