@@ -34,7 +34,7 @@ namespace eanim
        // Generator1D interface
        virtual float evaluate(float val) const override;
 
-       float getCurrentOffset() const { return currentOffset; }
+       double getCurrentOffset() const { return currentOffset; }
 
        float speed = 1.0f;
        float width = 1.0f;
@@ -47,7 +47,7 @@ namespace eanim
 
        bool bShouldReflect{false};
    private:
-       float currentOffset = 0.0f;
+       double currentOffset = 0.0;
    };
 } // namespace eanim
  

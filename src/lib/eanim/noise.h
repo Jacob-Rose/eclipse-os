@@ -43,6 +43,6 @@ namespace eanim
 
         FastNoiseLite noise;
     private:
-        float currentTime;
+        double currentTime;
     };
 }
