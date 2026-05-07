@@ -27,35 +27,41 @@ namespace ewifi
     {
     public:
         WiFiManager();
-        
+
         void init(const char* ssid, const char* password);
         bool connect(int maxAttempts = 20);
         void disconnect();
-        
+
         bool isConnected() const;
         WiFiStatus getStatus() const;
         const char* getLocalIP() const;
-        
+        int getReconnectAttempts() const { return reconnectAttempts; }
+
         WiFiClient& getClient();
-        
+
         virtual void tick(float deltaTime) override;
-        
+
         void setAutoReconnect(bool enabled) { bAutoReconnect = enabled; }
-        void setReconnectInterval(float seconds) { reconnectInterval = seconds; }
+        void setReconnectInterval(float seconds) { reconnectBaseInterval = seconds; }
+        void setMaxReconnectInterval(float seconds) { reconnectMaxInterval = seconds; }
 
     private:
         void attemptReconnect();
-        
+        float getNextReconnectInterval() const;
+
         const char* ssid;
         const char* password;
-        
+
         WiFiClient wifiClient;
         WiFiStatus status;
-        
+
         bool bAutoReconnect;
-        float reconnectInterval;
+        float reconnectBaseInterval;
+        float reconnectMaxInterval;
+        float currentReconnectInterval;
         float timeSinceLastReconnect;
-        
+        int reconnectAttempts;
+
         char ipAddressBuffer[16];
     };
 }

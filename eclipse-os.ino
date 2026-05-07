@@ -61,6 +61,9 @@ MqttConfig createMqttConfig() {
 void configureMqttClient(MqttClient& client) {
   client.setAutoReconnect(MQTT_AUTO_RECONNECT);
   client.setReconnectInterval(MQTT_RECONNECT_INTERVAL);
+#ifdef MQTT_MAX_RECONNECT_INTERVAL
+  client.setMaxReconnectInterval(MQTT_MAX_RECONNECT_INTERVAL);
+#endif
 }
 
 // Helper function to create Home Assistant configuration from secrets.h
@@ -124,6 +127,9 @@ void setup() {
   wifiManager->init(WIFI_SSID, WIFI_PASSWORD);
   wifiManager->setAutoReconnect(WIFI_AUTO_RECONNECT);
   wifiManager->setReconnectInterval(WIFI_RECONNECT_INTERVAL);
+#ifdef WIFI_MAX_RECONNECT_INTERVAL
+  wifiManager->setMaxReconnectInterval(WIFI_MAX_RECONNECT_INTERVAL);
+#endif
 
   if (wifiManager->connect(WIFI_MAX_CONNECT_ATTEMPTS)) {
     Serial.println("WiFi connected!");
@@ -138,6 +144,7 @@ void setup() {
   mqttClient = make_unique<MqttClient>(std::move(transport));
 
   mqttClient->init(createMqttConfig());
+  mqttClient->setWiFiConnectedCheck([&]() { return wifiManager && wifiManager->isConnected(); });
   configureMqttClient(*mqttClient);
 
   Serial.println("Connecting to MQTT broker...");

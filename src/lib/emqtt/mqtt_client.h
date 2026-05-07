@@ -35,25 +35,35 @@ namespace emqtt
 
         bool isConnected();
         ConnectionStatus getStatus() const;
+        int getReconnectAttempts() const { return reconnectAttempts; }
 
         virtual void tick(float deltaTime) override;
 
-        void setReconnectInterval(float seconds) { reconnectInterval = seconds; }
+        void setReconnectInterval(float seconds) { reconnectBaseInterval = seconds; }
+        void setMaxReconnectInterval(float seconds) { reconnectMaxInterval = seconds; }
         void setAutoReconnect(bool enabled) { bAutoReconnect = enabled; }
+        void setRequireWiFi(bool enabled) { bRequireWiFi = enabled; }
+        void setWiFiConnectedCheck(std::function<bool()> check) { wifiConnectedCheck = check; }
 
     private:
         void attemptReconnect();
         void subscribeToTopics();
+        float getNextReconnectInterval() const;
 
         std::unique_ptr<IMqttTransport> transport;
         MqttConfig config;
         TopicConfig topics;
 
         MqttCallback userCallback;
+        std::function<bool()> wifiConnectedCheck;
 
         ConnectionStatus status;
         bool bAutoReconnect;
-        float reconnectInterval;
+        bool bRequireWiFi;
+        float reconnectBaseInterval;
+        float reconnectMaxInterval;
+        float currentReconnectInterval;
         float timeSinceLastReconnect;
+        int reconnectAttempts;
     };
 }
