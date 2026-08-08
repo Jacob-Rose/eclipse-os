@@ -33,5 +33,12 @@ namespace efp
     // returns float between 0.f - 1.f
     // value / SCALE_FACTOR
     // 0 < fpInt < SCALE_FACTOR
-    static float getFloat(fpInt value);
+    //
+    // defined here rather than in fp.cpp: as a `static` declaration in a header
+    // every translation unit got its own internal-linkage copy with no
+    // definition behind it, so calling this would not have linked.
+    inline float getFloat(fpInt value)
+    {
+        return static_cast<float>(value) / SCALE_FACTOR;
+    }
 }

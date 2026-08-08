@@ -113,6 +113,17 @@ if(WIN32)
     target_link_libraries(edmx PUBLIC advapi32)
 endif()
 
+if(MINGW)
+    # Static-link the gcc runtime so the .exe runs on a machine that has never
+    # seen MinGW. This is a tool that gets copied to a show laptop, and
+    # "missing libstdc++-6.dll" is not a useful thing to debug at load-in.
+    target_link_options(eclipse-dmx PRIVATE
+        -static-libgcc
+        -static-libstdc++
+        -static
+    )
+endif()
+
 if(MSVC)
     target_compile_options(eclipse_core PRIVATE /W3)
     target_compile_options(edmx PRIVATE /W3)

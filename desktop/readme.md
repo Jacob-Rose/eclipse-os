@@ -33,23 +33,45 @@ The split between the executable and python is deliberate:
 
 ## Build
 
-Needs CMake 3.16+ and a C++17 compiler.
+Two steps, and the first is once per machine.
+
+**Windows**
+
+```powershell
+cd desktop
+.\tools\setup-toolchain.ps1     # once: installs a pinned MinGW-w64 via winget
+.\build.ps1
+```
 
 **Linux / macOS**
 
 ```sh
 cd desktop
+./tools/setup-toolchain.sh      # once: installs a compiler + cmake via apt/dnf/pacman/brew
 ./build.sh
 ```
 
-**Windows** (MSVC Build Tools or MinGW-w64)
+The setup script records what it installed in `tools/toolchain.env{,.ps1}`,
+and the build script reads that. So the build does not depend on what happens
+to be on PATH in a given shell, and a fresh machine gets the same compiler as
+the one this was verified on. Both scripts are safe to re-run — they detect an
+existing toolchain and just record the path.
+
+If you already have a toolchain you would rather use, skip setup and point the
+build at it:
 
 ```powershell
-cd desktop
-.\build.ps1
+$env:ECLIPSE_DMX_MINGW_BIN = "C:\path\to\mingw64\bin"    # windows
+export ECLIPSE_DMX_CXX=/usr/bin/g++                       # linux/macos
 ```
 
-The binary lands in `build/eclipse-dmx` or `build\Release\eclipse-dmx.exe`.
+The binary lands in `build/eclipse-dmx` or `build\eclipse-dmx.exe`. On MinGW it
+is statically linked against the gcc runtime, so it can be copied to a show
+laptop that has never seen a compiler.
+
+Verified with GCC 16.1.0 (MinGW-w64 UCRT, POSIX threads) on Windows 11.
+
+`.\build.ps1 -Clean` / `./build.sh --clean` blows away `build/` first.
 
 ## Check it works with no hardware
 
@@ -244,6 +266,7 @@ desktop/
   src/             implementations, plus main.cpp (the show runner)
   config/          example configs
   python/          the wrapper package
+  tools/           toolchain setup, one script per platform
   CMakeLists.txt   builds only the slice of the library that is off-Arduino clean
 ```
 

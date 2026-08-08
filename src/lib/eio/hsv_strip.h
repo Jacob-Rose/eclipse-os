@@ -11,7 +11,8 @@
 
 #include "../ecore/core.h"
 
-#define USING_NEOPIXEL USE_ARDUINO && true
+// parenthesised so `#if !USING_NEOPIXEL` means what it reads like
+#define USING_NEOPIXEL (USE_ARDUINO && true)
 
 #if USING_NEOPIXEL
 #include <Adafruit_NeoPixel.h>
