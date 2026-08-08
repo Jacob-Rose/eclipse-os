@@ -5,7 +5,27 @@
 
 #include "math.h"
 
+#include "core.h"
+
 using namespace ecore;
+
+namespace
+{
+    // Arduino gives us random(); the host build gets the same 0..range-1
+    // contract from the shim's mt19937 so both targets share this file.
+    long ecore_random(long range)
+    {
+        if (range <= 0)
+        {
+            return 0;
+        }
+#if USE_ARDUINO
+        return random() % range;
+#else
+        return static_cast<long>(::ecore::platform::rng()() % static_cast<uint32_t>(range));
+#endif
+    }
+}
 
 
 float ecore::lerp(const float &a, const float &b, const float &t)
@@ -58,7 +78,7 @@ float ecore::get_index_from_alpha(float a, const std::vector<float> &keys)
 
 float ecore::get_random_float()
 {
-    int randValue = random() % 400;
+    int randValue = static_cast<int>(ecore_random(400));
     return ((float)randValue) / 400;
 }
 
@@ -72,8 +92,8 @@ float ecore::get_random_float_in_range(float min, float max)
 int ecore::get_random_int_in_range(int min, int max)
 {
     int diff = max - min;
-    int randValue = random() % diff;
-    return diff + min;
+    int randValue = static_cast<int>(ecore_random(diff));
+    return randValue + min;
 }
 
 bool ecore::ess_equal(float A, float B, float maxRelDiff /* = FLT_EPSILON */)

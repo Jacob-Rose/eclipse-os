@@ -6,7 +6,16 @@
 #pragma once
 
 #include <stdio.h>
+
+#ifndef USE_ARDUINO
+#define USE_ARDUINO 1
+#endif
+
+#if USE_ARDUINO
 #include "pico/stdlib.h"
+#else
+#include <cstdint>
+#endif
 
 ///
 /// Fixed point standards for getting floating point style ranges with much more performant fixed point arithmetic.

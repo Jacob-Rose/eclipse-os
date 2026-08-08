@@ -22,6 +22,15 @@
 #endif
 
 #include <stdio.h>
+
+#if USE_ARDUINO
 #include <Arduino.h>
 #include "pico/stdlib.h"
 #include "pico/multicore.h"
+#else
+// desktop / host build (see desktop/readme.md). the platform shim supplies the
+// handful of Arduino symbols the portable library actually leans on.
+#include <cstdint>
+#include <cstddef>
+#include "platform_host.h"
+#endif

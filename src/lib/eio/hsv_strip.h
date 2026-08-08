@@ -63,6 +63,11 @@ namespace eio
         std::vector<HSV> strip_HSV;
 #if USING_NEOPIXEL
         Adafruit_NeoPixel strip;
+#else
+        // the host build has no pixel driver behind the strip: strip_HSV *is*
+        // the framebuffer, and a consumer (see edmx::Renderer) reads it back out
+        // via getStripHSV() on show().
+        uint8_t hostBrightness{255};
 #endif
     };
 

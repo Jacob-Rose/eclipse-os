@@ -23,12 +23,15 @@ HSVStrip::HSVStrip(uint16_t inLedCount, uint16_t inLedPin, neoPixelType inPixelT
 }
 #endif
 
-HSVStrip::HSVStrip(uint16_t inLedCount, uint16_t inLedPin) :
+HSVStrip::HSVStrip(uint16_t inLedCount, uint16_t inLedPin)
 #if USING_NEOPIXEL
-    HSVStrip(inLedCount, inLedPin, NEO_GRB + NEO_KHZ800)
+    : HSVStrip(inLedCount, inLedPin, NEO_GRB + NEO_KHZ800)
 #endif
 {
-
+#if !USING_NEOPIXEL
+    (void)inLedPin;
+    strip_HSV = std::vector<HSV>(inLedCount);
+#endif
 }
 
 HSVStrip::~HSVStrip()
@@ -111,23 +114,26 @@ uint16_t HSVStrip::getLength() const
 {
 #if USING_NEOPIXEL
     return strip.numPixels();
+#else
+    return static_cast<uint16_t>(strip_HSV.size());
 #endif
-    return 0;
 }
 
 uint8_t HSVStrip::getStripBrightness() const
 {
 #if USING_NEOPIXEL
     return strip.getBrightness();
+#else
+    return hostBrightness;
 #endif
-
-    return 0;
 }
 
 void HSVStrip::setStripBrightness(uint8_t inBrightness)
 {
 #if USING_NEOPIXEL
     strip.setBrightness(inBrightness);
+#else
+    hostBrightness = inBrightness;
 #endif
 }
 
