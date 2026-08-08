@@ -7,3 +7,9 @@ build
 secrets.h
 
 opencodetmp/*
+
+# desktop build
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/

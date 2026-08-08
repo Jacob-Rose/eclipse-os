@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "eclipse-dmx"
+version = "0.1.0"
+description = "Configure and drive eclipse-dmx, the eclipse-os DMX renderer"
+readme = "readme.md"
+requires-python = ">=3.8"
+license = { text = "GPL-3.0-or-later" }
+authors = [{ name = "Jake Rose" }]
+
+# No runtime dependencies on purpose. Port discovery goes through the
+# executable rather than pyserial, so a working install is python plus the
+# built binary and nothing else.
+dependencies = []
+
+[project.scripts]
+eclipse-dmx-py = "eclipse_dmx.cli:main"
+
+[tool.setuptools]
+packages = ["eclipse_dmx"]
