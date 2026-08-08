@@ -1,0 +1,63 @@
+{
+  // A rig of 7-channel RGB pars, the common cheap-par layout:
+  //
+  //   ch+0  master dimmer
+  //   ch+1  red
+  //   ch+2  green
+  //   ch+3  blue
+  //   ch+4  strobe      <- must be parked at 0 or the fixture flashes
+  //   ch+5  mode/macro  <- must be parked at 0 or it ignores rgb entirely
+  //   ch+6  speed
+  //
+  // Note start_channel points at RED, not at the fixture's own address: it is
+  // the address of the first channel we drive as colour. The dimmer and the
+  // parked channels are given as absolute channel numbers.
+
+  "device": {
+    "type": "enttec_pro",
+    "port": "auto",
+    "fps": 40
+  },
+
+  "master": {
+    "brightness": 0.85,
+    "gamma": 2.2
+  },
+
+  "pattern": {
+    "name": "chase",
+    "speed": 0.4,
+    "width": 1.5,
+    "palette": ["#ff0033", "#ffaa00", "#00ccff"]
+  },
+
+  "fixtures": [
+    {
+      "name": "par_1",
+      "start_channel": 2,
+      "channels": "rgb",
+      "dimmer_channel": 1,
+      "dimmer_value": 255,
+      "static_channels": { "5": 0, "6": 0, "7": 0 },
+      "position": [0.0, 0.0]
+    },
+    {
+      "name": "par_2",
+      "start_channel": 9,
+      "channels": "rgb",
+      "dimmer_channel": 8,
+      "dimmer_value": 255,
+      "static_channels": { "12": 0, "13": 0, "14": 0 },
+      "position": [0.5, 0.0]
+    },
+    {
+      "name": "par_3",
+      "start_channel": 16,
+      "channels": "rgb",
+      "dimmer_channel": 15,
+      "dimmer_value": 255,
+      "static_channels": { "19": 0, "20": 0, "21": 0 },
+      "position": [1.0, 0.0]
+    }
+  ]
+}
