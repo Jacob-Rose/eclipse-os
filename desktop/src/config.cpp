@@ -267,6 +267,72 @@ bool edmx::loadConfig(const std::string& path, Config& outConfig, std::string& o
         }
     }
 
+    // ---- profiles -----------------------------------------------------
+    // User-defined models, on top of the shipped ones. Declaring the layout
+    // once here is what lets the fixtures array stay one line per bank.
+    std::vector<FixtureProfile> customProfiles;
+    {
+        const JsonValue& profiles = root["profiles"];
+        if (profiles.isObject())
+        {
+            for (const std::string& name : profiles.keys())
+            {
+                const JsonValue& entry = profiles[name];
+
+                FixtureProfile profile;
+                profile.name         = name;
+                profile.footprint    = entry["footprint"].asInt(3);
+                profile.redOffset    = entry["red"].asInt(1);
+                profile.greenOffset  = entry["green"].asInt(2);
+                profile.blueOffset   = entry["blue"].asInt(3);
+                profile.dimmerOffset = entry["dimmer"].asInt(0);
+                profile.dimmerValue  = static_cast<uint8_t>(std::clamp(entry["dimmer_value"].asInt(255), 0, 255));
+
+                const JsonValue& park = entry["park"];
+                if (park.isObject())
+                {
+                    for (const std::string& key : park.keys())
+                    {
+                        try
+                        {
+                            const int offset = std::stoi(key);
+                            const int value = std::clamp(park[key].asInt(0), 0, 255);
+                            profile.park.emplace_back(offset, static_cast<uint8_t>(value));
+                        }
+                        catch (const std::exception&)
+                        {
+                            config.warnings.push_back("profile '" + name + "': park key '" + key
+                                                    + "' is not a channel offset; skipping it");
+                        }
+                    }
+                }
+
+                std::string profileError;
+                if (!validateProfile(profile, profileError))
+                {
+                    outError = path + ": " + profileError;
+                    return false;
+                }
+
+                customProfiles.push_back(profile);
+            }
+        }
+    }
+
+    const auto findProfile = [&](const std::string& name, FixtureProfile& out) -> bool {
+        // a config's own profiles shadow the shipped ones, so a rig can
+        // correct a built-in without us having to ship a fix
+        for (const FixtureProfile& profile : customProfiles)
+        {
+            if (profile.name == name)
+            {
+                out = profile;
+                return true;
+            }
+        }
+        return lookupBuiltinProfile(name, out);
+    };
+
     // ---- fixtures -----------------------------------------------------
     {
         const JsonValue& fixtures = root["fixtures"];
@@ -280,6 +346,77 @@ bool edmx::loadConfig(const std::string& path, Config& outConfig, std::string& o
         {
             const JsonValue& entry = fixtures[i];
 
+            const std::string profileName = entry["profile"].asString();
+
+            // ---- profile-driven: one entry patches a whole bank ----------
+            if (!profileName.empty())
+            {
+                FixtureProfile profile;
+                if (!findProfile(profileName, profile))
+                {
+                    std::string known;
+                    for (const std::string& candidate : builtinProfileNames())
+                    {
+                        known += (known.empty() ? "" : ", ") + candidate;
+                    }
+                    outError = path + ": unknown profile '" + profileName
+                             + "' (built-ins: " + known + "; or define it in \"profiles\")";
+                    return false;
+                }
+
+                // With a profile, the address is the fixture's own DMX address,
+                // the number set on its display. start_channel is accepted as a
+                // synonym because that is what people type.
+                int address = entry["address"].asInt(entry["start_channel"].asInt(-1));
+                if (address < 0)
+                {
+                    outError = path + ": fixture entry " + std::to_string(i)
+                             + " uses profile '" + profileName + "' but has no \"address\"";
+                    return false;
+                }
+
+                const int count = std::max(1, entry["count"].asInt(1));
+                // fixtures patched back to back sit one footprint apart, which
+                // is the overwhelmingly common case; spacing overrides it
+                const int spacing = entry["spacing"].asInt(profile.footprint);
+                const std::string prefix = entry["name"].asString(profileName);
+                const float trim = std::clamp(entry["brightness"].asFloat(1.0f), 0.0f, 1.0f);
+
+                const JsonValue& position = entry["position"];
+                const bool explicitPosition = position.isArray() && position.size() >= 1;
+
+                for (int index = 0; index < count; ++index)
+                {
+                    const std::string name = (count == 1)
+                        ? prefix
+                        : (prefix + "_" + std::to_string(index + 1));
+
+                    Fixture fixture = instantiateProfile(profile, name, address + (index * spacing));
+                    fixture.brightness = trim;
+
+                    if (explicitPosition)
+                    {
+                        // a single stated position applies to the whole bank
+                        fixture.positionX = position[0].asFloat(0.0f);
+                        fixture.positionY = (position.size() >= 2) ? position[1].asFloat(0.0f) : 0.0f;
+                        fixture.hasPosition = true;
+                    }
+                    else if (count > 1)
+                    {
+                        // otherwise spread the bank evenly, so spatial patterns
+                        // sweep along it in patch order
+                        fixture.positionX = static_cast<float>(index) / static_cast<float>(count - 1);
+                        fixture.positionY = 0.0f;
+                        fixture.hasPosition = true;
+                    }
+
+                    config.fixtures.addFixture(fixture);
+                }
+
+                continue;
+            }
+
+            // ---- explicit: every channel spelled out ---------------------
             Fixture fixture;
             fixture.name         = entry["name"].asString("fixture_" + std::to_string(i));
             fixture.startChannel = entry["start_channel"].asInt(static_cast<int>(i) * 3 + 1);

@@ -22,7 +22,7 @@ DMX_CHANNEL_COUNT = 512
 
 DEVICE_TYPES = ("enttec_pro", "enttec_open", "console")
 
-PATTERN_NAMES = ("solid", "palette_wave", "rainbow", "chase", "pulse", "off")
+PATTERN_NAMES = ("solid", "palette_wave", "rainbow", "chase", "pulse", "identify", "off")
 
 BUILTIN_PALETTES = (
     "p_retrosunset",
@@ -45,6 +45,107 @@ Color = Union[str, Dict[str, float]]
 
 class ConfigError(ValueError):
     """Raised when a config would not do what the caller meant."""
+
+
+@dataclass
+class FixtureProfile:
+    """The channel layout of a fixture *model*, independent of where it sits.
+
+    This is what a fixture's manual describes. Offsets are 1-based within the
+    fixture, so a chart reading "CH1 dimmer, CH2 red" transcribes directly.
+
+    ``park`` is the important part: cheap pars sit dark, or strobe, or run
+    their own colour macro and ignore you entirely until their mode channels
+    are pinned. Encoding that per model solves it once instead of per rig.
+    """
+
+    name: str
+    footprint: int = 3
+    red: int = 1
+    green: int = 2
+    blue: int = 3
+    dimmer: int = 0          # 0 = the model has no master dimmer
+    dimmer_value: int = 255
+    park: Dict[int, int] = field(default_factory=dict)
+
+    def validate(self) -> None:
+        where = f"profile '{self.name}'"
+
+        if not 1 <= self.footprint <= DMX_CHANNEL_COUNT:
+            raise ConfigError(f"{where}: footprint {self.footprint} is out of range")
+
+        claimed: Dict[int, str] = {}
+
+        def claim(offset: int, what: str) -> None:
+            if not 1 <= offset <= self.footprint:
+                raise ConfigError(
+                    f"{where}: {what} is at channel {offset}, "
+                    f"outside the {self.footprint}-channel footprint"
+                )
+            if offset in claimed:
+                raise ConfigError(f"{where}: channel {offset} is used by both {claimed[offset]} and {what}")
+            claimed[offset] = what
+
+        claim(self.red, "red")
+        claim(self.green, "green")
+        claim(self.blue, "blue")
+        if self.dimmer:
+            claim(self.dimmer, "dimmer")
+        for offset, value in self.park.items():
+            if not 0 <= int(value) <= 255:
+                raise ConfigError(f"{where}: park value {value} at channel {offset} is outside 0..255")
+            claim(int(offset), "a parked channel")
+
+    def instantiate(self, name: str, address: int) -> "Fixture":
+        """Places this model at `address`, the number set on its display."""
+        return Fixture(
+            name=name,
+            start_channel=address,
+            channels="rgb",
+            _offsets=(self.red - 1, self.green - 1, self.blue - 1),
+            dimmer_channel=(address + self.dimmer - 1) if self.dimmer else 0,
+            dimmer_value=self.dimmer_value,
+            static_channels={address + int(o) - 1: int(v) for o, v in self.park.items()},
+        )
+
+    def to_dict(self) -> Dict[str, Any]:
+        out: Dict[str, Any] = {
+            "footprint": self.footprint,
+            "red": self.red,
+            "green": self.green,
+            "blue": self.blue,
+        }
+        if self.dimmer:
+            out["dimmer"] = self.dimmer
+            out["dimmer_value"] = self.dimmer_value
+        if self.park:
+            out["park"] = {str(k): int(v) for k, v in self.park.items()}
+        return out
+
+
+# Must stay in step with builtinProfiles() in desktop/src/fixture.cpp.
+BUILTIN_PROFILES: Dict[str, FixtureProfile] = {
+    # U'King Par 36, 8-channel mode:
+    #   1 master dimmer  2 red  3 green  4 blue
+    #   5 strobe  6 mode  7 colour selection  8 (speed)
+    "uking_par36": FixtureProfile(
+        name="uking_par36",
+        footprint=8,
+        dimmer=1,
+        red=2,
+        green=3,
+        blue=4,
+        park={5: 0, 6: 0, 7: 0, 8: 0},
+    ),
+    "rgb3": FixtureProfile(name="rgb3", footprint=3, red=1, green=2, blue=3),
+    "rgb4_dimmer": FixtureProfile(
+        name="rgb4_dimmer", footprint=4, dimmer=1, red=2, green=3, blue=4
+    ),
+    "rgb7_par": FixtureProfile(
+        name="rgb7_par", footprint=7, red=1, green=2, blue=3, dimmer=4,
+        park={5: 0, 6: 0, 7: 0},
+    ),
+}
 
 
 def _check_color(value: Color, where: str) -> None:
@@ -170,18 +271,31 @@ class Fixture:
     position: Optional[Sequence[float]] = None
     brightness: float = 1.0
 
+    # Set when a profile placed this fixture: explicit (r, g, b) offsets from
+    # start_channel, which lets a profile put the colour channels anywhere in
+    # its footprint rather than requiring three in a row. None means derive
+    # them from `channels`.
+    _offsets: Optional[Sequence[int]] = None
+
+    def offsets(self) -> Sequence[int]:
+        """(r, g, b) offsets from start_channel."""
+        if self._offsets is not None:
+            return self._offsets
+        order = self.channels.lower()
+        return (order.index("r"), order.index("g"), order.index("b"))
+
     def validate(self) -> None:
         where = f"fixture '{self.name}'"
 
-        if sorted(self.channels.lower()) != ["b", "g", "r"]:
+        if self._offsets is None and sorted(self.channels.lower()) != ["b", "g", "r"]:
             raise ConfigError(f"{where}: channels '{self.channels}' must be a permutation of r, g and b")
 
         if not 1 <= self.start_channel <= DMX_CHANNEL_COUNT:
             raise ConfigError(f"{where}: start_channel {self.start_channel} is outside 1..{DMX_CHANNEL_COUNT}")
 
-        if self.start_channel + 2 > DMX_CHANNEL_COUNT:
+        if self.start_channel + max(self.offsets()) > DMX_CHANNEL_COUNT:
             raise ConfigError(
-                f"{where}: start_channel {self.start_channel} leaves no room for three colour channels"
+                f"{where}: start_channel {self.start_channel} leaves no room for its colour channels"
             )
 
         if self.dimmer_channel and not 1 <= self.dimmer_channel <= DMX_CHANNEL_COUNT:
@@ -204,18 +318,43 @@ class Fixture:
 
     def used_channels(self) -> List[int]:
         """Every channel this fixture writes, for collision checking."""
-        used = [self.start_channel + offset for offset in range(3)]
+        used = [self.start_channel + offset for offset in self.offsets()]
         if self.dimmer_channel:
             used.append(self.dimmer_channel)
         used.extend(int(channel) for channel in self.static_channels)
         return used
 
     def to_dict(self) -> Dict[str, Any]:
-        out: Dict[str, Any] = {
-            "name": self.name,
-            "start_channel": self.start_channel,
-            "channels": self.channels,
-        }
+        # Profile-placed fixtures serialise to the fully explicit form, so the
+        # written config says exactly which channel does what and never depends
+        # on the executable resolving a profile the same way we did.
+        if self._offsets is not None:
+            r, g, b = self._offsets
+            base = min(r, g, b)
+            order = ["?"] * (max(r, g, b) - base + 1)
+            order[r - base] = "r"
+            order[g - base] = "g"
+            order[b - base] = "b"
+
+            if "?" not in order and len(order) == 3:
+                # contiguous colour channels: expressible as a plain order string
+                out: Dict[str, Any] = {
+                    "name": self.name,
+                    "start_channel": self.start_channel + base,
+                    "channels": "".join(order),
+                }
+            else:
+                raise ConfigError(
+                    f"fixture '{self.name}': its profile puts the colour channels at "
+                    f"offsets {self._offsets}, which the explicit config form cannot express. "
+                    f"Write this rig with a \"profiles\" block instead."
+                )
+        else:
+            out = {
+                "name": self.name,
+                "start_channel": self.start_channel,
+                "channels": self.channels,
+            }
         if self.dimmer_channel:
             out["dimmer_channel"] = self.dimmer_channel
             out["dimmer_value"] = self.dimmer_value
@@ -244,6 +383,55 @@ class Config:
     def add_fixture(self, fixture: Fixture) -> Fixture:
         self.fixtures.append(fixture)
         return fixture
+
+    def add_bank(
+        self,
+        profile: Union[str, FixtureProfile],
+        count: int,
+        address: int = 1,
+        name_prefix: Optional[str] = None,
+        spacing: Optional[int] = None,
+        spread_positions: bool = True,
+    ) -> List[Fixture]:
+        """Patch `count` fixtures of one model, back to back from `address`.
+
+        The line you want for a rig of identical lights::
+
+            config.add_bank("uking_par36", count=10, address=1)
+
+        `address` is the fixture's own DMX address, the number set on its
+        display. `spacing` defaults to the profile's footprint, which is what
+        you want unless addresses were deliberately left with gaps.
+        """
+        if isinstance(profile, str):
+            if profile not in BUILTIN_PROFILES:
+                raise ConfigError(
+                    f"unknown profile '{profile}' (built-ins: {sorted(BUILTIN_PROFILES)}); "
+                    f"pass a FixtureProfile to define your own"
+                )
+            model = BUILTIN_PROFILES[profile]
+        else:
+            model = profile
+
+        model.validate()
+
+        if count < 1:
+            raise ConfigError("add_bank needs a count of at least 1")
+
+        step = model.footprint if spacing is None else spacing
+        prefix = name_prefix if name_prefix is not None else model.name
+
+        added: List[Fixture] = []
+        for index in range(count):
+            name = prefix if count == 1 else f"{prefix}_{index + 1}"
+            fixture = model.instantiate(name, address + (index * step))
+
+            if spread_positions and count > 1:
+                fixture.position = [index / (count - 1), 0.0]
+
+            added.append(self.add_fixture(fixture))
+
+        return added
 
     def add_rgb_bank(
         self,
@@ -373,7 +561,56 @@ class Config:
             color=pattern.get("color", config.pattern.color),
         )
 
+        # A config's own profiles shadow the built-ins, matching the executable.
+        profiles = dict(BUILTIN_PROFILES)
+        for name, entry in (data.get("profiles") or {}).items():
+            profiles[name] = FixtureProfile(
+                name=name,
+                footprint=int(entry.get("footprint", 3)),
+                red=int(entry.get("red", 1)),
+                green=int(entry.get("green", 2)),
+                blue=int(entry.get("blue", 3)),
+                dimmer=int(entry.get("dimmer", 0)),
+                dimmer_value=int(entry.get("dimmer_value", 255)),
+                park={int(k): int(v) for k, v in (entry.get("park") or {}).items()},
+            )
+
         for entry in data.get("fixtures", []):
+            profile_name = entry.get("profile")
+
+            if profile_name:
+                if profile_name not in profiles:
+                    raise ConfigError(
+                        f"unknown profile '{profile_name}' "
+                        f"(built-ins: {sorted(BUILTIN_PROFILES)}; or define it under \"profiles\")"
+                    )
+                model = profiles[profile_name]
+
+                address = entry.get("address", entry.get("start_channel"))
+                if address is None:
+                    raise ConfigError(
+                        f"a fixture entry uses profile '{profile_name}' but has no \"address\""
+                    )
+
+                count = max(1, int(entry.get("count", 1)))
+                step = int(entry.get("spacing", model.footprint))
+                prefix = entry.get("name", profile_name)
+                trim = float(entry.get("brightness", 1.0))
+                stated_position = entry.get("position")
+
+                for index in range(count):
+                    name = prefix if count == 1 else f"{prefix}_{index + 1}"
+                    fixture = model.instantiate(name, int(address) + (index * step))
+                    fixture.brightness = trim
+
+                    if stated_position is not None:
+                        fixture.position = list(stated_position)
+                    elif count > 1:
+                        fixture.position = [index / (count - 1), 0.0]
+
+                    config.add_fixture(fixture)
+                continue
+
             config.add_fixture(
                 Fixture(
                     name=entry.get("name", f"fixture_{len(config.fixtures) + 1}"),

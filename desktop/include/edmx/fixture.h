@@ -87,6 +87,57 @@ namespace edmx
     int fixtureHighestChannel(const Fixture& fixture);
 
 
+    /// The channel layout of a fixture *model*, independent of where it is
+    /// patched.
+    ///
+    /// This is the thing a fixture's manual describes, and the reason it exists
+    /// is that a rig is usually N of the same light: state the layout once,
+    /// then patch ten of them on one line. Offsets are 1-based within the
+    /// fixture, matching how every manual numbers them, so a chart reading
+    /// "CH1 dimmer, CH2 red" transcribes directly.
+    struct FixtureProfile
+    {
+        std::string name;
+
+        /// How many channels the fixture occupies, i.e. the gap to the next
+        /// one when they are patched back to back.
+        int footprint{3};
+
+        int redOffset{1};
+        int greenOffset{2};
+        int blueOffset{3};
+
+        /// Master dimmer, 0 when the model has none.
+        int dimmerOffset{0};
+        uint8_t dimmerValue{255};
+
+        /// Offsets that must be held at a fixed value for the fixture to obey
+        /// its colour channels: strobe, mode, macro and friends. Getting this
+        /// wrong is the single most common reason a par sits there dark or
+        /// flashing, so profiles carry it rather than leaving it to the user.
+        std::vector<std::pair<int, uint8_t>> park;
+    };
+
+    /// Looks up one of the shipped profiles. Returns false on an unknown name.
+    bool lookupBuiltinProfile(const std::string& name, FixtureProfile& outProfile);
+
+    /// Names of every shipped profile, for --list-profiles.
+    std::vector<std::string> builtinProfileNames();
+
+    /// Human-readable channel chart for a profile, for --list-profiles.
+    std::string describeProfile(const FixtureProfile& profile);
+
+    /// Turns a profile plus a DMX address into a patched fixture.
+    /// `address` is the fixture's own address, the number on its display.
+    Fixture instantiateProfile(const FixtureProfile& profile,
+                               const std::string& name,
+                               int address);
+
+    /// Checks a profile is internally consistent (offsets inside the
+    /// footprint, no channel used twice). Returns false with outError set.
+    bool validateProfile(const FixtureProfile& profile, std::string& outError);
+
+
     /// The patch: every fixture in the rig, in strip-node order.
     class FixtureMap
     {

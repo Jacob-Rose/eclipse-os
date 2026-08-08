@@ -187,6 +187,41 @@ namespace
     };
 
 
+    /// Lights one fixture at a time, in patch order, holding each for a beat.
+    ///
+    /// The commissioning tool. On a rig of ten identical pars the only way to
+    /// know that fixture 7 in the config is the seventh one on the truss is to
+    /// light it alone and go look. `speed` is fixtures per second.
+    class IdentifyPattern : public Pattern
+    {
+    public:
+        const char* getName() const override { return "identify"; }
+
+        void tick(float deltaTime) override
+        {
+            elapsed += deltaTime * std::max(speed, 0.01f);
+        }
+
+        void render(const PatternContext& context, std::vector<ecore::HSV>& outColors) override
+        {
+            outColors.assign(context.fixtureCount, ecore::HSV(0.0f, 0.0f, 0.0f));
+            if (context.fixtureCount == 0)
+            {
+                return;
+            }
+
+            const size_t active = static_cast<size_t>(elapsed) % context.fixtureCount;
+
+            // white, so a wrong channel order shows up as a colour cast rather
+            // than hiding behind a hue that happens to look plausible
+            outColors[active] = ecore::HSV(0.0f, 0.0f, brightness);
+        }
+
+    private:
+        float elapsed{0.0f};
+    };
+
+
     /// Everything off. Worth having as a real pattern rather than a special
     /// case: "blackout" should behave like any other look.
     class OffPattern : public Pattern
@@ -226,7 +261,7 @@ ecore::HSVPalette edmx::resolvePalette(const PatternConfig& config)
 
 std::vector<std::string> edmx::patternNames()
 {
-    return {"solid", "palette_wave", "rainbow", "chase", "pulse", "off"};
+    return {"solid", "palette_wave", "rainbow", "chase", "pulse", "identify", "off"};
 }
 
 std::unique_ptr<Pattern> edmx::makePattern(const std::string& name,
@@ -240,6 +275,7 @@ std::unique_ptr<Pattern> edmx::makePattern(const std::string& name,
     else if (name == "rainbow")      pattern.reset(new RainbowPattern());
     else if (name == "chase")        pattern.reset(new ChasePattern());
     else if (name == "pulse")        pattern.reset(new PulsePattern());
+    else if (name == "identify")     pattern.reset(new IdentifyPattern());
     else if (name == "off")          pattern.reset(new OffPattern());
 
     if (!pattern)

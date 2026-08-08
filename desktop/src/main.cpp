@@ -68,6 +68,7 @@ namespace
             "  eclipse-dmx --list-ports\n"
             "  eclipse-dmx --list-patterns\n"
             "  eclipse-dmx --list-palettes\n"
+            "  eclipse-dmx --list-profiles\n"
             "\n"
             "options:\n"
             "  --config <file>     config file to load (required to run a show)\n"
@@ -76,6 +77,7 @@ namespace
             "  --port <path>       override device.port\n"
             "  --pattern <name>    override pattern.name\n"
             "  --fps <n>           override device.fps\n"
+            "  --show-patch        print the resolved channel map and exit\n"
             "  --no-stdin          do not read the control protocol from stdin\n"
             "  --verbose           log every state change\n"
             "  --help              this text\n"
@@ -409,6 +411,7 @@ int main(int argc, char** argv)
     bool dryRun = false;
     bool useStdin = true;
     bool verbose = false;
+    bool showPatch = false;
 
     for (int i = 1; i < argc; ++i)
     {
@@ -433,6 +436,7 @@ int main(int argc, char** argv)
         else if (arg == "--fps")                   fpsOverride = std::stof(nextArg("--fps"));
         else if (arg == "--frames")                frameLimit = std::stoll(nextArg("--frames"));
         else if (arg == "--dry-run")               dryRun = true;
+        else if (arg == "--show-patch")            showPatch = true;
         else if (arg == "--no-stdin")              useStdin = false;
         else if (arg == "--verbose")               verbose = true;
         else if (arg == "--list-ports")
@@ -458,6 +462,18 @@ int main(int argc, char** argv)
             for (const std::string& name : builtinPaletteNames())
             {
                 emit("PALETTE " + name);
+            }
+            return 0;
+        }
+        else if (arg == "--list-profiles")
+        {
+            for (const std::string& name : builtinProfileNames())
+            {
+                FixtureProfile profile;
+                if (lookupBuiltinProfile(name, profile))
+                {
+                    emit("PROFILE " + describeProfile(profile));
+                }
             }
             return 0;
         }
@@ -491,6 +507,40 @@ int main(int argc, char** argv)
     {
         logLine("warning: " + warning);
         emit("WARN " + warning);
+    }
+
+    // ---- patch report ----------------------------------------------------
+    // What actually got resolved, per fixture. On a rig of identical pars
+    // patched from one profile line, this is the only way to see the addresses
+    // without counting them out by hand.
+    if (showPatch)
+    {
+        int highest = 0;
+        for (const Fixture& fixture : show.config.fixtures.all())
+        {
+            std::ostringstream line;
+            line << "PATCH " << fixture.name
+                 << " r=" << (fixture.startChannel + fixture.offsetR)
+                 << " g=" << (fixture.startChannel + fixture.offsetG)
+                 << " b=" << (fixture.startChannel + fixture.offsetB);
+
+            if (fixture.dimmerChannel > 0)
+            {
+                line << " dimmer=" << fixture.dimmerChannel
+                     << "@" << static_cast<int>(fixture.dimmerValue);
+            }
+            for (const auto& entry : fixture.staticChannels)
+            {
+                line << " park[" << entry.first << "]=" << static_cast<int>(entry.second);
+            }
+
+            emit(line.str());
+            highest = std::max(highest, fixtureHighestChannel(fixture));
+        }
+
+        emit("OK " + std::to_string(show.config.fixtures.size())
+           + " fixtures, highest channel " + std::to_string(highest));
+        return 0;
     }
 
     if (!portOverride.empty())    show.config.device.port = portOverride;

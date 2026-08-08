@@ -106,9 +106,228 @@ bool edmx::resolveChannelOrder(Fixture& fixture, std::string& outError)
     return true;
 }
 
+// ============================================================================
+// Fixture profiles
+// ============================================================================
+
+namespace
+{
+    /// The shipped profiles.
+    ///
+    /// `park` entries are what makes these worth having: a cheap par will sit
+    /// dark, or strobe, or run its own colour macro and ignore you entirely,
+    /// until its mode channels are pinned. Encoding that per model means it is
+    /// solved once instead of every time someone patches a rig.
+    const std::vector<FixtureProfile>& builtinProfiles()
+    {
+        static const std::vector<FixtureProfile> profiles = []() {
+            std::vector<FixtureProfile> out;
+
+            {
+                // U'King Par 36, 8-channel mode.
+                //   1 master dimmer   2 red   3 green   4 blue
+                //   5 strobe          6 mode  7 colour selection
+                //   8 (speed on these; 0 is correct either way)
+                FixtureProfile profile;
+                profile.name = "uking_par36";
+                profile.footprint = 8;
+                profile.dimmerOffset = 1;
+                profile.dimmerValue = 255;
+                profile.redOffset = 2;
+                profile.greenOffset = 3;
+                profile.blueOffset = 4;
+                profile.park = {{5, 0}, {6, 0}, {7, 0}, {8, 0}};
+                out.push_back(profile);
+            }
+
+            {
+                // The generic 3-channel par: nothing but colour.
+                FixtureProfile profile;
+                profile.name = "rgb3";
+                profile.footprint = 3;
+                profile.redOffset = 1;
+                profile.greenOffset = 2;
+                profile.blueOffset = 3;
+                out.push_back(profile);
+            }
+
+            {
+                // Dimmer in front of the colours, no mode channels.
+                FixtureProfile profile;
+                profile.name = "rgb4_dimmer";
+                profile.footprint = 4;
+                profile.dimmerOffset = 1;
+                profile.redOffset = 2;
+                profile.greenOffset = 3;
+                profile.blueOffset = 4;
+                out.push_back(profile);
+            }
+
+            {
+                // The other very common cheap-par layout: colour first, then
+                // dimmer, strobe and a macro channel.
+                FixtureProfile profile;
+                profile.name = "rgb7_par";
+                profile.footprint = 7;
+                profile.redOffset = 1;
+                profile.greenOffset = 2;
+                profile.blueOffset = 3;
+                profile.dimmerOffset = 4;
+                profile.park = {{5, 0}, {6, 0}, {7, 0}};
+                out.push_back(profile);
+            }
+
+            return out;
+        }();
+
+        return profiles;
+    }
+}
+
+bool edmx::lookupBuiltinProfile(const std::string& name, FixtureProfile& outProfile)
+{
+    for (const FixtureProfile& profile : builtinProfiles())
+    {
+        if (profile.name == name)
+        {
+            outProfile = profile;
+            return true;
+        }
+    }
+    return false;
+}
+
+std::vector<std::string> edmx::builtinProfileNames()
+{
+    std::vector<std::string> names;
+    for (const FixtureProfile& profile : builtinProfiles())
+    {
+        names.push_back(profile.name);
+    }
+    return names;
+}
+
+std::string edmx::describeProfile(const FixtureProfile& profile)
+{
+    std::vector<std::string> slots(static_cast<size_t>(std::max(profile.footprint, 1)), "-");
+
+    const auto label = [&](int offset, const std::string& text) {
+        if (offset >= 1 && offset <= profile.footprint)
+        {
+            slots[static_cast<size_t>(offset - 1)] = text;
+        }
+    };
+
+    label(profile.redOffset, "red");
+    label(profile.greenOffset, "green");
+    label(profile.blueOffset, "blue");
+    if (profile.dimmerOffset > 0)
+    {
+        label(profile.dimmerOffset, "dimmer=" + std::to_string(static_cast<int>(profile.dimmerValue)));
+    }
+    for (const auto& entry : profile.park)
+    {
+        label(entry.first, "park=" + std::to_string(static_cast<int>(entry.second)));
+    }
+
+    std::string out = profile.name + " (" + std::to_string(profile.footprint) + "ch)";
+    for (size_t i = 0; i < slots.size(); ++i)
+    {
+        out += "  " + std::to_string(i + 1) + ":" + slots[i];
+    }
+    return out;
+}
+
+bool edmx::validateProfile(const FixtureProfile& profile, std::string& outError)
+{
+    const std::string where = "profile '" + profile.name + "'";
+
+    if (profile.footprint < 1 || profile.footprint > DMX_CHANNEL_COUNT)
+    {
+        outError = where + ": footprint " + std::to_string(profile.footprint) + " is out of range";
+        return false;
+    }
+
+    // offset -> what claimed it, so a double-booked channel names both sides
+    std::map<int, std::string> claimed;
+
+    const auto claim = [&](int offset, const std::string& what) -> bool {
+        if (offset < 1 || offset > profile.footprint)
+        {
+            outError = where + ": " + what + " is at channel " + std::to_string(offset)
+                     + ", outside the " + std::to_string(profile.footprint) + "-channel footprint";
+            return false;
+        }
+        auto it = claimed.find(offset);
+        if (it != claimed.end())
+        {
+            outError = where + ": channel " + std::to_string(offset) + " is used by both "
+                     + it->second + " and " + what;
+            return false;
+        }
+        claimed[offset] = what;
+        return true;
+    };
+
+    if (!claim(profile.redOffset, "red"))     return false;
+    if (!claim(profile.greenOffset, "green")) return false;
+    if (!claim(profile.blueOffset, "blue"))   return false;
+
+    if (profile.dimmerOffset > 0 && !claim(profile.dimmerOffset, "dimmer"))
+    {
+        return false;
+    }
+
+    for (const auto& entry : profile.park)
+    {
+        if (!claim(entry.first, "a parked channel"))
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+Fixture edmx::instantiateProfile(const FixtureProfile& profile,
+                                 const std::string& name,
+                                 int address)
+{
+    Fixture fixture;
+    fixture.name = name;
+
+    // startChannel is the fixture's own address and the colour offsets are
+    // relative to it, which lets a profile place r/g/b anywhere in the
+    // footprint rather than requiring them to be three in a row.
+    fixture.startChannel = address;
+    fixture.offsetR = profile.redOffset - 1;
+    fixture.offsetG = profile.greenOffset - 1;
+    fixture.offsetB = profile.blueOffset - 1;
+
+    // channelOrder is only a display string once a profile is driving things;
+    // keep it honest for logs.
+    fixture.channelOrder = "profile:" + profile.name;
+
+    if (profile.dimmerOffset > 0)
+    {
+        fixture.dimmerChannel = address + profile.dimmerOffset - 1;
+        fixture.dimmerValue = profile.dimmerValue;
+    }
+
+    for (const auto& entry : profile.park)
+    {
+        fixture.staticChannels.emplace_back(address + entry.first - 1, entry.second);
+    }
+
+    return fixture;
+}
+
 int edmx::fixtureHighestChannel(const Fixture& fixture)
 {
-    int highest = fixture.startChannel + 2;
+    // the colour offsets are not necessarily 0/1/2 once a profile is placing
+    // them, so take the actual maximum rather than assuming three in a row
+    int highest = fixture.startChannel + std::max(fixture.offsetR,
+                                                  std::max(fixture.offsetG, fixture.offsetB));
     highest = std::max(highest, fixture.dimmerChannel);
     for (const auto& entry : fixture.staticChannels)
     {

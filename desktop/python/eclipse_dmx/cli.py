@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from .binary import BinaryNotFoundError, find_executable
-from .config import BUILTIN_PALETTES, PATTERN_NAMES, Config, ConfigError
+from .config import BUILTIN_PALETTES, BUILTIN_PROFILES, PATTERN_NAMES, Config, ConfigError
 from .controller import ShowController, ShowError
 from .ports import list_ports
 
@@ -39,24 +39,49 @@ def _cmd_validate(args: argparse.Namespace) -> int:
 
 
 def _cmd_generate(args: argparse.Namespace) -> int:
-    """Writes a config for a plain row of RGB fixtures."""
+    """Writes a config for a bank of identical fixtures."""
     config = Config()
     config.device.type = args.device
     config.device.port = args.port
     config.pattern.name = args.pattern
 
-    config.add_rgb_bank(
-        count=args.count,
-        first_channel=args.first_channel,
-        channels_per_fixture=args.channels_per_fixture,
-        order=args.order,
-    )
+    if args.profile:
+        config.add_bank(args.profile, count=args.count, address=args.first_channel)
+    else:
+        config.add_rgb_bank(
+            count=args.count,
+            first_channel=args.first_channel,
+            channels_per_fixture=args.channels_per_fixture,
+            order=args.order,
+        )
 
     if args.output == "-":
         print(config.to_json())
     else:
         path = config.write(args.output)
         print(f"wrote {path} ({len(config.fixtures)} fixtures)")
+    return 0
+
+
+def _cmd_patch(args: argparse.Namespace) -> int:
+    """Prints the resolved channel map, so a patch can be checked on paper."""
+    config = Config.load(args.config)
+    config.validate(strict_overlap=not args.allow_overlap)
+
+    highest = 0
+    for fixture in config.fixtures:
+        r, g, b = (fixture.start_channel + offset for offset in fixture.offsets())
+        line = f"{fixture.name:<16} r={r:<4} g={g:<4} b={b:<4}"
+        if fixture.dimmer_channel:
+            line += f" dimmer={fixture.dimmer_channel}@{fixture.dimmer_value}"
+        if fixture.static_channels:
+            parked = " ".join(f"park[{c}]={v}" for c, v in sorted(fixture.static_channels.items()))
+            line += f" {parked}"
+        print(line)
+        highest = max(highest, max(fixture.used_channels()))
+
+    print()
+    print(f"{len(config.fixtures)} fixtures, highest channel {highest}")
     return 0
 
 
@@ -97,6 +122,19 @@ def _cmd_list(args: argparse.Namespace) -> int:
     print("palettes:")
     for name in BUILTIN_PALETTES:
         print(f"  {name}")
+    print()
+    print("fixture profiles:")
+    for name, profile in BUILTIN_PROFILES.items():
+        slots = ["-"] * profile.footprint
+        slots[profile.red - 1] = "red"
+        slots[profile.green - 1] = "green"
+        slots[profile.blue - 1] = "blue"
+        if profile.dimmer:
+            slots[profile.dimmer - 1] = f"dimmer={profile.dimmer_value}"
+        for offset, value in profile.park.items():
+            slots[int(offset) - 1] = f"park={value}"
+        chart = "  ".join(f"{i + 1}:{slot}" for i, slot in enumerate(slots))
+        print(f"  {name} ({profile.footprint}ch)  {chart}")
     return 0
 
 
@@ -121,12 +159,22 @@ def build_parser() -> argparse.ArgumentParser:
                           help="treat channel collisions as warnings instead of errors")
     validate.set_defaults(func=_cmd_validate)
 
-    generate = subparsers.add_parser("generate", help="write a config for a row of RGB fixtures")
+    patch = subparsers.add_parser("patch", help="print the resolved channel map for a config")
+    patch.add_argument("config")
+    patch.add_argument("--allow-overlap", action="store_true")
+    patch.set_defaults(func=_cmd_patch)
+
+    generate = subparsers.add_parser("generate", help="write a config for a bank of fixtures")
     generate.add_argument("--count", type=int, required=True, help="how many fixtures")
-    generate.add_argument("--first-channel", type=int, default=1)
+    generate.add_argument("--profile", choices=sorted(BUILTIN_PROFILES),
+                          help="fixture model to patch (e.g. uking_par36); "
+                               "otherwise a plain RGB fixture is assumed")
+    generate.add_argument("--first-channel", type=int, default=1,
+                          help="DMX address of the first fixture")
     generate.add_argument("--channels-per-fixture", type=int, default=3,
-                          help="address stride between fixtures (3 for a plain RGB par)")
-    generate.add_argument("--order", default="rgb", help="channel order, e.g. rgb or grb")
+                          help="address stride, when not using --profile")
+    generate.add_argument("--order", default="rgb",
+                          help="channel order, when not using --profile")
     generate.add_argument("--device", default="enttec_pro", help="enttec_pro, enttec_open or console")
     generate.add_argument("--port", default="auto")
     generate.add_argument("--pattern", default="palette_wave", choices=PATTERN_NAMES)

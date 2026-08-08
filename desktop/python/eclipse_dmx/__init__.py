@@ -19,12 +19,16 @@ Typical use::
 """
 
 from .config import (
+    BUILTIN_PALETTES,
+    BUILTIN_PROFILES,
+    PATTERN_NAMES,
     Config,
+    ConfigError,
     DeviceConfig,
     Fixture,
+    FixtureProfile,
     MasterConfig,
     PatternConfig,
-    ConfigError,
 )
 from .controller import ShowController, ShowError
 from .binary import find_executable, BinaryNotFoundError
@@ -33,12 +37,16 @@ from .ports import list_ports, SerialPortInfo
 __version__ = "0.1.0"
 
 __all__ = [
+    "BUILTIN_PALETTES",
+    "BUILTIN_PROFILES",
+    "PATTERN_NAMES",
     "Config",
+    "ConfigError",
     "DeviceConfig",
     "Fixture",
+    "FixtureProfile",
     "MasterConfig",
     "PatternConfig",
-    "ConfigError",
     "ShowController",
     "ShowError",
     "find_executable",

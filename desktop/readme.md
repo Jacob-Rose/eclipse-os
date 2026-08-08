@@ -103,9 +103,79 @@ say what is behind it — list them and be explicit:
 
 ## Config
 
+### fixture profiles — the short way
+
+A rig is usually N of the same light. A profile states that model's channel
+layout once, and one `fixtures` entry patches the whole bank:
+
+```json
+"fixtures": [
+  { "profile": "uking_par36", "name": "par", "address": 1, "count": 10 }
+]
+```
+
+That is ten U'King Par 36 in 8-channel mode at addresses 1, 9, 17 … 73, with
+each fixture's dimmer driven and its strobe/mode/colour channels parked. See
+`config/uking_par36_x10.json`.
+
+With a profile, `address` is the fixture's **own DMX address** — the number set
+on its display — not the red channel. `count` patches that many one footprint
+apart; `spacing` overrides the stride if addresses were left with gaps.
+
+`--list-profiles` prints the shipped ones:
+
+```
+uking_par36 (8ch)  1:dimmer=255  2:red  3:green  4:blue  5:park=0  6:park=0  7:park=0  8:park=0
+rgb3        (3ch)  1:red  2:green  3:blue
+rgb4_dimmer (4ch)  1:dimmer=255  2:red  3:green  4:blue
+rgb7_par    (7ch)  1:red  2:green  3:blue  4:dimmer=255  5:park=0  6:park=0  7:park=0
+```
+
+Define your own in a `profiles` block, straight off the fixture's manual —
+offsets are 1-based within the fixture, so a chart transcribes directly. A
+profile defined here shadows a built-in of the same name:
+
+```json
+"profiles": {
+  "my_par": {
+    "footprint": 8,
+    "dimmer": 1, "dimmer_value": 255,
+    "red": 2, "green": 3, "blue": 4,
+    "park": { "5": 0, "6": 0, "7": 0, "8": 0 }
+  }
+}
+```
+
+`park` is the part that matters most. A cheap par will sit dark, or strobe, or
+run its own colour macro and ignore you entirely, until its mode channels are
+pinned. Putting that in the profile solves it once per model instead of once
+per rig.
+
+### checking a patch
+
+Before touching hardware, print what actually resolved:
+
+```sh
+eclipse-dmx --config config/uking_par36_x10.json --show-patch
+```
+
+Then confirm the physical order — on ten identical pars, the only way to know
+that `par_7` is the seventh one on the truss is to light it alone and go look:
+
+```sh
+eclipse-dmx --config config/uking_par36_x10.json --pattern identify
+```
+
+`identify` lights one fixture at a time in white, in patch order. White because
+a wrong channel order shows up as a colour cast rather than hiding behind a hue
+that happens to look plausible. `pattern.speed` is fixtures per second.
+
+### the long way
+
 See `config/example.json` for a plain row of RGB pars, and
-`config/example_7ch_pars.json` for the cheap-par layout where the colours sit
-behind a master dimmer and the strobe and mode channels have to be parked.
+`config/example_7ch_pars.json` for spelling out every channel by hand. Without
+a profile, `start_channel` is the **red** channel and `dimmer_channel` /
+`static_channels` keys are absolute channel numbers.
 
 ```json
 {
@@ -152,6 +222,7 @@ a mode that ignores its colour channels (`static_channels`).
 | `rainbow` | hue ramp along the rig, rotating over time |
 | `chase` | a lit fixture running the rig, driven by an eanim Saw |
 | `pulse` | whole rig breathing on `pattern.color` |
+| `identify` | one fixture at a time in white, for commissioning |
 | `off` | dark |
 
 `rainbow` is the one to reach for when commissioning: anything other than a
@@ -188,14 +259,10 @@ export PYTHONPATH=desktop/python      # or: pip install -e desktop/python
 Describe a rig, validate it, run it:
 
 ```python
-from eclipse_dmx import Config, Fixture, ShowController
+from eclipse_dmx import Config, ShowController
 
 config = Config()
-config.add_rgb_bank(count=4, first_channel=1, name_prefix="par")
-config.add_fixture(Fixture(
-    name="wash", start_channel=14, channels="rgb",
-    dimmer_channel=13, static_channels={17: 0, 18: 0, 19: 0},
-))
+config.add_bank("uking_par36", count=10, address=1, name_prefix="par")
 
 config.validate()          # raises on a channel collision or a bad patch
 
@@ -204,6 +271,19 @@ with ShowController(config) as show:
     show.set_palette(["#ff2200", "#ffaa00"])
     show.set_master(0.6)
     show.wait(seconds=30)
+```
+
+`add_bank` takes a built-in profile name or a `FixtureProfile` you define:
+
+```python
+from eclipse_dmx import FixtureProfile
+
+my_par = FixtureProfile(
+    name="my_par", footprint=8,
+    dimmer=1, red=2, green=3, blue=4,
+    park={5: 0, 6: 0, 7: 0, 8: 0},
+)
+config.add_bank(my_par, count=6, address=81)
 ```
 
 The controller writes the config to a temp file, starts the executable, waits
@@ -219,9 +299,10 @@ There is a CLI for the common jobs:
 
 ```sh
 python -m eclipse_dmx ports                    # what serial ports exist
-python -m eclipse_dmx list                     # patterns and palettes
+python -m eclipse_dmx list                     # patterns, palettes and profiles
 python -m eclipse_dmx validate my_rig.json     # check a patch, touch nothing
-python -m eclipse_dmx generate --count 8 -o my_rig.json
+python -m eclipse_dmx patch my_rig.json        # print the resolved channel map
+python -m eclipse_dmx generate --profile uking_par36 --count 10 -o my_rig.json
 python -m eclipse_dmx run my_rig.json --dry-run --seconds 5
 ```
 
@@ -250,7 +331,10 @@ sending them.
   place to add one.
 - **Multiple universes.** One 512-channel universe.
 - **Moving heads.** RGB colour fixtures only; pan/tilt has no representation in
-  the config yet, though `static_channels` will park them somewhere sensible.
+  the config yet, though a profile's `park` will hold them somewhere sensible.
+- **White / amber / UV channels.** Profiles model dimmer + RGB + parked
+  channels. An RGBW fixture works, but its white channel can only be parked at
+  a fixed value, not driven from the colour.
 - **The state machine.** `esm` is not in the desktop build — it reaches into
   `eio::Relic` and calls an unqualified `clamp()` that only resolves on the
   Arduino side. Nothing about it is unportable, it is just not on the critical

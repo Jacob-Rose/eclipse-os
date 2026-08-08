@@ -1,0 +1,51 @@
+{
+  // Ten U'King Par 36 in series on one DMX line, 8-channel mode.
+  //
+  // The whole rig is one entry. The uking_par36 profile knows the channel
+  // layout, "count" patches ten of them one footprint apart, and the parked
+  // strobe/mode/colour channels come along for free.
+  //
+  // Set each fixture's own address on its display to match:
+  //   par_1  ->   1      par_6  ->  41
+  //   par_2  ->   9      par_7  ->  49
+  //   par_3  ->  17      par_8  ->  57
+  //   par_4  ->  25      par_9  ->  65
+  //   par_5  ->  33      par_10 ->  73
+  //
+  // Highest channel used is 80, so there is room for another 54 channels of
+  // anything else on this universe.
+  //
+  // Check the patch before you touch hardware:
+  //   eclipse-dmx --config config/uking_par36_x10.json --show-patch
+  //
+  // Then confirm the physical order, one fixture at a time:
+  //   eclipse-dmx --config config/uking_par36_x10.json --pattern identify
+
+  "device": {
+    "type": "enttec_pro",
+    "port": "auto",
+    "fps": 40,
+    "console_channels": 24
+  },
+
+  "master": {
+    "brightness": 1.0,
+    "gamma": 2.2
+  },
+
+  "pattern": {
+    "name": "palette_wave",
+    "speed": 0.2,
+    "width": 2.0,
+    "palette": "p_bluemagic"
+  },
+
+  "fixtures": [
+    {
+      "profile": "uking_par36",
+      "name": "par",
+      "address": 1,
+      "count": 10
+    }
+  ]
+}
