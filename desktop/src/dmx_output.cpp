@@ -148,10 +148,16 @@ bool EnttecOpenOutput::sendFrame(const DmxUniverse& universe, std::string& outEr
         return false;
     }
 
+    // The break, the mark and the frame are one indivisible thing to a
+    // receiver: a gap in the middle reads as a new break and the frame lands
+    // shifted, which is what an occasional unexplained flicker is. Hold the
+    // scheduler off for the whole of it rather than just the break.
+    TimeCriticalSection timeCritical;
+
     // DMX512 frame: >=92us break, >=12us mark-after-break, then start code and
     // channel data. We ask for comfortably more than the minimum because host
     // scheduling jitter cuts the other way far more often than it pads.
-    if (!serial.sendBreak(120, 20, outError))
+    if (!serial.sendBreak(176, 24, outError))
     {
         return false;
     }

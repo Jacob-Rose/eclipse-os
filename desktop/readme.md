@@ -430,7 +430,7 @@ the host generates the DMX break and clocks the frame out itself. On Linux it
 needs the FTDI VCP driver and 250000 baud, which is available there but not on
 macOS.
 
-Two things make or break this path, both learned the hard way:
+Three things make or break this path, all learned the hard way:
 
 - **Flush before the break.** The break must not be asserted while the previous
   frame is still draining, or that frame is truncated and the break lands where
@@ -439,6 +439,16 @@ Two things make or break this path, both learned the hard way:
   the scheduler tick — 1ms at best, often 15. The problem is not that this is
   long but that it *varies*, and a receiver that cannot find a consistent break
   start reads every frame shifted. `serial_port.cpp` spins instead.
+- **Send the whole frame at raised priority.** The break, the mark and the data
+  are one indivisible thing to a receiver — a gap in the middle reads as a new
+  break and the frame lands shifted. Nothing on the host is generating that
+  timing except our thread, so if the scheduler preempts it mid-frame the rig
+  blinks. `TimeCriticalSection` raises priority for the few milliseconds of the
+  send and drops it straight back.
+
+  This is worth the trouble: on this rig it took an unexplained flicker every
+  few seconds — roughly one bad frame in two hundred — down to none over a
+  minute of watching.
 
 Get either wrong and the failure is not silence, it is a rig that looks steady
 on a solid colour and strobes the moment anything animates — because a shifted

@@ -27,6 +27,32 @@ namespace edmx
         std::string description; ///< best-effort friendly name, may be empty
     };
 
+    /// Keeps the scheduler off our back for the length of a DMX frame.
+    ///
+    /// A host-timed DMX frame is a break, a mark, and then ~3ms of bytes that
+    /// have to arrive without a gap the receiver will read as a new break. The
+    /// host has no hardware doing this for it, so if the OS preempts the thread
+    /// mid-frame the fixtures see a malformed one and blink. That is the whole
+    /// reason a firmware widget is worth having.
+    ///
+    /// We cannot stop preemption, only make it less likely, so the send runs at
+    /// raised priority and drops straight back. Scoped rather than set once at
+    /// startup: a process that sits at time-critical priority for its whole life
+    /// is a bad neighbour, and the risky window here is only milliseconds long.
+    class TimeCriticalSection
+    {
+    public:
+        TimeCriticalSection();
+        ~TimeCriticalSection();
+
+        TimeCriticalSection(const TimeCriticalSection&) = delete;
+        TimeCriticalSection& operator=(const TimeCriticalSection&) = delete;
+
+    private:
+        int previousPriority{0};
+        bool raised{false};
+    };
+
     class SerialPort
     {
     public:

@@ -318,6 +318,28 @@ best, often 15 — so the break was not merely long but *variable*, which is
 worse: a receiver that cannot find a consistent break start reads every frame
 shifted. Both are fixed in `serial_port.cpp`; the waits are spins now.
 
+### the flicker after that
+
+Once frames were landing, an occasional flicker remained: irregular, every few
+seconds, roughly one bad frame in two hundred. That is the *other* half of the
+same problem. The break, the mark and the frame are indivisible to a receiver —
+a gap in the middle reads as a new break — and on a bare FTDI cable nothing is
+generating that timing except our thread. When Windows preempts it mid-frame,
+the rig blinks.
+
+`TimeCriticalSection` in `serial_port.h` raises thread priority for the few
+milliseconds of a send and drops it straight back. Scoped, not set once at
+startup: a process sitting at time-critical priority for its whole life is a
+bad neighbour, and the risky window is only milliseconds. That took the flicker
+from every few seconds to none over a minute of watching.
+
+It reduces the odds; it cannot remove them. Host-timed DMX is best-effort by
+construction. **A widget with firmware — a real Enttec DMX USB PRO — owns the
+timing in hardware and ends this class of problem outright**, and the
+`enttec_pro` path is already written for one. Failing that, lowering
+`device.fps` cuts the rate proportionally, since fewer frames means fewer
+chances to corrupt one.
+
 **What this looked like from the outside is worth remembering**, because it
 sent me down two wrong paths. A shifted frame puts our red/green/blue onto the
 fixture's **Strobe** and **Mode** channels, and on these pars `Mode` above 10

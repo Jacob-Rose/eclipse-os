@@ -24,6 +24,40 @@
 
 using namespace edmx;
 
+// ============================================================================
+// TimeCriticalSection
+// ============================================================================
+
+#if defined(_WIN32)
+
+TimeCriticalSection::TimeCriticalSection()
+{
+    HANDLE thread = ::GetCurrentThread();
+    previousPriority = ::GetThreadPriority(thread);
+    if (previousPriority != THREAD_PRIORITY_ERROR_RETURN)
+    {
+        raised = ::SetThreadPriority(thread, THREAD_PRIORITY_TIME_CRITICAL) != 0;
+    }
+}
+
+TimeCriticalSection::~TimeCriticalSection()
+{
+    if (raised)
+    {
+        ::SetThreadPriority(::GetCurrentThread(), previousPriority);
+    }
+}
+
+#else
+
+// Raising priority on posix wants either root or a configured rtprio limit, and
+// failing that quietly is worse than not trying: a show that needs it can be
+// started under `chrt`. Left as a no-op so the call sites read the same.
+TimeCriticalSection::TimeCriticalSection() = default;
+TimeCriticalSection::~TimeCriticalSection() = default;
+
+#endif
+
 namespace
 {
     /// Busy-waits for a few microseconds.
