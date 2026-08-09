@@ -82,3 +82,33 @@ namespace ecore
 #define Serial (::ecore::platform::host_serial())
 
 inline uint32_t millis() { return ::ecore::platform::millis_since_start(); }
+
+///
+/// GPIO, enough of it to compile.
+///
+/// The relic sources describe their wiring in headers — pin numbers for
+/// buttons, an analog pin for a strip — and those headers get pulled in by the
+/// pattern sources we do want. There is no GPIO on a desktop, so rather than
+/// fork the headers we give the names somewhere to land.
+///
+/// A host button always reads unpressed. That is honest: there is no button.
+/// Anything the desktop wants to drive interactively is driven through the
+/// control protocol instead, which is where a UI can reach it.
+///
+/// Constants, deliberately not macros. Arduino ships these as #defines, and a
+/// macro named HIGH silently rewrites eio::EBrightness::HIGH into a numeric
+/// literal wherever this header lands first. Same hazard for INPUT and OUTPUT
+/// against any enum that uses those words. Real constants scope properly.
+inline constexpr int A0 = 26;
+inline constexpr int A1 = 27;
+inline constexpr int A2 = 28;
+inline constexpr int A3 = 29;
+
+inline constexpr int INPUT_PULLUP = 2;
+
+inline void pinMode(uint8_t, int) {}
+inline void digitalWrite(uint8_t, int) {}
+
+/// Idle-high, matching a pull-up with nothing wired to it. Button reads this
+/// as "not pressed", which is the truth on a desktop.
+inline int digitalRead(uint8_t) { return 1; }

@@ -17,6 +17,11 @@
 #include <AnimatedGIF.h>
 
 #include <Adafruit_GC9A01A.h>
+#else
+// Relic IO headers hold a shared_ptr<Adafruit_GC9A01A> whether or not there is
+// a screen behind it. A declaration is enough for those headers to compile on
+// a host: nothing there constructs one, so the type never needs completing.
+class Adafruit_GC9A01A;
 #endif
 
 #include <memory>

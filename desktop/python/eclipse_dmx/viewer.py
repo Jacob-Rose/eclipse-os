@@ -25,7 +25,7 @@ import time
 import tkinter as tk
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional, Sequence, Tuple, Union
+from typing import Dict, List, Optional, Sequence, Tuple, Union
 
 from .config import Config
 from .controller import Frame, ShowController, ShowError
@@ -33,12 +33,75 @@ from .patterns import list_patterns
 
 RGB = Tuple[int, int, int]
 
+# ===========================================================================
+# The buttons. This is the bit to edit.
+# ===========================================================================
+#
+# Hardcoded on purpose rather than generated from whatever the executable
+# reports: a generated row gives every look equal weight and alphabetical
+# order, and what you actually want at a desk is the four you are using
+# tonight, first, with the names you call them.
+#
+# Each entry is (label, command). A command is one of:
+#
+#     ("state",   "campfire")     switch a state machine to that state
+#     ("pattern", "obelisk_seasons")   switch the whole pattern
+#     ("input",   "a")            hold one of the two momentary inputs while
+#                                 the button is held down
+#
+# Rows are drawn in order, one strip of buttons per row. Add, remove and
+# reorder freely; nothing else needs to change.
+
+STATE_BUTTONS: List[List[Tuple[str, Tuple[str, str]]]] = [
+    # --- the jacket's looks -------------------------------------------
+    [
+        ("void", ("state", "digital_void")),
+        ("forest", ("state", "enchanted_forest")),
+        ("turbines", ("state", "warp_turbines")),
+        ("rainbow", ("state", "rainbow_road")),
+        ("breathe", ("state", "breathe_with_me")),
+        ("parrot", ("state", "parrot")),
+    ],
+    [
+        ("overload", ("state", "system_overload")),
+        ("toxin", ("state", "cyber_toxin")),
+        ("datamine", ("state", "datamine")),
+        ("bluemagic", ("state", "blue_magic")),
+        ("campfire", ("state", "campfire")),
+        ("hitstop", ("state", "hitstop")),
+    ],
+]
+
+#: Held down, not toggled - these are momentary, like the remote buttons the
+#: jacket's looks were written around.
+INPUT_BUTTONS: List[Tuple[str, str]] = [
+    ("input A", "a"),
+    ("input B", "b"),
+]
+
+#: Offered when the running pattern is not a state machine, so the window is
+#: still useful for the plain looks.
+PATTERN_BUTTONS: List[Tuple[str, Tuple[str, str]]] = [
+    ("jacket", ("pattern", "jacket")),
+    ("seasons", ("pattern", "obelisk_seasons")),
+    ("theater", ("pattern", "obelisk_theater")),
+    ("rainbow", ("pattern", "rainbow")),
+    ("chase", ("pattern", "chase")),
+    ("identify", ("pattern", "identify")),
+]
+
+# ===========================================================================
+
 # A dark room, so the lights are the brightest thing on screen.
 BACKGROUND = (11, 13, 16)
 PANEL = "#14181d"
 TEXT = "#c8d0d8"
 TEXT_DIM = "#6b7783"
 TEXT_WARN = "#e8a33d"
+
+BUTTON_BG = "#232a32"
+BUTTON_BG_ACTIVE = "#3d6ea5"
+BUTTON_FG = "#c8d0d8"
 
 #: Rings drawn around each fixture to fake a beam. tkinter has no alpha, so the
 #: falloff is opaque circles blended toward the background by hand.
@@ -118,6 +181,7 @@ class ViewerApp:
         config_path: Union[str, Path],
         executable: Optional[Union[str, Path]] = None,
         pattern: Optional[str] = None,
+        state: Optional[str] = None,
         live: bool = False,
         emit_rate: float = 30.0,
         width: int = 1000,
@@ -158,6 +222,9 @@ class ViewerApp:
         self._closing = False
         self._pump_id: Optional[str] = None
 
+        #: last (states, current) the buttons were drawn for
+        self._button_signature: Tuple[Tuple[str, ...], str] = ((), "")
+
         self.show = ShowController(
             self.config_path,
             executable=executable,
@@ -175,6 +242,11 @@ class ViewerApp:
             self.current_pattern = pattern
         else:
             self.current_pattern = self.config.pattern.name
+
+        if state:
+            # Not fatal if it does not take: a bad name should leave a working
+            # window with a message, not refuse to open.
+            self._guard(lambda: self.show.set_state(state), "state")
 
         self._refresh_header()
         self._pump_id = self.root.after(16, self._pump)
@@ -197,6 +269,8 @@ class ViewerApp:
             self.root, bg="#%02x%02x%02x" % BACKGROUND, highlightthickness=0
         )
         self.canvas.pack(fill="both", expand=True)
+
+        self._build_buttons()
 
         self.footer = tk.Label(
             self.root,
@@ -226,6 +300,109 @@ class ViewerApp:
 
         self._items: List[dict] = []
         self._rebuild_items()
+
+    # -- buttons -----------------------------------------------------------
+
+    def _build_buttons(self) -> None:
+        """Lays out the hardcoded button tables.
+
+        Built once. Which rows are *shown* changes with the running pattern —
+        state buttons are meaningless on a pattern that has no states — but
+        rebuilding widgets on every pattern switch would make them flicker
+        under the cursor, so they are packed and unpacked instead.
+        """
+        self.button_panel = tk.Frame(self.root, bg=PANEL)
+        self.button_panel.pack(fill="x")
+
+        self._state_rows: List[tk.Frame] = []
+        self._state_buttons: Dict[str, tk.Button] = {}
+
+        for row in STATE_BUTTONS:
+            frame = tk.Frame(self.button_panel, bg=PANEL)
+            for label, command in row:
+                button = tk.Button(
+                    frame, text=label, font=("Consolas", 9),
+                    bg=BUTTON_BG, fg=BUTTON_FG, activebackground=BUTTON_BG_ACTIVE,
+                    activeforeground=BUTTON_FG, relief="flat", padx=8, pady=3,
+                    highlightthickness=0, borderwidth=0,
+                    command=lambda c=command: self._run_button(c),
+                )
+                button.pack(side="left", padx=3, pady=3)
+                if command[0] == "state":
+                    self._state_buttons[command[1]] = button
+            self._state_rows.append(frame)
+
+        # the plain patterns, plus the momentary inputs, share a row
+        self.extra_row = tk.Frame(self.button_panel, bg=PANEL)
+        for label, command in PATTERN_BUTTONS:
+            tk.Button(
+                self.extra_row, text=label, font=("Consolas", 9),
+                bg=BUTTON_BG, fg=BUTTON_FG, activebackground=BUTTON_BG_ACTIVE,
+                activeforeground=BUTTON_FG, relief="flat", padx=8, pady=3,
+                highlightthickness=0, borderwidth=0,
+                command=lambda c=command: self._run_button(c),
+            ).pack(side="left", padx=3, pady=3)
+
+        tk.Label(self.extra_row, text="   ", bg=PANEL).pack(side="left")
+
+        self._input_buttons: Dict[str, tk.Button] = {}
+        for label, channel in INPUT_BUTTONS:
+            button = tk.Button(
+                self.extra_row, text=label, font=("Consolas", 9),
+                bg=BUTTON_BG, fg=BUTTON_FG, activebackground=BUTTON_BG_ACTIVE,
+                activeforeground=BUTTON_FG, relief="flat", padx=8, pady=3,
+                highlightthickness=0, borderwidth=0,
+            )
+            # momentary: held, not toggled, like the buttons these looks were
+            # written around
+            button.bind("<ButtonPress-1>", lambda e, c=channel: self._set_input(c, True))
+            button.bind("<ButtonRelease-1>", lambda e, c=channel: self._set_input(c, False))
+            button.pack(side="left", padx=3, pady=3)
+            self._input_buttons[channel] = button
+
+        self.extra_row.pack(fill="x")
+        self._refresh_buttons()
+
+    def _refresh_buttons(self) -> None:
+        """Shows the state rows only when the pattern actually has states."""
+        has_states = bool(self.show.state_names)
+
+        for frame in self._state_rows:
+            if has_states and not frame.winfo_ismapped():
+                frame.pack(fill="x", before=self.extra_row)
+            elif not has_states and frame.winfo_ismapped():
+                frame.pack_forget()
+
+        # a state the running machine does not offer is dimmed, not hidden:
+        # the table is yours, and silently dropping an entry would read as a bug
+        for name, button in self._state_buttons.items():
+            known = name in self.show.state_names
+            active = known and name == self.show.current_state
+            button.configure(
+                bg=BUTTON_BG_ACTIVE if active else BUTTON_BG,
+                fg=BUTTON_FG if known else TEXT_DIM,
+            )
+
+    def _run_button(self, command: Tuple[str, str]) -> None:
+        kind, value = command
+
+        def apply() -> None:
+            if kind == "state":
+                self.show.set_state(value)
+            elif kind == "pattern":
+                self.show.set_pattern(value)
+                self.current_pattern = value
+
+        self._guard(apply, kind)
+        self._refresh_buttons()
+
+    def _set_input(self, channel: str, down: bool) -> None:
+        if not self.show.state_names:
+            return
+        self._guard(lambda: self.show.set_input(channel, down), "input")
+        button = self._input_buttons.get(channel)
+        if button is not None:
+            button.configure(bg=BUTTON_BG_ACTIVE if down else BUTTON_BG)
 
     def _rebuild_items(self) -> None:
         """Lays the fixtures out for the current window size.
@@ -351,6 +528,15 @@ class ViewerApp:
 
         self._paint(frame)
 
+        # STATES and STATE arrive on the reader thread, whenever the executable
+        # gets round to them, so the buttons follow from here rather than from
+        # the click that caused it.
+        signature = (tuple(self.show.state_names), self.show.current_state)
+        if signature != self._button_signature:
+            self._button_signature = signature
+            self._refresh_buttons()
+            self._refresh_header()
+
         now = time.monotonic()
         elapsed = now - self._fps_marker
         if elapsed >= 0.5:
@@ -373,8 +559,10 @@ class ViewerApp:
 
     def _refresh_header(self) -> None:
         source = "LIVE" if self.live else "dry-run"
-        parts = [
-            f"{self.current_pattern}",
+        parts = [f"{self.current_pattern}"]
+        if self.show.current_state and self.show.state_names:
+            parts.append(self.show.current_state)
+        parts += [
             f"{len(self.placements)} fixtures",
             f"{self._fps:4.1f} fps",
             f"master {self._master:.2f}",
@@ -425,6 +613,7 @@ class ViewerApp:
             self.current_pattern = target
 
         self._guard(apply, "pattern")
+        self._refresh_buttons()
 
     def _nudge_master(self, delta: float) -> None:
         target = max(0.0, min(1.0, self._master + delta))
@@ -484,6 +673,7 @@ def view(
     config_path: Union[str, Path],
     executable: Optional[Union[str, Path]] = None,
     pattern: Optional[str] = None,
+    state: Optional[str] = None,
     live: bool = False,
     emit_rate: float = 30.0,
 ) -> int:
@@ -492,6 +682,7 @@ def view(
         config_path,
         executable=executable,
         pattern=pattern,
+        state=state,
         live=live,
         emit_rate=emit_rate,
     )

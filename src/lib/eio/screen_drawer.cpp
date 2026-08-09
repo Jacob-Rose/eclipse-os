@@ -7,6 +7,27 @@
 
 // was #ifdef, which was always true: USE_SCREEN is always *defined*, it is its
 // *value* that says whether there is a screen.
+#if !USE_SCREEN
+
+// A host build has no display, but relic states still call these when they
+// change: they ask their IO for a screen drawer, and only skip the call if it
+// hands back null. That check is a runtime one, so the symbols still have to
+// exist to link against. Defining them empty here keeps the guard in the relic
+// sources honest without an #if in every state that shows an image.
+namespace eio
+{
+    ScreenDrawer::ScreenDrawer() : xCanvasSize(0), yCanvasSize(0) {}
+
+    void ScreenDrawer::tick(float) {}
+    void ScreenDrawer::setCanvasSize(uint16_t x, uint16_t y) { xCanvasSize = x; yCanvasSize = y; }
+    uint16_t ScreenDrawer::getPixelColor(uint16_t, uint16_t) { return 0; }
+    void ScreenDrawer::setPixelColor(uint16_t, uint16_t, uint16_t) {}
+    void ScreenDrawer::setScreenGif(const uint8_t*, int) {}
+    void ScreenDrawer::cancelGifRender() {}
+}
+
+#endif
+
 #if USE_SCREEN
 
 #include "../ecore/logging.h"

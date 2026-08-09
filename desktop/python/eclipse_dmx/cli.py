@@ -138,6 +138,7 @@ def _cmd_view(args: argparse.Namespace) -> int:
         args.config,
         executable=args.executable,
         pattern=args.pattern,
+        state=args.state,
         live=args.live,
         emit_rate=args.emit_rate,
     )
@@ -225,6 +226,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     viewer.add_argument("config")
     viewer.add_argument("--pattern", help="start on this pattern instead of the config's")
+    viewer.add_argument("--state", help="for a state machine pattern, the look to open on")
     viewer.add_argument("--live", action="store_true",
                         help="also drive the real rig; without this nothing is put on the wire")
     viewer.add_argument("--emit-rate", type=float, default=30.0,

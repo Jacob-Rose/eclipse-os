@@ -245,8 +245,21 @@ bool edmx::loadConfig(const std::string& path, Config& outConfig, std::string& o
         config.pattern.speed      = pattern["speed"].asFloat(config.pattern.speed);
         config.pattern.width      = pattern["width"].asFloat(config.pattern.width);
         config.pattern.brightness = std::clamp(pattern["brightness"].asFloat(config.pattern.brightness), 0.0f, 1.0f);
-        config.pattern.coordSpanX = pattern["coord_span_x"].asFloat(config.pattern.coordSpanX);
-        config.pattern.coordSpanY = pattern["coord_span_y"].asFloat(config.pattern.coordSpanY);
+        config.pattern.stateName = pattern["state"].asString(config.pattern.stateName);
+
+        // Only override what the file actually says. A pattern's own frame is
+        // the right default, so an absent key must stay absent rather than
+        // resolving to some number we made up here.
+        auto readOptional = [&pattern](const char* key, std::optional<float>& out) {
+            if (!pattern[key].isNull())
+            {
+                out = pattern[key].asFloat(0.0f);
+            }
+        };
+        readOptional("coord_origin_x", config.pattern.coordOriginX);
+        readOptional("coord_origin_y", config.pattern.coordOriginY);
+        readOptional("coord_span_x",   config.pattern.coordSpanX);
+        readOptional("coord_span_y",   config.pattern.coordSpanY);
 
         if (!pattern["color"].isNull())
         {

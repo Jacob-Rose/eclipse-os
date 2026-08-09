@@ -5,6 +5,7 @@
 
 #pragma once
 
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -60,10 +61,19 @@ namespace edmx
         /// Fixed colour for the `solid` pattern.
         ecore::HSV solidColor{0.0f, 1.0f, 1.0f};
 
-        /// How a line of fixtures is projected into the coordinate space that
-        /// relic patterns expect. See PatternContext for why this is not 0..1.
-        float coordSpanX{8.0f};
-        float coordSpanY{43.0f};
+        /// Which look a state machine pattern opens on. Empty means the
+        /// machine's own first state, which for the jacket is `digital_void` —
+        /// nearly black by design, and a poor opening frame on a par rig.
+        std::string stateName;
+
+        /// Overrides for the coordinate frame a pattern is rendered in. Unset
+        /// means "whatever the pattern asked for", which is almost always
+        /// right — a relic look knows the space it was tuned in. See
+        /// edmx::CoordFrame.
+        std::optional<float> coordOriginX;
+        std::optional<float> coordOriginY;
+        std::optional<float> coordSpanX;
+        std::optional<float> coordSpanY;
     };
 
     /// How the config numbers DMX channels.

@@ -21,7 +21,7 @@ sys.path.insert(0, str(DESKTOP / "python"))
 
 from eclipse_dmx.binary import BinaryNotFoundError, find_executable  # noqa: E402
 from eclipse_dmx.config import Config, ConfigError, Fixture  # noqa: E402
-from eclipse_dmx.controller import ShowController, _parse_frame  # noqa: E402
+from eclipse_dmx.controller import ShowController, ShowError, _parse_frame  # noqa: E402
 
 RIG = DESKTOP / "config" / "uking_par36_x10.json"
 
@@ -169,9 +169,23 @@ class Addressing(unittest.TestCase):
 class CoordSpans(unittest.TestCase):
     """Relic patterns need a coordinate space, and it has to survive a file."""
 
-    def test_defaults_are_the_obelisk_space(self):
+    def test_unset_by_default(self):
+        """Unset means the pattern's own frame wins, which is what we want.
+
+        A number here would pin every pattern to one space, and the obelisk's
+        looks and the jacket's want quite different ones.
+        """
         pattern = Config().pattern
-        self.assertEqual((pattern.coord_span_x, pattern.coord_span_y), (8.0, 43.0))
+        self.assertEqual(
+            (pattern.coord_origin_x, pattern.coord_origin_y,
+             pattern.coord_span_x, pattern.coord_span_y),
+            (None, None, None, None),
+        )
+
+    def test_unset_spans_are_not_written(self):
+        written = Config().pattern.to_dict()
+        self.assertNotIn("coord_span_x", written)
+        self.assertNotIn("coord_origin_x", written)
 
     def test_round_trips(self):
         config = Config()
@@ -339,6 +353,84 @@ class FrameStream(unittest.TestCase):
             show.stop()
 
         self.assertAlmostEqual(measured, 20.0, delta=20.0 * 0.15)
+
+
+class JacketStateMachine(unittest.TestCase):
+    """The jacket's looks, driven over the protocol instead of by buttons."""
+
+    @classmethod
+    def setUpClass(cls):
+        executable_or_skip()
+
+    def test_states_are_announced(self):
+        show = ShowController(RIG, dry_run=True, on_frame=lambda f: None)
+        try:
+            show.command("pattern jacket")
+            time.sleep(0.5)
+            self.assertIn("digital_void", show.state_names)
+            self.assertEqual(len(show.state_names), 12)
+        finally:
+            show.stop()
+
+    def test_config_opens_on_its_chosen_state(self):
+        """The rig config names a state; digital_void is nearly black."""
+        show = ShowController(RIG, dry_run=True, on_frame=lambda f: None)
+        try:
+            time.sleep(0.5)
+            self.assertEqual(show.current_state, Config.load(RIG).pattern.state)
+        finally:
+            show.stop()
+
+    def test_switching_state_changes_the_rig(self):
+        frames = []
+        show = ShowController(RIG, dry_run=True, on_frame=frames.append, emit_rate=20.0)
+        try:
+            show.command("pattern jacket")
+            seen = []
+            for state in ("parrot", "blue_magic", "campfire"):
+                show.set_state(state)
+                time.sleep(1.0)          # past the 0.4s cross-fade
+                seen.append(tuple(frames[-1]))
+            self.assertEqual(len(set(seen)), 3)
+        finally:
+            show.stop()
+
+    def test_unknown_state_is_rejected_without_dying(self):
+        show = ShowController(RIG, dry_run=True, on_frame=lambda f: None)
+        try:
+            show.command("pattern jacket")
+            time.sleep(0.4)
+            with self.assertRaises(ShowError):
+                show.set_state("not_a_look")
+            self.assertTrue(show.is_running)
+        finally:
+            show.stop()
+
+    def test_state_needs_a_state_machine(self):
+        show = ShowController(RIG, dry_run=True, on_frame=lambda f: None)
+        try:
+            show.command("pattern obelisk_seasons")
+            time.sleep(0.4)
+            self.assertEqual(show.state_names, [])
+            with self.assertRaises(ShowError):
+                show.set_state("campfire")
+        finally:
+            show.stop()
+
+    def test_input_modulates_the_look(self):
+        frames = []
+        show = ShowController(RIG, dry_run=True, on_frame=frames.append, emit_rate=20.0)
+        try:
+            show.command("pattern jacket")
+            show.set_state("digital_void")
+            time.sleep(1.0)
+            before = tuple(frames[-1])
+            show.set_input("a", True)
+            time.sleep(1.2)
+            after = tuple(frames[-1])
+            self.assertNotEqual(before, after)
+        finally:
+            show.stop()
 
 
 class ViewerWindow(unittest.TestCase):

@@ -96,6 +96,12 @@ class ShowController:
         #: Fixture names, in patch order, as the executable reported them.
         self.fixture_names: List[str] = []
 
+        #: States the running pattern offers. Empty unless it is a state
+        #: machine, which is exactly the condition a UI wants to test.
+        self.state_names: List[str] = []
+        #: The state showing now, or "" when the pattern has no states.
+        self.current_state: str = ""
+
         self._process: Optional[subprocess.Popen] = None
         self._replies: "queue.Queue[str]" = queue.Queue()
         self._events: List[str] = []
@@ -210,6 +216,14 @@ class ShowController:
 
         if line.startswith("FIXTURES "):
             self.fixture_names = line.split()[1:]
+
+        # A state machine announces its looks when it starts and whenever the
+        # pattern changes. A plain pattern announces an empty list, which is how
+        # a UI knows to put its state buttons away.
+        if line.startswith("STATES"):
+            self.state_names = line.split()[1:]
+        elif line.startswith("STATE "):
+            self.current_state = line[len("STATE "):].strip()
 
         if line.startswith("OK") or line.startswith("ERR"):
             self._replies.put(line)
@@ -332,6 +346,23 @@ class ShowController:
     def set_pattern(self, name: str) -> None:
         """Switches the look. Speed/width/brightness carry across."""
         self.command(f"pattern {name}")
+
+    def set_state(self, name: str) -> None:
+        """Cross-fades a state machine pattern to `name`.
+
+        Raises ShowError if the running pattern has no states, or no such one.
+        """
+        self.command(f"state {name}")
+        self.current_state = name
+
+    def set_input(self, channel: str, down: bool) -> None:
+        """Drives one of the two momentary inputs a relic look can read.
+
+        On a jacket these are its remote buttons. Here they are whatever a UI
+        wires them to, which is how a look that was built around a button press
+        stays expressive on a rig that has none.
+        """
+        self.command(f"input {channel} {'on' if down else 'off'}")
 
     def set_speed(self, value: float) -> None:
         self.command(f"speed {value}")

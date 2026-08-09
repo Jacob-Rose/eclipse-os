@@ -15,6 +15,8 @@
 // the same file the obelisk runs, and it needed no changes to get here.
 #include "relics/obelisk/state_obelisk.h"
 
+#include "edmx/state_machine.h"
+
 using namespace edmx;
 
 namespace
@@ -268,12 +270,11 @@ void GeneratorPattern::ensureNodes(const PatternContext& context)
         auto node = std::make_shared<eio::HSVStripNode_Mapped2D>(segment.get(), static_cast<int>(idx));
 
         // Give the generator a coordinate space it recognises, by running the
-        // rig diagonally across it. x picks up anything the pattern keys off
-        // sides or columns; y gives a noise field the range it needs to not
-        // read as flat colour.
+        // rig across it. x picks up anything the pattern keys off sides or
+        // columns; y gives a noise field the range it needs to not read as
+        // flat colour.
         const float position = (idx < context.positions.size()) ? context.positions[idx] : 0.0f;
-        node->coord.x = position * context.coordSpanX;
-        node->coord.y = position * context.coordSpanY;
+        node->coord = context.coords.at(position);
 
         nodes.push_back(node);
     }
@@ -336,6 +337,13 @@ namespace
         table["pulse"]        = []() { return std::unique_ptr<Pattern>(new PulsePattern()); };
         table["identify"]     = []() { return std::unique_ptr<Pattern>(new IdentifyPattern()); };
         table["off"]          = []() { return std::unique_ptr<Pattern>(new OffPattern()); };
+
+        // --- relic state machines -------------------------------------------
+        // A whole relic's worth of looks, with its own transitions between
+        // them. Switch state with the `state` command; see makeJacketStateMachine.
+        table["jacket"] = []() {
+            return std::unique_ptr<Pattern>(makeJacketStateMachine().release());
+        };
 
         // --- relic patterns, unmodified -------------------------------------
         table["obelisk_seasons"] = []() {

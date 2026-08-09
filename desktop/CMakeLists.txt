@@ -75,6 +75,29 @@ set(ECLIPSE_CORE_SOURCES
 # done.
 set(ECLIPSE_RELIC_SOURCES
     ${ECLIPSE_SRC}/relics/obelisk/state_obelisk.cpp
+
+    # The jacket's looks. Its State_* wrappers reach into JacketIO for physical
+    # buttons, so the desktop drives the Pattern_* generators inside them
+    # directly, through esm's own State_GenericHSV - the state machine is real,
+    # only the input source differs. The wrappers still compile here; they are
+    # simply never instantiated.
+    ${ECLIPSE_SRC}/relics/pendant/pendant_generic_state.cpp
+    ${ECLIPSE_SRC}/relics/jacket/visual/state_bluemagic.cpp
+    ${ECLIPSE_SRC}/relics/jacket/visual/state_breathewithme.cpp
+    ${ECLIPSE_SRC}/relics/jacket/visual/state_campfire.cpp
+    ${ECLIPSE_SRC}/relics/jacket/visual/state_cybertoxin.cpp
+    ${ECLIPSE_SRC}/relics/jacket/visual/state_datamine.cpp
+    ${ECLIPSE_SRC}/relics/jacket/visual/state_digitalvoid.cpp
+    ${ECLIPSE_SRC}/relics/jacket/visual/state_enchantedforest.cpp
+    ${ECLIPSE_SRC}/relics/jacket/visual/state_hitstop.cpp
+    ${ECLIPSE_SRC}/relics/jacket/visual/state_parrot.cpp
+    ${ECLIPSE_SRC}/relics/jacket/visual/state_rainbowroad.cpp
+    ${ECLIPSE_SRC}/relics/jacket/visual/state_systemoverload.cpp
+    ${ECLIPSE_SRC}/relics/jacket/visual/state_warpturbines.cpp
+
+    # Buttons never fire on a host - digitalRead is shimmed to "not pressed" -
+    # but the jacket states link against them.
+    ${ECLIPSE_SRC}/lib/eio/button.cpp
 )
 
 list(APPEND ECLIPSE_CORE_SOURCES ${ECLIPSE_RELIC_SOURCES})
@@ -110,6 +133,7 @@ add_library(edmx STATIC
     src/json.cpp
     src/pattern.cpp
     src/serial_port.cpp
+    src/state_machine.cpp
 )
 
 target_include_directories(edmx PUBLIC

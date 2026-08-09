@@ -31,6 +31,38 @@
 
 namespace edmx
 {
+    /// Where a rig sits in the coordinate space a relic pattern expects.
+    ///
+    /// A node's coordinate is `origin + position * span`, position being the
+    /// fixture's 0..1 place along the rig. Relic patterns were written against
+    /// a physical layout, and a field tuned for that scale reads as flat colour
+    /// if you hand it 0..1 — so a rig's normalised positions get stretched
+    /// across this frame.
+    ///
+    /// Two numbers per axis rather than one because relic patterns do not agree
+    /// on an origin. The obelisk's looks read a noise field from (0,0) across
+    /// 8 x 43 — 8 being its four sides at two strips each, which is where its
+    /// per-side palettes come from, and 43 being one strip's height. The
+    /// jacket's monowire instead runs up a near-vertical line starting at
+    /// (0.75, -0.25), and every jacket look is tuned around that.
+    ///
+    /// Each pattern declares the frame it was written for; a config overrides
+    /// any of the four when a rig wants a different slice.
+    struct CoordFrame
+    {
+        float originX{0.0f};
+        float originY{0.0f};
+        float spanX{8.0f};
+        float spanY{43.0f};
+
+        /// The coordinate for a fixture at `position` along the rig.
+        ecore::Coordinate at(float position) const
+        {
+            return ecore::Coordinate{originX + position * spanX,
+                                     originY + position * spanY};
+        }
+    };
+
     /// Everything a pattern is allowed to know about the rig.
     struct PatternContext
     {
@@ -38,22 +70,9 @@ namespace edmx
         /// Position of each fixture along the rig, 0..1, index-aligned.
         std::vector<float> positions;
 
-        /// Coordinate space handed to relic patterns via GeneratorPattern.
-        ///
-        /// Relic patterns were written against a physical layout, and a noise
-        /// field tuned for that scale reads as flat colour if you hand it 0..1.
-        /// So a rig's normalised positions get stretched across this span.
-        ///
-        /// The defaults project a line of fixtures diagonally across the
-        /// obelisk's space: 8 columns wide (its four sides, two strips each,
-        /// which is where its per-side palettes come from) and 43 tall (one
-        /// strip, which is where its noise gets most of its variation). A rig
-        /// therefore picks up both the side palettes and real spatial motion.
-        ///
-        /// Override per-config with pattern.coord_span_x / _y when a rig wants
-        /// a different slice of that space.
-        float coordSpanX{8.0f};
-        float coordSpanY{43.0f};
+        /// Resolved for the running pattern: its own default frame, with any
+        /// config override applied on top.
+        CoordFrame coords;
     };
 
     class Pattern : public ecore::Tickable
@@ -68,6 +87,17 @@ namespace edmx
 
         /// Fill `outColors` with one HSV per fixture.
         virtual void render(const PatternContext& context, std::vector<ecore::HSV>& outColors) = 0;
+
+        /// The coordinate space this pattern was written against. The built-in
+        /// patterns work off `positions` directly and do not care; relic
+        /// patterns very much do. A config can override any field of it.
+        virtual CoordFrame defaultCoordFrame() const { return CoordFrame{}; }
+
+        /// Non-null when this pattern is a state machine, so the protocol can
+        /// offer `state` for it. A virtual rather than a dynamic_cast because
+        /// the library builds without RTTI on the microcontroller side and
+        /// there is no reason for the two to diverge.
+        virtual class StateMachinePattern* asStateMachine() { return nullptr; }
 
         /// Live control, driven by the stdin protocol. Values are applied
         /// immediately so the python wrapper can nudge a running show.

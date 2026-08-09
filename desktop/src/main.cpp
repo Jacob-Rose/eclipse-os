@@ -39,6 +39,7 @@
 #include "edmx/fixture.h"
 #include "edmx/pattern.h"
 #include "edmx/serial_port.h"
+#include "edmx/state_machine.h"
 
 using namespace edmx;
 
@@ -197,12 +198,64 @@ namespace
         bool blackout{false};
         bool verbose{false};
         bool shouldQuit{false};
+
+        /// The two momentary inputs a relic look can read, held here so they
+        /// survive a state change.
+        bool inputA{false};
+        bool inputB{false};
     };
+
+    /// Resolves the coordinate frame for whatever pattern is running.
+    ///
+    /// Re-run on every pattern switch, not just at startup: an obelisk look and
+    /// a jacket look want quite different spaces, and carrying one into the
+    /// other renders a flat wash.
+    void applyCoordFrame(ShowState& show)
+    {
+        if (!show.pattern)
+        {
+            return;
+        }
+
+        show.context.coords = show.pattern->defaultCoordFrame();
+
+        const PatternConfig& cfg = show.config.pattern;
+        if (cfg.coordOriginX) show.context.coords.originX = *cfg.coordOriginX;
+        if (cfg.coordOriginY) show.context.coords.originY = *cfg.coordOriginY;
+        if (cfg.coordSpanX)   show.context.coords.spanX   = *cfg.coordSpanX;
+        if (cfg.coordSpanY)   show.context.coords.spanY   = *cfg.coordSpanY;
+    }
+
+    /// Tells a UI which states it can offer, and which is showing.
+    ///
+    /// Emitted whenever the pattern changes, so a client that switches to a
+    /// state machine learns its states without having to ask.
+    void emitStates(ShowState& show)
+    {
+        StateMachinePattern* machine = show.pattern ? show.pattern->asStateMachine() : nullptr;
+        if (!machine)
+        {
+            emit("STATES");
+            return;
+        }
+
+        std::ostringstream out;
+        out << "STATES";
+        for (const std::string& state : machine->stateNames())
+        {
+            out << " " << state;
+        }
+        emit(out.str());
+        emit("STATE " + machine->currentStateName());
+    }
 
     std::string describeState(const ShowState& show)
     {
+        StateMachinePattern* machine = show.pattern ? show.pattern->asStateMachine() : nullptr;
+
         std::ostringstream out;
         out << "STATUS pattern=" << (show.pattern ? show.pattern->getName() : "none")
+            << " state=" << (machine ? machine->currentStateName() : "-")
             << " speed=" << (show.pattern ? show.pattern->getSpeed() : 0.0f)
             << " width=" << (show.pattern ? show.pattern->getWidth() : 0.0f)
             << " brightness=" << (show.pattern ? show.pattern->getBrightness() : 0.0f)
@@ -275,7 +328,75 @@ namespace
 
             show.pattern = std::move(created);
             show.config.pattern.name = next.name;
+
+            // A new pattern brings its own coordinate space and, if it is a
+            // state machine, its own set of states.
+            applyCoordFrame(show);
             emit("OK pattern " + next.name);
+            emitStates(show);
+            return;
+        }
+
+        if (command == "state")
+        {
+            StateMachinePattern* machine = show.pattern ? show.pattern->asStateMachine() : nullptr;
+            if (!machine)
+            {
+                emit("ERR pattern '" + std::string(show.pattern ? show.pattern->getName() : "none")
+                   + "' is not a state machine");
+                return;
+            }
+            if (words.size() < 2)
+            {
+                emit("ERR state needs a name");
+                return;
+            }
+
+            std::string error;
+            if (!machine->setState(words[1], error))
+            {
+                emit("ERR " + error);
+                return;
+            }
+
+            emit("OK state " + words[1]);
+            emit("STATE " + machine->currentStateName());
+            return;
+        }
+
+        if (command == "states")
+        {
+            emitStates(show);
+            return;
+        }
+
+        if (command == "input")
+        {
+            // input <a|b> <on|off> - the momentary inputs relic looks read.
+            // On a jacket these are remote buttons; here a UI drives them.
+            StateMachinePattern* machine = show.pattern ? show.pattern->asStateMachine() : nullptr;
+            if (!machine)
+            {
+                emit("ERR input needs a state machine pattern");
+                return;
+            }
+            if (words.size() < 3)
+            {
+                emit("ERR input needs a channel (a|b) and on|off");
+                return;
+            }
+
+            const bool down = (words[2] == "on" || words[2] == "1" || words[2] == "true");
+            if (words[1] == "a")      show.inputA = down;
+            else if (words[1] == "b") show.inputB = down;
+            else
+            {
+                emit("ERR input channel must be a or b, got '" + words[1] + "'");
+                return;
+            }
+
+            machine->setInput(show.inputA, show.inputB);
+            emit("OK input " + words[1] + " " + (down ? "on" : "off"));
             return;
         }
 
@@ -656,8 +777,7 @@ int main(int argc, char** argv)
     show.strip.reset(new eio::HSVStrip(static_cast<uint16_t>(fixtureCount), 0));
 
     show.context.fixtureCount = fixtureCount;
-    show.context.coordSpanX = show.config.pattern.coordSpanX;
-    show.context.coordSpanY = show.config.pattern.coordSpanY;
+    applyCoordFrame(show);
     show.context.positions.resize(fixtureCount);
     for (size_t idx = 0; idx < fixtureCount; ++idx)
     {
@@ -667,6 +787,31 @@ int main(int argc, char** argv)
     emit("READY fixtures=" + std::to_string(fixtureCount)
        + " pattern=" + show.config.pattern.name
        + " output=" + show.output->describe());
+
+    // Open on the look the config asked for. Warn rather than fail: a typo here
+    // should still light the rig, on the machine's own default.
+    if (!show.config.pattern.stateName.empty())
+    {
+        StateMachinePattern* machine = show.pattern->asStateMachine();
+        if (!machine)
+        {
+            logLine("warning: pattern.state is set but '" + show.config.pattern.name
+                  + "' has no states; ignoring");
+        }
+        else
+        {
+            std::string stateError;
+            if (!machine->setState(show.config.pattern.stateName, stateError))
+            {
+                logLine("warning: " + stateError);
+                emit("WARN " + stateError);
+            }
+        }
+    }
+
+    // A state machine announces its states up front, so a UI can build its
+    // buttons before the first frame lands.
+    emitStates(show);
 
     if (emitFrames)
     {

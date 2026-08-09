@@ -39,8 +39,20 @@
     "gamma": 2.2
   },
 
+  // The jacket's state machine: all of its looks, with the relic's own
+  // cross-fade between them. Switch state from the viewer's buttons, or with
+  // "state <name>" on stdin. "--list-patterns" still has the simpler looks.
+  //
+  // The rig is mapped onto the jacket's monowire - the whip - because that is
+  // the segment its looks treat as one long run rather than a ring. Coordinate
+  // spans come from the pattern itself; override coord_span_y here if the rig
+  // wants more or less travel through a look.
+  // "state" picks the opening look. Without it the machine starts on its own
+  // first state, which for the jacket is digital_void - deliberately almost
+  // black, and on a par rig that reads as "nothing is working".
   "pattern": {
-    "name": "palette_wave",
+    "name": "jacket",
+    "state": "enchanted_forest",
     "speed": 0.2,
     "width": 2.0,
     "palette": "p_bluemagic"

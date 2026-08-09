@@ -36,6 +36,27 @@ PATTERN_NAMES = (
     "obelisk_seasons",
     "obelisk_theater",
     "obelisk_mono",
+    # a whole relic state machine, with its own looks and transitions
+    "jacket",
+)
+
+#: The jacket's looks, in the order its state machine lists them. Must stay in
+#: step with makeJacketStateMachine() in desktop/src/state_machine.cpp. The
+#: executable is the authority — see patterns.list_states — this is here so a
+#: config can be checked without a binary around.
+JACKET_STATES = (
+    "digital_void",
+    "enchanted_forest",
+    "warp_turbines",
+    "rainbow_road",
+    "breathe_with_me",
+    "parrot",
+    "system_overload",
+    "cyber_toxin",
+    "datamine",
+    "blue_magic",
+    "campfire",
+    "hitstop",
 )
 
 ADDRESSING_MODES = ("one", "zero")
@@ -164,6 +185,11 @@ BUILTIN_PROFILES: Dict[str, FixtureProfile] = {
 }
 
 
+def _optional_float(value: Any) -> Optional[float]:
+    """None stays None; anything else becomes a float."""
+    return None if value is None else float(value)
+
+
 def _check_color(value: Color, where: str) -> None:
     if isinstance(value, str):
         if not _HEX_COLOR.match(value):
@@ -238,12 +264,19 @@ class PatternConfig:
     palette: Union[str, List[Color]] = "p_bluemagic"
     color: Color = "#ff2200"
 
-    # How a line of fixtures is projected into the coordinate space relic
-    # patterns expect. 8 wide (the obelisk's four sides, two strips each) and
-    # 43 tall (one strip). Feeding a relic pattern 0..1 makes its noise read as
-    # flat colour.
-    coord_span_x: float = 8.0
-    coord_span_y: float = 43.0
+    # Which look a state machine pattern opens on. Empty means the machine's
+    # own first state, which for the jacket is digital_void - nearly black by
+    # design, and a poor opening frame on a rig.
+    state: str = ""
+
+    # Overrides for the coordinate frame a pattern renders in. None means
+    # "whatever the pattern itself asked for", which is almost always right: a
+    # relic look knows the space it was tuned in. The obelisk's looks want an
+    # 8 x 43 field from the origin; the jacket's want the monowire's line.
+    coord_origin_x: Optional[float] = None
+    coord_origin_y: Optional[float] = None
+    coord_span_x: Optional[float] = None
+    coord_span_y: Optional[float] = None
 
     def validate(self) -> None:
         if self.name not in PATTERN_NAMES:
@@ -253,13 +286,17 @@ class PatternConfig:
         if not 0.0 <= self.brightness <= 1.0:
             raise ConfigError(f"pattern.brightness {self.brightness} must be between 0 and 1")
 
+        if self.state and self.name == "jacket" and self.state not in JACKET_STATES:
+            raise ConfigError(
+                f"pattern.state '{self.state}' is not one of the jacket's looks {JACKET_STATES}"
+            )
+
         # A zero span collapses the rig onto one coordinate, which makes any
         # spatial pattern render as flat colour. Easier to reject than to debug.
-        if self.coord_span_x <= 0 or self.coord_span_y <= 0:
-            raise ConfigError(
-                f"pattern.coord_span_x/_y must be positive, got "
-                f"({self.coord_span_x}, {self.coord_span_y})"
-            )
+        for key in ("coord_span_x", "coord_span_y"):
+            span = getattr(self, key)
+            if span is not None and span <= 0:
+                raise ConfigError(f"pattern.{key} must be positive, got {span}")
 
         if isinstance(self.palette, str):
             if self.palette not in BUILTIN_PALETTES:
@@ -278,16 +315,27 @@ class PatternConfig:
         _check_color(self.color, "pattern.color")
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        out: Dict[str, Any] = {
             "name": self.name,
             "speed": self.speed,
             "width": self.width,
             "brightness": self.brightness,
             "palette": list(self.palette) if isinstance(self.palette, (list, tuple)) else self.palette,
             "color": self.color,
-            "coord_span_x": self.coord_span_x,
-            "coord_span_y": self.coord_span_y,
         }
+        if self.state:
+            out["state"] = self.state
+        for key, value in (
+            ("coord_origin_x", self.coord_origin_x),
+            ("coord_origin_y", self.coord_origin_y),
+            ("coord_span_x", self.coord_span_x),
+            ("coord_span_y", self.coord_span_y),
+        ):
+            # Only written when set: an absent key means "whatever frame the
+            # pattern itself asked for", and writing a number here would pin it.
+            if value is not None:
+                out[key] = value
+        return out
 
 
 @dataclass
@@ -629,8 +677,12 @@ class Config:
             brightness=float(pattern.get("brightness", config.pattern.brightness)),
             palette=pattern.get("palette", config.pattern.palette),
             color=pattern.get("color", config.pattern.color),
-            coord_span_x=float(pattern.get("coord_span_x", config.pattern.coord_span_x)),
-            coord_span_y=float(pattern.get("coord_span_y", config.pattern.coord_span_y)),
+            state=pattern.get("state", config.pattern.state),
+            # absent stays absent, so the pattern's own frame survives
+            coord_origin_x=_optional_float(pattern.get("coord_origin_x")),
+            coord_origin_y=_optional_float(pattern.get("coord_origin_y")),
+            coord_span_x=_optional_float(pattern.get("coord_span_x")),
+            coord_span_y=_optional_float(pattern.get("coord_span_y")),
         )
 
         # A config's own profiles shadow the built-ins, matching the executable.
