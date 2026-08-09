@@ -268,7 +268,7 @@ to a garbage collector), python owns configuration and decisions.
 | `6115309` | relic patterns on the rig, zero-based addressing, the viewer |
 | `6aeb62c` | the jacket's state machine on the rig, with UI buttons |
 | `32e3ea6` | DMX frames sent at raised priority |
-| `4f78daa` | `mythos26`, the beat clock, MIDI tempo in |
+| `71a5a07` | `mythos26`, the beat clock, MIDI tempo in |
 
 ### library changes (`src/lib/`)
 
