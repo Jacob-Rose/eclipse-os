@@ -13,7 +13,7 @@ from typing import List, Optional
 from .binary import BinaryNotFoundError, find_executable
 from .config import BUILTIN_PALETTES, BUILTIN_PROFILES, PATTERN_NAMES, Config, ConfigError
 from .controller import ShowController, ShowError
-from .ports import list_ports
+from .ports import list_midi_ports, list_ports
 
 
 def _cmd_ports(args: argparse.Namespace) -> int:
@@ -23,6 +23,92 @@ def _cmd_ports(args: argparse.Namespace) -> int:
         return 1
     for port in ports:
         print(port)
+    return 0
+
+
+def _cmd_midi(args: argparse.Namespace) -> int:
+    ports = list_midi_ports(args.executable)
+    if not ports:
+        print("no MIDI inputs found", file=sys.stderr)
+        return 1
+    for port in ports:
+        print(port)
+    return 0
+
+
+def _cmd_midi_watch(args: argparse.Namespace) -> int:
+    """Prints what a MIDI input is actually sending.
+
+    The setup tool. Every step of wiring Mixxx up is verifiable except the last
+    one — whether the notes are the notes we think they are — and this is that
+    step. Play a track and read what comes out.
+    """
+    config = Config.load(args.config)
+
+    seen: dict = {}
+    beats = [0]
+
+    def note(payload: str) -> None:
+        parts = payload.split()
+        if len(parts) < 4 or parts[1] != "note_on":
+            return
+        key = (parts[0], parts[2])          # channel, note number
+        seen[key] = seen.get(key, 0) + 1
+        if not args.quiet:
+            print(payload)
+
+    def beat(index: int, bpm: float) -> None:
+        beats[0] = index
+
+    show = ShowController(
+        args.config,
+        executable=args.executable,
+        dry_run=True,                       # a diagnostic must not light a rig
+        midi=args.midi,
+        on_midi=note,
+        on_beat=beat,
+    )
+
+    with show:
+        show.midi_monitor(True)
+        print(f"listening on {show.midi_status()}", file=sys.stderr)
+        print(f"play a track for {args.seconds:.0f}s...", file=sys.stderr)
+        show.wait(args.seconds)
+        counts = dict(seen)
+        status = show.midi_status()
+
+    print()
+    if not counts:
+        print("nothing arrived.", file=sys.stderr)
+        print(
+            "  - is loopMIDI running, and was it running before Mixxx started?\n"
+            "  - Mixxx: Preferences > Controllers, is the port enabled and the\n"
+            "    'MIDI for light' mapping loaded and applied?\n"
+            "  - is a track actually playing?",
+            file=sys.stderr,
+        )
+        return 1
+
+    print("notes seen (channel, note, count):")
+    for (channel, number), count in sorted(counts.items(), key=lambda kv: -kv[1]):
+        label = ""
+        if int(number) == config.midi.beat_note:
+            label = "  <- taken as the beat"
+        elif int(number) == config.midi.bpm_note:
+            label = "  <- taken as the tempo"
+        print(f"  ch{channel:<4} note {number:<5} x{count}{label}")
+
+    print()
+    print(status)
+
+    if beats[0] == 0:
+        print(
+            "\nno beats registered. Set midi.beat_note to whichever note above "
+            "arrives once per beat,\nand midi.beat_channel to its channel.",
+            file=sys.stderr,
+        )
+        return 1
+
     return 0
 
 
@@ -104,6 +190,8 @@ def _cmd_run(args: argparse.Namespace) -> int:
         executable=args.executable,
         dry_run=args.dry_run,
         frames=args.frames,
+        midi=args.midi,
+        bpm=args.bpm,
         on_log=log if args.verbose else None,
     )
 
@@ -113,6 +201,8 @@ def _cmd_run(args: argparse.Namespace) -> int:
 
         if args.pattern:
             show.set_pattern(args.pattern)
+        if args.state:
+            show.set_state(args.state)
         if args.brightness is not None:
             show.set_master(args.brightness)
 
@@ -141,6 +231,8 @@ def _cmd_view(args: argparse.Namespace) -> int:
         state=args.state,
         live=args.live,
         emit_rate=args.emit_rate,
+        midi=args.midi,
+        bpm=args.bpm,
     )
 
 
@@ -168,6 +260,17 @@ def _cmd_list(args: argparse.Namespace) -> int:
     return 0
 
 
+def _add_tempo_args(parser: argparse.ArgumentParser) -> None:
+    """Tempo overrides, shared by the subcommands that start a show."""
+    parser.add_argument("--midi", metavar="SPEC",
+                        help="MIDI input to take the beat from: an index, a name, part of one, "
+                             "or 'auto'. Overrides the config's midi block; "
+                             "pass an empty string to open nothing.")
+    parser.add_argument("--bpm", type=float,
+                        help="starting tempo, and the one the rig falls back to if the "
+                             "MIDI link goes quiet")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="eclipse_dmx",
@@ -179,6 +282,22 @@ def build_parser() -> argparse.ArgumentParser:
 
     ports = subparsers.add_parser("ports", help="list serial ports the executable can see")
     ports.set_defaults(func=_cmd_ports)
+
+    midi = subparsers.add_parser("midi", help="list MIDI inputs the executable can see")
+    midi.set_defaults(func=_cmd_midi)
+
+    watch = subparsers.add_parser(
+        "midi-watch",
+        help="print what a MIDI input is actually sending, and whether we read it as a beat",
+    )
+    watch.add_argument("config")
+    watch.add_argument("--midi", metavar="SPEC",
+                       help="override the config's midi.port")
+    watch.add_argument("--seconds", type=float, default=10.0,
+                       help="how long to listen (default 10)")
+    watch.add_argument("--quiet", "-q", action="store_true",
+                       help="only the summary, not every message")
+    watch.set_defaults(func=_cmd_midi_watch)
 
     listing = subparsers.add_parser("list", help="list available patterns and palettes")
     listing.set_defaults(func=_cmd_list)
@@ -217,8 +336,10 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--frames", type=int, default=0, help="stop after this many frames")
     run.add_argument("--dry-run", action="store_true", help="print frames instead of driving hardware")
     run.add_argument("--pattern", choices=PATTERN_NAMES, help="override the config's pattern")
+    run.add_argument("--state", help="for a state machine pattern, the look to open on")
     run.add_argument("--brightness", type=float, help="override master brightness (0..1)")
     run.add_argument("--verbose", "-v", action="store_true", help="echo the executable's logs")
+    _add_tempo_args(run)
     run.set_defaults(func=_cmd_run)
 
     viewer = subparsers.add_parser(
@@ -231,6 +352,7 @@ def build_parser() -> argparse.ArgumentParser:
                         help="also drive the real rig; without this nothing is put on the wire")
     viewer.add_argument("--emit-rate", type=float, default=30.0,
                         help="frames per second to draw (default 30)")
+    _add_tempo_args(viewer)
     viewer.set_defaults(func=_cmd_view)
 
     return parser

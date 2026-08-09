@@ -1,0 +1,99 @@
+{
+  // mythos26, taking its beat from Mixxx.
+  //
+  // This is the load-in config. config/mythos26.json is the same show with
+  // "auto" port selection and an internal tempo, which is what you want at a
+  // bench; this one names everything outright, because at a venue a config
+  // that guesses is a config that guesses wrong at the worst moment.
+  //
+  // Setup is in readme.md under "from Mixxx". The short version:
+  //
+  //   1. Install loopMIDI (Tobias Erichsen, free) and add a port. Name it
+  //      exactly "eclipse" or leave it "loopMIDI Port" - either matches below.
+  //   2. Start loopMIDI BEFORE Mixxx. Mixxx enumerates MIDI devices once, at
+  //      startup, and will not see a port created after it.
+  //   3. Mixxx: Preferences > Controllers > pick the loopMIDI port, load the
+  //      "MIDI for light" mapping, Apply.
+  //   4. In that mapping's Settings tab, turn OFF the VU meters and MTC
+  //      timecode. They are on by default and we use none of it.
+  //   5. eclipse-dmx --config config/mythos26_mixxx.json
+  //
+  // Verify without guessing:
+  //   echo midi monitor on | eclipse-dmx --config config/mythos26_mixxx.json
+  // Play a track. You should see "MIDI-IN ch=1 note_on 50 100" once a beat and
+  // "note_on 52 <bpm-50>" alongside it. If the numbers differ, change
+  // beat_note / bpm_note / beat_channel below to match what you actually see.
+
+  "device": {
+    "type": "enttec_open",
+    "port": "auto",
+    "fps": 40,
+    "console_channels": 24
+  },
+
+  "master": {
+    "brightness": 1.0,
+    "gamma": 2.2
+  },
+
+  // Tempo in, from Mixxx's MIDI-for-light mapping.
+  //
+  // It sends notes, not beat clock. On its "Midi Channel" setting, default 1:
+  //
+  //     note 48   deck change
+  //     note 50   the beat, velocity 100      <- beat_note
+  //     note 52   the tempo, velocity bpm-50  <- bpm_note
+  //     note 64+  VU meters, many per second
+  //
+  // Which is why beat_note is a number and not -1. Take any note as a beat and
+  // the VU meters alone would fire hundreds of times a second.
+  //
+  // "clock" stays on even though Mixxx sends no 0xF8: it costs nothing, and
+  // "ticks" in `midi status` staying at 0 is a useful confirmation that what is
+  // on this cable is what we think it is.
+  "midi": {
+    "enabled": true,
+
+    // The virtual cable, by name. Matched case-insensitively on a fragment, so
+    // this finds "loopMIDI Port", "eclipse", "Mixxx" and similar.
+    "port": "loopMIDI",
+
+    // Never open these, whatever "port" resolution would otherwise do.
+    //
+    // The S2 is a controller: its pads, jogs and transport all send notes, and
+    // one of them landing on note 50 would yank the beat grid mid-set. It is
+    // also frequently the only MIDI input on the machine, which is exactly when
+    // an "auto" would reach for it. Naming "port" above already avoids it -
+    // this is the belt to that pair of braces, and it keeps working if the
+    // loopMIDI port is ever missing at startup.
+    "ignore": ["Traktor", "Kontrol"],
+
+    "clock": true,
+    "notes": true,
+
+    "beat_note": 50,
+    "bpm_note": 52,
+    // Mixxx's mapping defaults to channel 1. Pinning it here means a stray note
+    // from anything else sharing the cable cannot register as a beat.
+    "beat_channel": 1,
+
+    // Before Mixxx says otherwise, and after it goes quiet.
+    "bpm": 128,
+    "free_run": true
+  },
+
+  "pattern": {
+    "name": "mythos26",
+    "state": "beat_pulse",
+    "brightness": 1.0
+  },
+
+  "fixtures": [
+    {
+      "profile": "uking_par36",
+      "name": "par",
+      "address": 1,
+      "count": 10
+    }
+  ]
+}

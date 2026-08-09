@@ -48,11 +48,27 @@ RGB = Tuple[int, int, int]
 #     ("pattern", "obelisk_seasons")   switch the whole pattern
 #     ("input",   "a")            hold one of the two momentary inputs while
 #                                 the button is held down
+#     ("beat",    "")             a downbeat, now - tap it in
+#     ("bpm",     "128")          set the tempo outright
 #
 # Rows are drawn in order, one strip of buttons per row. Add, remove and
-# reorder freely; nothing else needs to change.
+# reorder freely; nothing else needs to change. A state the running pattern
+# does not offer is dimmed rather than hidden, so a row can hold looks from
+# more than one machine.
 
 STATE_BUTTONS: List[List[Tuple[str, Tuple[str, str]]]] = [
+    # --- mythos26 -----------------------------------------------------
+    # Only beat_pulse is written; the rest are placeholders. Rename them here
+    # when they are renamed in makeMythos26StateMachine().
+    [
+        ("pulse", ("state", "beat_pulse")),
+        ("slot 2", ("state", "slot_2")),
+        ("slot 3", ("state", "slot_3")),
+        ("slot 4", ("state", "slot_4")),
+        ("slot 5", ("state", "slot_5")),
+        ("slot 6", ("state", "slot_6")),
+        ("slot 7", ("state", "slot_7")),
+    ],
     # --- the jacket's looks -------------------------------------------
     [
         ("void", ("state", "digital_void")),
@@ -82,12 +98,23 @@ INPUT_BUTTONS: List[Tuple[str, str]] = [
 #: Offered when the running pattern is not a state machine, so the window is
 #: still useful for the plain looks.
 PATTERN_BUTTONS: List[Tuple[str, Tuple[str, str]]] = [
+    ("mythos26", ("pattern", "mythos26")),
     ("jacket", ("pattern", "jacket")),
     ("seasons", ("pattern", "obelisk_seasons")),
     ("theater", ("pattern", "obelisk_theater")),
     ("rainbow", ("pattern", "rainbow")),
     ("chase", ("pattern", "chase")),
     ("identify", ("pattern", "identify")),
+]
+
+#: Tempo, for when there is no MIDI or the phase has drifted. "tap" is a
+#: downbeat now: hit it on the one and the rig lines up.
+TEMPO_BUTTONS: List[Tuple[str, Tuple[str, str]]] = [
+    ("tap", ("beat", "")),
+    ("100", ("bpm", "100")),
+    ("120", ("bpm", "120")),
+    ("128", ("bpm", "128")),
+    ("140", ("bpm", "140")),
 ]
 
 # ===========================================================================
@@ -184,6 +211,8 @@ class ViewerApp:
         state: Optional[str] = None,
         live: bool = False,
         emit_rate: float = 30.0,
+        midi: Optional[str] = None,
+        bpm: Optional[float] = None,
         width: int = 1000,
         height: int = 420,
     ) -> None:
@@ -231,6 +260,8 @@ class ViewerApp:
             dry_run=not live,
             on_frame=self._on_frame,
             emit_rate=emit_rate,
+            midi=midi,
+            bpm=bpm,
             autostart=False,
         )
 
@@ -281,7 +312,7 @@ class ViewerApp:
             padx=12,
             pady=6,
             text="[space] blackout   [n]/[p] pattern   [↑]/[↓] master   "
-            "[←]/[→] speed   [q] quit",
+            "[←]/[→] speed   [t] tap the beat   [q] quit",
         )
         self.footer.pack(fill="x")
 
@@ -294,6 +325,7 @@ class ViewerApp:
         self.root.bind("<Down>", lambda event: self._nudge_master(-0.05))
         self.root.bind("<Right>", lambda event: self._nudge_speed(1.25))
         self.root.bind("<Left>", lambda event: self._nudge_speed(0.8))
+        self.root.bind("<Key-t>", lambda event: self._run_button(("beat", "")))
         self.root.bind("<Key-q>", lambda event: self._quit())
         self.root.bind("<Escape>", lambda event: self._quit())
         self.root.protocol("WM_DELETE_WINDOW", self._quit)
@@ -360,6 +392,18 @@ class ViewerApp:
             button.pack(side="left", padx=3, pady=3)
             self._input_buttons[channel] = button
 
+        tk.Label(self.extra_row, text="   tempo ", bg=PANEL, fg=TEXT_DIM,
+                 font=("Consolas", 9)).pack(side="left")
+
+        for label, command in TEMPO_BUTTONS:
+            tk.Button(
+                self.extra_row, text=label, font=("Consolas", 9),
+                bg=BUTTON_BG, fg=BUTTON_FG, activebackground=BUTTON_BG_ACTIVE,
+                activeforeground=BUTTON_FG, relief="flat", padx=8, pady=3,
+                highlightthickness=0, borderwidth=0,
+                command=lambda c=command: self._run_button(c),
+            ).pack(side="left", padx=3, pady=3)
+
         self.extra_row.pack(fill="x")
         self._refresh_buttons()
 
@@ -392,6 +436,10 @@ class ViewerApp:
             elif kind == "pattern":
                 self.show.set_pattern(value)
                 self.current_pattern = value
+            elif kind == "beat":
+                self.show.tap_beat()
+            elif kind == "bpm":
+                self.show.set_bpm(float(value))
 
         self._guard(apply, kind)
         self._refresh_buttons()
@@ -565,6 +613,15 @@ class ViewerApp:
         parts += [
             f"{len(self.placements)} fixtures",
             f"{self._fps:4.1f} fps",
+        ]
+
+        # Only once a beat line has actually arrived. Showing "0.0 bpm" before
+        # the first one would read as a tempo of zero rather than as no news.
+        if self.show.bpm > 0.0:
+            lock = "lock" if self.show.beat_locked else "free"
+            parts.append(f"{self.show.bpm:5.1f} bpm {self.show.beat_source} {lock}")
+
+        parts += [
             f"master {self._master:.2f}",
             source,
         ]
@@ -676,6 +733,8 @@ def view(
     state: Optional[str] = None,
     live: bool = False,
     emit_rate: float = 30.0,
+    midi: Optional[str] = None,
+    bpm: Optional[float] = None,
 ) -> int:
     """Opens the viewer on a config and blocks until the window closes."""
     app = ViewerApp(
@@ -685,5 +744,7 @@ def view(
         state=state,
         live=live,
         emit_rate=emit_rate,
+        midi=midi,
+        bpm=bpm,
     )
     return app.run()

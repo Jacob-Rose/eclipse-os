@@ -21,6 +21,8 @@ Typical use::
 from .config import (
     BUILTIN_PALETTES,
     BUILTIN_PROFILES,
+    JACKET_STATES,
+    MYTHOS26_STATES,
     PATTERN_NAMES,
     Config,
     ConfigError,
@@ -28,12 +30,13 @@ from .config import (
     Fixture,
     FixtureProfile,
     MasterConfig,
+    MidiConfig,
     PatternConfig,
 )
 from .controller import Frame, ShowController, ShowError
 from .binary import find_executable, BinaryNotFoundError
 from .patterns import list_patterns
-from .ports import list_ports, SerialPortInfo
+from .ports import list_midi_ports, list_ports, MidiPortInfo, SerialPortInfo
 
 # viewer is deliberately not imported here: it pulls in tkinter, and a show
 # laptop driving a rig headless should not need a display to import this.
@@ -43,6 +46,8 @@ __version__ = "0.1.0"
 __all__ = [
     "BUILTIN_PALETTES",
     "BUILTIN_PROFILES",
+    "JACKET_STATES",
+    "MYTHOS26_STATES",
     "PATTERN_NAMES",
     "Config",
     "ConfigError",
@@ -51,11 +56,14 @@ __all__ = [
     "FixtureProfile",
     "Frame",
     "MasterConfig",
+    "MidiConfig",
+    "MidiPortInfo",
     "PatternConfig",
     "ShowController",
     "ShowError",
     "find_executable",
     "BinaryNotFoundError",
+    "list_midi_ports",
     "list_patterns",
     "list_ports",
     "SerialPortInfo",

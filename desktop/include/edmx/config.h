@@ -46,6 +46,54 @@ namespace edmx
         float gamma{2.2f};
     };
 
+    /// Where the beat comes from. See edmx/beat_clock.h and edmx/midi_input.h.
+    ///
+    /// Everything here is optional. With no `midi` block at all the rig runs on
+    /// its own internal tempo, which is what you want at a bench and is a
+    /// perfectly serviceable fallback on stage.
+    struct MidiConfig
+    {
+        /// Off by default: a lighting binary should not go opening MIDI devices
+        /// on a machine that never asked it to.
+        bool enabled{false};
+
+        /// "auto", a device index, or a fragment of a device name. See
+        /// MidiInput::resolvePort for what "auto" will and will not guess at.
+        std::string port{"auto"};
+
+        /// Name fragments "auto" must never open.
+        ///
+        /// This exists for the DJ controller on the same machine. It is a MIDI
+        /// input, it is often the only one, and its pads and jogs all send
+        /// notes — so it is both what "auto" would reach for and the last thing
+        /// that should be allowed to move the beat. Naming a port explicitly
+        /// still overrides this.
+        std::vector<std::string> ignore;
+
+        /// Follow 0xF8 beat clock.
+        bool followClock{true};
+        /// Take the beat from a note. If a source sends both, notes win.
+        bool followNotes{true};
+
+        /// Which note is the beat, and which carries the tempo as velocity+50.
+        /// These default to Mixxx's numbering; -1 on beatNote means any note,
+        /// and -1 on bpmNote means measure the tempo instead of being told it.
+        /// See the message table in edmx/midi_input.h.
+        int beatNote{50};
+        int bpmNote{52};
+
+        /// Only take beats from this channel, 1..16. -1 means any.
+        int beatChannel{-1};
+
+        /// Tempo before anything external has been heard, and the tempo the rig
+        /// falls back to when the link goes quiet.
+        float bpm{128.0f};
+
+        /// Keep predicting beats after the external clock stops. A drifting rig
+        /// beats a dark one.
+        bool freeRun{true};
+    };
+
     struct PatternConfig
     {
         std::string name{"palette_wave"};
@@ -97,6 +145,7 @@ namespace edmx
 
         DeviceConfig device;
         MasterConfig master;
+        MidiConfig midi;
         PatternConfig pattern;
         FixtureMap fixtures;
 

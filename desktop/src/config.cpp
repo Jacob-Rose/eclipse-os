@@ -238,6 +238,83 @@ bool edmx::loadConfig(const std::string& path, Config& outConfig, std::string& o
         config.master.brightness = std::clamp(config.master.brightness, 0.0f, 1.0f);
     }
 
+    // ---- midi ---------------------------------------------------------
+    {
+        const JsonValue& midi = root["midi"];
+
+        // Naming a port is the whole point of the block, so it also counts as
+        // asking for it. Someone who writes `"midi": {"port": "loopMIDI"}` and
+        // gets silence because they left `enabled` out has been failed by us,
+        // not by their config.
+        const bool named = !midi["port"].isNull();
+        config.midi.enabled      = midi["enabled"].asBool(named);
+        config.midi.port         = midi["port"].asString(config.midi.port);
+        config.midi.followClock  = midi["clock"].asBool(config.midi.followClock);
+        config.midi.followNotes  = midi["notes"].asBool(config.midi.followNotes);
+        config.midi.beatNote     = midi["beat_note"].asInt(config.midi.beatNote);
+        config.midi.bpmNote      = midi["bpm_note"].asInt(config.midi.bpmNote);
+        config.midi.beatChannel  = midi["beat_channel"].asInt(config.midi.beatChannel);
+        config.midi.bpm          = midi["bpm"].asFloat(config.midi.bpm);
+        config.midi.freeRun      = midi["free_run"].asBool(config.midi.freeRun);
+
+        const JsonValue& ignore = midi["ignore"];
+        if (ignore.isArray())
+        {
+            for (size_t i = 0; i < ignore.size(); ++i)
+            {
+                const std::string fragment = ignore[i].asString();
+                if (!fragment.empty())
+                {
+                    config.midi.ignore.push_back(fragment);
+                }
+            }
+        }
+        else if (ignore.getType() == JsonValue::Type::String)
+        {
+            // One name is the common case; not making people write a list for
+            // it is worth four lines here.
+            config.midi.ignore.push_back(ignore.asString());
+        }
+
+        if (config.midi.bpm < 30.0f || config.midi.bpm > 300.0f)
+        {
+            config.warnings.push_back("midi.bpm of " + std::to_string(config.midi.bpm)
+                                    + " is not a tempo; falling back to 128");
+            config.midi.bpm = 128.0f;
+        }
+
+        if (config.midi.beatChannel != -1 &&
+            (config.midi.beatChannel < 1 || config.midi.beatChannel > 16))
+        {
+            config.warnings.push_back("midi.beat_channel must be 1-16 or -1 for any; using any");
+            config.midi.beatChannel = -1;
+        }
+
+        const auto checkNote = [&config](const char* key, int& note, int fallback) {
+            if (note != -1 && (note < 0 || note > 127))
+            {
+                config.warnings.push_back(std::string(key) + " must be 0-127, or -1 to switch it "
+                                          "off; using " + std::to_string(fallback));
+                note = fallback;
+            }
+        };
+        checkNote("midi.beat_note", config.midi.beatNote, 50);
+        checkNote("midi.bpm_note", config.midi.bpmNote, 52);
+
+        if (config.midi.beatNote != -1 && config.midi.beatNote == config.midi.bpmNote)
+        {
+            config.warnings.push_back("midi.beat_note and midi.bpm_note are the same note, so the "
+                                      "tempo message would be taken as a beat; ignoring bpm_note");
+            config.midi.bpmNote = -1;
+        }
+
+        if (config.midi.enabled && !config.midi.followClock && !config.midi.followNotes)
+        {
+            config.warnings.push_back("midi is enabled but both clock and notes are off, "
+                                      "so nothing will ever set the tempo");
+        }
+    }
+
     // ---- pattern ------------------------------------------------------
     {
         const JsonValue& pattern = root["pattern"];

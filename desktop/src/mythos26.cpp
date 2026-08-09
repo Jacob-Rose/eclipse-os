@@ -1,0 +1,259 @@
+// Copyright 2024 | Jake Rose
+//
+// This file is part of project eclipse-os
+// See readme.md for full license details.
+
+#include "edmx/mythos26.h"
+
+#include <algorithm>
+#include <cmath>
+
+#include "edmx/beat_clock.h"
+
+using namespace edmx;
+
+namespace
+{
+    /// Shape of the fall.
+    ///
+    /// Linear reads as a fade; a light that *hits* drops fast and then trails
+    /// off. This is an exponential shifted so it reaches exactly zero at the
+    /// end of the window rather than approaching it forever — a tail that never
+    /// quite finishes leaves the rig glowing faintly between beats, which is
+    /// precisely the mush the fast attack was for.
+    float decayShape(float x)
+    {
+        constexpr float kSharpness = 4.0f;
+
+        if (x <= 0.0f) return 1.0f;
+        if (x >= 1.0f) return 0.0f;
+
+        const float curve = std::exp(-kSharpness * x);
+        const float tail  = std::exp(-kSharpness);
+        return (curve - tail) / (1.0f - tail);
+    }
+}
+
+// ============================================================================
+// beat_pulse
+// ============================================================================
+
+Pattern_Mythos_BeatPulse::Pattern_Mythos_BeatPulse()
+    : clock(&sharedBeatClock())
+{
+}
+
+void Pattern_Mythos_BeatPulse::init()
+{
+    started = false;
+    sinceTrigger = 0.0f;
+    level = 0.0f;
+}
+
+float Pattern_Mythos_BeatPulse::envelopeAt(float seconds) const
+{
+    const float attack = std::max(attackSeconds, 0.0f);
+    const float decay  = std::max(decaySeconds, 0.001f);
+
+    if (seconds < 0.0f)
+    {
+        return 0.0f;
+    }
+    if (seconds < attack)
+    {
+        return (attack <= 0.0f) ? 1.0f : (seconds / attack);
+    }
+    return decayShape((seconds - attack) / decay);
+}
+
+float Pattern_Mythos_BeatPulse::envelopePeak(float from, float to) const
+{
+    // The envelope rises to exactly 1 at the end of the attack and falls from
+    // there, so the largest value over a span is either an end of the span or
+    // the crest, if the crest is inside it.
+    const float attack = std::max(attackSeconds, 0.0f);
+    if (from <= attack && attack <= to)
+    {
+        return 1.0f;
+    }
+    return std::max(envelopeAt(from), envelopeAt(to));
+}
+
+void Pattern_Mythos_BeatPulse::tick(float deltaTime)
+{
+    const double now = nowSeconds();
+    const long long beat = static_cast<long long>(std::floor(clock->beatPosition(now)));
+
+    float from = sinceTrigger;
+
+    if (!started || beat != lastBeat)
+    {
+        // Retrigger from where the beat actually started, not from this frame.
+        // At 40fps a frame is 25ms and a beat lands anywhere inside one, so
+        // starting the envelope at the frame boundary would quantise every
+        // pulse to the frame grid and put a visible swing on the rig.
+        started = true;
+        lastBeat = beat;
+        from = 0.0f;
+        sinceTrigger = clock->timeSinceBeat(now);
+    }
+    else
+    {
+        sinceTrigger += deltaTime;
+    }
+
+    // Take the envelope's peak across the frame rather than its value at the
+    // end of it. The attack is deliberately shorter than a frame, so sampling
+    // instantaneously would catch the crest only when a frame happened to land
+    // on it — every other beat would come out dimmer, by a different amount
+    // each time. A rig that flickers unevenly on a steady tempo is the whole
+    // failure this avoids, and peak-holding a transient shorter than the frame
+    // is the honest thing to draw anyway.
+    const float envelope = envelopePeak(from, sinceTrigger);
+
+    const float floorValue = std::clamp(floorLevel, 0.0f, 1.0f);
+    level = floorValue + ((1.0f - floorValue) * std::clamp(envelope, 0.0f, 1.0f));
+}
+
+void Pattern_Mythos_BeatPulse::render(eio::HSVStripNode* node, ecore::HSV& inOutColor) const
+{
+    (void)node; // the whole rig hits together; nothing here is spatial yet
+
+    inOutColor = pulseColor;
+    inOutColor.setBrightnessAlpha(pulseColor.getValFloat() * level);
+}
+
+// ============================================================================
+// placeholders
+// ============================================================================
+
+void Pattern_Mythos_Placeholder::init()
+{
+    phase = 0.0f;
+}
+
+void Pattern_Mythos_Placeholder::tick(float deltaTime)
+{
+    // ~9 seconds a cycle. Slow enough to read as "nothing is happening here
+    // yet" rather than as a look someone meant.
+    phase += deltaTime * 0.11f;
+    if (phase > 1.0f)
+    {
+        phase -= 1.0f;
+    }
+}
+
+void Pattern_Mythos_Placeholder::render(eio::HSVStripNode* node, ecore::HSV& inOutColor) const
+{
+    float position = 0.0f;
+    if (node != nullptr && node->GetStripNodeType() == eio::StripNodeType::MAPPED2D)
+    {
+        // mythos26's frame runs 0..1 along the rig on y, so the coordinate is
+        // the position — no scaling, unlike a relic look.
+        position = static_cast<eio::HSVStripNode_Mapped2D*>(node)->coord.y;
+    }
+
+    const float breath = 0.5f + (0.5f * std::sin((phase + (position * 0.25f)) * 6.2831853f));
+
+    inOutColor = ecore::HSV(hue, 0.7f, 1.0f);
+    inOutColor.setBrightnessAlpha(0.10f + (0.15f * breath));
+}
+
+// ============================================================================
+// the show
+// ============================================================================
+
+namespace
+{
+    /// One look in the table. Same shape as the relic version in
+    /// state_machine.cpp: default-construct, init, hand back as a generator.
+    ///
+    /// Anything a look needs configuring is set on the instance afterwards
+    /// rather than passed to a constructor — see `placeholder`. Keeping every
+    /// entry built identically is what lets the table below read as a list.
+    ///
+    /// Both of these spell out the return type and return the derived pointer
+    /// directly, rather than ending on a static_pointer_cast the way the relic
+    /// table does. The cast leaves a derived-typed temporary to destroy, and
+    /// gcc 16 devirtualises that destructor across the two generator types in
+    /// this file, then warns that one of them overruns the other's allocation.
+    /// It is a false positive — the vtable picks the right one at runtime — but
+    /// letting the conversion happen at the return is both cleaner and quiet.
+    template <typename PatternT>
+    StateDef look(const char* name)
+    {
+        StateDef def;
+        def.name = name;
+        def.make = []() -> std::shared_ptr<eanim::GeneratorHSV> {
+            auto pattern = std::make_shared<PatternT>();
+            pattern->init();
+            return pattern;
+        };
+        return def;
+    }
+
+    /// An empty slot, tinted so the states are told apart on the rig.
+    StateDef placeholder(const char* name, float hue)
+    {
+        StateDef def;
+        def.name = name;
+        def.make = [hue]() -> std::shared_ptr<eanim::GeneratorHSV> {
+            auto pattern = std::make_shared<Pattern_Mythos_Placeholder>();
+            pattern->hue = hue;
+            pattern->init();
+            return pattern;
+        };
+        return def;
+    }
+}
+
+std::unique_ptr<StateMachinePattern> edmx::makeMythos26StateMachine()
+{
+    // ------------------------------------------------------------------
+    // The show, one line per state, in the order a UI shows them.
+    //
+    // Six of the seven are placeholders. Writing one for real means adding a
+    // GeneratorHSV to mythos26.h/.cpp and changing its line here; nothing else
+    // in the runner, the protocol or the UI needs to know.
+    //
+    // Renaming a slot means renaming it in three places: here,
+    // MYTHOS26_STATES in python/eclipse_dmx/config.py, and the button table in
+    // python/eclipse_dmx/viewer.py. The executable is the authority; the other
+    // two are so a config can be validated and a button can be labelled
+    // without one running.
+    // ------------------------------------------------------------------
+    std::vector<StateDef> states = {
+        look<Pattern_Mythos_BeatPulse>("beat_pulse"),
+
+        placeholder("slot_2", 30.0f),
+        placeholder("slot_3", 90.0f),
+        placeholder("slot_4", 160.0f),
+        placeholder("slot_5", 210.0f),
+        placeholder("slot_6", 275.0f),
+        placeholder("slot_7", 320.0f),
+    };
+
+    // ------------------------------------------------------------------
+    // The rig's own space, not a relic's.
+    //
+    // A jacket look needs the monowire's coordinates and an obelisk look needs
+    // its 8 x 43 field, because both were tuned against a physical object. These
+    // were written here, so the sane space is the simple one: x is flat and y
+    // runs 0..1 from the first fixture to the last.
+    // ------------------------------------------------------------------
+    CoordFrame rig;
+    rig.originX = 0.0f;
+    rig.spanX   = 0.0f;
+    rig.originY = 0.0f;
+    rig.spanY   = 1.0f;
+
+    // Shorter than the jacket's 0.4s. These are cues in a show rather than
+    // moods on a garment, and a beat-locked look wants to arrive promptly.
+    const float transitionTime = 0.25f;
+
+    return std::unique_ptr<StateMachinePattern>(new StateMachinePattern(
+        "mythos26", std::move(states),
+        /*segmentId*/ 0, // nothing here branches on segment; only relic looks do
+        rig,
+        transitionTime));
+}

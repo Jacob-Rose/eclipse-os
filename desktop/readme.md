@@ -10,9 +10,9 @@ wrapper handles configuration and drives the running process.
 
 ```
 config.json ──> eclipse-dmx ──> Enttec USB widget ──> DMX fixtures
-                    ^
-                    │  line protocol on stdin
-              python wrapper
+                  ^   ^
+   MIDI tempo in ─┘   │  line protocol on stdin
+                python wrapper
 ```
 
 ## Why it is built this way
@@ -303,6 +303,8 @@ a mode that ignores its colour channels (`static_channels`).
 | `obelisk_seasons` | the obelisk's four-seasons noise field |
 | `obelisk_theater` | the obelisk's theatre chase |
 | `obelisk_mono` | the obelisk's flat colour |
+| `jacket` | the jacket's twelve looks, as a state machine |
+| `mythos26` | the show — beat-driven, see below |
 
 `rainbow` is the one to reach for when commissioning: anything other than a
 clean spectrum across the rig means a channel order is wrong.
@@ -339,6 +341,234 @@ real spatial motion. Change them to take a different slice.
 `pattern.palette` takes either a built-in name from `kits/palettes.h` or an
 explicit list like `["#ff0044", "#22ffcc"]`. `--list-palettes` names them all.
 
+### mythos26 — the show
+
+`config/mythos26.json` is the show, on the same ten pars.
+
+Unlike `jacket` and the `obelisk_*` looks, these are not a relic's patterns
+borrowed for a rig — they are written for the rig, in `src/mythos26.cpp`. Two
+things follow from that: the coordinate space is the rig itself (`coord.y` runs
+0..1 from the first fixture to the last, with none of the stretching a relic
+look needs), and they can read the beat.
+
+Seven states, in the order the buttons show them:
+
+| state | what it does |
+| --- | --- |
+| `beat_pulse` | the whole rig hits white on each beat |
+| `slot_2` … `slot_7` | placeholders — a dim tinted breath, waiting for a look |
+
+The placeholders are there so the cue buttons, the cross-fades and the config
+all work before the looks exist. Writing one for real is a `GeneratorHSV` in
+`mythos26.h`/`.cpp` and a changed line in `makeMythos26StateMachine()`; nothing
+in the runner, the protocol or the viewer needs to know. If you rename a slot,
+rename it in three places — there, `MYTHOS26_STATES` in
+`python/eclipse_dmx/config.py`, and the button table in
+`python/eclipse_dmx/viewer.py`.
+
+**`beat_pulse`** is fast up and ~200ms back down, so at any danceable tempo
+there is a clear dark gap before the next beat and the rig reads as *hitting*
+the beat rather than throbbing near it. Its envelope is tuned by three fields at
+the top of `Pattern_Mythos_BeatPulse`: `attackSeconds`, `decaySeconds`, and
+`pulseColor`, which is white for now.
+
+One detail in there is worth knowing about before you retune it. The attack is
+deliberately shorter than a frame — 12ms against 25ms at 40fps — so the pattern
+takes the envelope's *peak across the frame* rather than its value at the end of
+one. Sampled instantaneously, a pulse would only reach full brightness when a
+frame happened to land on the crest, and every other beat would come out dimmer
+by a different amount. A rig flickering unevenly on a steady tempo is exactly
+the artefact that avoids.
+
+### the beat
+
+Beat-driven looks read `edmx::BeatClock`, one per process. Something upstream
+says "beat now" and how fast; patterns ask how far into the beat it is, every
+frame.
+
+It **predicts**: beats arrive twice a second and frames render forty times a
+second, so the clock interpolates from the last beat at the current tempo. And
+it **free-runs**: if the link drops mid-set the rig keeps pulsing at the last
+known tempo rather than freezing. It drifts, which is a much better failure than
+a dark stage, and it re-locks the moment a real beat lands. `midi.free_run:
+false` turns that off.
+
+None of this needs a device. With no `midi` block the rig keeps its own time at
+`midi.bpm`, which is what you want at a bench:
+
+```sh
+eclipse-dmx --config config/mythos26.json --dry-run --bpm 128 --frames 80
+```
+
+#### from Mixxx
+
+`config/mythos26_mixxx.json` is this, configured. Five steps.
+
+**1. Make a virtual cable.** MIDI does not travel between two programs on one
+machine without one. On Windows that is [loopMIDI][loopmidi] (free); create a
+port and leave it running. macOS has one built in: Audio MIDI Setup → Window →
+Show MIDI Studio → IAC Driver → tick *Device is online*.
+
+[loopmidi]: https://www.tobias-erichsen.de/software/loopmidi.html
+
+**2. Start the cable before Mixxx.** Mixxx enumerates MIDI devices once, at
+startup, and will not see a port created afterwards. This is the single most
+common reason the port is missing from its list.
+
+**3. Load the mapping.** Mixxx → **Preferences → Controllers** → click the
+loopMIDI port → set *Load Mapping* to **MIDI for light** → **Apply**. The port
+must show as enabled; the mapping is output-only, so nothing will appear to
+happen yet.
+
+**4. Turn off what we do not use.** In that same panel, the mapping has a
+**Settings** tab. Leave *Enable Beat* and *Enable BPM* on. Turn **off** *Enable
+MTC Timecode* and every *VU* option — they default on, they are the bulk of the
+traffic on the cable, and nothing here reads them. Note the *Midi Channel*
+setting, default 1.
+
+**5. Run.**
+
+```sh
+eclipse-dmx --list-midi                     # confirm the cable is visible
+eclipse-dmx --config config/mythos26_mixxx.json
+```
+
+##### what it sends
+
+Notes, **not** beat clock, on the mapping's Midi Channel:
+
+| note | dec | meaning |
+| --- | --- | --- |
+| 0x30 | 48 | deck change |
+| 0x32 | 50 | **the beat**, velocity 100 |
+| 0x34 | 52 | **the tempo**, velocity = bpm − 50 |
+| 0x40+ | 64+ | VU meters, many per second |
+
+Two things follow, and both are already the defaults. `beat_note` is 50 rather
+than "any note" — with the VU meters left on, taking any note-on as a beat would
+strobe the rig rather than pulse it. And the tempo arrives *explicitly* on note
+52, which beats any interval we could measure, so `bpm_note` decodes it.
+
+`clock` stays on regardless. Mixxx sends no 0xF8, so it costs nothing, and
+`ticks=0` in `midi status` is a useful confirmation that what is on the cable is
+what you think it is.
+
+##### verifying it, rather than hoping
+
+```sh
+python -m eclipse_dmx midi-watch config/mythos26_mixxx.json --seconds 15
+```
+
+Play a track. This listens, prints every message that arrives, and tells you
+which of them we are reading as the beat:
+
+```
+notes seen (channel, note, count):
+  ch1    note 50    x32  <- taken as the beat
+  ch1    note 52    x32  <- taken as the tempo
+  ch1    note 48    x2
+MIDI-STATUS port="loopMIDI Port" ... beats=32 bpm=128.0 src=midi_note lock=yes
+```
+
+If the numbers differ from 50 and 52, put what you actually see into
+`beat_note` / `bpm_note` / `beat_channel` and run it again. Nothing is driven
+while it watches — it forces a dry run, so a rig cannot flash at you mid-check.
+
+The same thing live, once running: `midi monitor on` on stdin prints every
+message; `midi status` gives the counts.
+
+##### keeping the DJ controller out of it
+
+A controller on the same machine — the S2, a Mixtrack, anything — is also a
+MIDI input, is often the *only* MIDI input, and sends notes from every pad, jog
+and transport button. It is simultaneously what `"auto"` would reach for and the
+last thing that should be allowed to move the beat.
+
+Two defences, and the shipped configs use both:
+
+```json
+"port": "loopMIDI",
+"ignore": ["Traktor", "Kontrol"]
+```
+
+Naming the port is the real fix — a MIDI input is a separate stream, so once we
+are on the cable the controller's messages are not something we filter out, they
+are something we never see. `ignore` is the backstop for when the cable is
+missing at startup and `auto` would otherwise fall through to whatever is left.
+With every input ignored, it refuses, says so, and free-runs:
+
+```
+WARN midi: midi.port is "auto" but every MIDI input is on midi.ignore
+           (0:Traktor Kontrol S2 MK3 (ignored))
+```
+
+An explicitly named port always wins over `ignore` — naming it means you meant
+it. `auto` also ignores hardware brand names in its own preference list, for the
+same reason.
+
+##### the full block
+
+```json
+"midi": {
+  "enabled": true,
+  "port": "loopMIDI",
+  "ignore": ["Traktor", "Kontrol"],
+  "clock": true,
+  "notes": true,
+  "beat_note": 50,
+  "bpm_note": 52,
+  "beat_channel": 1,
+  "bpm": 128,
+  "free_run": true
+}
+```
+
+Naming a `port` counts as enabling MIDI, so `"midi": {"port": "loopMIDI"}` on
+its own works. `"auto"` prefers a port whose name looks like DJ software or a
+virtual cable and otherwise takes the only port there is; it will not guess
+between several unrecognised devices, because opening the wrong input looks
+exactly like opening none.
+
+#### from anything else
+
+`midi.clock` follows standard MIDI beat clock: 0xF8 twenty-four times a quarter
+note, with 0xFA/0xFB/0xFC and Song Position Pointer. It costs nothing when no
+0xF8 ever arrives, which is why it stays on for Mixxx.
+
+Tempo comes off a rolling window of the last 24 ticks — the tick 24 ago was one
+beat ago by definition, so it is exact after a single beat rather than
+converging over tens of them.
+
+Beat clock gives tempo but not, on its own, *phase* — a 0xF8 stream joined
+halfway through a bar has no marker saying which tick is the beat. Start,
+Continue and Song Position Pointer resolve that. If a source sends none of them,
+`midi align` or a tap puts the downbeat where you say it is. If a source sends
+both notes and clock, notes win, because a note is an explicit downbeat.
+
+Everything downstream of "which notes arrive" is checked without a device:
+
+```sh
+eclipse-dmx --midi-selftest
+```
+
+It replays a synthesised Mixxx stream, a bare clock stream, a source sending
+both, and a raw byte stream with running status and an interleaved realtime
+byte, in synthetic time, and checks the beats and tempo that come out. It is in
+the test suite, and it is what caught the clock tempo being a whole bpm out for
+the first thirty beats.
+
+At the desk: `beat` taps a downbeat, `bpm <n>` sets the tempo outright, and the
+viewer has both on buttons plus `[t]` for the tap. `status` reports what the
+clock thinks:
+
+```
+bpm=128.0 src=midi_note lock=yes free_run=on beat=417
+```
+
+`src` is where the tempo came from and `lock` is whether beats are still
+arriving from outside. `lock=no` with the rig still pulsing means it is
+free-running — the link went quiet and it is keeping its own time.
+
 ### gamma
 
 `master.gamma` defaults to 2.2. LEDs are linear in duty cycle and eyes are
@@ -356,7 +586,22 @@ pattern <name>            speed <float>          width <float>
 brightness <float>        master <float>         color <#rrggbb | h s v>
 palette <name|#a,#b,...>  blackout <on|off>      status
 quit
+
+state <name>              states                 input <a|b> <on|off>
+
+bpm <float>               beat                   midi list
+midi open <spec>          midi close             midi align
+midi free-run <on|off>    midi monitor <on|off>  midi status
 ```
+
+`state` and `input` need a state machine pattern; the rest work on anything.
+The tempo commands work whatever is running, because the beat clock is
+process-wide — dial a tempo in on `solid`, switch to `mythos26`, and it is
+already right.
+
+With `--emit-frames` on, a `BEAT <n> <bpm> <src> <lock|free>` line goes out the
+moment each beat lands, outside the frame rate limit. That is what the viewer's
+tempo readout is fed from.
 
 ## Python wrapper
 
@@ -398,6 +643,26 @@ The controller writes the config to a temp file, starts the executable, waits
 for `READY`, and speaks the protocol on its stdin. Leaving the `with` block
 shuts the process down, which sends the rig one dark frame on the way out.
 
+The tempo side is there too, including a callback per beat:
+
+```python
+from eclipse_dmx import ShowController, list_midi_ports
+
+print(list_midi_ports())
+
+with ShowController("config/mythos26.json", on_beat=print) as show:
+    show.midi_open("loopMIDI")     # or leave it to the config
+    show.set_state("beat_pulse")
+    show.wait(seconds=60)
+
+    show.set_bpm(128)              # no MIDI? drive it by hand
+    show.tap_beat()                # ...and put the downbeat here
+```
+
+`show.bpm`, `show.beat`, `show.beat_source` and `show.beat_locked` track what
+the executable reports. Like frames, they only move when frames are being
+emitted — passing `on_beat` turns that on.
+
 Validation in python is stricter than in the executable, on purpose. A channel
 claimed twice is a warning at runtime — a half-repatched rig should still light
 up — but an error when you are generating config from code, where it is
@@ -407,6 +672,8 @@ There is a CLI for the common jobs:
 
 ```sh
 python -m eclipse_dmx ports                    # what serial ports exist
+python -m eclipse_dmx midi                     # what MIDI inputs exist
+python -m eclipse_dmx midi-watch my_rig.json   # what one of them is sending
 python -m eclipse_dmx list                     # patterns, palettes and profiles
 python -m eclipse_dmx validate my_rig.json     # check a patch, touch nothing
 python -m eclipse_dmx patch my_rig.json        # print the resolved channel map
@@ -486,12 +753,15 @@ sending them.
 - **White / amber / UV channels.** Profiles model dimmer + RGB + parked
   channels. An RGBW fixture works, but its white channel can only be parked at
   a fixed value, not driven from the colour.
-- **The state machine.** `esm` is not in the desktop build — it reaches into
-  `eio::Relic` and calls an unqualified `clamp()` that only resolves on the
-  Arduino side. Nothing about it is unportable, it is just not on the critical
-  path. Cue sequencing lives in python for now.
-- **Config hot reload.** Restart to change the patch. Look and brightness are
-  live over the control protocol.
+- **Config hot reload.** Restart to change the patch. Look, brightness and
+  tempo are live over the control protocol.
+- **MIDI out.** Input only, and only tempo off it — no control-change mapping
+  to patterns, no faders. `MidiInput::handleMessage` is where that would start.
+- **Bars.** The clock counts beats, not bars, because nothing upstream reliably
+  says where a bar begins. A look that wants to do something on the one needs
+  either a downbeat note from the source or a tap.
+- **Beat division.** A pulse is one per beat. Half and double time would be a
+  field on the pattern and a protocol command; neither exists yet.
 
 ## Layout
 

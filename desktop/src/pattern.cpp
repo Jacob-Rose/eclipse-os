@@ -15,6 +15,7 @@
 // the same file the obelisk runs, and it needed no changes to get here.
 #include "relics/obelisk/state_obelisk.h"
 
+#include "edmx/mythos26.h"
 #include "edmx/state_machine.h"
 
 using namespace edmx;
@@ -343,6 +344,13 @@ namespace
         // them. Switch state with the `state` command; see makeJacketStateMachine.
         table["jacket"] = []() {
             return std::unique_ptr<Pattern>(makeJacketStateMachine().release());
+        };
+
+        // --- the show -------------------------------------------------------
+        // Written for the rig rather than borrowed from a relic, and the first
+        // thing here that reads the beat. See makeMythos26StateMachine.
+        table["mythos26"] = []() {
+            return std::unique_ptr<Pattern>(makeMythos26StateMachine().release());
         };
 
         // --- relic patterns, unmodified -------------------------------------

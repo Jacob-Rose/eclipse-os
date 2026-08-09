@@ -127,10 +127,13 @@ target_compile_definitions(eclipse_core PUBLIC
 # edmx: the DMX output layer
 # ---------------------------------------------------------------------------
 add_library(edmx STATIC
+    src/beat_clock.cpp
     src/config.cpp
     src/dmx_output.cpp
     src/fixture.cpp
     src/json.cpp
+    src/midi_input.cpp
+    src/mythos26.cpp
     src/pattern.cpp
     src/serial_port.cpp
     src/state_machine.cpp
@@ -157,6 +160,8 @@ target_link_libraries(edmx PUBLIC Threads::Threads)
 if(WIN32)
     # RegOpenKeyEx / RegEnumValue for port enumeration
     target_link_libraries(edmx PUBLIC advapi32)
+    # midiIn* for tempo in. winmm is part of Windows; nothing to install.
+    target_link_libraries(edmx PUBLIC winmm)
 endif()
 
 if(MINGW)

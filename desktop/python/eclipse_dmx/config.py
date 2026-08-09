@@ -38,6 +38,8 @@ PATTERN_NAMES = (
     "obelisk_mono",
     # a whole relic state machine, with its own looks and transitions
     "jacket",
+    # the show: written for this rig, and beat-driven
+    "mythos26",
 )
 
 #: The jacket's looks, in the order its state machine lists them. Must stay in
@@ -58,6 +60,28 @@ JACKET_STATES = (
     "campfire",
     "hitstop",
 )
+
+#: mythos26's states, in the order its state machine lists them. Must stay in
+#: step with makeMythos26StateMachine() in desktop/src/mythos26.cpp.
+#:
+#: Only the first is written; slot_2 onwards are placeholders waiting for a
+#: look. Rename them here when you rename them there.
+MYTHOS26_STATES = (
+    "beat_pulse",
+    "slot_2",
+    "slot_3",
+    "slot_4",
+    "slot_5",
+    "slot_6",
+    "slot_7",
+)
+
+#: Which patterns are state machines, and what states each offers. Used to
+#: check `pattern.state` before a binary is necessarily around.
+STATE_MACHINE_STATES = {
+    "jacket": JACKET_STATES,
+    "mythos26": MYTHOS26_STATES,
+}
 
 ADDRESSING_MODES = ("one", "zero")
 
@@ -254,6 +278,89 @@ class MasterConfig:
 
 
 @dataclass
+class MidiConfig:
+    """Where the beat comes from.
+
+    Optional in every sense: leave it alone and the rig keeps its own time at
+    ``bpm``, which is what you want at a bench and a serviceable fallback on
+    stage. Must stay in step with MidiConfig in desktop/include/edmx/config.h.
+
+    The note numbers default to what Mixxx's MIDI-for-light mapping sends:
+    note 50 on each beat, note 52 carrying the tempo as velocity + 50. Setting
+    ``beat_note`` to -1 accepts *any* note as a beat, which is right for a
+    source that sends nothing else and very wrong for Mixxx, whose VU meters
+    are notes too.
+    """
+
+    enabled: bool = False
+    port: str = "auto"
+    #: Name fragments "auto" must never open, for the DJ controller on the same
+    #: machine: it is a MIDI input, often the only one, and its pads all send
+    #: notes. Naming ``port`` explicitly still overrides this.
+    ignore: List[str] = field(default_factory=list)
+    clock: bool = True
+    notes: bool = True
+    beat_note: int = 50
+    bpm_note: int = 52
+    beat_channel: int = -1
+    bpm: float = 128.0
+    free_run: bool = True
+
+    def ignores(self, name: str) -> bool:
+        """Whether `name` matches the ignore list, the way the executable does."""
+        lowered = name.lower()
+        return any(fragment.lower() in lowered for fragment in self.ignore if fragment)
+
+    def validate(self) -> None:
+        if not 30.0 <= self.bpm <= 300.0:
+            raise ConfigError(f"midi.bpm {self.bpm} is not a tempo; expected 30..300")
+
+        for key in ("beat_note", "bpm_note"):
+            note = getattr(self, key)
+            if note != -1 and not 0 <= note <= 127:
+                raise ConfigError(f"midi.{key} {note} must be 0..127, or -1 to switch it off")
+
+        if self.beat_channel != -1 and not 1 <= self.beat_channel <= 16:
+            raise ConfigError(
+                f"midi.beat_channel {self.beat_channel} must be 1..16, or -1 for any"
+            )
+
+        if self.beat_note != -1 and self.beat_note == self.bpm_note:
+            raise ConfigError(
+                "midi.beat_note and midi.bpm_note are the same note, so the tempo message "
+                "would be taken as a beat"
+            )
+
+        if self.enabled and not self.clock and not self.notes:
+            raise ConfigError(
+                "midi is enabled but both clock and notes are off, so nothing would set the tempo"
+            )
+
+        # An explicit name wins over the ignore list in the executable, so this
+        # is not broken — but it is nobody's intent, and it reads as a config
+        # that has been edited twice in opposite directions.
+        if self.enabled and self.port != "auto" and self.ignores(self.port):
+            raise ConfigError(
+                f"midi.port '{self.port}' also matches midi.ignore {self.ignore}; "
+                "the explicit port would win, so one of the two is a mistake"
+            )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "enabled": self.enabled,
+            "port": self.port,
+            "ignore": list(self.ignore),
+            "clock": self.clock,
+            "notes": self.notes,
+            "beat_note": self.beat_note,
+            "bpm_note": self.bpm_note,
+            "beat_channel": self.beat_channel,
+            "bpm": self.bpm,
+            "free_run": self.free_run,
+        }
+
+
+@dataclass
 class PatternConfig:
     """The look, and its parameters."""
 
@@ -286,9 +393,10 @@ class PatternConfig:
         if not 0.0 <= self.brightness <= 1.0:
             raise ConfigError(f"pattern.brightness {self.brightness} must be between 0 and 1")
 
-        if self.state and self.name == "jacket" and self.state not in JACKET_STATES:
+        known_states = STATE_MACHINE_STATES.get(self.name)
+        if self.state and known_states is not None and self.state not in known_states:
             raise ConfigError(
-                f"pattern.state '{self.state}' is not one of the jacket's looks {JACKET_STATES}"
+                f"pattern.state '{self.state}' is not one of {self.name}'s looks {known_states}"
             )
 
         # A zero span collapses the rig onto one coordinate, which makes any
@@ -467,6 +575,7 @@ class Config:
 
     device: DeviceConfig = field(default_factory=DeviceConfig)
     master: MasterConfig = field(default_factory=MasterConfig)
+    midi: MidiConfig = field(default_factory=MidiConfig)
     pattern: PatternConfig = field(default_factory=PatternConfig)
     fixtures: List[Fixture] = field(default_factory=list)
 
@@ -581,6 +690,7 @@ class Config:
 
         self.device.validate()
         self.master.validate()
+        self.midi.validate()
         self.pattern.validate()
 
         if not self.fixtures:
@@ -621,6 +731,7 @@ class Config:
             "addressing": "one",
             "device": self.device.to_dict(),
             "master": self.master.to_dict(),
+            "midi": self.midi.to_dict(),
             "pattern": self.pattern.to_dict(),
             "fixtures": [fixture.to_dict() for fixture in self.fixtures],
         }
@@ -667,6 +778,29 @@ class Config:
         config.master = MasterConfig(
             brightness=float(master.get("brightness", config.master.brightness)),
             gamma=float(master.get("gamma", config.master.gamma)),
+        )
+
+        # Naming a port counts as asking for MIDI, the same way the executable
+        # reads it - see loadConfig() in desktop/src/config.cpp.
+        midi = data.get("midi", {})
+
+        # A bare string is allowed for the common "just this one device" case,
+        # matching the executable.
+        stated_ignore = midi.get("ignore", [])
+        if isinstance(stated_ignore, str):
+            stated_ignore = [stated_ignore]
+
+        config.midi = MidiConfig(
+            enabled=bool(midi.get("enabled", "port" in midi)),
+            port=midi.get("port", config.midi.port),
+            ignore=[str(fragment) for fragment in stated_ignore if fragment],
+            clock=bool(midi.get("clock", config.midi.clock)),
+            notes=bool(midi.get("notes", config.midi.notes)),
+            beat_note=int(midi.get("beat_note", config.midi.beat_note)),
+            bpm_note=int(midi.get("bpm_note", config.midi.bpm_note)),
+            beat_channel=int(midi.get("beat_channel", config.midi.beat_channel)),
+            bpm=float(midi.get("bpm", config.midi.bpm)),
+            free_run=bool(midi.get("free_run", config.midi.free_run)),
         )
 
         pattern = data.get("pattern", {})

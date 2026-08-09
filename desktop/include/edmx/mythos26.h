@@ -1,0 +1,124 @@
+// Copyright 2024 | Jake Rose
+//
+// This file is part of project eclipse-os
+// See readme.md for full license details.
+
+#pragma once
+
+#include <memory>
+
+#include "lib/eanim/generator_hsv.h"
+#include "lib/ecore/hsv.h"
+
+#include "edmx/state_machine.h"
+
+///
+/// mythos26 — the show.
+///
+/// Unlike `jacket` and the `obelisk_*` looks, these are not a relic's patterns
+/// borrowed for a rig. They are written for the rig, which means two things
+/// are different and both are on purpose:
+///
+///   - **The coordinate space is the rig itself.** A relic look has to be
+///     stretched into the physical space it was tuned in; these are written
+///     against 0..1 along the rig, so `coord.y` is just "how far along".
+///   - **They can read the beat.** A relic has no idea what the music is doing.
+///     This rig does, over MIDI — see edmx/beat_clock.h.
+///
+/// They are still plain `GeneratorHSV`s, so they run through the same state
+/// machine, with the same cross-fades, as everything else. Nothing here is a
+/// special case in the show runner.
+///
+
+namespace edmx
+{
+    class BeatClock;
+
+    /// The whole rig flashing on the beat.
+    ///
+    /// Quick attack, then a fall that is over well before the next beat: at
+    /// 128bpm a beat is 469ms, so a 200ms fall leaves a clear dark gap and the
+    /// rig reads as *hitting* the beat rather than throbbing near it. A slower
+    /// fall than the beat period would smear one pulse into the next and the
+    /// whole effect would collapse into a wobble.
+    ///
+    /// The envelope is retriggered by the beat *number* changing rather than by
+    /// a callback from the MIDI thread: the clock predicts between beats, so
+    /// polling it once a frame is both simpler and immune to a beat that lands
+    /// mid-render.
+    class Pattern_Mythos_BeatPulse : public eanim::GeneratorHSV
+    {
+    public:
+        Pattern_Mythos_BeatPulse();
+
+        void init();
+
+        virtual void tick(float deltaTime) override;
+        virtual void render(eio::HSVStripNode* node, ecore::HSV& inOutColor) const override;
+
+        /// White for now. The whole look is one colour and one envelope, so
+        /// this is the knob that changes it.
+        ecore::HSV pulseColor{0.0f, 0.0f, 1.0f};
+
+        /// Seconds to full. Short but not zero: an instant step lands on
+        /// whatever frame it lands on, and a couple of milliseconds of ramp
+        /// costs nothing and stops the edge looking ragged at low frame rates.
+        float attackSeconds{0.012f};
+
+        /// Seconds from full back to dark.
+        float decaySeconds{0.200f};
+
+        /// Level held between pulses, 0..1. Zero is a hard blackout between
+        /// beats; lift it if the rig needs to stay visible.
+        float floorLevel{0.0f};
+
+        /// The level the envelope is at right now, 0..1. Exposed for tests and
+        /// for anything that wants to show the beat on screen.
+        float getLevel() const { return level; }
+
+        /// The envelope `seconds` after a beat, 0..1.
+        float envelopeAt(float seconds) const;
+        /// Its largest value across a span, which is what a frame should show
+        /// when the attack is shorter than the frame. See tick().
+        float envelopePeak(float from, float to) const;
+
+    private:
+        BeatClock* clock{nullptr};
+
+        /// Beat we last fired on. Starts unset so the first tick pulses rather
+        /// than waiting up to a whole beat to show anything.
+        long long lastBeat{0};
+        bool started{false};
+
+        float sinceTrigger{0.0f};
+        float level{0.0f};
+    };
+
+
+    /// A placeholder look, so a slot in the show can be switched to and seen
+    /// before it has been written.
+    ///
+    /// Deliberately plain — a dim, slow breath on one hue. It is not trying to
+    /// be good; it is trying to make it obvious that the state changed and that
+    /// this slot is still empty. Replace one by writing a real GeneratorHSV and
+    /// swapping the line in makeMythos26StateMachine().
+    class Pattern_Mythos_Placeholder : public eanim::GeneratorHSV
+    {
+    public:
+        void init();
+
+        virtual void tick(float deltaTime) override;
+        virtual void render(eio::HSVStripNode* node, ecore::HSV& inOutColor) const override;
+
+        /// Degrees. Set after construction, so every look in the table is built
+        /// the same way — see the note on `look` in mythos26.cpp.
+        float hue{0.0f};
+
+    private:
+        float phase{0.0f};
+    };
+
+
+    /// The show's seven states, in the order a UI shows them.
+    std::unique_ptr<StateMachinePattern> makeMythos26StateMachine();
+}

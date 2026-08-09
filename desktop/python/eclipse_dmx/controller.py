@@ -17,6 +17,7 @@ import sys
 import tempfile
 import threading
 import time
+from collections import deque
 from pathlib import Path
 from typing import Callable, List, Optional, Sequence, Tuple, Union
 
@@ -73,8 +74,12 @@ class ShowController:
         on_log: Optional[Callable[[str], None]] = None,
         on_event: Optional[Callable[[str], None]] = None,
         on_frame: Optional[Callable[[Frame], None]] = None,
+        on_beat: Optional[Callable[[int, float], None]] = None,
+        on_midi: Optional[Callable[[str], None]] = None,
         emit_frames: bool = False,
         emit_rate: float = 30.0,
+        midi: Optional[str] = None,
+        bpm: Optional[float] = None,
         autostart: bool = True,
         command_timeout: float = 5.0,
     ) -> None:
@@ -84,14 +89,35 @@ class ShowController:
         self.verbose = verbose
         self.command_timeout = command_timeout
 
+        # Both override the config's midi block. `midi=""` is the way to say
+        # "open nothing", distinct from None meaning "whatever the config said".
+        self.midi_port = midi
+        self.start_bpm = bpm
+
         # Asking for frames implies wanting them: a caller that passes on_frame
         # and forgets the flag would otherwise sit and watch nothing happen.
-        self.emit_frames = emit_frames or on_frame is not None
+        # Beat lines ride the same flag, so on_beat implies it too.
+        self.emit_frames = emit_frames or on_frame is not None or on_beat is not None
         self.emit_rate = emit_rate
 
         self.on_log = on_log
         self.on_event = on_event
         self.on_frame = on_frame
+        self.on_beat = on_beat
+        self.on_midi = on_midi
+
+        #: The last few `midi monitor` lines. Bounded, because a chatty mapping
+        #: sends hundreds a second and a monitor left on is a monitor forgotten.
+        self.midi_seen: "deque[str]" = deque(maxlen=200)
+
+        #: Tempo the executable is running on, and the beat it is up to. Both
+        #: only move when frames are being emitted; see emit_frames.
+        self.bpm: float = 0.0
+        self.beat: int = 0
+        #: Where that tempo comes from: internal, midi_clock, midi_note, manual.
+        self.beat_source: str = "internal"
+        #: True while beats are arriving from outside rather than free-running.
+        self.beat_locked: bool = False
 
         #: Fixture names, in patch order, as the executable reported them.
         self.fixture_names: List[str] = []
@@ -144,6 +170,10 @@ class ShowController:
             args.extend(["--frames", str(self.frames)])
         if self.emit_frames:
             args.extend(["--emit-frames", "--emit-rate", str(self.emit_rate)])
+        if self.midi_port is not None:
+            args.extend(["--midi", self.midi_port] if self.midi_port else ["--no-midi"])
+        if self.start_bpm is not None:
+            args.extend(["--bpm", str(self.start_bpm)])
         if self.verbose:
             args.append("--verbose")
         return args
@@ -212,6 +242,33 @@ class ShowController:
                 frame = _parse_frame(line)
                 if frame is not None:
                     self.on_frame(frame)
+            return
+
+        # Twice a second for the length of a show, so handled here with the
+        # frames rather than appended to _events, for the same reason.
+        if line.startswith("BEAT "):
+            parts = line.split()
+            try:
+                self.beat = int(parts[1])
+                self.bpm = float(parts[2])
+            except (IndexError, ValueError):
+                return
+            if len(parts) > 3:
+                self.beat_source = parts[3]
+            if len(parts) > 4:
+                self.beat_locked = parts[4] == "lock"
+            if self.on_beat is not None:
+                self.on_beat(self.beat, self.bpm)
+            return
+
+        # Also unbounded if left running, and for the same reason kept out of
+        # _events: `midi monitor on` against a mapping sending VU meters is
+        # hundreds of lines a second.
+        if line.startswith("MIDI-IN "):
+            payload = line[len("MIDI-IN "):]
+            self.midi_seen.append(payload)
+            if self.on_midi is not None:
+                self.on_midi(payload)
             return
 
         if line.startswith("FIXTURES "):
@@ -392,6 +449,65 @@ class ShowController:
             self.command(f"palette {palette}")
         else:
             self.command("palette " + ",".join(palette))
+
+    # -- tempo ------------------------------------------------------------
+    #
+    # The beat clock is process-wide rather than owned by a pattern, so these
+    # work whatever is running: dial the tempo in on any look and it is already
+    # right when you switch to one that uses it.
+
+    def set_bpm(self, value: float) -> None:
+        """Sets the tempo by hand, and stops following anything external."""
+        self.command(f"bpm {value}")
+
+    def tap_beat(self) -> None:
+        """A downbeat, now.
+
+        Two jobs: tapping a tempo in when there is no MIDI, and telling a clock
+        that only sends 0xF8 where the bar actually starts.
+        """
+        self.command("beat")
+
+    def midi_open(self, port: str = "auto") -> None:
+        """Follows tempo from a MIDI input. `port` is an index, a name, a
+        fragment of one, or "auto"."""
+        self.command(f"midi open {port}")
+
+    def midi_close(self) -> None:
+        """Stops following. The tempo stays where it was."""
+        self.command("midi close")
+
+    def midi_align(self) -> None:
+        """Declares that now is the downbeat, without changing the tempo."""
+        self.command("midi align")
+
+    def set_free_run(self, enable: bool = True) -> None:
+        """Whether the rig keeps pulsing after the external clock stops."""
+        self.command(f"midi free-run {'on' if enable else 'off'}")
+
+    def midi_monitor(self, enable: bool = True) -> None:
+        """Reports every channel message arriving, into `midi_seen`.
+
+        This is how you find out what your DJ software actually sends rather
+        than trusting its documentation. Turn it off again when done: a mapping
+        with VU meters on emits hundreds of lines a second.
+        """
+        self.command(f"midi monitor {'on' if enable else 'off'}")
+
+    def midi_status(self) -> str:
+        """Port, filters, counts and the beat clock, as one line."""
+        self._write_line("midi status")
+
+        deadline = time.monotonic() + self.command_timeout
+        seen = len(self._events)
+        while time.monotonic() < deadline:
+            for event in self._events[seen:]:
+                if event.startswith("MIDI-STATUS"):
+                    return event
+            seen = len(self._events)
+            time.sleep(0.02)
+
+        raise ShowError("no midi status reply in time")
 
     def blackout(self, enable: bool = True) -> None:
         """Holds the rig dark without losing the running look."""

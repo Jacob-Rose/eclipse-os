@@ -16,9 +16,9 @@ than sitting on top of one.
 
 ```
 config.json ──> eclipse-dmx ──> Enttec USB widget ──> DMX fixtures
-                    ^
-                    │  line protocol on stdin
-              python wrapper
+                  ^   ^
+   MIDI tempo in ─┘   │  line protocol on stdin
+                python wrapper
 ```
 
 The pattern code is the *same code* that runs on the relics. `ecore`, `eanim`
@@ -39,6 +39,9 @@ cd desktop
 
 # no hardware needed - prints DMX frames to stderr
 .\build\eclipse-dmx.exe --config config\uking_par36_x10.json --dry-run --frames 5
+
+# the show, pulsing on its own internal 128bpm - no DJ software, no MIDI
+.\build\eclipse-dmx.exe --config config\mythos26.json --dry-run --bpm 128 --frames 80
 
 # what the patch actually resolved to
 .\build\eclipse-dmx.exe --config config\uking_par36_x10.json --show-patch
@@ -108,13 +111,14 @@ order shows as a colour cast instead of hiding behind a plausible hue.
 
 ```
 desktop/
-  include/edmx/    json, serial_port, dmx_output, fixture, config, pattern
+  include/edmx/    json, serial_port, dmx_output, fixture, config, pattern,
+                   state_machine, beat_clock, midi_input, mythos26
   src/             implementations + main.cpp (the show runner)
-  config/          example configs, including your rig
+  config/          example configs, including your rig and the show
   python/          the wrapper package, and the viewer
   python/tests/    unittest suite, runnable with nothing installed
   tools/           toolchain setup, one script per platform
-  readme.md        the real docs - config schema, protocol, patterns
+  readme.md        the real docs - config schema, protocol, patterns, MIDI
   BRANCH.md        this file
 ```
 
@@ -125,6 +129,9 @@ desktop/
 | `ecore` / `eanim` | colour and motion — unchanged, shared with the relics |
 | `edmx::Pattern` | patterns, thin wrappers over `HSVPalette` + `LFO`/`Saw` |
 | `edmx::GeneratorPattern` | runs any relic `GeneratorHSV` on a DMX rig |
+| `edmx::StateMachinePattern` | runs a whole `esm` machine, with its cross-fades |
+| `edmx::BeatClock` | where the beat is, and how fast |
+| `edmx::MidiInput` | tempo in, off winmm or an ALSA rawmidi device |
 | `edmx::FixtureMap` | HSV → RGB → DMX channels, gamma, dimmer, parked channels |
 | `edmx::DmxOutput` | the wire: Enttec PRO, Enttec Open, or console |
 | `main.cpp` | frame timing, the stdin control protocol, the frame stream |
@@ -155,10 +162,77 @@ four sides at two strips each, which is where `obelisk_seasons` gets its
 per-side palettes, and 43 being one strip, which is where its noise gets its
 variation.
 
+### mythos26 runs the other way round
+
+`mythos26` is the first thing here that is *not* a relic look on a rig. It is
+written for the rig, in `src/mythos26.cpp`, and two things follow.
+
+Its coordinate space is the rig itself — `coord.y` runs 0..1 from the first
+fixture to the last, with none of the stretching a relic look needs, because
+there is no physical object it was tuned against.
+
+And it reads the beat. `edmx::BeatClock` is one number the whole process agrees
+on — how far through the current beat we are — fed by `edmx::MidiInput` from
+whatever the DJ software is sending. Two properties are deliberate: it
+*predicts*, because beats arrive twice a second and frames render forty times a
+second, and it *free-runs*, because a rig that drifts out of time is a much
+better failure than one that goes dark when the link drops.
+
+Seven states, of which one is written. `beat_pulse` is the whole rig hitting
+white on the beat, fast up and 200ms back down. The other six are placeholders,
+so the buttons, the cross-fades and the config all work before the looks exist.
+
+**Mixxx sends notes, not beat clock**, which is the thing worth knowing before
+touching any of this. Its MIDI-for-light mapping puts the beat on note 50, the
+tempo on note 52 as `velocity + 50`, and VU meters on notes 64 and up, many per
+second. So "any note-on is a beat" — the obvious default — would strobe the rig
+rather than pulse it, and the tempo is better read off note 52 than measured off
+intervals. Both are the defaults; see the table in `include/edmx/midi_input.h`.
+
+`config/mythos26_mixxx.json` is the load-in config with all of that named
+outright, and `readme.md` has the loopMIDI/Mixxx setup. `config/mythos26.json`
+stays the bench version: `auto`, internal tempo, no assumptions about what is
+plugged in.
+
+### the DJ controller must never be the tempo source
+
+Worth stating separately because it is the failure that would look like a bug in
+the show. A controller is a MIDI input, is frequently the *only* MIDI input, and
+sends notes from every pad, jog and transport button. It is simultaneously what
+`"auto"` reaches for and the last thing that should move the beat — a hand on
+the S2 mid-set would drag the whole rig off the music.
+
+Two defences. Naming the port is the real one: a MIDI input is a separate
+stream, so once we are on the loopMIDI cable the controller's messages are not
+something we filter, they are something we never see. `midi.ignore` is the
+backstop for when the cable is missing at startup and `auto` would fall through
+to whatever is left — with everything ignored it refuses, says so, and free-runs
+rather than quietly following a pad. An explicitly named port still wins over
+the list, because naming it means you meant it.
+
+### verifying it without Mixxx
+
+Two tools, because "the notes are what the wiki says" was the one assumption
+left in the whole path.
+
+`python -m eclipse_dmx midi-watch <config>` listens on the cable, prints every
+message, and says which of them we are reading as the beat. It forces a dry run,
+so a diagnostic cannot flash the rig. That covers *which notes arrive*.
+
+`eclipse-dmx --midi-selftest` covers everything downstream of that: it replays a
+synthesised Mixxx stream, a bare clock stream, a source sending both at once, and
+a raw byte stream with running status and an interleaved realtime byte — all in
+synthetic time, because `handleMessage` takes its timestamp rather than reading a
+clock. It found a real defect on first run: **clock tempo was a whole bpm out for
+the first thirty beats**, because it was averaging beat-to-beat gaps when 24
+ticks a beat were available. It now takes the tick 24 ago, which was one beat ago
+by definition, and locks exactly after one beat.
+
 ### the viewer
 
 ```sh
 python -m eclipse_dmx view config/uking_par36_x10.json --pattern obelisk_seasons
+python -m eclipse_dmx view config/mythos26.json --bpm 128
 ```
 
 A tkinter window, one glowing disc per fixture. Nothing reaches the wire
@@ -191,7 +265,10 @@ to a garbage collector), python owns configuration and decisions.
 | `e950a56` | python wrapper + readme |
 | `f91889f` | reproducible toolchain, static link, `fp.h` fix |
 | `fd4f2be` | fixture profiles, bulk patching, `identify` |
-| *uncommitted* | relic patterns on the rig, zero-based addressing, the viewer, the test suite |
+| `6115309` | relic patterns on the rig, zero-based addressing, the viewer |
+| `6aeb62c` | the jacket's state machine on the rig, with UI buttons |
+| `32e3ea6` | DMX frames sent at raised priority |
+| `4f78daa` | `mythos26`, the beat clock, MIDI tempo in |
 
 ### library changes (`src/lib/`)
 
@@ -263,6 +340,31 @@ And, for the relic patterns and the viewer:
 - frame lines do not accumulate in the controller's event list
 - closing the viewer leaks no pipes and prints no Tcl error
 
+And, for mythos26 and the beat clock:
+
+- `beat_pulse` reaches **full 255 on every beat**, not just the ones a frame
+  happens to land on — see the peak-hold note in `mythos26.cpp`
+- it is white on every hit: `r == g == b` on every fixture of every peak frame,
+  which is also a channel-order check
+- the whole rig hits together, and goes fully dark between beats
+- doubling the tempo doubles the pulses in the same wall time
+- a tap relights the rig within a frame, mid-gap
+- with free-run off and nothing driving it, the rig settles dark rather than
+  holding a level
+- all seven states are announced in table order, and the six placeholders render
+  visibly and differently from each other
+- `BEAT` lines do not accumulate in the controller's event list, the same way
+  frame lines do not
+- a bad tempo, and a MIDI port that is not there, are both rejected without
+  killing the show
+- the viewer's tempo readout and its tap and bpm buttons all take
+- `--midi-selftest`: 14 checks over a synthesised Mixxx stream, a bare clock
+  stream, both at once, and the raw byte parser, all in synthetic time
+- with the controller as the only MIDI input, `auto` refuses it, warns, and the
+  rig still lights and free-runs
+- 32 new tests, none of which need a MIDI device: `--midi ""` keeps the suite
+  off whatever happens to be plugged into the machine running it
+
 On the real rig, through the widget on COM3:
 
 - `solid` holds a steady, correct colour — frames arriving whole and aligned
@@ -280,11 +382,19 @@ There is now a suite for all of this, which there was not before:
 
 ```sh
 cd desktop
-python -m unittest discover -s python/tests -v      # 35 tests
+python -m unittest discover -s python/tests -v      # 77 tests
 ```
 
 It needs nothing installed. Anything requiring the executable or a display
 skips itself when there is not one.
+
+**Not yet verified against Mixxx itself.** The note map came off the mapping's
+own source and settings block rather than off a cable, and the only MIDI device
+on this machine is a controller. Everything downstream of it is covered by
+`--midi-selftest`, so the untested surface is exactly one question — are the
+notes 50 and 52 on channel 1 — and `midi-watch` answers that in fifteen seconds
+the first time it is plugged in. If they differ, the fix is three numbers in the
+config, no code.
 
 Toolchain: GCC 16.1.0 (MinGW-w64 UCRT, POSIX threads) on Windows 11.
 
@@ -429,13 +539,17 @@ listing online.
   An RGBW fixture works, but its white channel can only be parked at a fixed
   value, not driven from the colour.
 - **Moving heads** — no pan/tilt representation.
-- **`esm` (the state machine)** — now *compiles* into the host build, and the
-  unqualified `clamp()` that used to block it is fixed. But nothing drives it
-  yet: cue sequencing still lives in python. Wiring a `StateMachine_GenericHSV`
-  up to the show runner is the obvious next thing if you want looks to
-  transition themselves the way they do on the relics.
-- **Config hot reload** — restart to change the patch. Look and brightness are
-  live over the control protocol.
+- **Config hot reload** — restart to change the patch. Look, brightness and
+  tempo are live over the control protocol.
+- **Six of mythos26's seven states** — placeholders. That is the point of them,
+  but they are not looks.
+- **MIDI out, and MIDI for anything but tempo** — no control-change mapping to
+  patterns, no faders. `MidiInput::handleMessage` is where that starts.
+- **Bars** — the clock counts beats, not bars, because nothing upstream reliably
+  says where a bar begins. A look that wants to land something on the one needs
+  a downbeat note from the source, or a tap.
+- **Beat division** — one pulse per beat. Half and double time would be a field
+  on the pattern and a protocol command; neither exists.
 - **The viewer draws discs, not beams.** Fixtures with a real position in space
   are drawn as a flat 2D scatter; there is no notion of where a light is
   pointing, so it cannot show you a stage wash. It answers "is each fixture
@@ -447,13 +561,19 @@ listing online.
 
 ## Open questions for you
 
-1. **Does the rig need cue sequencing?** Right now python drives cues
-   imperatively (`example_show.py`). `esm` compiles into the host build now, so
-   wiring it up would let looks transition themselves the way they do on the
-   relics.
-2. **Is one universe enough long-term?** Ten 7-channel fixtures is 70 channels,
+1. **What are mythos26's other six looks?** They are slots with names like
+   `slot_4` right now. Each one is a `GeneratorHSV` in `mythos26.cpp` and a
+   changed line in the table — say what they should do and they can be written.
+2. **Does `beat_pulse` want to stay flat?** Every fixture hits together. The
+   coordinate space is already there for a hit that travels along the rig, or
+   alternates odds and evens, or lands on a different colour each bar.
+3. **Is 200ms right on the actual pars?** The envelope is three fields at the
+   top of `Pattern_Mythos_BeatPulse`. It reads punchy in a dry run; the fixtures
+   have their own response time and that is not measurable from here.
+4. **Does Mixxx actually send what its wiki says?** Note 50 for the beat and 52
+   for the tempo came off the mapping's source, not off a cable. First time it
+   is plugged in, `python -m eclipse_dmx midi-watch config/mythos26_mixxx.json`
+   prints what really arrives and says which of it we are reading as the beat.
+5. **Is one universe enough long-term?** Ten 7-channel fixtures is 70 channels,
    so there is a lot of headroom, but multi-universe is a real change if it is
    ever needed.
-3. **Which relic patterns do you actually want on the rig?** Only the obelisk's
-   three are registered. Anything else written as a `GeneratorHSV` is a one-line
-   addition.
