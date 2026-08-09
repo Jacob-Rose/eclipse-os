@@ -75,9 +75,12 @@ namespace
             "  --dry-run           ignore device.type and print frames to stderr\n"
             "  --frames <n>        render n frames then exit (0 = run until stopped)\n"
             "  --port <path>       override device.port\n"
+            "  --device <type>     override device.type (enttec_pro, enttec_open, console)\n"
             "  --pattern <name>    override pattern.name\n"
             "  --fps <n>           override device.fps\n"
             "  --show-patch        print the resolved channel map and exit\n"
+            "  --emit-frames       stream per-fixture rgb on stdout, for a viewer\n"
+            "  --emit-rate <n>     cap that stream at n per second (default 30)\n"
             "  --no-stdin          do not read the control protocol from stdin\n"
             "  --verbose           log every state change\n"
             "  --help              this text\n"
@@ -405,6 +408,7 @@ int main(int argc, char** argv)
 {
     std::string configPath;
     std::string portOverride;
+    std::string deviceOverride;
     std::string patternOverride;
     float fpsOverride = 0.0f;
     long long frameLimit = 0;
@@ -412,6 +416,8 @@ int main(int argc, char** argv)
     bool useStdin = true;
     bool verbose = false;
     bool showPatch = false;
+    bool emitFrames = false;
+    float emitRate = 30.0f;
 
     for (int i = 1; i < argc; ++i)
     {
@@ -432,11 +438,14 @@ int main(int argc, char** argv)
         }
         else if (arg == "--config" || arg == "-c") configPath = nextArg("--config");
         else if (arg == "--port")                  portOverride = nextArg("--port");
+        else if (arg == "--device")                deviceOverride = nextArg("--device");
         else if (arg == "--pattern")               patternOverride = nextArg("--pattern");
         else if (arg == "--fps")                   fpsOverride = std::stof(nextArg("--fps"));
         else if (arg == "--frames")                frameLimit = std::stoll(nextArg("--frames"));
         else if (arg == "--dry-run")               dryRun = true;
         else if (arg == "--show-patch")            showPatch = true;
+        else if (arg == "--emit-frames")           emitFrames = true;
+        else if (arg == "--emit-rate")             emitRate = std::stof(nextArg("--emit-rate"));
         else if (arg == "--no-stdin")              useStdin = false;
         else if (arg == "--verbose")               verbose = true;
         else if (arg == "--list-ports")
@@ -515,23 +524,30 @@ int main(int argc, char** argv)
     // without counting them out by hand.
     if (showPatch)
     {
+        // Report in the config's own numbering, so these line up with what is
+        // dialled on the fixtures rather than with our internal 1-based slots.
+        const int bias = (show.config.addressing == Addressing::ZeroBased) ? -1 : 0;
+
+        emit(std::string("ADDRESSING ")
+           + ((show.config.addressing == Addressing::ZeroBased) ? "zero" : "one") + "-based");
+
         int highest = 0;
         for (const Fixture& fixture : show.config.fixtures.all())
         {
             std::ostringstream line;
             line << "PATCH " << fixture.name
-                 << " r=" << (fixture.startChannel + fixture.offsetR)
-                 << " g=" << (fixture.startChannel + fixture.offsetG)
-                 << " b=" << (fixture.startChannel + fixture.offsetB);
+                 << " r=" << (fixture.startChannel + fixture.offsetR + bias)
+                 << " g=" << (fixture.startChannel + fixture.offsetG + bias)
+                 << " b=" << (fixture.startChannel + fixture.offsetB + bias);
 
             if (fixture.dimmerChannel > 0)
             {
-                line << " dimmer=" << fixture.dimmerChannel
+                line << " dimmer=" << (fixture.dimmerChannel + bias)
                      << "@" << static_cast<int>(fixture.dimmerValue);
             }
             for (const auto& entry : fixture.staticChannels)
             {
-                line << " park[" << entry.first << "]=" << static_cast<int>(entry.second);
+                line << " park[" << (entry.first + bias) << "]=" << static_cast<int>(entry.second);
             }
 
             emit(line.str());
@@ -539,13 +555,17 @@ int main(int argc, char** argv)
         }
 
         emit("OK " + std::to_string(show.config.fixtures.size())
-           + " fixtures, highest channel " + std::to_string(highest));
+           + " fixtures, highest channel " + std::to_string(highest + bias));
         return 0;
     }
 
     if (!portOverride.empty())    show.config.device.port = portOverride;
+    if (!deviceOverride.empty())  show.config.device.type = deviceOverride;
     if (!patternOverride.empty()) show.config.pattern.name = patternOverride;
     if (fpsOverride > 0.0f)       show.config.device.fps = fpsOverride;
+
+    // last, so --dry-run wins over --device: asking for both means you want to
+    // pick a widget type but not actually drive it yet.
     if (dryRun)                   show.config.device.type = "console";
 
     show.masterBrightness = show.config.master.brightness;
@@ -577,6 +597,19 @@ int main(int argc, char** argv)
         return 1;
     }
 
+    // ---- send only the channels the rig actually uses --------------------
+    // A receiver keeps whatever it already had for slots that do not arrive,
+    // so there is nothing to gain from shipping 442 trailing zeros every
+    // frame. On a serial link that padding is most of the frame time.
+    {
+        int highest = 0;
+        for (const Fixture& fixture : show.config.fixtures.all())
+        {
+            highest = std::max(highest, fixtureHighestChannel(fixture));
+        }
+        show.output->setUniverseLength(highest);
+    }
+
     if (!show.output->open(error))
     {
         logLine("output error: " + error);
@@ -584,6 +617,28 @@ int main(int argc, char** argv)
         return 1;
     }
     logLine("output: " + show.output->describe());
+
+    // ---- do not outrun the wire ------------------------------------------
+    // Asking for more frames than the link can carry does not make the rig
+    // faster. The driver queues the excess, the backlog grows without bound,
+    // and the widget ends up parsing half-written frames - which reads as a
+    // strobing, unblendable rig rather than as an error. Render at a rate the
+    // wire can actually deliver and every frame lands whole.
+    const float outputCeiling = show.output->maxFrameRate();
+    if (outputCeiling > 0.0f && show.config.device.fps > outputCeiling)
+    {
+        std::ostringstream note;
+        note.setf(std::ios::fixed);
+        note.precision(1);
+        note << "device.fps " << show.config.device.fps
+             << " is more than " << show.output->describe()
+             << " can carry; running at " << outputCeiling
+             << ". Raise device.baud for a faster refresh.";
+        logLine("warning: " + note.str());
+        emit("WARN " + note.str());
+
+        show.config.device.fps = outputCeiling;
+    }
 
     // ---- build the pattern -----------------------------------------------
     show.pattern = makePattern(show.config.pattern.name, show.config.pattern, error);
@@ -601,6 +656,8 @@ int main(int argc, char** argv)
     show.strip.reset(new eio::HSVStrip(static_cast<uint16_t>(fixtureCount), 0));
 
     show.context.fixtureCount = fixtureCount;
+    show.context.coordSpanX = show.config.pattern.coordSpanX;
+    show.context.coordSpanY = show.config.pattern.coordSpanY;
     show.context.positions.resize(fixtureCount);
     for (size_t idx = 0; idx < fixtureCount; ++idx)
     {
@@ -610,6 +667,18 @@ int main(int argc, char** argv)
     emit("READY fixtures=" + std::to_string(fixtureCount)
        + " pattern=" + show.config.pattern.name
        + " output=" + show.output->describe());
+
+    if (emitFrames)
+    {
+        // Name the fixtures once, so the frame lines can stay compact.
+        std::ostringstream names;
+        names << "FIXTURES";
+        for (const Fixture& fixture : show.config.fixtures.all())
+        {
+            names << " " << fixture.name;
+        }
+        emit(names.str());
+    }
 
     StdinReader stdinReader;
     if (useStdin)
@@ -623,6 +692,7 @@ int main(int argc, char** argv)
 
     auto lastFrame = clock::now();
     auto nextFrame = lastFrame;
+    auto nextEmit = lastFrame; // emit the first frame straight away
     long long framesRendered = 0;
     int exitCode = 0;
 
@@ -669,6 +739,43 @@ int main(int argc, char** argv)
             emit("ERR output " + error);
             exitCode = 1;
             break;
+        }
+
+        // Stream what actually went out, for a viewer. Read back out of the
+        // universe rather than off the pattern: a viewer fed from the pattern
+        // would happily show a beautiful rig while the patch was wrong.
+        if (emitFrames)
+        {
+            // Advance the target by exactly one period rather than restarting
+            // it from now. Resetting to now rounds every wait up to the next
+            // render tick, so asking for 30 on a 40fps show silently gives 20.
+            // Accumulating lets the emitted rate average out to what was asked.
+            const auto period = std::chrono::duration<float>(1.0f / std::max(emitRate, 0.1f));
+
+            if (now >= nextEmit)
+            {
+                nextEmit += std::chrono::duration_cast<clock::duration>(period);
+
+                // Never bank up a burst: after a stall, start counting again
+                // from here instead of firing off every frame we owe.
+                if (nextEmit < now)
+                {
+                    nextEmit = now + std::chrono::duration_cast<clock::duration>(period);
+                }
+
+                std::ostringstream frame;
+                frame << "F";
+                for (const Fixture& fixture : show.config.fixtures.all())
+                {
+                    char swatch[8];
+                    std::snprintf(swatch, sizeof(swatch), " %02x%02x%02x",
+                                  show.universe.getChannel(fixture.startChannel + fixture.offsetR),
+                                  show.universe.getChannel(fixture.startChannel + fixture.offsetG),
+                                  show.universe.getChannel(fixture.startChannel + fixture.offsetB));
+                    frame << swatch;
+                }
+                emit(frame.str());
+            }
         }
 
         ++framesRendered;

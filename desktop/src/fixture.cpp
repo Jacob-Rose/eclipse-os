@@ -124,19 +124,22 @@ namespace
             std::vector<FixtureProfile> out;
 
             {
-                // U'King Par 36, 8-channel mode.
+                // U'King Par 36, 7-channel mode.
                 //   1 master dimmer   2 red   3 green   4 blue
                 //   5 strobe          6 mode  7 colour selection
-                //   8 (speed on these; 0 is correct either way)
+                //
+                // Parking 5-7 is the part that decides whether a cheap par
+                // works at all: leave the mode channel floating and the fixture
+                // runs its own colour macro and ignores you.
                 FixtureProfile profile;
                 profile.name = "uking_par36";
-                profile.footprint = 8;
+                profile.footprint = 7;
                 profile.dimmerOffset = 1;
                 profile.dimmerValue = 255;
                 profile.redOffset = 2;
                 profile.greenOffset = 3;
                 profile.blueOffset = 4;
-                profile.park = {{5, 0}, {6, 0}, {7, 0}, {8, 0}};
+                profile.park = {{5, 0}, {6, 0}, {7, 0}};
                 out.push_back(profile);
             }
 

@@ -7,7 +7,11 @@
 
 #include "../ecore/core.h"
 
-#define USE_SCREEN 1
+// there is no screen on a host build, and the gif/display libraries are
+// arduino-only. parenthesised so `#if !USE_SCREEN` reads correctly.
+#ifndef USE_SCREEN
+#define USE_SCREEN (USE_ARDUINO && 1)
+#endif
 
 #if USE_SCREEN
 #include <AnimatedGIF.h>

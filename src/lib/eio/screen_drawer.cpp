@@ -5,7 +5,9 @@
 
 #include "screen_drawer.h"
 
-#ifdef USE_SCREEN
+// was #ifdef, which was always true: USE_SCREEN is always *defined*, it is its
+// *value* that says whether there is a screen.
+#if USE_SCREEN
 
 #include "../ecore/logging.h"
 

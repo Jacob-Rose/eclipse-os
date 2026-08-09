@@ -191,6 +191,28 @@ bool edmx::loadConfig(const std::string& path, Config& outConfig, std::string& o
 
     Config config;
 
+    // ---- addressing ---------------------------------------------------
+    // Read first: every channel number below is interpreted through it.
+    int addressBias = 0;
+    {
+        const std::string mode = root["addressing"].asString("one");
+        if (mode == "zero" || mode == "zero-based" || mode == "0")
+        {
+            config.addressing = Addressing::ZeroBased;
+            // a config address of 0 is DMX slot 1
+            addressBias = 1;
+        }
+        else if (mode == "one" || mode == "one-based" || mode == "1")
+        {
+            config.addressing = Addressing::OneBased;
+        }
+        else
+        {
+            outError = path + ": addressing must be \"zero\" or \"one\", got '" + mode + "'";
+            return false;
+        }
+    }
+
     // ---- device -------------------------------------------------------
     {
         const JsonValue& device = root["device"];
@@ -223,6 +245,8 @@ bool edmx::loadConfig(const std::string& path, Config& outConfig, std::string& o
         config.pattern.speed      = pattern["speed"].asFloat(config.pattern.speed);
         config.pattern.width      = pattern["width"].asFloat(config.pattern.width);
         config.pattern.brightness = std::clamp(pattern["brightness"].asFloat(config.pattern.brightness), 0.0f, 1.0f);
+        config.pattern.coordSpanX = pattern["coord_span_x"].asFloat(config.pattern.coordSpanX);
+        config.pattern.coordSpanY = pattern["coord_span_y"].asFloat(config.pattern.coordSpanY);
 
         if (!pattern["color"].isNull())
         {
@@ -367,13 +391,16 @@ bool edmx::loadConfig(const std::string& path, Config& outConfig, std::string& o
                 // With a profile, the address is the fixture's own DMX address,
                 // the number set on its display. start_channel is accepted as a
                 // synonym because that is what people type.
-                int address = entry["address"].asInt(entry["start_channel"].asInt(-1));
-                if (address < 0)
+                // sentinel below any legal address in either numbering
+                const int missing = -1000;
+                int address = entry["address"].asInt(entry["start_channel"].asInt(missing));
+                if (address == missing)
                 {
                     outError = path + ": fixture entry " + std::to_string(i)
                              + " uses profile '" + profileName + "' but has no \"address\"";
                     return false;
                 }
+                address += addressBias;
 
                 const int count = std::max(1, entry["count"].asInt(1));
                 // fixtures patched back to back sit one footprint apart, which
@@ -419,9 +446,16 @@ bool edmx::loadConfig(const std::string& path, Config& outConfig, std::string& o
             // ---- explicit: every channel spelled out ---------------------
             Fixture fixture;
             fixture.name         = entry["name"].asString("fixture_" + std::to_string(i));
-            fixture.startChannel = entry["start_channel"].asInt(static_cast<int>(i) * 3 + 1);
+            fixture.startChannel = entry["start_channel"].asInt(static_cast<int>(i) * 3 + 1 - addressBias)
+                                 + addressBias;
             fixture.channelOrder = entry["channels"].asString("rgb");
-            fixture.dimmerChannel = entry["dimmer_channel"].asInt(0);
+
+            // An *absent* dimmer_channel means the fixture has no dimmer, in
+            // either numbering, so it stays 0 instead of being biased into
+            // channel 1. An explicit 0 under zero-based addressing is a real
+            // dimmer sitting in the first slot, and is shifted like any other.
+            const int dimmer = entry["dimmer_channel"].asInt(-1000);
+            fixture.dimmerChannel = (dimmer == -1000) ? 0 : (dimmer + addressBias);
             fixture.dimmerValue  = static_cast<uint8_t>(std::clamp(entry["dimmer_value"].asInt(255), 0, 255));
             fixture.brightness   = std::clamp(entry["brightness"].asFloat(1.0f), 0.0f, 1.0f);
 
@@ -449,7 +483,7 @@ bool edmx::loadConfig(const std::string& path, Config& outConfig, std::string& o
                 {
                     try
                     {
-                        const int channel = std::stoi(key);
+                        const int channel = std::stoi(key) + addressBias;
                         const int value = std::clamp(statics[key].asInt(0), 0, 255);
                         fixture.staticChannels.emplace_back(channel, static_cast<uint8_t>(value));
                     }

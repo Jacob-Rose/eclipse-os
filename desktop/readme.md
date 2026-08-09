@@ -86,6 +86,58 @@ You should see the first twelve channels of five frames. Four RGB fixtures at
 channels 1, 4, 7 and 10 means twelve channels of colour, changing frame to
 frame as the palette sweeps.
 
+## Watch it
+
+Reading channel values off a terminal tells you the numbers changed. It does
+not tell you the rig looks right. So there is a viewer:
+
+```sh
+python -m eclipse_dmx view config/uking_par36_x10.json --pattern obelisk_seasons
+```
+
+A window, one glowing disc per fixture, labelled with its name and address.
+Nothing goes on the wire unless you add `--live`, so this is safe to run at a
+desk with no rig attached.
+
+```
+[space] blackout   [n]/[p] pattern   [↑]/[↓] master   [←]/[→] speed   [q] quit
+```
+
+Two things about it are deliberate.
+
+**The layout comes out of the config**, from the same `position` fields the
+patterns are driven by — not from a hardcoded rig and not from the obelisk's
+LED geometry. Point it at a different config and you get a picture of that rig.
+A fixture with no `position` falls back to its patch order, so a config that
+never mentions position still draws as the row it almost certainly is.
+
+**The colours are read back out of the DMX universe**, not off the pattern. The
+executable streams what it actually put in the frame, so a wrong patch shows up
+as a wrong picture. A viewer fed from the pattern would cheerfully show a
+beautiful rig while the fixtures sat dark, which is the one bug a viewer exists
+to catch.
+
+It needs tkinter, which ships with python on Windows and macOS. On Debian and
+Ubuntu, `sudo apt install python3-tk`.
+
+### the frame stream
+
+The viewer is a client of a flag anything can use:
+
+```sh
+./build/eclipse-dmx --config config/example.json --dry-run --emit-frames
+```
+
+On stdout, alongside the normal protocol:
+
+```
+FIXTURES par_1 par_2 par_3 ...      once, at startup, in patch order
+F e3c545 d94616 d55b1c ...          one per frame, rrggbb per fixture
+```
+
+`--emit-rate` caps it, 30 per second by default. It is a display rate, not the
+DMX refresh — the rig still runs at `device.fps` whatever the viewer asks for.
+
 ## Run it for real
 
 ```sh
@@ -114,7 +166,7 @@ layout once, and one `fixtures` entry patches the whole bank:
 ]
 ```
 
-That is ten U'King Par 36 in 8-channel mode at addresses 1, 9, 17 … 73, with
+That is ten U'King Par 36 in 7-channel mode at addresses 1, 8, 15 … 64, with
 each fixture's dimmer driven and its strobe/mode/colour channels parked. See
 `config/uking_par36_x10.json`.
 
@@ -125,11 +177,35 @@ apart; `spacing` overrides the stride if addresses were left with gaps.
 `--list-profiles` prints the shipped ones:
 
 ```
-uking_par36 (8ch)  1:dimmer=255  2:red  3:green  4:blue  5:park=0  6:park=0  7:park=0  8:park=0
+uking_par36 (7ch)  1:dimmer=255  2:red  3:green  4:blue  5:park=0  6:park=0  7:park=0
 rgb3        (3ch)  1:red  2:green  3:blue
 rgb4_dimmer (4ch)  1:dimmer=255  2:red  3:green  4:blue
 rgb7_par    (7ch)  1:red  2:green  3:blue  4:dimmer=255  5:park=0  6:park=0  7:park=0
 ```
+
+#### zero-based or one-based
+
+DMX512 numbers its 512 slots 1..512, and that is what this assumes. Plenty of
+fixtures label their address dial 0..511 instead, so the first light reads as
+`0` and the next as `8`. Rather than make you translate, say which numbering
+the file uses:
+
+```json
+"addressing": "zero"
+```
+
+Every channel number in the file is then read that way — fixture addresses,
+`start_channel`, `dimmer_channel`, and `static_channels` keys — and
+`--show-patch` reports back in the same numbering, so what you read on screen
+matches what is dialled on the fixture.
+
+This changes nothing on the wire. A fixture at zero-based `0` and one at
+one-based `1` are the same slot and produce byte-identical output. The default
+is `"one"`.
+
+One corner worth knowing: an *absent* `dimmer_channel` means the fixture has no
+dimmer, in either numbering. An explicit `0` under zero-based addressing is a
+real dimmer in the first slot.
 
 Define your own in a `profiles` block, straight off the fixture's manual —
 offsets are 1-based within the fixture, so a chart transcribes directly. A
@@ -224,9 +300,41 @@ a mode that ignores its colour channels (`static_channels`).
 | `pulse` | whole rig breathing on `pattern.color` |
 | `identify` | one fixture at a time in white, for commissioning |
 | `off` | dark |
+| `obelisk_seasons` | the obelisk's four-seasons noise field |
+| `obelisk_theater` | the obelisk's theatre chase |
+| `obelisk_mono` | the obelisk's flat colour |
 
 `rainbow` is the one to reach for when commissioning: anything other than a
 clean spectrum across the rig means a channel order is wrong.
+
+`--list-patterns` prints the live list, which is the authoritative one.
+
+#### relic patterns
+
+The `obelisk_*` entries are not reimplementations. They are
+`src/relics/obelisk/state_obelisk.cpp` compiled for the host and run as-is.
+
+A relic pattern is a `GeneratorHSV`: it reads a node's 2D coordinate and writes
+a colour, and it has no idea whether the node is an LED on a strip or a par on
+a truss. `edmx::GeneratorPattern` builds one `HSVStripNode_Mapped2D` per
+fixture, hands them to the generator, and the look renders. Adding another relic
+pattern is one source file in `ECLIPSE_RELIC_SOURCES` and one line in
+`ensureBuiltinsRegistered()`.
+
+What needs care is the *coordinate space*. Relic patterns were written against
+a physical layout, and a noise field tuned for a 43-pixel strip reads as flat
+colour if you hand it 0..1. So a rig's normalised positions are stretched
+across a span:
+
+```json
+"pattern": { "coord_span_x": 8, "coord_span_y": 43 }
+```
+
+The defaults run a line of fixtures diagonally across the obelisk's own space:
+8 wide (its four sides, two strips each, which is where the per-side palettes
+in `obelisk_seasons` come from) and 43 tall (one strip, which is where its
+noise gets its variation). A rig therefore picks up both the side palettes and
+real spatial motion. Change them to take a different slice.
 
 `pattern.palette` takes either a built-in name from `kits/palettes.h` or an
 explicit list like `["#ff0044", "#22ffcc"]`. `--list-palettes` names them all.
@@ -304,6 +412,7 @@ python -m eclipse_dmx validate my_rig.json     # check a patch, touch nothing
 python -m eclipse_dmx patch my_rig.json        # print the resolved channel map
 python -m eclipse_dmx generate --profile uking_par36 --count 10 -o my_rig.json
 python -m eclipse_dmx run my_rig.json --dry-run --seconds 5
+python -m eclipse_dmx view my_rig.json          # watch it in a window
 ```
 
 And a worked example with a cue list in `python/example_show.py`.
@@ -315,12 +424,44 @@ firmware that owns the DMX timing, so a frame is just a framed message over its
 virtual COM port and the host being briefly busy does not disturb the output.
 PRO Mk2 works on port 1.
 
-**Enttec Open DMX USB** (`"type": "enttec_open"`) is supported because the
-hardware is cheap and common, but it is the worse path. There is no firmware:
-the host has to generate the DMX break and clock the frame out itself, so
-output timing is at the mercy of the OS scheduler and you may see flicker under
-load. On Linux it needs the FTDI VCP driver and 250000 baud, which is available
-there but not on macOS.
+**Enttec Open DMX USB** (`"type": "enttec_open"`) covers the bare FTDI cables,
+which is most of what "USB to DMX" means when it is cheap. There is no firmware:
+the host generates the DMX break and clocks the frame out itself. On Linux it
+needs the FTDI VCP driver and 250000 baud, which is available there but not on
+macOS.
+
+Two things make or break this path, both learned the hard way:
+
+- **Flush before the break.** The break must not be asserted while the previous
+  frame is still draining, or that frame is truncated and the break lands where
+  no receiver expects it. `FlushFileBuffers` on Windows, `tcdrain` on posix.
+- **Do not `sleep` for the break.** It is 92us, and a Windows sleep rounds up to
+  the scheduler tick — 1ms at best, often 15. The problem is not that this is
+  long but that it *varies*, and a receiver that cannot find a consistent break
+  start reads every frame shifted. `serial_port.cpp` spins instead.
+
+Get either wrong and the failure is not silence, it is a rig that looks steady
+on a solid colour and strobes the moment anything animates — because a shifted
+frame lands your colour data on the fixture's mode and strobe channels.
+
+### which one do I have?
+
+You cannot always tell from the USB descriptor. A widget that enumerates as a
+plain `FT232R USB UART` with a stock EEPROM is a bare cable and wants
+`enttec_open`; a real PRO programs its EEPROM to say `DMX USB PRO`. But clones
+vary, so if in doubt try both:
+
+```sh
+eclipse-dmx --config my_rig.json --device enttec_open --pattern solid
+eclipse-dmx --config my_rig.json --device enttec_pro   --pattern solid
+```
+
+`solid` is the right pattern for this: an unchanging frame, so anything other
+than one steady colour means the frames are not arriving intact.
+
+If QLC+ is installed, its Inputs/Outputs panel names the device it found, and
+its `Fixtures/` folder holds `.qxf` definitions that are a far better source for
+a channel map than most listings online.
 
 **console** (`"type": "console"`, or `--dry-run`) prints frames instead of
 sending them.

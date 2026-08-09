@@ -33,7 +33,7 @@ namespace eanim
         // generate color for provided index
         // node is provided for any required context
         virtual void render(HSVStripNode* node, HSV& InOutColor) const = 0;
-        virtual void tick(float deltaTime) {} // optional, if the generator needs to update any internal state
+        virtual void tick(float /*deltaTime*/) {} // optional, if the generator needs to update any internal state
     
     };
 

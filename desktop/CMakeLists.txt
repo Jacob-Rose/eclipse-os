@@ -46,22 +46,44 @@ set(ECLIPSE_CORE_SOURCES
     ${ECLIPSE_SRC}/lib/eanim/generator_float.cpp
     ${ECLIPSE_SRC}/lib/eanim/generator_hsv.cpp
     ${ECLIPSE_SRC}/lib/eanim/lfo.cpp
+    ${ECLIPSE_SRC}/lib/eanim/noise.cpp
     ${ECLIPSE_SRC}/lib/eanim/processor_float.cpp
 
     ${ECLIPSE_SRC}/lib/eio/hsv_strip.cpp
+    ${ECLIPSE_SRC}/lib/eio/relic.cpp
+    ${ECLIPSE_SRC}/lib/eio/screen_drawer.cpp
     ${ECLIPSE_SRC}/lib/eio/strip_projection.cpp
 
+    ${ECLIPSE_SRC}/lib/esm/state.cpp
+    ${ECLIPSE_SRC}/lib/esm/state_generic.cpp
+
     ${ECLIPSE_SRC}/lib/external/easing.cpp
+
+    ${ECLIPSE_SRC}/kits/effects.cpp
 )
 
-# Deliberately left out of the MVP:
-#   eanim/noise.cpp   - FastNoiseLite is portable, just not needed until a
-#                       pattern actually wants noise.
-#   esm/*             - the state machine reaches into eio::Relic and calls an
-#                       unqualified clamp() that only resolves on the Arduino
-#                       side. Portable in principle, but it is not on the
-#                       config -> fixture -> DMX throughline, so it can wait.
-#   emqtt/, ewifi/    - hard Arduino dependencies.
+# Relic *pattern* sources built for the host.
+#
+# The patterns only - not the relic's device/IO layer. obelisk.cpp (ObeliskIO,
+# RelicCore, the neopixel strip segments) is deliberately absent: the look is
+# the portable part, and here it renders through our own fixture patch instead
+# of a physical strip.
+#
+# These are the actual relic patterns, not copies. A pattern is a GeneratorHSV,
+# so anything written for a relic runs here through edmx::GeneratorPattern with
+# no porting at all. Add a pattern source here, register it in pattern.cpp,
+# done.
+set(ECLIPSE_RELIC_SOURCES
+    ${ECLIPSE_SRC}/relics/obelisk/state_obelisk.cpp
+)
+
+list(APPEND ECLIPSE_CORE_SOURCES ${ECLIPSE_RELIC_SOURCES})
+
+# Still out of the host build:
+#   emqtt/, ewifi/    - hard Arduino dependencies (WiFi.h, PubSubClient).
+#   imgs/, screen     - the gif/display path needs AnimatedGIF and the GC9A01A
+#                       driver. screen_drawer compiles to nothing when
+#                       USE_SCREEN is 0, which is what lets eio::Relic build.
 
 add_library(eclipse_core STATIC ${ECLIPSE_CORE_SOURCES})
 
@@ -131,6 +153,11 @@ if(MSVC)
     target_compile_definitions(eclipse_core PUBLIC _CRT_SECURE_NO_WARNINGS)
 else()
     target_compile_options(edmx PRIVATE -Wall -Wextra)
+
+    # FastNoiseLite's 3D cellular path trips -Waggressive-loop-optimizations at
+    # -O2. It is vendored third-party code and we only ever call the 2D entry
+    # points, so silence it here rather than editing someone else's header.
+    target_compile_options(eclipse_core PRIVATE -Wno-aggressive-loop-optimizations)
 endif()
 
 install(TARGETS eclipse-dmx RUNTIME DESTINATION bin)

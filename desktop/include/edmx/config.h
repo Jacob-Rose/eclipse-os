@@ -23,7 +23,18 @@ namespace edmx
     {
         std::string type{"enttec_pro"}; ///< enttec_pro | enttec_open | console
         std::string port{"auto"};       ///< "auto", "COM3", "/dev/ttyUSB0"
-        int baud{115200};               ///< PRO link speed; ignored by enttec_open
+        /// PRO link speed; ignored by enttec_open, which is always 250000.
+        ///
+        /// 115200 is what the PRO's firmware expects on its USB side, and it
+        /// is not negotiable: the widget has a microcontroller behind the FTDI
+        /// reading at a fixed rate, so a "faster" link just hands it garbage.
+        /// Raising this to 250000 does not speed the rig up, it makes the
+        /// widget mis-parse frames and the fixtures flicker.
+        ///
+        /// The rate that actually matters is how many bytes we put in a frame;
+        /// see setUniverseLength. Trimmed to a real rig's channel count, a
+        /// frame is well under a millisecond of link time even at 115200.
+        int baud{115200};
         float fps{40.0f};               ///< DMX refresh rate; 40 is the spec's max
         int consoleChannels{12};        ///< how many channels the console output prints
     };
@@ -48,10 +59,32 @@ namespace edmx
 
         /// Fixed colour for the `solid` pattern.
         ecore::HSV solidColor{0.0f, 1.0f, 1.0f};
+
+        /// How a line of fixtures is projected into the coordinate space that
+        /// relic patterns expect. See PatternContext for why this is not 0..1.
+        float coordSpanX{8.0f};
+        float coordSpanY{43.0f};
+    };
+
+    /// How the config numbers DMX channels.
+    ///
+    /// DMX512 sends a start code then 512 data slots, and the standard numbers
+    /// those slots 1..512. Plenty of fixtures label their address dial 0..511
+    /// instead, so a rig's first light reads as 0 and the next as 8.
+    ///
+    /// This only changes how the *config* is read. Internally, and on the wire,
+    /// slot numbering never moves: a fixture at zero-based 0 and one at
+    /// one-based 1 produce byte-for-byte identical output.
+    enum class Addressing
+    {
+        OneBased, ///< first slot is 1 (the DMX512 convention, and the default)
+        ZeroBased ///< first slot is 0 (what many fixture displays show)
     };
 
     struct Config
     {
+        Addressing addressing{Addressing::OneBased};
+
         DeviceConfig device;
         MasterConfig master;
         PatternConfig pattern;

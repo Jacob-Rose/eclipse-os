@@ -26,11 +26,28 @@ using namespace edmx;
 
 namespace
 {
-    void sleepMicroseconds(int microseconds)
+    /// Busy-waits for a few microseconds.
+    ///
+    /// Deliberately a spin rather than sleep_for. DMX's break is 92us and its
+    /// mark-after-break 12us, while a Windows sleep rounds up to the scheduler
+    /// tick — 1ms at best, often 15. Sleeping here does not merely make the
+    /// break long, it makes it *variable*, and a receiver that cannot find a
+    /// consistent break start reads the frame shifted.
+    ///
+    /// At 40fps this spins for well under a millisecond a second, which is a
+    /// fair price for a frame that lands.
+    void spinMicroseconds(int microseconds)
     {
-        if (microseconds > 0)
+        if (microseconds <= 0)
         {
-            std::this_thread::sleep_for(std::chrono::microseconds(microseconds));
+            return;
+        }
+
+        const auto target = std::chrono::steady_clock::now()
+                          + std::chrono::microseconds(microseconds);
+        while (std::chrono::steady_clock::now() < target)
+        {
+            // nothing: the wait *is* the work
         }
     }
 
@@ -115,8 +132,12 @@ bool SerialPort::open(const std::string& path, int baud, std::string& outError, 
     dcb.fParity         = FALSE;
     dcb.fOutxCtsFlow    = FALSE;
     dcb.fOutxDsrFlow    = FALSE;
-    dcb.fDtrControl     = DTR_CONTROL_ENABLE;
-    dcb.fRtsControl     = RTS_CONTROL_ENABLE;
+    // Leave DTR and RTS alone rather than asserting them. Neither line means
+    // anything to a DMX widget, but plenty of FTDI-based boards wire one of
+    // them to a reset or to the RS485 driver-enable, where asserting it holds
+    // the thing mute. Nothing downstream needs them, so do not drive them.
+    dcb.fDtrControl     = DTR_CONTROL_DISABLE;
+    dcb.fRtsControl     = RTS_CONTROL_DISABLE;
     dcb.fOutX           = FALSE;
     dcb.fInX            = FALSE;
     dcb.fAbortOnError   = FALSE;
@@ -192,19 +213,26 @@ bool SerialPort::sendBreak(int microseconds, int markAfterMicroseconds, std::str
         return false;
     }
 
+    // Push out anything still queued first, exactly as the posix path does with
+    // tcdrain. Without this the break is asserted while the previous frame is
+    // still draining out of the driver, which truncates that frame and moves
+    // the break to a place no receiver expects. On a dumb FTDI cable that is
+    // the difference between a rig that renders and a rig that strobes.
+    ::FlushFileBuffers(static_cast<HANDLE>(handle));
+
     if (!::SetCommBreak(static_cast<HANDLE>(handle)))
     {
         outError = "SetCommBreak failed: " + lastWindowsError();
         return false;
     }
-    sleepMicroseconds(microseconds);
+    spinMicroseconds(microseconds);
 
     if (!::ClearCommBreak(static_cast<HANDLE>(handle)))
     {
         outError = "ClearCommBreak failed: " + lastWindowsError();
         return false;
     }
-    sleepMicroseconds(markAfterMicroseconds);
+    spinMicroseconds(markAfterMicroseconds);
     return true;
 }
 
@@ -414,14 +442,14 @@ bool SerialPort::sendBreak(int microseconds, int markAfterMicroseconds, std::str
         outError = "TIOCSBRK failed: " + lastPosixError();
         return false;
     }
-    sleepMicroseconds(microseconds);
+    spinMicroseconds(microseconds);
 
     if (::ioctl(fd, TIOCCBRK, 0) < 0)
     {
         outError = "TIOCCBRK failed: " + lastPosixError();
         return false;
     }
-    sleepMicroseconds(markAfterMicroseconds);
+    spinMicroseconds(markAfterMicroseconds);
     return true;
 }
 

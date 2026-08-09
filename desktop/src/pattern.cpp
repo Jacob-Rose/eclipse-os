@@ -7,8 +7,13 @@
 
 #include <algorithm>
 #include <cmath>
+#include <map>
 
 #include "lib/ecore/math.h"
+
+// The relic's own pattern source, compiled for the host. Not a copy: this is
+// the same file the obelisk runs, and it needed no changes to get here.
+#include "relics/obelisk/state_obelisk.h"
 
 using namespace edmx;
 
@@ -238,6 +243,122 @@ namespace
     };
 }
 
+// ============================================================================
+// GeneratorHSV adapter
+// ============================================================================
+
+GeneratorPattern::GeneratorPattern(const char* inName, std::shared_ptr<eanim::GeneratorHSV> inGenerator)
+    : name(inName), generator(std::move(inGenerator))
+{
+}
+
+void GeneratorPattern::ensureNodes(const PatternContext& context)
+{
+    if (nodes.size() == context.fixtureCount && strip)
+    {
+        return;
+    }
+
+    strip.reset(new eio::HSVStrip(static_cast<uint16_t>(context.fixtureCount), 0));
+    segment.reset(new eio::HSVStripSegment(strip.get(), 0));
+    nodes.clear();
+
+    for (size_t idx = 0; idx < context.fixtureCount; ++idx)
+    {
+        auto node = std::make_shared<eio::HSVStripNode_Mapped2D>(segment.get(), static_cast<int>(idx));
+
+        // Give the generator a coordinate space it recognises, by running the
+        // rig diagonally across it. x picks up anything the pattern keys off
+        // sides or columns; y gives a noise field the range it needs to not
+        // read as flat colour.
+        const float position = (idx < context.positions.size()) ? context.positions[idx] : 0.0f;
+        node->coord.x = position * context.coordSpanX;
+        node->coord.y = position * context.coordSpanY;
+
+        nodes.push_back(node);
+    }
+}
+
+void GeneratorPattern::tick(float deltaTime)
+{
+    generator->tick(deltaTime);
+}
+
+void GeneratorPattern::render(const PatternContext& context, std::vector<ecore::HSV>& outColors)
+{
+    ensureNodes(context);
+
+    outColors.resize(context.fixtureCount);
+    for (size_t idx = 0; idx < context.fixtureCount; ++idx)
+    {
+        ecore::HSV color;
+        generator->render(nodes[idx].get(), color);
+
+        color.setBrightnessAlpha(color.getValFloat() * brightness);
+        outColors[idx] = color;
+    }
+}
+
+// ============================================================================
+// Registry
+// ============================================================================
+
+namespace
+{
+    /// name -> factory. Ordered so --list-patterns is stable, and a map so a
+    /// later registration of the same name replaces an earlier one.
+    std::map<std::string, PatternFactory>& registry()
+    {
+        static std::map<std::string, PatternFactory> instance;
+        return instance;
+    }
+
+    /// Registers the shipped patterns on first use.
+    ///
+    /// Adding one is a single line here. The relic entries wrap a GeneratorHSV
+    /// straight out of the relic's own source, which is what keeps looks
+    /// shared between the microcontrollers and this.
+    void ensureBuiltinsRegistered()
+    {
+        static bool done = false;
+        if (done)
+        {
+            return;
+        }
+        done = true;
+
+        auto& table = registry();
+
+        table["solid"]        = []() { return std::unique_ptr<Pattern>(new SolidPattern()); };
+        table["palette_wave"] = []() { return std::unique_ptr<Pattern>(new PaletteWavePattern()); };
+        table["rainbow"]      = []() { return std::unique_ptr<Pattern>(new RainbowPattern()); };
+        table["chase"]        = []() { return std::unique_ptr<Pattern>(new ChasePattern()); };
+        table["pulse"]        = []() { return std::unique_ptr<Pattern>(new PulsePattern()); };
+        table["identify"]     = []() { return std::unique_ptr<Pattern>(new IdentifyPattern()); };
+        table["off"]          = []() { return std::unique_ptr<Pattern>(new OffPattern()); };
+
+        // --- relic patterns, unmodified -------------------------------------
+        table["obelisk_seasons"] = []() {
+            return std::unique_ptr<Pattern>(new GeneratorPattern(
+                "obelisk_seasons", std::make_shared<Pattern_Obelisk_FourSeasons>()));
+        };
+        table["obelisk_theater"] = []() {
+            return std::unique_ptr<Pattern>(new GeneratorPattern(
+                "obelisk_theater", std::make_shared<Pattern_Obelisk_Theater>()));
+        };
+        table["obelisk_mono"] = []() {
+            return std::unique_ptr<Pattern>(new GeneratorPattern(
+                "obelisk_mono", std::make_shared<Pattern_Obelisk_Monocolor>()));
+        };
+    }
+}
+
+void edmx::registerPattern(const std::string& name, PatternFactory factory)
+{
+    ensureBuiltinsRegistered();
+    registry()[name] = std::move(factory);
+}
+
 ecore::HSVPalette edmx::resolvePalette(const PatternConfig& config)
 {
     // Explicit stops win over a name: if someone listed colours, honour them.
@@ -261,24 +382,24 @@ ecore::HSVPalette edmx::resolvePalette(const PatternConfig& config)
 
 std::vector<std::string> edmx::patternNames()
 {
-    return {"solid", "palette_wave", "rainbow", "chase", "pulse", "identify", "off"};
+    ensureBuiltinsRegistered();
+
+    std::vector<std::string> names;
+    for (const auto& entry : registry())
+    {
+        names.push_back(entry.first);
+    }
+    return names;
 }
 
 std::unique_ptr<Pattern> edmx::makePattern(const std::string& name,
                                            const PatternConfig& config,
                                            std::string& outError)
 {
-    std::unique_ptr<Pattern> pattern;
+    ensureBuiltinsRegistered();
 
-    if      (name == "solid")        pattern.reset(new SolidPattern());
-    else if (name == "palette_wave") pattern.reset(new PaletteWavePattern());
-    else if (name == "rainbow")      pattern.reset(new RainbowPattern());
-    else if (name == "chase")        pattern.reset(new ChasePattern());
-    else if (name == "pulse")        pattern.reset(new PulsePattern());
-    else if (name == "identify")     pattern.reset(new IdentifyPattern());
-    else if (name == "off")          pattern.reset(new OffPattern());
-
-    if (!pattern)
+    auto it = registry().find(name);
+    if (it == registry().end())
     {
         std::string known;
         for (const std::string& candidate : patternNames())
@@ -286,6 +407,13 @@ std::unique_ptr<Pattern> edmx::makePattern(const std::string& name,
             known += (known.empty() ? "" : ", ") + candidate;
         }
         outError = "unknown pattern '" + name + "' (available: " + known + ")";
+        return nullptr;
+    }
+
+    std::unique_ptr<Pattern> pattern = it->second();
+    if (!pattern)
+    {
+        outError = "pattern '" + name + "' failed to build";
         return nullptr;
     }
 

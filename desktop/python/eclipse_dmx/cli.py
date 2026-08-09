@@ -68,20 +68,28 @@ def _cmd_patch(args: argparse.Namespace) -> int:
     config = Config.load(args.config)
     config.validate(strict_overlap=not args.allow_overlap)
 
+    # Reported in the config's own numbering, so these line up with what is
+    # dialled on the fixtures. Matches the executable's --show-patch.
+    show = config.display_channel
+    print(f"addressing: {config.addressing}-based")
+    print()
+
     highest = 0
     for fixture in config.fixtures:
-        r, g, b = (fixture.start_channel + offset for offset in fixture.offsets())
+        r, g, b = (show(fixture.start_channel + offset) for offset in fixture.offsets())
         line = f"{fixture.name:<16} r={r:<4} g={g:<4} b={b:<4}"
         if fixture.dimmer_channel:
-            line += f" dimmer={fixture.dimmer_channel}@{fixture.dimmer_value}"
+            line += f" dimmer={show(fixture.dimmer_channel)}@{fixture.dimmer_value}"
         if fixture.static_channels:
-            parked = " ".join(f"park[{c}]={v}" for c, v in sorted(fixture.static_channels.items()))
+            parked = " ".join(
+                f"park[{show(c)}]={v}" for c, v in sorted(fixture.static_channels.items())
+            )
             line += f" {parked}"
         print(line)
         highest = max(highest, max(fixture.used_channels()))
 
     print()
-    print(f"{len(config.fixtures)} fixtures, highest channel {highest}")
+    print(f"{len(config.fixtures)} fixtures, highest channel {show(highest)}")
     return 0
 
 
@@ -112,6 +120,27 @@ def _cmd_run(args: argparse.Namespace) -> int:
 
         code = show.wait(args.seconds)
         return 0 if code is None else code
+
+
+def _cmd_view(args: argparse.Namespace) -> int:
+    """Opens the viewer. Imported here so the rest of the CLI works headless."""
+    try:
+        from .viewer import view
+    except ImportError as error:  # tkinter missing (some slim linux pythons)
+        print(
+            f"error: the viewer needs tkinter, which this python does not have ({error}).\n"
+            f"       on debian/ubuntu: sudo apt install python3-tk",
+            file=sys.stderr,
+        )
+        return 1
+
+    return view(
+        args.config,
+        executable=args.executable,
+        pattern=args.pattern,
+        live=args.live,
+        emit_rate=args.emit_rate,
+    )
 
 
 def _cmd_list(args: argparse.Namespace) -> int:
@@ -190,6 +219,17 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--brightness", type=float, help="override master brightness (0..1)")
     run.add_argument("--verbose", "-v", action="store_true", help="echo the executable's logs")
     run.set_defaults(func=_cmd_run)
+
+    viewer = subparsers.add_parser(
+        "view", help="watch the rig in a window, laid out from the config"
+    )
+    viewer.add_argument("config")
+    viewer.add_argument("--pattern", help="start on this pattern instead of the config's")
+    viewer.add_argument("--live", action="store_true",
+                        help="also drive the real rig; without this nothing is put on the wire")
+    viewer.add_argument("--emit-rate", type=float, default=30.0,
+                        help="frames per second to draw (default 30)")
+    viewer.set_defaults(func=_cmd_view)
 
     return parser
 

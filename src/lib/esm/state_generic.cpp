@@ -4,6 +4,8 @@
 // See readme.md for full license details.
 #include "state_generic.h"
 
+#include <algorithm>
+
 #include "../ecore/core.h"
 #include "../ecore/math.h"
 #include "../ecore/logging.h"
@@ -82,7 +84,10 @@ void StateMachine_GenericHSV::tick(float deltaTime)
             for(const std::shared_ptr<HSVStripNode>& node : seg.second->getNodes())
             {
                 float alpha = currentTransitionTime / transitionTime;
-                alpha = clamp(alpha, 0.0f, 1.0f); // ensure alpha is between 0 and 1
+                // was unqualified clamp(), which only resolved via the
+                // `using namespace std;` that relic.h happens to leak, and only
+                // when something else had already pulled in <algorithm>
+                alpha = std::clamp(alpha, 0.0f, 1.0f);
 
                 HSV color = getActiveState() == nullptr ? HSV(0.f, 0.f, 0.f) : node->getBuffer(ActiveState->getStateID());
                 HSV color2 = getNextState() == nullptr ? HSV(0.f, 0.f, 0.f) : node->getBuffer(NextState->getStateID());

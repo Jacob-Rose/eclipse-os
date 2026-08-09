@@ -69,6 +69,27 @@ namespace edmx
         /// Push one frame. Returning false ends the show with outError.
         virtual bool sendFrame(const DmxUniverse& universe, std::string& outError) = 0;
 
+        /// Send only the first `channels` slots, instead of all 512.
+        ///
+        /// A DMX frame does not have to carry the whole universe: a receiver
+        /// takes what arrives and keeps what it already had. A rig using 70
+        /// channels has no use for the 442 zeros behind them, and sending them
+        /// anyway is the difference between a 519-byte frame and a 77-byte one
+        /// — which on a serial link is most of the reason a rig cannot keep up.
+        ///
+        /// Clamped to a sane floor: some fixtures dislike very short frames.
+        virtual void setUniverseLength(int channels) { (void)channels; }
+
+        /// Frames per second this output can actually sustain, or 0 for "no
+        /// limit worth enforcing".
+        ///
+        /// This matters more than it looks. A serial widget can only carry so
+        /// many bytes a second, and asking for frames faster than that does not
+        /// give a faster rig — it grows an unbounded backlog in the driver
+        /// until the widget's parser loses sync, and the fixtures strobe on
+        /// half-read frames. Better to render slower and correctly.
+        virtual float maxFrameRate() const { return 0.0f; }
+
         virtual std::string describe() const = 0;
     };
 
@@ -90,10 +111,15 @@ namespace edmx
         bool isOpen() const override;
         bool sendFrame(const DmxUniverse& universe, std::string& outError) override;
         std::string describe() const override;
+        float maxFrameRate() const override;
+        void setUniverseLength(int channels) override;
 
     private:
+        void rebuildPacket();
+
         std::string port;
         int baud;
+        int universeLength{DMX_CHANNEL_COUNT};
         SerialPort serial;
         std::vector<uint8_t> packet; // reused every frame, no per-frame allocation
     };
@@ -116,9 +142,12 @@ namespace edmx
         bool isOpen() const override;
         bool sendFrame(const DmxUniverse& universe, std::string& outError) override;
         std::string describe() const override;
+        float maxFrameRate() const override;
+        void setUniverseLength(int channels) override;
 
     private:
         std::string port;
+        int universeLength{DMX_CHANNEL_COUNT};
         SerialPort serial;
         std::vector<uint8_t> packet;
     };

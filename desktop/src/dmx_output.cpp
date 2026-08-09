@@ -39,16 +39,28 @@ namespace
 EnttecProOutput::EnttecProOutput(const std::string& inPort, int inBaud)
     : port(inPort), baud(inBaud)
 {
-    // start code + 512 channels is the payload the widget wants; anything
-    // shorter and some fixtures never see their channel.
-    const size_t payload = 1 + DMX_CHANNEL_COUNT;
-    packet.resize(4 + payload + 1);
+    rebuildPacket();
+}
+
+void EnttecProOutput::rebuildPacket()
+{
+    const size_t payload = 1 + static_cast<size_t>(universeLength);
+    packet.assign(4 + payload + 1, 0);
     packet[0] = ENTTEC_START_OF_MESSAGE;
     packet[1] = ENTTEC_LABEL_SEND_DMX;
     packet[2] = static_cast<uint8_t>(payload & 0xFF);
     packet[3] = static_cast<uint8_t>((payload >> 8) & 0xFF);
     packet[4] = DMX_START_CODE;
     packet.back() = ENTTEC_END_OF_MESSAGE;
+}
+
+void EnttecProOutput::setUniverseLength(int channels)
+{
+    // The widget's send-DMX request takes 25..513 bytes of payload, so the
+    // shortest legal universe is 24 channels. Nothing patched that low needs
+    // the difference anyway.
+    universeLength = std::clamp(channels, 24, DMX_CHANNEL_COUNT);
+    rebuildPacket();
 }
 
 bool EnttecProOutput::open(std::string& outError)
@@ -74,13 +86,23 @@ bool EnttecProOutput::sendFrame(const DmxUniverse& universe, std::string& outErr
         return false;
     }
 
-    std::copy(universe.data(), universe.data() + universe.size(), packet.begin() + 5);
+    std::copy(universe.data(), universe.data() + universeLength, packet.begin() + 5);
     return serial.write(packet.data(), packet.size(), outError);
 }
 
 std::string EnttecProOutput::describe() const
 {
-    return "enttec_pro on " + port + " @ " + std::to_string(baud) + " baud";
+    return "enttec_pro on " + port + " @ " + std::to_string(baud) + " baud, "
+         + std::to_string(universeLength) + " channels";
+}
+
+float EnttecProOutput::maxFrameRate() const
+{
+    // 8N1 is ten bits on the wire per byte, start and stop included. At 115200
+    // a 519-byte packet is 45ms, so the honest ceiling is about 22fps - which
+    // is why asking for 40 there strobed the rig rather than speeding it up.
+    const float bitsPerFrame = 10.0f * static_cast<float>(packet.size());
+    return static_cast<float>(baud) / bitsPerFrame;
 }
 
 // ============================================================================
@@ -90,7 +112,14 @@ std::string EnttecProOutput::describe() const
 EnttecOpenOutput::EnttecOpenOutput(const std::string& inPort)
     : port(inPort)
 {
-    packet.resize(1 + DMX_CHANNEL_COUNT);
+    packet.assign(1 + DMX_CHANNEL_COUNT, 0);
+    packet[0] = DMX_START_CODE;
+}
+
+void EnttecOpenOutput::setUniverseLength(int channels)
+{
+    universeLength = std::clamp(channels, 24, DMX_CHANNEL_COUNT);
+    packet.assign(1 + static_cast<size_t>(universeLength), 0);
     packet[0] = DMX_START_CODE;
 }
 
@@ -127,13 +156,23 @@ bool EnttecOpenOutput::sendFrame(const DmxUniverse& universe, std::string& outEr
         return false;
     }
 
-    std::copy(universe.data(), universe.data() + universe.size(), packet.begin() + 1);
+    std::copy(universe.data(), universe.data() + universeLength, packet.begin() + 1);
     return serial.write(packet.data(), packet.size(), outError);
 }
 
 std::string EnttecOpenOutput::describe() const
 {
-    return "enttec_open on " + port + " @ 250000 baud (host-timed)";
+    return "enttec_open on " + port + " @ 250000 baud (host-timed), "
+         + std::to_string(universeLength) + " channels";
+}
+
+float EnttecOpenOutput::maxFrameRate() const
+{
+    // 8N2 is eleven bits per byte, plus the break and mark we hold before each
+    // frame. That lands near DMX512's own ceiling of about 44 frames a second.
+    const float bitsPerFrame = 11.0f * static_cast<float>(packet.size());
+    const float frameSeconds = (bitsPerFrame / 250000.0f) + 0.00014f;
+    return 1.0f / frameSeconds;
 }
 
 // ============================================================================

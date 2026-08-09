@@ -22,7 +22,23 @@ DMX_CHANNEL_COUNT = 512
 
 DEVICE_TYPES = ("enttec_pro", "enttec_open", "console")
 
-PATTERN_NAMES = ("solid", "palette_wave", "rainbow", "chase", "pulse", "identify", "off")
+PATTERN_NAMES = (
+    # built-ins
+    "solid",
+    "palette_wave",
+    "rainbow",
+    "chase",
+    "pulse",
+    "identify",
+    "off",
+    # relic patterns, run unmodified through edmx::GeneratorPattern.
+    # Must stay in step with ensureBuiltinsRegistered() in desktop/src/pattern.cpp.
+    "obelisk_seasons",
+    "obelisk_theater",
+    "obelisk_mono",
+)
+
+ADDRESSING_MODES = ("one", "zero")
 
 BUILTIN_PALETTES = (
     "p_retrosunset",
@@ -125,17 +141,17 @@ class FixtureProfile:
 
 # Must stay in step with builtinProfiles() in desktop/src/fixture.cpp.
 BUILTIN_PROFILES: Dict[str, FixtureProfile] = {
-    # U'King Par 36, 8-channel mode:
+    # U'King Par 36, 7-channel mode:
     #   1 master dimmer  2 red  3 green  4 blue
-    #   5 strobe  6 mode  7 colour selection  8 (speed)
+    #   5 strobe  6 mode  7 colour selection
     "uking_par36": FixtureProfile(
         name="uking_par36",
-        footprint=8,
+        footprint=7,
         dimmer=1,
         red=2,
         green=3,
         blue=4,
-        park={5: 0, 6: 0, 7: 0, 8: 0},
+        park={5: 0, 6: 0, 7: 0},
     ),
     "rgb3": FixtureProfile(name="rgb3", footprint=3, red=1, green=2, blue=3),
     "rgb4_dimmer": FixtureProfile(
@@ -167,6 +183,11 @@ class DeviceConfig:
 
     type: str = "enttec_pro"
     port: str = "auto"
+
+    # 115200 is what the PRO's firmware expects, and it is not negotiable:
+    # there is a microcontroller behind the FTDI reading at a fixed rate, so a
+    # "faster" link just hands it garbage and the fixtures flicker. What
+    # actually buys headroom is sending fewer channels per frame.
     baud: int = 115200
     fps: float = 40.0
     console_channels: int = 12
@@ -217,6 +238,13 @@ class PatternConfig:
     palette: Union[str, List[Color]] = "p_bluemagic"
     color: Color = "#ff2200"
 
+    # How a line of fixtures is projected into the coordinate space relic
+    # patterns expect. 8 wide (the obelisk's four sides, two strips each) and
+    # 43 tall (one strip). Feeding a relic pattern 0..1 makes its noise read as
+    # flat colour.
+    coord_span_x: float = 8.0
+    coord_span_y: float = 43.0
+
     def validate(self) -> None:
         if self.name not in PATTERN_NAMES:
             raise ConfigError(f"pattern.name '{self.name}' is not one of {PATTERN_NAMES}")
@@ -224,6 +252,14 @@ class PatternConfig:
             raise ConfigError(f"pattern.width {self.width} must be positive")
         if not 0.0 <= self.brightness <= 1.0:
             raise ConfigError(f"pattern.brightness {self.brightness} must be between 0 and 1")
+
+        # A zero span collapses the rig onto one coordinate, which makes any
+        # spatial pattern render as flat colour. Easier to reject than to debug.
+        if self.coord_span_x <= 0 or self.coord_span_y <= 0:
+            raise ConfigError(
+                f"pattern.coord_span_x/_y must be positive, got "
+                f"({self.coord_span_x}, {self.coord_span_y})"
+            )
 
         if isinstance(self.palette, str):
             if self.palette not in BUILTIN_PALETTES:
@@ -249,6 +285,8 @@ class PatternConfig:
             "brightness": self.brightness,
             "palette": list(self.palette) if isinstance(self.palette, (list, tuple)) else self.palette,
             "color": self.color,
+            "coord_span_x": self.coord_span_x,
+            "coord_span_y": self.coord_span_y,
         }
 
 
@@ -371,12 +409,24 @@ class Fixture:
 
 @dataclass
 class Config:
-    """A whole rig: device, trim, look and patch."""
+    """A whole rig: device, trim, look and patch.
+
+    Channel numbers on `Fixture` are always one-based internally, whatever the
+    file said. `addressing` records only how the file we read was *numbered*, so
+    that anything printing channels back to a user can speak the same dialect
+    their fixture displays do. See `display_channel`.
+    """
 
     device: DeviceConfig = field(default_factory=DeviceConfig)
     master: MasterConfig = field(default_factory=MasterConfig)
     pattern: PatternConfig = field(default_factory=PatternConfig)
     fixtures: List[Fixture] = field(default_factory=list)
+
+    addressing: str = "one"
+
+    def display_channel(self, channel: int) -> int:
+        """A one-based internal channel, back in the config's own numbering."""
+        return channel - 1 if self.addressing == "zero" else channel
 
     # -- building ---------------------------------------------------------
 
@@ -478,6 +528,9 @@ class Config:
         With `strict_overlap` a channel claimed by two fixtures is an error;
         turn it off if you are deliberately stacking fixtures on one address.
         """
+        if self.addressing not in ADDRESSING_MODES:
+            raise ConfigError(f"addressing '{self.addressing}' is not one of {ADDRESSING_MODES}")
+
         self.device.validate()
         self.master.validate()
         self.pattern.validate()
@@ -512,7 +565,12 @@ class Config:
     # -- serialising ------------------------------------------------------
 
     def to_dict(self) -> Dict[str, Any]:
+        # Always written one-based, whatever the source file used, because the
+        # fixtures below carry resolved one-based channels. Saying so explicitly
+        # means a zero-based config that round-trips through here cannot come
+        # back out and get biased a second time.
         return {
+            "addressing": "one",
             "device": self.device.to_dict(),
             "master": self.master.to_dict(),
             "pattern": self.pattern.to_dict(),
@@ -535,6 +593,18 @@ class Config:
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "Config":
         config = cls()
+
+        # Read first: every channel number below is interpreted through it.
+        # Must stay in step with loadConfig() in desktop/src/config.cpp.
+        stated = str(data.get("addressing", "one")).lower()
+        if stated in ("zero", "zero-based", "0"):
+            config.addressing = "zero"
+            bias = 1  # a config address of 0 is DMX slot 1
+        elif stated in ("one", "one-based", "1"):
+            config.addressing = "one"
+            bias = 0
+        else:
+            raise ConfigError(f"addressing must be \"zero\" or \"one\", got '{stated}'")
 
         device = data.get("device", {})
         config.device = DeviceConfig(
@@ -559,6 +629,8 @@ class Config:
             brightness=float(pattern.get("brightness", config.pattern.brightness)),
             palette=pattern.get("palette", config.pattern.palette),
             color=pattern.get("color", config.pattern.color),
+            coord_span_x=float(pattern.get("coord_span_x", config.pattern.coord_span_x)),
+            coord_span_y=float(pattern.get("coord_span_y", config.pattern.coord_span_y)),
         )
 
         # A config's own profiles shadow the built-ins, matching the executable.
@@ -600,7 +672,7 @@ class Config:
 
                 for index in range(count):
                     name = prefix if count == 1 else f"{prefix}_{index + 1}"
-                    fixture = model.instantiate(name, int(address) + (index * step))
+                    fixture = model.instantiate(name, int(address) + bias + (index * step))
                     fixture.brightness = trim
 
                     if stated_position is not None:
@@ -611,15 +683,23 @@ class Config:
                     config.add_fixture(fixture)
                 continue
 
+            # An absent dimmer_channel means "this fixture has no dimmer" in
+            # either numbering, so it stays 0 rather than being biased into
+            # channel 1. An explicit 0 under zero-based addressing is a real
+            # dimmer, in the first slot.
+            stated_dimmer = entry.get("dimmer_channel")
+            dimmer_channel = 0 if stated_dimmer is None else int(stated_dimmer) + bias
+
             config.add_fixture(
                 Fixture(
                     name=entry.get("name", f"fixture_{len(config.fixtures) + 1}"),
-                    start_channel=int(entry.get("start_channel", 1)),
+                    start_channel=int(entry.get("start_channel", 1 - bias)) + bias,
                     channels=entry.get("channels", "rgb"),
-                    dimmer_channel=int(entry.get("dimmer_channel", 0)),
+                    dimmer_channel=dimmer_channel,
                     dimmer_value=int(entry.get("dimmer_value", 255)),
                     static_channels={
-                        int(k): int(v) for k, v in (entry.get("static_channels") or {}).items()
+                        int(k) + bias: int(v)
+                        for k, v in (entry.get("static_channels") or {}).items()
                     },
                     position=entry.get("position"),
                     brightness=float(entry.get("brightness", 1.0)),

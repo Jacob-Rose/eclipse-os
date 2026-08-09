@@ -18,16 +18,38 @@ import tempfile
 import threading
 import time
 from pathlib import Path
-from typing import Callable, List, Optional, Sequence, Union
+from typing import Callable, List, Optional, Sequence, Tuple, Union
 
 from .binary import find_executable
 from .config import Config, ConfigError
 
 Color = Union[str, Sequence[float]]
 
+#: One frame as the viewer sees it: the (r, g, b) each fixture is showing.
+Frame = List[Tuple[int, int, int]]
+
 
 class ShowError(RuntimeError):
     """Raised when the executable rejects a command or dies unexpectedly."""
+
+
+def _parse_frame(line: str) -> Optional[Frame]:
+    """Parses one ``F rrggbb rrggbb ...`` line into per-fixture colours.
+
+    Returns None on anything malformed. A viewer dropping a frame is a blink;
+    a viewer raising out of a reader thread is a dead window, so this never
+    throws on bad input.
+    """
+    frame: Frame = []
+    for swatch in line.split()[1:]:
+        if len(swatch) != 6:
+            return None
+        try:
+            value = int(swatch, 16)
+        except ValueError:
+            return None
+        frame.append(((value >> 16) & 0xFF, (value >> 8) & 0xFF, value & 0xFF))
+    return frame
 
 
 class ShowController:
@@ -50,6 +72,9 @@ class ShowController:
         verbose: bool = False,
         on_log: Optional[Callable[[str], None]] = None,
         on_event: Optional[Callable[[str], None]] = None,
+        on_frame: Optional[Callable[[Frame], None]] = None,
+        emit_frames: bool = False,
+        emit_rate: float = 30.0,
         autostart: bool = True,
         command_timeout: float = 5.0,
     ) -> None:
@@ -59,8 +84,17 @@ class ShowController:
         self.verbose = verbose
         self.command_timeout = command_timeout
 
+        # Asking for frames implies wanting them: a caller that passes on_frame
+        # and forgets the flag would otherwise sit and watch nothing happen.
+        self.emit_frames = emit_frames or on_frame is not None
+        self.emit_rate = emit_rate
+
         self.on_log = on_log
         self.on_event = on_event
+        self.on_frame = on_frame
+
+        #: Fixture names, in patch order, as the executable reported them.
+        self.fixture_names: List[str] = []
 
         self._process: Optional[subprocess.Popen] = None
         self._replies: "queue.Queue[str]" = queue.Queue()
@@ -102,6 +136,8 @@ class ShowController:
             args.append("--dry-run")
         if self.frames > 0:
             args.extend(["--frames", str(self.frames)])
+        if self.emit_frames:
+            args.extend(["--emit-frames", "--emit-rate", str(self.emit_rate)])
         if self.verbose:
             args.append("--verbose")
         return args
@@ -162,6 +198,19 @@ class ShowController:
         if not line:
             return
 
+        # Frame lines arrive tens of times a second and are pure data, so they
+        # are dispatched and dropped rather than kept in _events, which would
+        # otherwise grow without bound for the length of the show.
+        if line.startswith("F "):
+            if self.on_frame is not None:
+                frame = _parse_frame(line)
+                if frame is not None:
+                    self.on_frame(frame)
+            return
+
+        if line.startswith("FIXTURES "):
+            self.fixture_names = line.split()[1:]
+
         if line.startswith("OK") or line.startswith("ERR"):
             self._replies.put(line)
         else:
@@ -193,6 +242,16 @@ class ShowController:
                 except subprocess.TimeoutExpired:
                     process.kill()
                     process.wait(timeout=timeout)
+
+        # Close the pipes rather than waiting for the collector. A long-lived
+        # caller that starts a show per cue would otherwise leak three handles
+        # each time, and on Windows that is a finite budget.
+        for stream in (process.stdin, process.stdout, process.stderr):
+            if stream is not None:
+                try:
+                    stream.close()
+                except (OSError, ValueError):
+                    pass
 
         returncode = process.returncode
         self._process = None
