@@ -317,7 +317,7 @@ to a garbage collector), python owns configuration and decisions.
 | `6aeb62c` | the jacket's state machine on the rig, with UI buttons |
 | `32e3ea6` | DMX frames sent at raised priority |
 | `71a5a07` | `mythos26`, the beat clock, MIDI tempo in |
-| *uncommitted* | `vu_pulse`, the static looks, beat division, the master slider |
+| `5e7ed8d` | `vu_pulse`, the static looks, beat division, the master slider |
 
 ### library changes (`src/lib/`)
 
