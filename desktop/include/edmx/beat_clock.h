@@ -9,6 +9,14 @@
 #include <string>
 
 ///
+/// What the music is doing: where the beat is, and how loud it is.
+///
+/// Two things rather than one file per thing, because they are the same shape
+/// and arrive down the same cable. Both are written by the MIDI callback thread
+/// and read by the render thread every frame, both are lock-free atomics for
+/// that reason, and both are process-wide singletons because the pattern
+/// factories take no arguments and the MIDI thread has no route to a pattern.
+///
 /// Where the beat is.
 ///
 /// A show that pulses on the music needs one number the whole rig agrees on:
@@ -139,4 +147,92 @@ namespace edmx
     /// device runs on a callback thread that has no route to a pattern. There is
     /// exactly one beat in a room, so there is exactly one of these.
     BeatClock& sharedBeatClock();
+
+
+    /// Which loudness signal, of the several a mapping sends.
+    ///
+    /// They are not interchangeable and the difference is the whole reason this
+    /// is an enum rather than one number. Mixxx sends all three; a look picks
+    /// the one whose behaviour it wants, by name, so that no pattern has to
+    /// know a MIDI note number.
+    enum class VuSource
+    {
+        /// The instantaneous level, resent every 40ms. Peaks on every kick, so
+        /// anything driven from it hits on transients — and anything meant to
+        /// sit still will flash.
+        Instant,
+
+        /// The same level averaged over about two seconds: the loudness of the
+        /// track rather than of the waveform. What a backdrop wants.
+        Average,
+
+        /// A meter bar — quantised, steppy, and useful for something that
+        /// should move in visible increments rather than continuously.
+        Meter,
+    };
+
+    /// How many there are, for sizing. Not a VuSource value itself.
+    constexpr int kVuSourceCount = 3;
+
+    const char* describeVuSource(VuSource source);
+
+
+    /// How loud the music is, 0..1, on each of the sources above.
+    ///
+    /// Fed from the VU messages on the MIDI cable — the only thing on there
+    /// that says anything about the *sound* as opposed to the grid.
+    ///
+    /// A reading is held flat until it is old enough to be suspect, then fades
+    /// out. The fade is not an effect, it is a dead-man's switch: a level held
+    /// at its last value forever would leave the rig sitting lit at whatever
+    /// the music happened to be doing when the link dropped, which looks
+    /// exactly like it is still working.
+    ///
+    /// Held flat first rather than decaying from the instant of the reading,
+    /// because anything reading this every frame is reading it far more often
+    /// than the meter updates. Decaying immediately would put a few percent of
+    /// sag on every frame, varying with how long ago the last message landed —
+    /// a ripple on something that is supposed to be steady.
+    class AudioLevel
+    {
+    public:
+        /// Seconds a reading stands unaltered. Comfortably longer than the gap
+        /// between messages from a meter that is working.
+        static constexpr double kHoldFor = 0.35;
+
+        /// Seconds after which a stale reading has fallen to zero.
+        static constexpr double kStaleAfter = 0.8;
+
+        /// A new reading, 0..1, taken at `when`.
+        void set(VuSource source, float level, double when);
+
+        /// The level as of `now`, with the hold and staleness decay applied.
+        float get(VuSource source, double now) const;
+
+        /// Whether that source has been heard from recently enough to trust.
+        bool isLive(VuSource source, double now) const;
+
+        /// Readings taken, for status and for telling "silent" apart from
+        /// "not wired up".
+        unsigned long long getUpdates(VuSource source) const;
+
+        /// True when any source is reporting.
+        bool isAnyLive(double now) const;
+
+        /// `avg=0.42 inst=0.61 meter=0.33`, for status.
+        std::string describe(double now) const;
+
+    private:
+        struct Reading
+        {
+            std::atomic<float> level{0.0f};
+            std::atomic<double> stamp{-1.0};
+            std::atomic<unsigned long long> updates{0};
+        };
+
+        Reading readings[kVuSourceCount];
+    };
+
+    /// The process's level meter. Same reasoning as sharedBeatClock().
+    AudioLevel& sharedAudioLevel();
 }

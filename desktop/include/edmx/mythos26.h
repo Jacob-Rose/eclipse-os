@@ -10,6 +10,7 @@
 #include "lib/eanim/generator_hsv.h"
 #include "lib/ecore/hsv.h"
 
+#include "edmx/beat_clock.h"
 #include "edmx/state_machine.h"
 
 ///
@@ -32,7 +33,6 @@
 
 namespace edmx
 {
-    class BeatClock;
 
     /// The whole rig flashing on the beat.
     ///
@@ -72,6 +72,15 @@ namespace edmx
         /// beats; lift it if the rig needs to stay visible.
         float floorLevel{0.0f};
 
+        /// Beats between hits: 1 on every beat, 2 on every other, 4 once a bar.
+        ///
+        /// Which beat of the pair or the bar it lands on is whichever one was
+        /// current when the count started — the clock counts beats, not bars,
+        /// because nothing upstream reliably says where a bar begins. `beat`
+        /// (a tap) re-seats it, which is how you move it onto the one.
+        void setBeatsPerPulse(int beats);
+        int getBeatsPerPulse() const { return beatsPerPulse; }
+
         /// The level the envelope is at right now, 0..1. Exposed for tests and
         /// for anything that wants to show the beat on screen.
         float getLevel() const { return level; }
@@ -85,13 +94,116 @@ namespace edmx
     private:
         BeatClock* clock{nullptr};
 
-        /// Beat we last fired on. Starts unset so the first tick pulses rather
+        int beatsPerPulse{1};
+
+        /// Pulse we last fired on. Starts unset so the first tick pulses rather
         /// than waiting up to a whole beat to show anything.
         long long lastBeat{0};
         bool started{false};
 
         float sinceTrigger{0.0f};
         float level{0.0f};
+    };
+
+
+    /// The beat in white over the loudness in red.
+    ///
+    /// Two layers doing different jobs. The red one is continuous and follows
+    /// the VU meter, so the rig has a floor that breathes with the music
+    /// instead of going black between hits. The white one is the same envelope
+    /// as beat_pulse on top of it, defaulting to every second beat — on a busy
+    /// track, hitting every beat and being lit underneath at the same time is
+    /// too much light and the hits stop reading as hits.
+    ///
+    /// They are composited by desaturating rather than adding: at full flash
+    /// the red has become white, which is what "a white flash over red" looks
+    /// like, where adding white to red would give you pink.
+    class Pattern_Mythos_VuPulse : public eanim::GeneratorHSV
+    {
+    public:
+        Pattern_Mythos_VuPulse();
+
+        void init();
+
+        virtual void tick(float deltaTime) override;
+        virtual void render(eio::HSVStripNode* node, ecore::HSV& inOutColor) const override;
+
+        /// The flash. Same shape as beat_pulse, on twos by default.
+        Pattern_Mythos_BeatPulse pulse;
+
+        /// The layer underneath: a backdrop that follows how loud the track is.
+        ecore::HSV baseColor{0.0f, 1.0f, 1.0f}; ///< red
+
+        /// Which loudness signal drives it. The two-second average, because a
+        /// backdrop should hold still — VuSource::Instant peaks on every kick
+        /// and turns the wash into a second pulse. Switchable so a look that
+        /// *wants* that can have it.
+        VuSource baseSource{VuSource::Average};
+
+        /// What a full-scale meter reading maps to. 1 tracks the level
+        /// literally; lower it to leave the flash more headroom above the wash.
+        float baseGain{1.0f};
+
+        /// Lifts the wash off black while the meter is live. Zero by default,
+        /// so silence really is dark.
+        float baseFloor{0.0f};
+
+        /// Seconds for the backdrop to close most of a gap to a new reading.
+        /// Zero follows the meter exactly.
+        ///
+        /// This has been wrong twice, so it is worth writing down what it is
+        /// for. It is *not* VU ballistics — an asymmetric fast-attack slow-
+        /// release, which is how a meter is drawn, keeps every transient on the
+        /// way up and so still flashes on each kick. It is a symmetric
+        /// low-pass: equally slow in both directions, which is what actually
+        /// removes beat-rate pulsing and leaves the shape of the track.
+        ///
+        /// Modest by default because the meter this reads is already averaged
+        /// upstream (see midi.vu_note). Raise it if the source is the
+        /// instantaneous level instead.
+        float baseSmoothing{0.25f};
+
+        void setBeatsPerPulse(int beats) { pulse.setBeatsPerPulse(beats); }
+        int getBeatsPerPulse() const { return pulse.getBeatsPerPulse(); }
+
+        /// The wash level right now, for tests.
+        float getBaseLevel() const { return baseLevel; }
+
+    private:
+        AudioLevel* meter{nullptr};
+        float baseLevel{0.0f};
+    };
+
+
+    /// Every fixture a new random value, every frame.
+    ///
+    /// No smoothing, no motion, no beat — deliberately. The look is the
+    /// absence of correlation: the moment consecutive frames relate to each
+    /// other it stops reading as static and starts reading as a bad pattern.
+    ///
+    /// The values come from hashing (frame number, fixture index) rather than
+    /// from a random generator with state. That keeps render() const and
+    /// stateless while still giving every fixture its own value every frame,
+    /// and it means a given frame is reproducible, which is the difference
+    /// between a testable look and one you can only eyeball.
+    class Pattern_Mythos_TvStatic : public eanim::GeneratorHSV
+    {
+    public:
+        void init();
+
+        virtual void tick(float deltaTime) override;
+        virtual void render(eio::HSVStripNode* node, ecore::HSV& inOutColor) const override;
+
+        /// True for greys, false for random hues.
+        bool monochrome{false};
+
+        /// Lowest brightness a fixture can draw. Zero lets fixtures go fully
+        /// dark, which is what makes it read as static rather than as a
+        /// shimmer.
+        float floorLevel{0.0f};
+
+    private:
+        unsigned int frame{0};
     };
 
 

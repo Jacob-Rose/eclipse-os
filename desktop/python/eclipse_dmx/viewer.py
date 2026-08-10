@@ -58,13 +58,13 @@ RGB = Tuple[int, int, int]
 
 STATE_BUTTONS: List[List[Tuple[str, Tuple[str, str]]]] = [
     # --- mythos26 -----------------------------------------------------
-    # Only beat_pulse is written; the rest are placeholders. Rename them here
-    # when they are renamed in makeMythos26StateMachine().
+    # slot_5 onwards are still placeholders. Rename them here when they are
+    # renamed in makeMythos26StateMachine().
     [
         ("pulse", ("state", "beat_pulse")),
-        ("slot 2", ("state", "slot_2")),
-        ("slot 3", ("state", "slot_3")),
-        ("slot 4", ("state", "slot_4")),
+        ("vu pulse", ("state", "vu_pulse")),
+        ("static b/w", ("state", "tv_static_mono")),
+        ("static rgb", ("state", "tv_static")),
         ("slot 5", ("state", "slot_5")),
         ("slot 6", ("state", "slot_6")),
         ("slot 7", ("state", "slot_7")),
@@ -115,6 +115,15 @@ TEMPO_BUTTONS: List[Tuple[str, Tuple[str, str]]] = [
     ("120", ("bpm", "120")),
     ("128", ("bpm", "128")),
     ("140", ("bpm", "140")),
+]
+
+#: How often the beat-driven looks fire. "auto" hands each look back its own
+#: default, which for beat_pulse is every beat and for vu_pulse is every other.
+DIVISION_BUTTONS: List[Tuple[str, Tuple[str, str]]] = [
+    ("auto", ("div", "0")),
+    ("on 1", ("div", "1")),
+    ("on 2", ("div", "2")),
+    ("on 4", ("div", "4")),
 ]
 
 # ===========================================================================
@@ -254,6 +263,10 @@ class ViewerApp:
         #: last (states, current) the buttons were drawn for
         self._button_signature: Tuple[Tuple[str, ...], str] = ((), "")
 
+        #: Selected beat division, as the button value. "0" is each look's own
+        #: default, which is what the executable starts on.
+        self._division = "0"
+
         self.show = ShowController(
             self.config_path,
             executable=executable,
@@ -392,19 +405,61 @@ class ViewerApp:
             button.pack(side="left", padx=3, pady=3)
             self._input_buttons[channel] = button
 
-        tk.Label(self.extra_row, text="   tempo ", bg=PANEL, fg=TEXT_DIM,
+        self.extra_row.pack(fill="x")
+
+        # -- tempo, division and master, on their own row ------------------
+        # Separate from the pattern row because these apply to whatever is
+        # running: they are the desk, not the cue list.
+        self.tempo_row = tk.Frame(self.button_panel, bg=PANEL)
+
+        tk.Label(self.tempo_row, text="tempo ", bg=PANEL, fg=TEXT_DIM,
                  font=("Consolas", 9)).pack(side="left")
 
         for label, command in TEMPO_BUTTONS:
             tk.Button(
-                self.extra_row, text=label, font=("Consolas", 9),
+                self.tempo_row, text=label, font=("Consolas", 9),
                 bg=BUTTON_BG, fg=BUTTON_FG, activebackground=BUTTON_BG_ACTIVE,
                 activeforeground=BUTTON_FG, relief="flat", padx=8, pady=3,
                 highlightthickness=0, borderwidth=0,
                 command=lambda c=command: self._run_button(c),
             ).pack(side="left", padx=3, pady=3)
 
-        self.extra_row.pack(fill="x")
+        tk.Label(self.tempo_row, text="   fire ", bg=PANEL, fg=TEXT_DIM,
+                 font=("Consolas", 9)).pack(side="left")
+
+        self._division_buttons: Dict[str, tk.Button] = {}
+        for label, command in DIVISION_BUTTONS:
+            button = tk.Button(
+                self.tempo_row, text=label, font=("Consolas", 9),
+                bg=BUTTON_BG, fg=BUTTON_FG, activebackground=BUTTON_BG_ACTIVE,
+                activeforeground=BUTTON_FG, relief="flat", padx=8, pady=3,
+                highlightthickness=0, borderwidth=0,
+                command=lambda c=command: self._run_button(c),
+            )
+            button.pack(side="left", padx=3, pady=3)
+            self._division_buttons[command[1]] = button
+
+        # -- master brightness ---------------------------------------------
+        # A slider rather than more buttons: this is the one control that gets
+        # ridden continuously rather than set, and it is the one you reach for
+        # when the rig is too bright in a room you have not seen before.
+        tk.Label(self.tempo_row, text="   master ", bg=PANEL, fg=TEXT_DIM,
+                 font=("Consolas", 9)).pack(side="left")
+
+        self._master_var = tk.DoubleVar(value=self._master * 100.0)
+        self.master_slider = tk.Scale(
+            self.tempo_row,
+            from_=0, to=100, resolution=1,
+            orient="horizontal", length=180, showvalue=True,
+            variable=self._master_var,
+            command=self._on_master_slider,
+            bg=PANEL, fg=TEXT, troughcolor=BUTTON_BG,
+            activebackground=BUTTON_BG_ACTIVE, highlightthickness=0,
+            borderwidth=0, sliderrelief="flat", font=("Consolas", 8),
+        )
+        self.master_slider.pack(side="left", padx=3)
+
+        self.tempo_row.pack(fill="x")
         self._refresh_buttons()
 
     def _refresh_buttons(self) -> None:
@@ -427,6 +482,8 @@ class ViewerApp:
                 fg=BUTTON_FG if known else TEXT_DIM,
             )
 
+        self._refresh_division_buttons()
+
     def _run_button(self, command: Tuple[str, str]) -> None:
         kind, value = command
 
@@ -440,9 +497,24 @@ class ViewerApp:
                 self.show.tap_beat()
             elif kind == "bpm":
                 self.show.set_bpm(float(value))
+            elif kind == "div":
+                self.show.set_beat_division(int(value))
+                self._division = value
 
         self._guard(apply, kind)
         self._refresh_buttons()
+        self._refresh_division_buttons()
+
+    def _refresh_division_buttons(self) -> None:
+        """Lights the selected division, and dims them all when nothing running
+        pulses on the beat."""
+        available = bool(self.show.state_names)
+        for value, button in self._division_buttons.items():
+            active = available and value == self._division
+            button.configure(
+                bg=BUTTON_BG_ACTIVE if active else BUTTON_BG,
+                fg=BUTTON_FG if available else TEXT_DIM,
+            )
 
     def _set_input(self, channel: str, down: bool) -> None:
         if not self.show.state_names:
@@ -625,6 +697,9 @@ class ViewerApp:
             f"master {self._master:.2f}",
             source,
         ]
+
+        if self._division != "0":
+            parts.append(f"on {self._division}")
         if self._blackout:
             parts.append("BLACKOUT")
         line = "   ·   ".join(parts)
@@ -673,13 +748,35 @@ class ViewerApp:
         self._refresh_buttons()
 
     def _nudge_master(self, delta: float) -> None:
-        target = max(0.0, min(1.0, self._master + delta))
+        self._set_master(max(0.0, min(1.0, self._master + delta)))
 
+    def _set_master(self, target: float) -> None:
         def apply() -> None:
             self.show.set_master(target)
             self._master = target
 
         self._guard(apply, "master")
+
+        # Keep the slider and the arrow keys showing the same number. Setting
+        # the variable re-enters _on_master_slider, which is why that guards on
+        # the value having actually moved.
+        if hasattr(self, "_master_var"):
+            self._master_var.set(round(self._master * 100.0))
+
+        self._refresh_header()
+
+    def _on_master_slider(self, value: str) -> None:
+        try:
+            target = float(value) / 100.0
+        except ValueError:
+            return
+
+        # tk fires this on every pixel of the drag, and _set_master writes it
+        # back into the variable, so without this the two bounce off each other.
+        if abs(target - self._master) < 0.005:
+            return
+
+        self._set_master(target)
 
     def _nudge_speed(self, factor: float) -> None:
         target = max(0.001, self.config.pattern.speed * factor)

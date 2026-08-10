@@ -178,9 +178,54 @@ whatever the DJ software is sending. Two properties are deliberate: it
 second, and it *free-runs*, because a rig that drifts out of time is a much
 better failure than one that goes dark when the link drops.
 
-Seven states, of which one is written. `beat_pulse` is the whole rig hitting
-white on the beat, fast up and 200ms back down. The other six are placeholders,
-so the buttons, the cross-fades and the config all work before the looks exist.
+Seven states, of which four are written:
+
+| state | what it does |
+| --- | --- |
+| `beat_pulse` | the whole rig hits white on the beat, fast up and 200ms back down |
+| `vu_pulse` | the same flash on every *second* beat, over a red backdrop that follows the track's loudness |
+| `tv_static_mono` | every fixture a new grey, every frame |
+| `tv_static` | every fixture a new colour, every frame |
+| `slot_5`–`slot_7` | placeholders |
+
+How often the beat-driven looks fire is a desk control, not a config one:
+`beat div 1|2|4`, or **on 1 / on 2 / on 4** in the viewer. It overrides every
+look at once, because a choice made at the desk should survive a cue change;
+`beat div 0` ("auto") hands each look back its own default, which is 1 for
+`beat_pulse` and 2 for `vu_pulse`. What it divides is the beat *count*, not the
+tempo — dividing the tempo would stretch the envelope and the hit would go soft.
+
+The static looks hash `(frame, fixture index)` rather than keeping a random
+generator, which lets `render()` stay const and stateless and makes any given
+frame reproducible.
+
+### the loudness backdrop, and getting it wrong twice
+
+`vu_pulse` is a white flash over a red wash that tracks how loud the track is.
+Worth recording how that went, because both wrong answers were plausible.
+
+**First wrong answer: VU ballistics.** Fast attack, limited release — how a
+meter is *drawn*. Because it snaps upward it keeps every transient it is
+supposed to be removing, so the wash still moved on every kick. What a backdrop
+needs is a *symmetric* low-pass, equally slow in both directions.
+
+**Second wrong answer, and the real one: the wrong signal.** It was reading
+note 64, "VU mono current" — the instantaneous level, resent every 40ms. That
+peaks on every kick by construction, so no amount of smoothing downstream turns
+it into a steady wash. Note 68, "VU mono average fit", is the same level over a
+two-second window: the loudness of the *track*.
+
+So all three useful signals are now read and kept apart, and a look picks one by
+name rather than by note number:
+
+| `VuSource` | note | what it is |
+| --- | --- | --- |
+| `Instant` | 64 | the level now — peaks on every kick |
+| `Average` | 68 | ~2s average — what `vu_pulse` uses |
+| `Meter` | 69 | a meter bar, quantised |
+
+The two layers composite by *desaturating*, not adding: at full flash the red has
+become white. Adding white to red gives pink.
 
 **Mixxx sends notes, not beat clock**, which is the thing worth knowing before
 touching any of this. Its MIDI-for-light mapping puts the beat on note 50, the
@@ -188,6 +233,9 @@ tempo on note 52 as `velocity + 50`, and VU meters on notes 64 and up, many per
 second. So "any note-on is a beat" — the obvious default — would strobe the rig
 rather than pulse it, and the tempo is better read off note 52 than measured off
 intervals. Both are the defaults; see the table in `include/edmx/midi_input.h`.
+
+This part is now **confirmed against a real Mixxx** over loopMIDI, which it was
+not when the note map was first written.
 
 `config/mythos26_mixxx.json` is the load-in config with all of that named
 outright, and `readme.md` has the loopMIDI/Mixxx setup. `config/mythos26.json`
@@ -269,6 +317,7 @@ to a garbage collector), python owns configuration and decisions.
 | `6aeb62c` | the jacket's state machine on the rig, with UI buttons |
 | `32e3ea6` | DMX frames sent at raised priority |
 | `71a5a07` | `mythos26`, the beat clock, MIDI tempo in |
+| *uncommitted* | `vu_pulse`, the static looks, beat division, the master slider |
 
 ### library changes (`src/lib/`)
 
@@ -357,12 +406,18 @@ And, for mythos26 and the beat clock:
   frame lines do not
 - a bad tempo, and a MIDI port that is not there, are both rejected without
   killing the show
-- the viewer's tempo readout and its tap and bpm buttons all take
-- `--midi-selftest`: 14 checks over a synthesised Mixxx stream, a bare clock
-  stream, both at once, and the raw byte parser, all in synthetic time
+- the viewer's tempo readout, its tap/bpm/division buttons and the master
+  brightness slider all take, and the slider and the arrow keys stay in step
+- `beat_pulse` opens on every beat and `vu_pulse` on twos, without anyone
+  selecting anything; `on 1` and `on 4` override both, `auto` hands them back
+- `tv_static_mono` is grey on every fixture of every frame, `tv_static` is not,
+  fixtures differ from each other, and consecutive frames differ
+- `--midi-selftest`: 23 checks over a synthesised Mixxx stream, a bare clock
+  stream, both at once, the three loudness signals interleaved, and the raw
+  byte parser — all in synthetic time
 - with the controller as the only MIDI input, `auto` refuses it, warns, and the
   rig still lights and free-runs
-- 32 new tests, none of which need a MIDI device: `--midi ""` keeps the suite
+- 50 new tests, none of which need a MIDI device: `--midi ""` keeps the suite
   off whatever happens to be plugged into the machine running it
 
 On the real rig, through the widget on COM3:
@@ -382,19 +437,19 @@ There is now a suite for all of this, which there was not before:
 
 ```sh
 cd desktop
-python -m unittest discover -s python/tests -v      # 77 tests
+python -m unittest discover -s python/tests -v      # 95 tests
 ```
 
 It needs nothing installed. Anything requiring the executable or a display
 skips itself when there is not one.
 
-**Not yet verified against Mixxx itself.** The note map came off the mapping's
-own source and settings block rather than off a cable, and the only MIDI device
-on this machine is a controller. Everything downstream of it is covered by
-`--midi-selftest`, so the untested surface is exactly one question — are the
-notes 50 and 52 on channel 1 — and `midi-watch` answers that in fifteen seconds
-the first time it is plugged in. If they differ, the fix is three numbers in the
-config, no code.
+**Confirmed against a real Mixxx**, over loopMIDI, on the rig. The note map was
+derived from the mapping's source rather than off a cable, and it was right.
+
+What that first run did surface was the loudness backdrop reading the wrong
+signal — see above. Which is the argument for `midi-watch` and `--midi-selftest`
+existing: the map was right, the *choice of message* was not, and only playing a
+track showed it.
 
 Toolchain: GCC 16.1.0 (MinGW-w64 UCRT, POSIX threads) on Windows 11.
 
@@ -541,15 +596,19 @@ listing online.
 - **Moving heads** — no pan/tilt representation.
 - **Config hot reload** — restart to change the patch. Look, brightness and
   tempo are live over the control protocol.
-- **Six of mythos26's seven states** — placeholders. That is the point of them,
-  but they are not looks.
-- **MIDI out, and MIDI for anything but tempo** — no control-change mapping to
-  patterns, no faders. `MidiInput::handleMessage` is where that starts.
+- **Three of mythos26's seven states** — placeholders. That is the point of
+  them, but they are not looks.
+- **MIDI out, and MIDI for anything but tempo and loudness** — no
+  control-change mapping to patterns, no faders. `MidiInput::handleMessage` is
+  where that starts.
 - **Bars** — the clock counts beats, not bars, because nothing upstream reliably
-  says where a bar begins. A look that wants to land something on the one needs
-  a downbeat note from the source, or a tap.
-- **Beat division** — one pulse per beat. Half and double time would be a field
-  on the pattern and a protocol command; neither exists.
+  says where a bar begins. `beat div 4` fires once every four beats but has no
+  idea which of them is the one; a tap is what puts it there.
+- **Sub-beat division** — `beat div` goes 1, 2, 4: slower than the beat, not
+  faster. Eighths would need the envelope to shorten with them, which is a
+  different pattern rather than a different number.
+- **Stereo VU** — only the mono signals are read. The mapping sends left and
+  right separately, which a rig split into two halves could use.
 - **The viewer draws discs, not beams.** Fixtures with a real position in space
   are drawn as a flat 2D scatter; there is no notion of where a light is
   pointing, so it cannot show you a stage wash. It answers "is each fixture
@@ -561,19 +620,22 @@ listing online.
 
 ## Open questions for you
 
-1. **What are mythos26's other six looks?** They are slots with names like
-   `slot_4` right now. Each one is a `GeneratorHSV` in `mythos26.cpp` and a
-   changed line in the table — say what they should do and they can be written.
-2. **Does `beat_pulse` want to stay flat?** Every fixture hits together. The
-   coordinate space is already there for a hit that travels along the rig, or
-   alternates odds and evens, or lands on a different colour each bar.
+1. **What are the last three looks?** `slot_5` to `slot_7`. Each is a
+   `GeneratorHSV` in `mythos26.cpp` and a changed line in the table — say what
+   they should do and they can be written.
+2. **Do the beat looks want to stay flat?** Every fixture hits together. The
+   coordinate space is there for a hit that travels along the rig, alternates
+   odds and evens, or lands on a different colour each bar.
 3. **Is 200ms right on the actual pars?** The envelope is three fields at the
-   top of `Pattern_Mythos_BeatPulse`. It reads punchy in a dry run; the fixtures
-   have their own response time and that is not measurable from here.
-4. **Does Mixxx actually send what its wiki says?** Note 50 for the beat and 52
-   for the tempo came off the mapping's source, not off a cable. First time it
-   is plugged in, `python -m eclipse_dmx midi-watch config/mythos26_mixxx.json`
-   prints what really arrives and says which of it we are reading as the beat.
-5. **Is one universe enough long-term?** Ten 7-channel fixtures is 70 channels,
+   top of `Pattern_Mythos_BeatPulse`. The fixtures have their own response time
+   and that is not measurable from a dry run.
+4. **Is `Average` steady enough, or too steady?** The backdrop reads a
+   two-second average with a further 0.25s of smoothing. If it feels sluggish,
+   drop `baseSmoothing`; if it still moves too much, `Meter` is quantised and
+   `baseGain` pulls the whole thing down.
+5. **Do the other two loudness signals want a look of their own?** `Instant` and
+   `Meter` are read and sitting there unused. Something that hits on transients
+   is a natural fit for `Instant`.
+6. **Is one universe enough long-term?** Ten 7-channel fixtures is 70 channels,
    so there is a lot of headroom, but multi-universe is a real change if it is
    ever needed.

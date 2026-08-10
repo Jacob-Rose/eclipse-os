@@ -64,13 +64,13 @@ JACKET_STATES = (
 #: mythos26's states, in the order its state machine lists them. Must stay in
 #: step with makeMythos26StateMachine() in desktop/src/mythos26.cpp.
 #:
-#: Only the first is written; slot_2 onwards are placeholders waiting for a
-#: look. Rename them here when you rename them there.
+#: slot_5 onwards are placeholders waiting for a look. Rename them here when
+#: you rename them there.
 MYTHOS26_STATES = (
     "beat_pulse",
-    "slot_2",
-    "slot_3",
-    "slot_4",
+    "vu_pulse",
+    "tv_static_mono",
+    "tv_static",
     "slot_5",
     "slot_6",
     "slot_7",
@@ -302,6 +302,13 @@ class MidiConfig:
     notes: bool = True
     beat_note: int = 50
     bpm_note: int = 52
+    #: The three loudness signals, all read and kept apart so a look can pick
+    #: the one it wants. Mixxx's numbering: 64 instantaneous (every 40ms, peaks
+    #: on every kick), 68 averaged over two seconds (the loudness of the
+    #: track), 69 the first meter bar (quantised). -1 ignores one.
+    vu_instant_note: int = 64
+    vu_average_note: int = 68
+    vu_meter_note: int = 69
     beat_channel: int = -1
     bpm: float = 128.0
     free_run: bool = True
@@ -315,7 +322,8 @@ class MidiConfig:
         if not 30.0 <= self.bpm <= 300.0:
             raise ConfigError(f"midi.bpm {self.bpm} is not a tempo; expected 30..300")
 
-        for key in ("beat_note", "bpm_note"):
+        for key in ("beat_note", "bpm_note",
+                    "vu_instant_note", "vu_average_note", "vu_meter_note"):
             note = getattr(self, key)
             if note != -1 and not 0 <= note <= 127:
                 raise ConfigError(f"midi.{key} {note} must be 0..127, or -1 to switch it off")
@@ -329,6 +337,21 @@ class MidiConfig:
             raise ConfigError(
                 "midi.beat_note and midi.bpm_note are the same note, so the tempo message "
                 "would be taken as a beat"
+            )
+
+        for key in ("vu_instant_note", "vu_average_note", "vu_meter_note"):
+            if self.beat_note != -1 and self.beat_note == getattr(self, key):
+                raise ConfigError(
+                    f"midi.{key} is the same note as midi.beat_note, so the meter would be "
+                    "taken as a beat - dozens of times a second"
+                )
+
+        meters = [self.vu_instant_note, self.vu_average_note, self.vu_meter_note]
+        live = [note for note in meters if note != -1]
+        if len(set(live)) != len(live):
+            raise ConfigError(
+                f"two of midi.vu_*_note are the same note {live}; they carry different "
+                "signals and cannot share one"
             )
 
         if self.enabled and not self.clock and not self.notes:
@@ -354,6 +377,9 @@ class MidiConfig:
             "notes": self.notes,
             "beat_note": self.beat_note,
             "bpm_note": self.bpm_note,
+            "vu_instant_note": self.vu_instant_note,
+            "vu_average_note": self.vu_average_note,
+            "vu_meter_note": self.vu_meter_note,
             "beat_channel": self.beat_channel,
             "bpm": self.bpm,
             "free_run": self.free_run,
@@ -798,6 +824,9 @@ class Config:
             notes=bool(midi.get("notes", config.midi.notes)),
             beat_note=int(midi.get("beat_note", config.midi.beat_note)),
             bpm_note=int(midi.get("bpm_note", config.midi.bpm_note)),
+            vu_instant_note=int(midi.get("vu_instant_note", config.midi.vu_instant_note)),
+            vu_average_note=int(midi.get("vu_average_note", config.midi.vu_average_note)),
+            vu_meter_note=int(midi.get("vu_meter_note", config.midi.vu_meter_note)),
             beat_channel=int(midi.get("beat_channel", config.midi.beat_channel)),
             bpm=float(midi.get("bpm", config.midi.bpm)),
             free_run=bool(midi.get("free_run", config.midi.free_run)),

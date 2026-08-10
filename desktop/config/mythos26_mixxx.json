@@ -14,8 +14,11 @@
   //      startup, and will not see a port created after it.
   //   3. Mixxx: Preferences > Controllers > pick the loopMIDI port, load the
   //      "MIDI for light" mapping, Apply.
-  //   4. In that mapping's Settings tab, turn OFF the VU meters and MTC
-  //      timecode. They are on by default and we use none of it.
+  //   4. In that mapping's Settings tab: leave "Enable VU mono average" on -
+  //      that is note 68, the two-second average, and it is what vu_pulse's red
+  //      backdrop reads. Tick "Enable VU mono current" too if you want note 64
+  //      available to looks that should hit on transients. Turn OFF MTC
+  //      timecode; nothing here reads it.
   //   5. eclipse-dmx --config config/mythos26_mixxx.json
   //
   // Verify without guessing:
@@ -43,10 +46,12 @@
   //     note 48   deck change
   //     note 50   the beat, velocity 100      <- beat_note
   //     note 52   the tempo, velocity bpm-50  <- bpm_note
-  //     note 64+  VU meters, many per second
+  //     note 64   VU mono, instantaneous      <- vu_instant_note
+  //     note 68   VU mono, 2-second average   <- vu_average_note
+  //     note 69   VU meter bar                <- vu_meter_note
   //
   // Which is why beat_note is a number and not -1. Take any note as a beat and
-  // the VU meters alone would fire hundreds of times a second.
+  // the VU meters alone would fire dozens of times a second.
   //
   // "clock" stays on even though Mixxx sends no 0xF8: it costs nothing, and
   // "ticks" in `midi status` staying at 0 is a useful confirmation that what is
@@ -73,6 +78,21 @@
 
     "beat_note": 50,
     "bpm_note": 52,
+    // The three loudness signals. All read, all kept apart, so a look picks
+    // the one whose behaviour it wants by name rather than by note number.
+    //
+    //   instant  every 40ms, peaks on every kick - for something that should
+    //            visibly hit on transients
+    //   average  the same level over a two-second window: the loudness of the
+    //            track. What vu_pulse's red backdrop uses, and already on by
+    //            default in the mapping's settings
+    //   meter    a bar value, quantised - for something that should move in
+    //            visible steps
+    //
+    // -1 on any of them ignores it.
+    "vu_instant_note": 64,
+    "vu_average_note": 68,
+    "vu_meter_note": 69,
     // Mixxx's mapping defaults to channel 1. Pinning it here means a stray note
     // from anything else sharing the cable cannot register as a beat.
     "beat_channel": 1,

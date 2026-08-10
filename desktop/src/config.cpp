@@ -10,6 +10,7 @@
 #include <cmath>
 #include <stdexcept>
 #include <string>
+#include <utility>
 
 #include "edmx/json.h"
 
@@ -253,6 +254,9 @@ bool edmx::loadConfig(const std::string& path, Config& outConfig, std::string& o
         config.midi.followNotes  = midi["notes"].asBool(config.midi.followNotes);
         config.midi.beatNote     = midi["beat_note"].asInt(config.midi.beatNote);
         config.midi.bpmNote      = midi["bpm_note"].asInt(config.midi.bpmNote);
+        config.midi.vuInstantNote = midi["vu_instant_note"].asInt(config.midi.vuInstantNote);
+        config.midi.vuAverageNote = midi["vu_average_note"].asInt(config.midi.vuAverageNote);
+        config.midi.vuMeterNote   = midi["vu_meter_note"].asInt(config.midi.vuMeterNote);
         config.midi.beatChannel  = midi["beat_channel"].asInt(config.midi.beatChannel);
         config.midi.bpm          = midi["bpm"].asFloat(config.midi.bpm);
         config.midi.freeRun      = midi["free_run"].asBool(config.midi.freeRun);
@@ -300,12 +304,33 @@ bool edmx::loadConfig(const std::string& path, Config& outConfig, std::string& o
         };
         checkNote("midi.beat_note", config.midi.beatNote, 50);
         checkNote("midi.bpm_note", config.midi.bpmNote, 52);
+        checkNote("midi.vu_instant_note", config.midi.vuInstantNote, 64);
+        checkNote("midi.vu_average_note", config.midi.vuAverageNote, 68);
+        checkNote("midi.vu_meter_note", config.midi.vuMeterNote, 69);
 
         if (config.midi.beatNote != -1 && config.midi.beatNote == config.midi.bpmNote)
         {
             config.warnings.push_back("midi.beat_note and midi.bpm_note are the same note, so the "
                                       "tempo message would be taken as a beat; ignoring bpm_note");
             config.midi.bpmNote = -1;
+        }
+
+        // A meter sharing the beat's note would fire a beat dozens of times a
+        // second, so the meter loses rather than the beat.
+        const std::pair<const char*, int*> meters[] = {
+            {"midi.vu_instant_note", &config.midi.vuInstantNote},
+            {"midi.vu_average_note", &config.midi.vuAverageNote},
+            {"midi.vu_meter_note",   &config.midi.vuMeterNote},
+        };
+        for (const auto& entry : meters)
+        {
+            if (config.midi.beatNote != -1 && config.midi.beatNote == *entry.second)
+            {
+                config.warnings.push_back(std::string(entry.first) + " is the same note as "
+                                          "midi.beat_note, so the meter would be taken as a beat; "
+                                          "ignoring it");
+                *entry.second = -1;
+            }
         }
 
         if (config.midi.enabled && !config.midi.followClock && !config.midi.followNotes)

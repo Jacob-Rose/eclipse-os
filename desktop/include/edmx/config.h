@@ -82,6 +82,18 @@ namespace edmx
         int beatNote{50};
         int bpmNote{52};
 
+        /// Which notes carry the loudness signals, as velocity 0..127. -1 on
+        /// any of them ignores it.
+        ///
+        /// All three are read and kept apart, because they behave differently
+        /// and a look picks the one it wants by name — see edmx::VuSource.
+        /// These are Mixxx's numbering: 64 instantaneous (every 40ms, peaks on
+        /// every kick), 68 the two-second average (the loudness of the track),
+        /// 69 the first meter bar (quantised).
+        int vuInstantNote{64};
+        int vuAverageNote{68};
+        int vuMeterNote{69};
+
         /// Only take beats from this channel, 1..16. -1 means any.
         int beatChannel{-1};
 

@@ -197,3 +197,91 @@ BeatClock& edmx::sharedBeatClock()
     static BeatClock instance;
     return instance;
 }
+
+// ============================================================================
+// AudioLevel
+// ============================================================================
+
+const char* edmx::describeVuSource(VuSource source)
+{
+    switch (source)
+    {
+        case VuSource::Instant: return "inst";
+        case VuSource::Meter:   return "meter";
+        case VuSource::Average: break;
+    }
+    return "avg";
+}
+
+void AudioLevel::set(VuSource source, float inLevel, double when)
+{
+    Reading& reading = readings[static_cast<int>(source)];
+    reading.level.store(std::clamp(inLevel, 0.0f, 1.0f));
+    reading.stamp.store(when);
+    reading.updates.fetch_add(1);
+}
+
+float AudioLevel::get(VuSource source, double now) const
+{
+    const Reading& reading = readings[static_cast<int>(source)];
+
+    const double last = reading.stamp.load();
+    if (last < 0.0)
+    {
+        return 0.0f; // never fed
+    }
+
+    const double age = now - last;
+    if (age <= kHoldFor)
+    {
+        return reading.level.load(); // still current: hand it back untouched
+    }
+    if (age >= kStaleAfter)
+    {
+        return 0.0f;
+    }
+
+    // Past the hold and not yet dead: ramp out across what is left of the
+    // window, so a source that stops fades rather than cutting to black.
+    const double fade = (age - kHoldFor) / (kStaleAfter - kHoldFor);
+    return reading.level.load() * static_cast<float>(1.0 - fade);
+}
+
+bool AudioLevel::isLive(VuSource source, double now) const
+{
+    const double last = readings[static_cast<int>(source)].stamp.load();
+    return (last >= 0.0) && ((now - last) < kHoldFor);
+}
+
+unsigned long long AudioLevel::getUpdates(VuSource source) const
+{
+    return readings[static_cast<int>(source)].updates.load();
+}
+
+bool AudioLevel::isAnyLive(double now) const
+{
+    for (int index = 0; index < kVuSourceCount; ++index)
+    {
+        if (isLive(static_cast<VuSource>(index), now))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+std::string AudioLevel::describe(double now) const
+{
+    char text[128];
+    std::snprintf(text, sizeof(text), "avg=%.2f inst=%.2f meter=%.2f",
+                  static_cast<double>(get(VuSource::Average, now)),
+                  static_cast<double>(get(VuSource::Instant, now)),
+                  static_cast<double>(get(VuSource::Meter, now)));
+    return std::string(text);
+}
+
+AudioLevel& edmx::sharedAudioLevel()
+{
+    static AudioLevel instance;
+    return instance;
+}

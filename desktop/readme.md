@@ -356,7 +356,10 @@ Seven states, in the order the buttons show them:
 | state | what it does |
 | --- | --- |
 | `beat_pulse` | the whole rig hits white on each beat |
-| `slot_2` … `slot_7` | placeholders — a dim tinted breath, waiting for a look |
+| `vu_pulse` | the same flash on every *second* beat, over a red layer that follows the VU meter |
+| `tv_static_mono` | every fixture a new grey, every frame |
+| `tv_static` | every fixture a new colour, every frame |
+| `slot_5` … `slot_7` | placeholders — a dim tinted breath, waiting for a look |
 
 The placeholders are there so the cue buttons, the cross-fades and the config
 all work before the looks exist. Writing one for real is a `GeneratorHSV` in
@@ -365,6 +368,85 @@ in the runner, the protocol or the viewer needs to know. If you rename a slot,
 rename it in three places — there, `MYTHOS26_STATES` in
 `python/eclipse_dmx/config.py`, and the button table in
 `python/eclipse_dmx/viewer.py`.
+
+##### how often it fires
+
+`beat div 1 | 2 | 4` on stdin, or the **on 1 / on 2 / on 4** buttons in the
+viewer: every beat, every other, or once a bar. It overrides every beat-driven
+look at once, because a choice made at the desk should survive a cue change.
+`beat div 0` — **auto** in the viewer — hands each look back its own default,
+which is 1 for `beat_pulse` and 2 for `vu_pulse`.
+
+What it divides is the beat *count*, not the tempo. Dividing the tempo would
+stretch the envelope with it and the hit would go soft at slower divisions; the
+point of "on twos" is the same crack, half as often.
+
+Which beat of the pair or the bar it lands on is whichever one was current when
+the count started — the clock counts beats, not bars, because nothing upstream
+reliably says where a bar begins. A tap (`beat`, or `t` in the viewer) re-seats
+it, which is how you move it onto the one.
+
+##### `vu_pulse`
+
+Two layers doing different jobs. Underneath, a red wash that follows Mixxx's VU
+meter, so the rig has a floor that breathes with the music instead of going
+black between hits. On top, the same white envelope as `beat_pulse`, on every
+second beat — with a lit wash underneath, hitting every beat is too much light
+and the hits stop reading as hits.
+
+They composite by *desaturating*, not adding: at full flash the red has become
+white, which is what a white flash over red looks like. Adding white to red
+would give you pink.
+
+**The wash follows the loudness of the track, not the waveform.** That
+distinction is the whole difficulty, and getting it wrong twice is what these
+two paragraphs are here to save you from.
+
+*Which meter.* Mixxx sends several and they behave differently, so all three
+useful ones are read and kept apart — a look picks one by name, never by note
+number:
+
+| `VuSource` | note | what it is |
+| --- | --- | --- |
+| `Instant` | 64 | the level right now, resent every 40ms — peaks on every kick |
+| `Average` | 68 | the same averaged over ~2 seconds — the loudness of the *track* |
+| `Meter` | 69 | a meter bar, quantised — moves in visible steps |
+
+`vu_pulse`'s backdrop uses `Average`, and that is the whole fix for a wash that
+flashes: `Instant` peaks on every kick, so a backdrop driven from it pulses at
+beat rate no matter what you do downstream. `Average` is also one of the few VU
+options the mapping enables by default. Reach for `Instant` when you want
+something to *hit* on transients, which is a different look, not a broken one.
+
+*How it is smoothed.* `baseSmoothing` is a symmetric one-pole — equally slow up
+and down. It is deliberately not VU ballistics (fast attack, limited release):
+that is how a meter is *drawn*, and because it snaps upward it keeps every
+transient it is supposed to be removing. Default is a light 0.25s, because the
+signal it reads is already averaged upstream; raise it if you point `baseSource`
+at `Instant`. Zero follows the meter exactly.
+
+`baseGain` of 1 maps a full-scale reading to full brightness; lower it to buy
+the flash headroom above the wash.
+
+A reading is held flat for 0.35s and then fades out over the next 0.45s. The
+hold is so a backdrop sampled every frame does not ripple with how long ago the
+last message landed; the fade is a dead-man's switch, because a level held up
+forever after the link dropped would be the rig lying about having a signal.
+
+This needs **Enable VU mono current** ticked in the mapping's settings — note
+64, and the one VU option worth having on. Without it the red layer simply
+stays dark and the flash still works.
+
+##### the static looks
+
+Every fixture a new random value every frame, in greys or in hue. No smoothing
+and no motion, deliberately: the moment consecutive frames relate to each other
+it stops reading as static and starts reading as a bad pattern.
+
+The values come from hashing (frame number, fixture index) rather than from a
+generator with state, which keeps `render()` const and stateless and makes a
+given frame reproducible — the difference between a testable look and one you
+can only eyeball.
 
 **`beat_pulse`** is fast up and ~200ms back down, so at any danceable tempo
 there is a clear dark gap before the next beat and the rig reads as *hitting*
@@ -420,10 +502,11 @@ loopMIDI port → set *Load Mapping* to **MIDI for light** → **Apply**. The po
 must show as enabled; the mapping is output-only, so nothing will appear to
 happen yet.
 
-**4. Turn off what we do not use.** In that same panel, the mapping has a
-**Settings** tab. Leave *Enable Beat* and *Enable BPM* on. Turn **off** *Enable
-MTC Timecode* and every *VU* option — they default on, they are the bulk of the
-traffic on the cable, and nothing here reads them. Note the *Midi Channel*
+**4. Set what it sends.** In that same panel, the mapping has a **Settings**
+tab. Leave *Enable Beat*, *Enable BPM* and *Enable VU mono average* on — notes
+50, 52 and 68, which is the minimum this needs. Tick *Enable VU mono current*
+(note 64) if you want the transient-reactive source too. Turn **off** *Enable
+MTC Timecode*; it defaults on and nothing here reads it. Note the *Midi Channel*
 setting, default 1.
 
 **5. Run.**
@@ -442,12 +525,20 @@ Notes, **not** beat clock, on the mapping's Midi Channel:
 | 0x30 | 48 | deck change |
 | 0x32 | 50 | **the beat**, velocity 100 |
 | 0x34 | 52 | **the tempo**, velocity = bpm − 50 |
-| 0x40+ | 64+ | VU meters, many per second |
+| 0x40 | 64 | VU mono **current** — instantaneous, every 40ms |
+| 0x44 | 68 | VU mono **2-second average** — what `vu_pulse` reads |
+| 0x45 | 69 | first VU **meter bar** |
+| 0x46+ | 70+ | the rest of the meter bars |
 
 Two things follow, and both are already the defaults. `beat_note` is 50 rather
-than "any note" — with the VU meters left on, taking any note-on as a beat would
+than "any note" — with the VU meters on, taking any note-on as a beat would
 strobe the rig rather than pulse it. And the tempo arrives *explicitly* on note
 52, which beats any interval we could measure, so `bpm_note` decodes it.
+
+Notes 64, 68 and 69 are the exception to "turn the VU meters off" — all three
+are read, into the three `VuSource` slots above. *Enable VU mono average* is
+already on in the mapping's defaults; tick *Enable VU mono current* as well if
+you want `Instant` available.
 
 `clock` stays on regardless. Mixxx sends no 0xF8, so it costs nothing, and
 `ticks=0` in `midi status` is a useful confirmation that what is on the cable is
@@ -517,6 +608,9 @@ same reason.
   "notes": true,
   "beat_note": 50,
   "bpm_note": 52,
+  "vu_instant_note": 64,
+  "vu_average_note": 68,
+  "vu_meter_note": 69,
   "beat_channel": 1,
   "bpm": 128,
   "free_run": true
@@ -589,9 +683,9 @@ quit
 
 state <name>              states                 input <a|b> <on|off>
 
-bpm <float>               beat                   midi list
+bpm <float>               beat                   beat div <0|1|2|4>
 midi open <spec>          midi close             midi align
-midi free-run <on|off>    midi monitor <on|off>  midi status
+midi free-run <on|off>    midi monitor <on|off>  midi list / midi status
 ```
 
 `state` and `input` need a state machine pattern; the rest work on anything.
@@ -758,10 +852,13 @@ sending them.
 - **MIDI out.** Input only, and only tempo off it — no control-change mapping
   to patterns, no faders. `MidiInput::handleMessage` is where that would start.
 - **Bars.** The clock counts beats, not bars, because nothing upstream reliably
-  says where a bar begins. A look that wants to do something on the one needs
-  either a downbeat note from the source or a tap.
-- **Beat division.** A pulse is one per beat. Half and double time would be a
-  field on the pattern and a protocol command; neither exists yet.
+  says where a bar begins. `beat div 4` fires once every four beats but has no
+  idea which of them is the one; a tap is what puts it there.
+- **Sub-beat division.** `beat div` goes 1, 2, 4 — slower than the beat, not
+  faster. Eighths and sixteenths would need the envelope to shorten with them,
+  which is a different pattern rather than a different number.
+- **Stereo VU.** Only the mono meters are read. The mapping sends left and
+  right separately, which a rig split into two halves could use.
 
 ## Layout
 

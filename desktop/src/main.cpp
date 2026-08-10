@@ -109,6 +109,8 @@ namespace
             "  blackout <on|off>         hold the rig dark without losing the look\n"
             "  bpm <float>               set the tempo by hand\n"
             "  beat                      a downbeat, now - tap it, or trigger a cue\n"
+            "  beat div <1|2|4>          fire on every beat, every other, or once a bar\n"
+            "                            (0 gives each look back its own default)\n"
             "  midi list                 MIDI inputs the machine can see\n"
             "  midi open <spec>          follow tempo from that input\n"
             "  midi close                stop following, keep the tempo\n"
@@ -308,6 +310,48 @@ namespace
             check("bytes.ticks", static_cast<double>(midi.getClockTicks()), 1, 0.0);
         }
 
+        // ---- the VU meter ---------------------------------------------------
+        {
+            BeatClock clock;
+            AudioLevel meter;
+            MidiInput midi;
+            midi.setBeatClock(&clock);
+            midi.setAudioLevel(&meter);
+
+            // All three arrive interleaved on the same channel and must land in
+            // three separate places. Mixing them up is not cosmetic: a backdrop
+            // that gets the instantaneous level instead of the average pulses
+            // on every kick, which is exactly the bug this pins down.
+            midi.handleMessage(0x90, 64, 127, 30.0); // instantaneous, loud
+            midi.handleMessage(0x90, 68, 64, 30.0);  // average, half
+            midi.handleMessage(0x90, 69, 32, 30.0);  // meter bar, quarter
+
+            check("vu.instant", meter.get(VuSource::Instant, 30.0), 1.0, 0.001);
+            check("vu.average", meter.get(VuSource::Average, 30.0), 64.0 / 127.0, 0.001);
+            check("vu.meter", meter.get(VuSource::Meter, 30.0), 32.0 / 127.0, 0.001);
+
+            // Held flat, not decaying from the instant of the reading. A
+            // backdrop tracking this every frame would otherwise ripple.
+            check("vu.holds_between_messages",
+                  meter.get(VuSource::Average, 30.0 + AudioLevel::kHoldFor - 0.05),
+                  64.0 / 127.0, 0.001);
+
+            // They arrive on the same channel as the beat, dozens of times a
+            // second. Taking one for a beat would not be a subtle failure.
+            check("vu.not_a_beat", static_cast<double>(midi.getBeats()), 0.0, 0.0);
+
+            const double stale = 30.0 + AudioLevel::kStaleAfter + 0.1;
+            check("vu.live", meter.isLive(VuSource::Average, 30.1) ? 1.0 : 0.0, 1.0, 0.0);
+            check("vu.decays_when_stale", meter.get(VuSource::Average, stale), 0.0, 0.0);
+            check("vu.dead_when_stale",
+                  meter.isAnyLive(stale) ? 1.0 : 0.0, 0.0, 0.0);
+
+            // A source nobody is sending stays at zero rather than inheriting
+            // from a neighbour.
+            AudioLevel untouched;
+            check("vu.unfed_is_zero", untouched.get(VuSource::Instant, 30.0), 0.0, 0.0);
+        }
+
         // ---- the ignore list -----------------------------------------------
         {
             const std::vector<std::string> ignore = {"Traktor", "Kontrol"};
@@ -496,6 +540,24 @@ namespace
         emit("OK " + std::to_string(ports.size()) + " midi inputs");
     }
 
+    /// Everything the config says about how to read the cable, in one place.
+    ///
+    /// Two callers — startup and `midi open` — and a filter applied in only one
+    /// of them is a bug that presents as "it works from the config but not when
+    /// I reopen the port", which is a miserable thing to chase at a venue.
+    void applyMidiConfig(ShowState& show)
+    {
+        show.midi.setFollowClock(show.config.midi.followClock);
+        show.midi.setFollowNotes(show.config.midi.followNotes);
+        show.midi.setBeatNote(show.config.midi.beatNote);
+        show.midi.setBpmNote(show.config.midi.bpmNote);
+        show.midi.setVuNote(VuSource::Instant, show.config.midi.vuInstantNote);
+        show.midi.setVuNote(VuSource::Average, show.config.midi.vuAverageNote);
+        show.midi.setVuNote(VuSource::Meter, show.config.midi.vuMeterNote);
+        show.midi.setBeatChannel(show.config.midi.beatChannel);
+        show.midi.setAudioLevel(&sharedAudioLevel());
+    }
+
     std::string describeState(const ShowState& show)
     {
         StateMachinePattern* machine = show.pattern ? show.pattern->asStateMachine() : nullptr;
@@ -511,6 +573,9 @@ namespace
             << " fixtures=" << show.config.fixtures.size()
             << " fps=" << show.config.device.fps
             << " " << sharedBeatClock().describe(nowSeconds())
+            << " div=" << (machine ? machine->currentBeatDivision() : 0)
+            << " " << sharedAudioLevel().describe(nowSeconds())
+            << " vu=" << (sharedAudioLevel().isAnyLive(nowSeconds()) ? "live" : "none")
             << " midi=" << (show.midi.isOpen() ? ("\"" + show.midi.getPortName() + "\"") : "none")
             << " output=" << (show.output ? show.output->describe() : "none");
         return out.str();
@@ -681,6 +746,34 @@ namespace
 
         if (command == "beat")
         {
+            // beat div <n> - how often the beat-driven looks fire.
+            if (words.size() >= 2 && (words[1] == "div" || words[1] == "divide"))
+            {
+                StateMachinePattern* machine = show.pattern ? show.pattern->asStateMachine() : nullptr;
+                if (!machine)
+                {
+                    emit("ERR beat div needs a state machine pattern");
+                    return;
+                }
+                if (words.size() < 3)
+                {
+                    emit("ERR beat div needs 1, 2, 4, or 0 for each look's own default");
+                    return;
+                }
+
+                float value = 0.0f;
+                if (!parseFloatArg(words[2], value) || value < 0.0f || value > 64.0f)
+                {
+                    emit("ERR beat div: '" + words[2] + "' is not a beat count");
+                    return;
+                }
+
+                machine->setBeatDivision(static_cast<int>(value));
+                emit("OK beat div " + words[2]);
+                emit("DIV " + std::to_string(machine->currentBeatDivision()));
+                return;
+            }
+
             // A downbeat, now. Two jobs in one: tapping the tempo in when there
             // is no MIDI, and telling a running clock where the bar starts when
             // it only sends 0xF8 and never said.
@@ -704,7 +797,8 @@ namespace
             if (action == "status")
             {
                 emit("MIDI-STATUS " + show.midi.describe() + " "
-                   + sharedBeatClock().describe(nowSeconds()));
+                   + sharedBeatClock().describe(nowSeconds()) + " "
+                   + sharedAudioLevel().describe(nowSeconds()));
                 emit("OK midi status");
                 return;
             }
@@ -729,11 +823,7 @@ namespace
                     return;
                 }
 
-                show.midi.setFollowClock(show.config.midi.followClock);
-                show.midi.setFollowNotes(show.config.midi.followNotes);
-                show.midi.setBeatNote(show.config.midi.beatNote);
-                show.midi.setBpmNote(show.config.midi.bpmNote);
-                show.midi.setBeatChannel(show.config.midi.beatChannel);
+                applyMidiConfig(show);
 
                 emit("OK midi open " + show.midi.getPortName());
                 return;
@@ -1173,11 +1263,7 @@ int main(int argc, char** argv)
         // `midi status` reports what is *configured* rather than the class
         // defaults. Reading channel=-1 off a failed open, when the config
         // plainly says 1, sends you looking in the wrong place.
-        show.midi.setFollowClock(show.config.midi.followClock);
-        show.midi.setFollowNotes(show.config.midi.followNotes);
-        show.midi.setBeatNote(show.config.midi.beatNote);
-        show.midi.setBpmNote(show.config.midi.bpmNote);
-        show.midi.setBeatChannel(show.config.midi.beatChannel);
+        applyMidiConfig(show);
 
         std::string midiError;
         if (show.midi.open(show.config.midi.port, show.config.midi.ignore,

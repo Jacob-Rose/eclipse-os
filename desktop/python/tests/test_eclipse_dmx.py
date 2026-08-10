@@ -472,6 +472,25 @@ class MidiSettings(unittest.TestCase):
         midi = MidiConfig()
         self.assertEqual((midi.beat_note, midi.bpm_note), (50, 52))
 
+    def test_all_three_loudness_signals_are_read(self):
+        """64 instantaneous, 68 two-second average, 69 a meter bar."""
+        midi = MidiConfig()
+        self.assertEqual(
+            (midi.vu_instant_note, midi.vu_average_note, midi.vu_meter_note),
+            (64, 68, 69),
+        )
+
+    def test_two_signals_cannot_share_a_note(self):
+        with self.assertRaises(ConfigError):
+            MidiConfig(vu_instant_note=68, vu_average_note=68).validate()
+
+    def test_a_signal_can_be_switched_off(self):
+        MidiConfig(vu_instant_note=-1, vu_meter_note=-1).validate()
+
+    def test_a_meter_cannot_share_the_beat_note(self):
+        with self.assertRaises(ConfigError):
+            MidiConfig(beat_note=64, vu_instant_note=64).validate()
+
     def test_a_tempo_that_is_not_a_tempo_is_rejected(self):
         with self.assertRaises(ConfigError):
             MidiConfig(bpm=5.0).validate()
@@ -645,7 +664,7 @@ class Mythos26(unittest.TestCase):
         show = self._show(on_frame=frames.append, emit_rate=20.0)
         try:
             seen = []
-            for state in ("slot_2", "slot_4", "slot_6"):
+            for state in ("slot_5", "slot_6", "slot_7"):
                 show.set_state(state)
                 time.sleep(0.8)  # past the 0.25s cross-fade
                 seen.append(tuple(frames[-1]))
@@ -655,6 +674,127 @@ class Mythos26(unittest.TestCase):
             self.assertEqual(len(set(seen)), 3, "two slots look the same")
         finally:
             show.stop()
+
+
+def _rising_edges(frames, threshold=128):
+    """How many times the rig went from dark to lit.
+
+    Counting edges rather than lit frames: a pulse spans several frames and how
+    many depends on the frame rate we happened to get.
+    """
+    lit = [max(f[0]) > threshold for f in frames]
+    return sum(1 for i in range(1, len(lit)) if lit[i] and not lit[i - 1])
+
+
+class BeatDivision(unittest.TestCase):
+    """on 1 / on 2 / on 4, and each look's own default."""
+
+    @classmethod
+    def setUpClass(cls):
+        executable_or_skip()
+
+    def _count(self, state, seconds=4.0, division=None, bpm=120.0):
+        frames = []
+        show = ShowController(
+            SHOW, dry_run=True, midi="", bpm=bpm, on_frame=frames.append, emit_rate=40.0
+        )
+        try:
+            show.set_state(state)
+            if division is not None:
+                show.set_beat_division(division)
+            frames.clear()          # drop the cross-fade
+            time.sleep(seconds)
+        finally:
+            show.stop()
+        return _rising_edges(frames)
+
+    def test_vu_pulse_opens_on_twos(self):
+        """Its own default, without anyone selecting a division."""
+        beats = 120.0 / 60.0 * 4.0          # 8 beats in the window
+        self.assertAlmostEqual(self._count("vu_pulse"), beats / 2, delta=1.5)
+
+    def test_beat_pulse_opens_on_every_beat(self):
+        beats = 120.0 / 60.0 * 4.0
+        self.assertAlmostEqual(self._count("beat_pulse"), beats, delta=2.0)
+
+    def test_the_selection_overrides_the_default(self):
+        """`on 1` should make vu_pulse fire every beat despite opening on twos."""
+        beats = 120.0 / 60.0 * 4.0
+        self.assertAlmostEqual(self._count("vu_pulse", division=1), beats, delta=2.0)
+
+    def test_on_four_is_once_a_bar(self):
+        beats = 120.0 / 60.0 * 8.0
+        self.assertAlmostEqual(
+            self._count("beat_pulse", seconds=8.0, division=4), beats / 4, delta=1.5
+        )
+
+    def test_zero_hands_back_each_looks_default(self):
+        show = ShowController(SHOW, dry_run=True, midi="", on_frame=lambda f: None)
+        try:
+            show.set_state("vu_pulse")
+            show.set_beat_division(1)
+            show.set_beat_division(0)
+            time.sleep(0.3)
+            self.assertIn("div=2", show.status(), "vu_pulse should be back on twos")
+        finally:
+            show.stop()
+
+    def test_a_nonsense_division_is_rejected_without_dying(self):
+        show = ShowController(SHOW, dry_run=True, midi="", on_frame=lambda f: None)
+        try:
+            with self.assertRaises(ShowError):
+                show.command("beat div nonsense")
+            self.assertTrue(show.is_running)
+        finally:
+            show.stop()
+
+
+class TvStatic(unittest.TestCase):
+    """Every fixture a new value every frame."""
+
+    @classmethod
+    def setUpClass(cls):
+        executable_or_skip()
+
+    def _frames(self, state, seconds=1.5):
+        frames = []
+        show = ShowController(
+            SHOW, dry_run=True, midi="", on_frame=frames.append, emit_rate=40.0
+        )
+        try:
+            show.set_state(state)
+            time.sleep(0.5)     # past the cross-fade
+            frames.clear()
+            time.sleep(seconds)
+        finally:
+            show.stop()
+        self.assertTrue(frames, "no frames arrived")
+        return frames
+
+    def test_mono_is_grey(self):
+        for frame in self._frames("tv_static_mono"):
+            for red, green, blue in frame:
+                self.assertEqual((red, green, blue), (red, red, red))
+
+    def test_colour_is_not_grey(self):
+        frames = self._frames("tv_static")
+        coloured = any(
+            red != green or green != blue
+            for frame in frames
+            for red, green, blue in frame
+        )
+        self.assertTrue(coloured, "every fixture came out grey")
+
+    def test_fixtures_differ_from_each_other(self):
+        """Otherwise it is a flashing rig, not static."""
+        frames = self._frames("tv_static_mono")
+        varied = sum(1 for frame in frames if len(set(frame)) > len(frame) // 2)
+        self.assertGreater(varied, len(frames) * 0.8)
+
+    def test_consecutive_frames_differ(self):
+        frames = self._frames("tv_static")
+        same = sum(1 for i in range(1, len(frames)) if frames[i] == frames[i - 1])
+        self.assertLess(same, len(frames) * 0.1)
 
 
 class MidiMessageHandling(unittest.TestCase):
@@ -901,6 +1041,40 @@ class ViewerOnTheShow(unittest.TestCase):
         self.settle(0.5)
         self.assertEqual(self.app._status, "")
         self.assertIn("manual", self.app.header.cget("text"))
+
+    def test_the_division_buttons_take(self):
+        self.settle(0.8)
+        self.app._run_button(("div", "4"))
+        self.settle(0.5)
+        self.assertEqual(self.app._status, "")
+        self.assertIn("on 4", self.app.header.cget("text"))
+        self.assertIn("div=4", self.app.show.status())
+
+    def test_the_master_slider_reaches_the_rig(self):
+        self.settle(0.8)
+        self.app._on_master_slider("40")
+        self.settle(0.5)
+        self.assertEqual(self.app._status, "")
+        self.assertAlmostEqual(self.app._master, 0.4, places=2)
+        self.assertIn("master=0.4", self.app.show.status())
+
+    def test_the_arrow_keys_and_the_slider_agree(self):
+        """Two controls on one value; they must not drift apart."""
+        self.settle(0.8)
+        self.app._on_master_slider("50")
+        self.settle(0.3)
+        self.app._nudge_master(0.1)
+        self.settle(0.3)
+        self.assertAlmostEqual(self.app._master, 0.6, places=2)
+        self.assertAlmostEqual(self.app._master_var.get(), 60.0, delta=1.0)
+
+    def test_dragging_the_slider_does_not_feed_itself(self):
+        """_set_master writes the variable back, which re-enters the handler."""
+        self.settle(0.5)
+        self.app._on_master_slider("70")
+        self.settle(0.3)
+        self.assertAlmostEqual(self.app._master, 0.7, places=2)
+        self.assertEqual(self.app._status, "")
 
 
 if __name__ == "__main__":

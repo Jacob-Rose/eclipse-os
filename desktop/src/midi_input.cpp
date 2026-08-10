@@ -291,6 +291,16 @@ void MidiInput::onBeat(double when, bool fromNote)
     beatsSeen.fetch_add(1);
 }
 
+void MidiInput::setVuNote(VuSource source, int note)
+{
+    vuNotes[static_cast<int>(source)].store(note);
+}
+
+int MidiInput::getVuNote(VuSource source) const
+{
+    return vuNotes[static_cast<int>(source)].load();
+}
+
 void MidiInput::setMonitor(bool enable)
 {
     if (enable)
@@ -466,6 +476,23 @@ void MidiInput::handleMessage(unsigned char status, unsigned char data1, unsigne
             return;
         }
 
+        // The VU meters. Checked before the beat so that a rig configured with
+        // beat_note -1 - "any note is a beat" - still does not take one for a
+        // beat, since between them they arrive dozens of times a second.
+        for (int index = 0; index < kVuSourceCount; ++index)
+        {
+            if (vuNotes[index].load() != note)
+            {
+                continue;
+            }
+            if (audioLevel != nullptr)
+            {
+                audioLevel->set(static_cast<VuSource>(index),
+                                static_cast<float>(data2) / 127.0f, when);
+            }
+            return;
+        }
+
         const int wantedNote = beatNote.load();
         if (wantedNote >= 0 && note != wantedNote)
         {
@@ -558,15 +585,18 @@ void MidiInput::alignToNow()
 
 std::string MidiInput::describe() const
 {
-    char text[320];
+    char text[384];
     std::snprintf(text, sizeof(text),
-                  "port=\"%s\" clock=%s notes=%s beat_note=%d bpm_note=%d channel=%d "
-                  "ticks=%llu beats=%llu",
+                  "port=\"%s\" clock=%s notes=%s beat_note=%d bpm_note=%d "
+                  "vu_inst=%d vu_avg=%d vu_meter=%d channel=%d ticks=%llu beats=%llu",
                   portName.empty() ? "-" : portName.c_str(),
                   followClock.load() ? "on" : "off",
                   followNotes.load() ? "on" : "off",
-                  beatNote.load(), bpmNote.load(), beatChannel.load(),
-                  getClockTicks(), getBeats());
+                  beatNote.load(), bpmNote.load(),
+                  getVuNote(VuSource::Instant),
+                  getVuNote(VuSource::Average),
+                  getVuNote(VuSource::Meter),
+                  beatChannel.load(), getClockTicks(), getBeats());
     return std::string(text);
 }
 

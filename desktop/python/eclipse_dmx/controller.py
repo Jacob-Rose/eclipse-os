@@ -485,6 +485,15 @@ class ShowController:
         """Whether the rig keeps pulsing after the external clock stops."""
         self.command(f"midi free-run {'on' if enable else 'off'}")
 
+    def set_beat_division(self, beats: int) -> None:
+        """How often the beat-driven looks fire: 1, 2 or 4 beats per hit.
+
+        Zero hands every look back its own default, which is how a machine
+        holding both an on-every-beat look and an on-twos look can be switched
+        between them without resetting this each time.
+        """
+        self.command(f"beat div {beats}")
+
     def midi_monitor(self, enable: bool = True) -> None:
         """Reports every channel message arriving, into `midi_seen`.
 

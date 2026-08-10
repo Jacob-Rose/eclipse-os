@@ -11,6 +11,8 @@
 #include <thread>
 #include <vector>
 
+#include "edmx/beat_clock.h"
+
 ///
 /// MIDI in, for tempo.
 ///
@@ -59,7 +61,6 @@
 
 namespace edmx
 {
-    class BeatClock;
 
     struct MidiPortInfo
     {
@@ -123,6 +124,10 @@ namespace edmx
         /// the message handling can be exercised with no device present.
         void setBeatClock(BeatClock* inClock) { clock = inClock; }
 
+        /// Where VU readings go. Optional — leave it null and they are parsed
+        /// and dropped.
+        void setAudioLevel(AudioLevel* inLevel) { audioLevel = inLevel; }
+
         /// Follow 0xF8 beat clock. On by default.
         void setFollowClock(bool enable) { followClock.store(enable); }
         /// Treat note-on as a beat. On by default.
@@ -135,6 +140,15 @@ namespace edmx
         /// Which note number carries the tempo, as velocity + 50. -1 to ignore
         /// it and infer the tempo from the gaps between beats instead.
         void setBpmNote(int note) { bpmNote.store(note); }
+
+        /// Which note carries which loudness signal, as velocity 0..127.
+        /// -1 on any of them ignores that one.
+        ///
+        /// All three are read at once and kept separately, because they behave
+        /// differently and a look should be able to pick: 64 instantaneous,
+        /// 68 the two-second average, 69 a meter bar. See VuSource.
+        void setVuNote(VuSource source, int note);
+        int getVuNote(VuSource source) const;
 
         /// Only take beats from this channel (1..16), or -1 for any.
         void setBeatChannel(int channel) { beatChannel.store(channel); }
@@ -173,6 +187,7 @@ namespace edmx
         void onBeat(double when, bool fromNote);
 
         BeatClock* clock{nullptr};
+        AudioLevel* audioLevel{nullptr};
         std::string portName;
         std::atomic<bool> opened{false};
 
@@ -184,6 +199,9 @@ namespace edmx
         std::atomic<int> beatNote{50};
         std::atomic<int> bpmNote{52};
         std::atomic<int> beatChannel{-1};
+
+        /// Indexed by VuSource: instantaneous, two-second average, meter bar.
+        std::atomic<int> vuNotes[kVuSourceCount] = {{64}, {68}, {69}};
 
         std::atomic<unsigned long long> clockTicks{0};
         std::atomic<unsigned long long> beatsSeen{0};

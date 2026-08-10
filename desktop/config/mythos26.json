@@ -61,12 +61,21 @@
     "free_run": true
   },
 
-  // Seven states. One of them is written.
+  // Seven states, four of them written:
   //
-  // "beat_pulse" is the whole rig hitting white on each beat: fast up, ~200ms
-  // back down, so it lands on the beat rather than throbbing near it. The other
-  // six are placeholders - a dim tinted breath - so the cue buttons and the
-  // cross-fades can be proved out before the looks exist.
+  //   beat_pulse      the whole rig hitting white on each beat - fast up,
+  //                   ~200ms back down, so it lands on the beat rather than
+  //                   throbbing near it
+  //   vu_pulse        the same flash on every second beat, over a red layer
+  //                   that follows the VU meter. Needs midi.vu_note.
+  //   tv_static_mono  every par a new grey, every frame
+  //   tv_static       every par a new colour, every frame
+  //
+  // slot_5 onwards are placeholders - a dim tinted breath - so the cue buttons
+  // and the cross-fades can be proved out before the looks exist.
+  //
+  // How often the beat-driven looks fire is a desk control, not a config one:
+  // "beat div 1|2|4" on stdin, or the on 1 / on 2 / on 4 buttons in the viewer.
   "pattern": {
     "name": "mythos26",
     "state": "beat_pulse",
