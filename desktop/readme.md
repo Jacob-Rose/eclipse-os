@@ -355,7 +355,7 @@ Seven states, in the order the buttons show them:
 
 | state | what it does |
 | --- | --- |
-| `beat_pulse` | the whole rig hits white on each beat |
+| `beat_pulse` | the whole rig swells white on each beat |
 | `vu_pulse` | the same flash on every *second* beat, over a red layer that follows the VU meter |
 | `tv_static_mono` | every fixture a new grey, every frame |
 | `tv_static` | every fixture a new colour, every frame |
@@ -448,19 +448,44 @@ generator with state, which keeps `render()` const and stateless and makes a
 given frame reproducible — the difference between a testable look and one you
 can only eyeball.
 
-**`beat_pulse`** is fast up and ~200ms back down, so at any danceable tempo
-there is a clear dark gap before the next beat and the rig reads as *hitting*
-the beat rather than throbbing near it. Its envelope is tuned by three fields at
-the top of `Pattern_Mythos_BeatPulse`: `attackSeconds`, `decaySeconds`, and
-`pulseColor`, which is white for now.
+**`beat_pulse`** swells: a rise of a couple of hundred milliseconds into a fall
+of most of a second, in white. It was the other way round to begin with — 12ms
+up and 200ms down, a crack with a clear dark gap before the next beat — and
+that pair of numbers is the whole difference if you want it to hit again.
 
-One detail in there is worth knowing about before you retune it. The attack is
-deliberately shorter than a frame — 12ms against 25ms at 40fps — so the pattern
-takes the envelope's *peak across the frame* rather than its value at the end of
-one. Sampled instantaneously, a pulse would only reach full brightness when a
-frame happened to land on the crest, and every other beat would come out dimmer
-by a different amount. A rig flickering unevenly on a steady tempo is exactly
-the artefact that avoids.
+Its envelope is an **automation curve**, `eanim::AutomationCurveTrigger`, and
+the beat is the impulse that fires it. `setEnvelope(attack, decay)` is the
+shorthand for a rise and a fall; for any other shape, put keys on
+`envelope.curve` directly:
+
+```cpp
+envelope.curve.clear();
+envelope.curve.addKey(0.00f, 0.0f);
+envelope.curve.addKey(0.20f, 1.0f, easing_functions::EaseOutCubic);
+envelope.curve.addKey(0.80f, 0.0f);
+```
+
+The curve lives in `src/lib/eanim/`, not in the desktop tree, so the relics get
+it too — it is a `FloatAttribute`, which means anything that already takes one
+of those takes a trigger.
+
+#### what a beat landing mid-pass does
+
+The envelope is longer than a beat at any tempo this runs at, so at `beat div 1`
+the fall never finishes. `envelope.retriggerMode` decides what happens then:
+
+| mode | what it does |
+| --- | --- |
+| `Restart` | the timeline resets and the output steps to the curve's first value — a visible drop to dark on every beat, unless the curve fits in the gap |
+| `RestartHold` | the timeline resets, but the output is **held** where it had got to until the new rise climbs past it. The default here: the beat still lands on time and still peaks, and the rig swells between a trough and full instead of cutting to black |
+| `Overlap` | each impulse gets its own voice and the live ones are combined, `Max` or `Sum`. The old pass finishes underneath the new one rather than being cancelled by it. Four voices, then the oldest is stolen |
+
+One detail worth knowing before you shorten the rise. The trigger reads the
+curve's *peak across the frame* rather than its value at the end of one. With a
+rise shorter than a frame — 12ms against 25ms at 40fps — sampling instantaneously
+would reach full brightness only when a frame happened to land on the crest, and
+every other beat would come out dimmer by a different amount. A rig flickering
+unevenly on a steady tempo is exactly the artefact that avoids.
 
 ### the beat
 

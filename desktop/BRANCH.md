@@ -182,7 +182,7 @@ Seven states, of which four are written:
 
 | state | what it does |
 | --- | --- |
-| `beat_pulse` | the whole rig hits white on the beat, fast up and 200ms back down |
+| `beat_pulse` | the whole rig swells white on the beat, on an automation curve |
 | `vu_pulse` | the same flash on every *second* beat, over a red backdrop that follows the track's loudness |
 | `tv_static_mono` | every fixture a new grey, every frame |
 | `tv_static` | every fixture a new colour, every frame |
@@ -198,6 +198,28 @@ tempo — dividing the tempo would stretch the envelope and the hit would go sof
 The static looks hash `(frame, fixture index)` rather than keeping a random
 generator, which lets `render()` stay const and stateless and makes any given
 frame reproducible.
+
+### the envelope is an automation curve now
+
+`beat_pulse` no longer owns its shape. `eanim::AutomationCurve` is a keyframe
+curve — time, value, and an easing per segment — and
+`eanim::AutomationCurveTrigger` plays one from an impulse and exposes the result
+as a `FloatAttribute`. The beat is the impulse; the pulse is one three-key curve.
+
+It lives in `src/lib/eanim/` rather than in `desktop/`, so the relics get it as
+well: fixed capacity, no allocation, nothing host-only in it.
+
+The part that needed a decision is what a second impulse does to a pass that is
+still running, because the envelope is now longer than a beat. `RetriggerMode`
+names the three answers: `Restart` (reset the timeline, which steps the output
+back down — right when the curve fits in the gap), `RestartHold` (reset the
+timeline but hold the output where it was until the new rise passes it, which is
+what `beat_pulse` uses and why the rig swells instead of cutting to black), and
+`Overlap` (each impulse gets its own voice, combined by `Max` or `Sum`, four
+deep and then the oldest is stolen).
+
+The peak-across-a-frame read moved down into `AutomationCurve::peak`, so it is
+now a property of any curve rather than a hand-rolled special case in one look.
 
 ### the loudness backdrop, and getting it wrong twice
 

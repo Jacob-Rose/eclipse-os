@@ -544,7 +544,7 @@ class Mythos26(unittest.TestCase):
             show.stop()
 
     def test_it_pulses_white_on_the_beat(self):
-        """Full white once a beat, dark between, and every fixture together."""
+        """Full white once a beat, well down between, and every fixture together."""
         frames = []
         show = self._show(on_frame=frames.append, bpm=120.0, emit_rate=40.0)
         try:
@@ -566,8 +566,15 @@ class Mythos26(unittest.TestCase):
         for frame in peaks:
             self.assertEqual(len(set(frame)), 1)
 
-        # And it goes dark in between, rather than sitting lit.
-        self.assertTrue(any(max(f[0]) == 0 for f in frames), "the rig never went dark")
+        # And it comes back down in between, rather than sitting lit.
+        #
+        # Not "reaches zero" any more: the envelope is 1.2s against a 500ms beat
+        # and retriggers by holding rather than by cutting to black, so the
+        # trough is a third of full and not dark. Asserting zero here passed
+        # only on the cross-fade frames at the top of the show, which is not
+        # what it meant to be checking. See RetriggerMode::RestartHold.
+        trough = min(max(f[0]) for f in frames[len(frames) // 2:])
+        self.assertLess(trough, 128, "the rig never came back down between hits")
 
     def test_the_tempo_sets_how_often(self):
         """The rig pulses once per beat, at whatever the tempo is."""

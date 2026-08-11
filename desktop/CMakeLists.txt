@@ -43,6 +43,7 @@ set(ECLIPSE_CORE_SOURCES
     ${ECLIPSE_SRC}/lib/ecore/utils.cpp
 
     ${ECLIPSE_SRC}/lib/eanim/attribute_float.cpp
+    ${ECLIPSE_SRC}/lib/eanim/automation_curve.cpp
     ${ECLIPSE_SRC}/lib/eanim/generator_float.cpp
     ${ECLIPSE_SRC}/lib/eanim/generator_hsv.cpp
     ${ECLIPSE_SRC}/lib/eanim/lfo.cpp

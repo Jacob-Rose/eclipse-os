@@ -12,28 +12,6 @@
 
 using namespace edmx;
 
-namespace
-{
-    /// Shape of the fall.
-    ///
-    /// Linear reads as a fade; a light that *hits* drops fast and then trails
-    /// off. This is an exponential shifted so it reaches exactly zero at the
-    /// end of the window rather than approaching it forever — a tail that never
-    /// quite finishes leaves the rig glowing faintly between beats, which is
-    /// precisely the mush the fast attack was for.
-    float decayShape(float x)
-    {
-        constexpr float kSharpness = 4.0f;
-
-        if (x <= 0.0f) return 1.0f;
-        if (x >= 1.0f) return 0.0f;
-
-        const float curve = std::exp(-kSharpness * x);
-        const float tail  = std::exp(-kSharpness);
-        return (curve - tail) / (1.0f - tail);
-    }
-}
-
 // ============================================================================
 // beat_pulse
 // ============================================================================
@@ -41,42 +19,28 @@ namespace
 Pattern_Mythos_BeatPulse::Pattern_Mythos_BeatPulse()
     : clock(&sharedBeatClock())
 {
+    // RestartHold rather than Restart, because 1.2s of envelope does not fit
+    // between two beats at any tempo this runs at. See the class comment.
+    envelope.retriggerMode = eanim::RetriggerMode::RestartHold;
+    setEnvelope(attackSeconds, decaySeconds);
+}
+
+void Pattern_Mythos_BeatPulse::setEnvelope(float inAttackSeconds, float inDecaySeconds)
+{
+    attackSeconds = std::max(inAttackSeconds, 0.0f);
+    decaySeconds  = std::max(inDecaySeconds, 0.001f);
+
+    envelope.curve.clear();
+    envelope.curve.addKey(0.0f, 0.0f);
+    envelope.curve.addKey(attackSeconds, 1.0f, easing_functions::EaseOutCubic);
+    envelope.curve.addKey(attackSeconds + decaySeconds, 0.0f);
 }
 
 void Pattern_Mythos_BeatPulse::init()
 {
     started = false;
-    sinceTrigger = 0.0f;
     level = 0.0f;
-}
-
-float Pattern_Mythos_BeatPulse::envelopeAt(float seconds) const
-{
-    const float attack = std::max(attackSeconds, 0.0f);
-    const float decay  = std::max(decaySeconds, 0.001f);
-
-    if (seconds < 0.0f)
-    {
-        return 0.0f;
-    }
-    if (seconds < attack)
-    {
-        return (attack <= 0.0f) ? 1.0f : (seconds / attack);
-    }
-    return decayShape((seconds - attack) / decay);
-}
-
-float Pattern_Mythos_BeatPulse::envelopePeak(float from, float to) const
-{
-    // The envelope rises to exactly 1 at the end of the attack and falls from
-    // there, so the largest value over a span is either an end of the span or
-    // the crest, if the crest is inside it.
-    const float attack = std::max(attackSeconds, 0.0f);
-    if (from <= attack && attack <= to)
-    {
-        return 1.0f;
-    }
-    return std::max(envelopeAt(from), envelopeAt(to));
+    envelope.reset();
 }
 
 void Pattern_Mythos_BeatPulse::setBeatsPerPulse(int beats)
@@ -94,35 +58,25 @@ void Pattern_Mythos_BeatPulse::tick(float deltaTime)
     const double position = clock->beatPosition(now) / static_cast<double>(beatsPerPulse);
     const long long beat = static_cast<long long>(std::floor(position));
 
-    float from = sinceTrigger;
-
     if (!started || beat != lastBeat)
     {
-        // Retrigger from where the beat actually started, not from this frame.
-        // At 40fps a frame is 25ms and a beat lands anywhere inside one, so
-        // starting the envelope at the frame boundary would quantise every
-        // pulse to the frame grid and put a visible swing on the rig.
         started = true;
         lastBeat = beat;
-        from = 0.0f;
-        sinceTrigger = clock->timeSinceBeat(now);
-    }
-    else
-    {
-        sinceTrigger += deltaTime;
+
+        // Fire the impulse at where the beat actually landed, not at this
+        // frame's boundary. At 40fps a frame is 25ms and a beat lands anywhere
+        // inside one, so triggering at the boundary would quantise every pulse
+        // to the frame grid and put a visible swing on the rig.
+        envelope.triggerAt(static_cast<float>(clock->timeSinceBeat(now)));
     }
 
-    // Take the envelope's peak across the frame rather than its value at the
-    // end of it. The attack is deliberately shorter than a frame, so sampling
-    // instantaneously would catch the crest only when a frame happened to land
-    // on it — every other beat would come out dimmer, by a different amount
-    // each time. A rig that flickers unevenly on a steady tempo is the whole
-    // failure this avoids, and peak-holding a transient shorter than the frame
-    // is the honest thing to draw anyway.
-    const float envelope = envelopePeak(from, sinceTrigger);
+    // The trigger reads the curve's peak across the frame rather than its value
+    // at the end of one, which is what keeps the envelope safe to shorten — see
+    // eanim::AutomationCurve::peak.
+    envelope.tick(deltaTime);
 
     const float floorValue = std::clamp(floorLevel, 0.0f, 1.0f);
-    level = floorValue + ((1.0f - floorValue) * std::clamp(envelope, 0.0f, 1.0f));
+    level = floorValue + ((1.0f - floorValue) * std::clamp(envelope.getValue(), 0.0f, 1.0f));
 }
 
 void Pattern_Mythos_BeatPulse::render(eio::HSVStripNode* node, ecore::HSV& inOutColor) const

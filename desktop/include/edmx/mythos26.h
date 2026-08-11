@@ -7,6 +7,7 @@
 
 #include <memory>
 
+#include "lib/eanim/automation_curve.h"
 #include "lib/eanim/generator_hsv.h"
 #include "lib/ecore/hsv.h"
 
@@ -34,18 +35,30 @@
 namespace edmx
 {
 
-    /// The whole rig flashing on the beat.
+    /// The whole rig swelling on the beat.
     ///
-    /// Quick attack, then a fall that is over well before the next beat: at
-    /// 128bpm a beat is 469ms, so a 200ms fall leaves a clear dark gap and the
-    /// rig reads as *hitting* the beat rather than throbbing near it. A slower
-    /// fall than the beat period would smear one pulse into the next and the
-    /// whole effect would collapse into a wobble.
+    /// A slow rise into a long fall — a swell rather than a crack. It was the
+    /// other way round first, 12ms up and 200ms down, which read as the rig
+    /// *hitting* the beat and left a clear dark gap before the next one; that
+    /// pair of numbers is the whole difference if it ever wants to hit again.
     ///
-    /// The envelope is retriggered by the beat *number* changing rather than by
-    /// a callback from the MIDI thread: the clock predicts between beats, so
-    /// polling it once a frame is both simpler and immune to a beat that lands
-    /// mid-render.
+    /// One thing to know before retuning it: the envelope is now longer than a
+    /// beat at any danceable tempo — a beat is 469ms at 128bpm — so at `beat
+    /// div 1` the fall never finishes before the next beat cuts it short. That
+    /// is why it runs in `RetriggerMode::RestartHold`: the new pass restarts the
+    /// timeline, but the output is held at the level it had reached until the
+    /// rise climbs back past it, so the rig swells between a trough and full
+    /// rather than stepping to dark on every beat. `Restart` is the old
+    /// behaviour and is the right one for a curve that fits inside the gap.
+    ///
+    /// The envelope is an eanim::AutomationCurveTrigger, and the beat is the
+    /// impulse that fires it. Nothing about the shape lives here any more: it is
+    /// three keys on `envelope.curve`, and any other shape is the same three
+    /// calls with different numbers.
+    ///
+    /// It is retriggered by the beat *number* changing rather than by a callback
+    /// from the MIDI thread: the clock predicts between beats, so polling it
+    /// once a frame is both simpler and immune to a beat that lands mid-render.
     class Pattern_Mythos_BeatPulse : public eanim::GeneratorHSV
     {
     public:
@@ -60,13 +73,23 @@ namespace edmx
         /// this is the knob that changes it.
         ecore::HSV pulseColor{0.0f, 0.0f, 1.0f};
 
-        /// Seconds to full. Short but not zero: an instant step lands on
-        /// whatever frame it lands on, and a couple of milliseconds of ramp
-        /// costs nothing and stops the edge looking ragged at low frame rates.
-        float attackSeconds{0.012f};
+        /// The envelope, and the timeline the beat plays it on.
+        ///
+        /// Reach straight into `envelope.curve` for a shape that is not a rise
+        /// and a fall, or `envelope.retriggerMode` for what a beat landing
+        /// mid-pass should do. setEnvelope() is the shorthand for the common
+        /// case.
+        eanim::AutomationCurveTrigger envelope;
 
-        /// Seconds from full back to dark.
-        float decaySeconds{0.200f};
+        /// Rebuilds the curve as a rise to full and a fall back to dark.
+        ///
+        /// The rise is linear and the fall is EaseOutCubic — quick off the top
+        /// and then trailing, which is what a light doing this actually looks
+        /// like; a linear fall reads as a fade rather than as a decay.
+        void setEnvelope(float attackSeconds, float decaySeconds);
+
+        float getAttackSeconds() const { return attackSeconds; }
+        float getDecaySeconds() const { return decaySeconds; }
 
         /// Level held between pulses, 0..1. Zero is a hard blackout between
         /// beats; lift it if the rig needs to stay visible.
@@ -86,22 +109,26 @@ namespace edmx
         float getLevel() const { return level; }
 
         /// The envelope `seconds` after a beat, 0..1.
-        float envelopeAt(float seconds) const;
+        float envelopeAt(float seconds) const { return envelope.curve.evaluate(seconds); }
         /// Its largest value across a span, which is what a frame should show
-        /// when the attack is shorter than the frame. See tick().
-        float envelopePeak(float from, float to) const;
+        /// when the rise is short enough to crest inside one. See tick().
+        float envelopePeak(float from, float to) const { return envelope.curve.peak(from, to); }
 
     private:
         BeatClock* clock{nullptr};
 
         int beatsPerPulse{1};
 
+        /// What setEnvelope() was last given. Kept only so the numbers can be
+        /// read back; the curve is what actually runs.
+        float attackSeconds{0.15f};
+        float decaySeconds{0.600f};
+
         /// Pulse we last fired on. Starts unset so the first tick pulses rather
         /// than waiting up to a whole beat to show anything.
         long long lastBeat{0};
         bool started{false};
 
-        float sinceTrigger{0.0f};
         float level{0.0f};
     };
 
