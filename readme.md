@@ -86,7 +86,35 @@ If terminals are scary, the ide instructions should work. i recommend the cli.
 
 ### Linux
 
-#### Install
+#### First-time setup
+
+You need the [arduino-cli](https://arduino.github.io/arduino-cli/), the RP2040 core, and a handful of libraries. This was last verified with **arduino-cli 1.4.1** and the versions noted below.
+
+1. Add the arduino-pico (earlephilhower) board index and install the core:
+
+   ```sh
+   arduino-cli config add board_manager.additional_urls https://github.com/earlephilhower/arduino-pico/releases/download/global/package_rp2040_index.json
+   arduino-cli core update-index
+   arduino-cli core install rp2040:rp2040          # verified w/ 5.6.0
+   ```
+
+2. Install the libraries the sketch pulls in:
+
+   ```sh
+   arduino-cli lib install "Adafruit GC9A01A" "Adafruit NeoPixel" "AnimatedGIF" "FastLED" "PubSubClient"
+   ```
+
+   (Adafruit GFX + BusIO come along as dependencies.)
+
+3. Create your secrets file from the template (compile fails without it):
+
+   ```sh
+   cp secrets.h.example secrets.h
+   ```
+
+4. Apply the library patches below (see **Library Patches**) — currently still required.
+
+#### Build / upload / monitor
 
 1. compile.sh -> compile for raspberry pico w (use as reference, easy to change per chipset)
 2. upload.sh -> upload compiled project to first found device
@@ -103,10 +131,22 @@ I would recommend just running this in WSL for these tools.
    >  [Arduino-Pico GitHub w/ Install Instructions](https://github.com/earlephilhower/arduino-pico) 
 3. Get Adafruit GC9A01 and AnimatedGif libraries in Arduino IDE
    > Can be downloaded + auto-setup in Arduino IDE Library Manager
-4. SPI Fixes (IMPORTANT)
-   - SPI had some bs fixes. I just modified these. Try and see if necessary as they maybe fix this soon.
-      - SPI.h: line 50 -> convert byte to uint_8
-      - SPIHelper.h: line 6 -> needed to add #pragma once
+4. Apply the patches in **Library Patches** below.
+
+## Library Patches (IMPORTANT)
+
+These are hand-edits to installed core/library files (not in this repo, so they don't survive a core/lib reinstall). They're still required as of the versions noted in the setup above — try without them first in case upstream has fixed it.
+
+- **SPI** (`rp2040` core, `.../libraries/SPI/src/`) — `byte` collides with `std::byte` once the project drags `using namespace std;` into scope:
+   - `SPI.h` line ~50: change `byte transfer(uint8_t data)` to `uint8_t transfer(uint8_t data)`
+   - `SPIHelper.h` line 6: add `#pragma once`
+- **AnimatedGIF** (`.../libraries/AnimatedGIF/src/AnimatedGIF.h`) — the current arduino-pico core defines `PICO_BUILD`, so the header skips its `#include <Arduino.h>` while `AnimatedGIF.cpp` still calls `millis()`/`delay()` (`'millis' was not declared in this scope`). Force the include back in by adding, right after the `#else / #include <Arduino.h> / #endif` block near the top:
+
+   ```cpp
+   #if defined( ARDUINO )
+   #include <Arduino.h>
+   #endif
+   ```
 
 ### Raspberry Pico / This software Programming Tips
 
