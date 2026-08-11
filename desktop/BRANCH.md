@@ -340,6 +340,8 @@ to a garbage collector), python owns configuration and decisions.
 | `32e3ea6` | DMX frames sent at raised priority |
 | `71a5a07` | `mythos26`, the beat clock, MIDI tempo in |
 | `5e7ed8d` | `vu_pulse`, the static looks, beat division, the master slider |
+| `c260b13` | `eanim::AutomationCurve`, and `beat_pulse` rebuilt on it |
+| `e32c0d9` | `start.bat` |
 
 ### library changes (`src/lib/`)
 
