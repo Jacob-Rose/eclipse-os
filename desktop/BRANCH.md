@@ -388,6 +388,7 @@ to a garbage collector), python owns configuration and decisions.
 | `5e7ed8d` | `vu_pulse`, the static looks, beat division, the master slider |
 | `c260b13` | `eanim::AutomationCurve`, and `beat_pulse` rebuilt on it |
 | `e32c0d9` | `start.bat` |
+| `e9d96d0` | per-look tunable properties, and the viewer's split |
 
 ### library changes (`src/lib/`)
 
