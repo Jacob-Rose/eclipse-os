@@ -33,7 +33,7 @@ from .config import (
     MidiConfig,
     PatternConfig,
 )
-from .controller import Frame, ShowController, ShowError
+from .controller import Frame, Param, ShowController, ShowError
 from .binary import find_executable, BinaryNotFoundError
 from .patterns import list_patterns
 from .ports import list_midi_ports, list_ports, MidiPortInfo, SerialPortInfo
@@ -58,6 +58,7 @@ __all__ = [
     "MasterConfig",
     "MidiConfig",
     "MidiPortInfo",
+    "Param",
     "PatternConfig",
     "ShowController",
     "ShowError",

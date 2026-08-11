@@ -19,9 +19,9 @@ using namespace edmx;
 Pattern_Mythos_BeatPulse::Pattern_Mythos_BeatPulse()
     : clock(&sharedBeatClock())
 {
-    // RestartHold rather than Restart, because 1.2s of envelope does not fit
+    // RestartHold rather than Restart, because the envelope does not fit
     // between two beats at any tempo this runs at. See the class comment.
-    envelope.retriggerMode = eanim::RetriggerMode::RestartHold;
+    setHoldOnRetrigger(bHoldOnRetrigger);
     setEnvelope(attackSeconds, decaySeconds);
 }
 
@@ -34,6 +34,21 @@ void Pattern_Mythos_BeatPulse::setEnvelope(float inAttackSeconds, float inDecayS
     envelope.curve.addKey(0.0f, 0.0f);
     envelope.curve.addKey(attackSeconds, 1.0f, easing_functions::EaseOutCubic);
     envelope.curve.addKey(attackSeconds + decaySeconds, 0.0f);
+}
+
+void Pattern_Mythos_BeatPulse::setHoldOnRetrigger(bool bHold)
+{
+    bHoldOnRetrigger = bHold;
+    envelope.retriggerMode = bHold ? eanim::RetriggerMode::RestartHold
+                                   : eanim::RetriggerMode::Restart;
+}
+
+void Pattern_Mythos_BeatPulse::reflect(ecore::PropertyBag& bag)
+{
+    bag.add("attack", attackSeconds, 0.0f, 1.0f, [this] { setEnvelope(attackSeconds, decaySeconds); });
+    bag.add("decay", decaySeconds, 0.01f, 3.0f, [this] { setEnvelope(attackSeconds, decaySeconds); });
+    bag.add("floor", floorLevel, 0.0f, 1.0f);
+    bag.add("hold", bHoldOnRetrigger, [this] { setHoldOnRetrigger(bHoldOnRetrigger); });
 }
 
 void Pattern_Mythos_BeatPulse::init()
@@ -98,6 +113,17 @@ Pattern_Mythos_VuPulse::Pattern_Mythos_VuPulse()
     // this is the look's own idea of itself: with a lit wash underneath, a hit
     // on every beat is too much light and the hits stop reading as hits.
     pulse.setBeatsPerPulse(2);
+}
+
+void Pattern_Mythos_VuPulse::reflect(ecore::PropertyBag& bag)
+{
+    // The flash's own knobs first, under the names beat_pulse gives them, so
+    // the same look tunes the same way whichever state you are in.
+    pulse.reflect(bag);
+
+    bag.add("base_gain", baseGain, 0.0f, 2.0f);
+    bag.add("base_floor", baseFloor, 0.0f, 1.0f);
+    bag.add("base_smoothing", baseSmoothing, 0.0f, 2.0f);
 }
 
 void Pattern_Mythos_VuPulse::init()
@@ -172,6 +198,12 @@ namespace
     }
 }
 
+void Pattern_Mythos_TvStatic::reflect(ecore::PropertyBag& bag)
+{
+    bag.add("monochrome", monochrome);
+    bag.add("floor", floorLevel, 0.0f, 1.0f);
+}
+
 void Pattern_Mythos_TvStatic::init()
 {
     frame = 0;
@@ -209,6 +241,11 @@ void Pattern_Mythos_TvStatic::render(eio::HSVStripNode* node, ecore::HSV& inOutC
 // ============================================================================
 // placeholders
 // ============================================================================
+
+void Pattern_Mythos_Placeholder::reflect(ecore::PropertyBag& bag)
+{
+    bag.add("hue", hue, 0.0f, 360.0f);
+}
 
 void Pattern_Mythos_Placeholder::init()
 {

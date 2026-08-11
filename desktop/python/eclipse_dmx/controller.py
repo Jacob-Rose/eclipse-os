@@ -34,6 +34,48 @@ class ShowError(RuntimeError):
     """Raised when the executable rejects a command or dies unexpectedly."""
 
 
+class Param:
+    """One tunable knob on the running look.
+
+    The set is per *look*, not per pattern: switching a state machine's cue
+    replaces it wholesale, and the executable re-announces it every time that
+    happens. So a UI rebuilds its controls from this rather than holding on to
+    them.
+
+    `kind` is "f" or "b". A bool still carries a range, so a UI can read every
+    param the same way and only branch on the widget it builds.
+    """
+
+    __slots__ = ("name", "kind", "value", "minimum", "maximum")
+
+    def __init__(self, name: str, kind: str, value: float, minimum: float, maximum: float):
+        self.name = name
+        self.kind = kind
+        self.value = value
+        self.minimum = minimum
+        self.maximum = maximum
+
+    @property
+    def is_bool(self) -> bool:
+        return self.kind == "b"
+
+    def __repr__(self) -> str:
+        if self.is_bool:
+            return f"Param({self.name}={bool(self.value)})"
+        return f"Param({self.name}={self.value:g}, {self.minimum:g}..{self.maximum:g})"
+
+
+def _parse_param(line: str) -> Optional[Param]:
+    """Parses one ``PARAM name f 0.2 0 1`` line. None on anything malformed."""
+    parts = line.split()
+    if len(parts) < 6:
+        return None
+    try:
+        return Param(parts[1], parts[2], float(parts[3]), float(parts[4]), float(parts[5]))
+    except ValueError:
+        return None
+
+
 def _parse_frame(line: str) -> Optional[Frame]:
     """Parses one ``F rrggbb rrggbb ...`` line into per-fixture colours.
 
@@ -127,6 +169,18 @@ class ShowController:
         self.state_names: List[str] = []
         #: The state showing now, or "" when the pattern has no states.
         self.current_state: str = ""
+
+        #: Knobs the running look offers, in registration order. Replaced
+        #: wholesale whenever the pattern or the state changes, so a UI can
+        #: watch `params_revision` and rebuild when it moves.
+        self.params: List[Param] = []
+        #: Bumped on every complete set. Cheaper for a UI to compare than the
+        #: list itself, and unlike comparing names it also catches a look whose
+        #: knobs are the same ones on a different object.
+        self.params_revision: int = 0
+
+        #: The set being read right now, or None between blocks.
+        self._params_open: Optional[List[Param]] = None
 
         self._process: Optional[subprocess.Popen] = None
         self._replies: "queue.Queue[str]" = queue.Queue()
@@ -234,6 +288,13 @@ class ShowController:
         if not line:
             return
 
+        # Any other line closes an open PARAMS block, and this has to happen
+        # before the early returns below: a set is followed immediately by frame
+        # lines, and leaving the block open would make the next lone PARAM echo
+        # append a duplicate instead of updating in place.
+        if not line.startswith("PARAM"):
+            self._params_open = None
+
         # Frame lines arrive tens of times a second and are pure data, so they
         # are dispatched and dropped rather than kept in _events, which would
         # otherwise grow without bound for the length of the show.
@@ -281,6 +342,29 @@ class ShowController:
             self.state_names = line.split()[1:]
         elif line.startswith("STATE "):
             self.current_state = line[len("STATE "):].strip()
+
+        # PARAMS opens a new set and PARAM lines fill it. Collected here rather
+        # than by asking, because the set changes under a UI whenever the cue
+        # does and a UI that only reads on demand shows knobs for a look that is
+        # no longer running.
+        if line.startswith("PARAMS"):
+            self._params_open = []
+            self.params = self._params_open
+            self.params_revision += 1
+        elif line.startswith("PARAM "):
+            param = _parse_param(line)
+            if param is None:
+                pass
+            elif self._params_open is not None:
+                self._params_open.append(param)
+            else:
+                # A lone PARAM is the echo after a `param` command, carrying
+                # what the value actually landed on once clamped. Updated in
+                # place so a UI does not rebuild every time a slider moves.
+                for index, existing in enumerate(self.params):
+                    if existing.name == param.name:
+                        self.params[index] = param
+                        break
 
         if line.startswith("OK") or line.startswith("ERR"):
             self._replies.put(line)
@@ -420,6 +504,41 @@ class ShowController:
         stays expressive on a rig that has none.
         """
         self.command(f"input {channel} {'on' if down else 'off'}")
+
+    def set_param(self, name: str, value: Union[float, bool]) -> None:
+        """Turns one of the running look's knobs.
+
+        Values outside a param's range are clamped rather than refused, and the
+        executable echoes back what it landed on, so `self.params` is right
+        afterwards even when the number was not.
+        """
+        if isinstance(value, bool):
+            value = 1 if value else 0
+        self.command(f"param {name} {value}")
+
+    def get_param(self, name: str) -> Optional[Param]:
+        """The named knob on the running look, or None if it has no such one."""
+        return next((param for param in self.params if param.name == name), None)
+
+    def refresh_params(self) -> List[Param]:
+        """Asks for the set outright, rather than waiting to be told.
+
+        Rarely needed - the executable announces it on every pattern and state
+        change - but a client that attached late has missed those.
+        """
+        self.command("params")
+        return self.params
+
+    def dump_params(self) -> str:
+        """The running look's knobs as one line of JSON, for keeping.
+
+        Tuning is live only: nothing is written to a config file behind you.
+        This is what a tuning session leaves behind, and where it ends up is
+        your decision.
+        """
+        self.command("params dump")
+        dump = next((event for event in reversed(self._events) if event.startswith("DUMP ")), None)
+        return dump[len("DUMP "):] if dump else "{}"
 
     def set_speed(self, value: float) -> None:
         self.command(f"speed {value}")

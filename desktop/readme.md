@@ -103,7 +103,14 @@ desk with no rig attached.
 [space] blackout   [n]/[p] pattern   [↑]/[↓] master   [←]/[→] speed   [q] quit
 ```
 
-Two things about it are deliberate.
+Under the picture is a split: the cue list on the left, and on the right the
+running look's own knobs — see [tuning a look while it runs](#tuning-a-look-while-it-runs).
+The two are separated because they answer different questions. The left is a
+fixed table you learn the shape of; the right changes every time the left is
+clicked, and mixing them in one column moved the buttons whenever a look with
+more properties came up.
+
+Three things about it are deliberate.
 
 **The layout comes out of the config**, from the same `position` fields the
 patterns are driven by — not from a hardcoded rig and not from the obelisk's
@@ -487,6 +494,68 @@ would reach full brightness only when a frame happened to land on the crest, and
 every other beat would come out dimmer by a different amount. A rig flickering
 unevenly on a steady tempo is exactly the artefact that avoids.
 
+### tuning a look while it runs
+
+A look's numbers — an attack time, a gain, a flag — are worth turning at the
+desk rather than recompiling for. So a look can hand out the ones that matter,
+and everything downstream builds itself from that:
+
+```cpp
+void Pattern_Mythos_TvStatic::reflect(ecore::PropertyBag& bag)
+{
+    bag.add("monochrome", monochrome);
+    bag.add("floor", floorLevel, 0.0f, 1.0f);
+}
+```
+
+One line per knob, and that is the whole registration. `bag.add` takes the
+member itself, not a copy and not a setter, so the look goes on reading its own
+field exactly as it did. Where a value is derived from — an envelope keeps a
+built curve, not the two numbers behind it — pass a callback:
+
+```cpp
+bag.add("attack", attackSeconds, 0.0f, 1.0f, [this] { setEnvelope(attackSeconds, decaySeconds); });
+```
+
+Floats and bools only. This is for knobs, and a knob is one or the other;
+anything richer belongs in the config.
+
+The viewer puts the running look's knobs in the right-hand pane — a slider and
+a box for a float, a checkbox for a bool. The slider is for finding a value and
+the box is for saying one, because a 0..3 slider a hundred pixels wide cannot
+express 0.15.
+
+**The set belongs to the look, not to the pattern.** On a state machine, a cue
+change replaces it wholesale, and the executable re-announces it every time, so
+the panel follows the show without being asked.
+
+Over the protocol:
+
+```
+params                      what the running look offers
+param <name> <value>        turn one; on/off work for a bool
+params dump                 the current set as one line of JSON
+```
+
+Values outside a knob's range are clamped rather than refused — the range is
+what a slider spans, and a number typed slightly past it is a request for the
+end of the slider. What it landed on is echoed back on a `PARAM` line *before*
+the `OK`, so a client that waits for the reply and then reads has the new value
+and not the old one.
+
+Tuning is **live only**. Nothing is written to a config file behind you:
+`params dump` is how a session that found something is kept.
+
+```python
+show.set_param("decay", 0.9)
+show.get_param("decay")        # Param(decay=0.9, 0.01..3)
+show.params                    # the whole set, replaced on every cue change
+print(show.dump_params())      # {"attack": 0.15, "decay": 0.9, ...}
+```
+
+`ecore::PropertyBag` is in `src/lib/ecore/`, and `reflect()` is a virtual on
+`eanim::GeneratorHSV`, so this is available to the relics and not only here.
+
 ### the beat
 
 Beat-driven looks read `edmx::BeatClock`, one per process. Something upstream
@@ -707,6 +776,7 @@ palette <name|#a,#b,...>  blackout <on|off>      status
 quit
 
 state <name>              states                 input <a|b> <on|off>
+params                    params dump            param <name> <value>
 
 bpm <float>               beat                   beat div <0|1|2|4>
 midi open <spec>          midi close             midi align

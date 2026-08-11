@@ -99,6 +99,18 @@ namespace edmx
         /// there is no reason for the two to diverge.
         virtual class StateMachinePattern* asStateMachine() { return nullptr; }
 
+        /// The knobs this pattern offers, gathered fresh on every call.
+        ///
+        /// Fresh, and never cached, because a PropertyBag holds pointers into
+        /// whatever filled it — and on a state machine that is the running
+        /// look, which changes underneath you on a cue. Rebuilding it costs a
+        /// handful of allocations on a command, not on a frame.
+        ///
+        /// The base offers the three every pattern has. A look with its own
+        /// knobs overrides this, calls up, and adds them; one that has no use
+        /// for speed and width overrides without calling up.
+        virtual void reflect(ecore::PropertyBag& bag);
+
         /// Live control, driven by the stdin protocol. Values are applied
         /// immediately so the python wrapper can nudge a running show.
         virtual void setSpeed(float value) { speed = value; }
@@ -140,6 +152,10 @@ namespace edmx
 
         /// The wrapped generator, for anything that needs to poke at it.
         eanim::GeneratorHSV* getGenerator() const { return generator.get(); }
+
+        /// Straight through to the generator: a relic look's knobs are the
+        /// look's, not the wrapper's, and speed/width mean nothing here.
+        void reflect(ecore::PropertyBag& bag) override;
 
     private:
         /// Rebuilds the node set when the rig changes shape.

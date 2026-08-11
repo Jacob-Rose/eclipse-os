@@ -247,8 +247,36 @@ namespace
 }
 
 // ============================================================================
+// Pattern
+// ============================================================================
+
+void Pattern::reflect(ecore::PropertyBag& bag)
+{
+    // The three every pattern has. Ranges are what a slider should span rather
+    // than what the field will accept: speed past 4 is a blur on any rig, and
+    // width is in different units per pattern - fixtures of tail on `chase`,
+    // wavelengths on `palette_wave` - so this is a usable span for both rather
+    // than a correct one for either.
+    bag.add("speed", speed, 0.0f, 4.0f);
+    bag.add("width", width, 0.01f, 10.0f);
+    bag.add("brightness", brightness, 0.0f, 1.0f);
+}
+
+
+// ============================================================================
 // GeneratorHSV adapter
 // ============================================================================
+
+void GeneratorPattern::reflect(ecore::PropertyBag& bag)
+{
+    // Not calling up: a relic look does its own motion internally and reads
+    // neither speed nor width, so offering them would be three knobs that do
+    // nothing.
+    if (generator)
+    {
+        generator->reflect(bag);
+    }
+}
 
 GeneratorPattern::GeneratorPattern(const char* inName, std::shared_ptr<eanim::GeneratorHSV> inGenerator)
     : name(inName), generator(std::move(inGenerator))

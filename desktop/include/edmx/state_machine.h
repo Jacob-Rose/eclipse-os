@@ -92,6 +92,15 @@ namespace edmx
         CoordFrame defaultCoordFrame() const override { return frame; }
         StateMachinePattern* asStateMachine() override { return this; }
 
+        /// The knobs of the look that is *showing*, and nothing else.
+        ///
+        /// This is the whole point of gathering them per call rather than once:
+        /// a cue change swaps which object the properties point at, so the set
+        /// a UI is holding goes stale the moment the state does. Whoever asks
+        /// gets the current look's, and emitParams() re-announces them on every
+        /// state change.
+        void reflect(ecore::PropertyBag& bag) override;
+
         /// Every state, in table order. This is what a UI builds buttons from.
         std::vector<std::string> stateNames() const;
 

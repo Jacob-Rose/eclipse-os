@@ -113,6 +113,7 @@ order shows as a colour cast instead of hiding behind a plausible hue.
 desktop/
   include/edmx/    json, serial_port, dmx_output, fixture, config, pattern,
                    state_machine, beat_clock, midi_input, mythos26
+                   (the tuning surface itself is ecore::PropertyBag, in src/lib)
   src/             implementations + main.cpp (the show runner)
   config/          example configs, including your rig and the show
   python/          the wrapper package, and the viewer
@@ -298,6 +299,46 @@ the first thirty beats**, because it was averaging beat-to-beat gaps when 24
 ticks a beat were available. It now takes the tick 24 ago, which was one beat ago
 by definition, and locks exactly after one beat.
 
+### looks hand out their own knobs
+
+A look's numbers are worth turning at the desk rather than recompiling for, so
+`ecore::PropertyBag` and a `reflect()` virtual on `eanim::GeneratorHSV` let one
+hand out the ones that matter — one line each:
+
+```cpp
+bag.add("floor", floorLevel, 0.0f, 1.0f);
+bag.add("monochrome", monochrome);
+bag.add("attack", attackSeconds, 0.0f, 1.0f, [this] { setEnvelope(attackSeconds, decaySeconds); });
+```
+
+`add` takes the member itself rather than a copy or a setter, so the look keeps
+reading its own field and nothing is plumbed through. The optional callback is
+for a value something else is derived from, which is the envelope's case exactly:
+it keeps a built curve, not the two numbers behind it.
+
+Floats and bools only. A knob is one or the other; anything richer is config.
+
+Three decisions in it are worth keeping:
+
+**The set belongs to the look, not the pattern.** `StateMachinePattern::reflect`
+hands out the *showing* look's properties, and a bag is gathered fresh on every
+call rather than cached — it holds pointers into whatever filled it, and on a
+cue change that object is gone. `main.cpp` re-announces on every pattern and
+state change, so a UI follows the show without polling.
+
+**A value out of range is clamped, not refused.** The range is what a slider
+spans, and a number typed slightly past it is a request for the end of the
+slider rather than a mistake.
+
+**The echo goes out before the OK.** A client that waits on the reply and then
+reads the value would otherwise race the line telling it what the value became.
+Emitted the other way round that test passes about half the time, which is the
+worst kind of protocol bug to own.
+
+Live only, deliberately: `params dump` prints the set as a line of JSON, and
+nothing is written to a config file behind you. What gets kept is a paste, not a
+side effect of turning a knob.
+
 ### the viewer
 
 ```sh
@@ -308,7 +349,12 @@ python -m eclipse_dmx view config/mythos26.json --bpm 128
 A tkinter window, one glowing disc per fixture. Nothing reaches the wire
 without `--live`, so it is safe at a desk.
 
-Two decisions in it are load-bearing:
+Under the picture is a split — the cue list on the left, the running look's
+knobs on the right. Two different questions: the left is a fixed table you learn
+the shape of, the right changes on every cue. In one column the buttons moved
+whenever a look with more properties came up.
+
+Three decisions in it are load-bearing:
 
 **The layout is read from the config**, off the same `position` fields that
 place fixtures in the pattern's coordinate space — not from the obelisk's LED
@@ -444,6 +490,20 @@ And, for mythos26 and the beat clock:
 - 50 new tests, none of which need a MIDI device: `--midi ""` keeps the suite
   off whatever happens to be plugged into the machine running it
 
+And, for the per-look knobs:
+
+- every mythos26 look announces its own set, and a cue change replaces it
+- a knob reaches the render: `floor` lifts the trough between beats, and
+  turning `monochrome` off puts colour on the rig within a frame
+- out of range is clamped both ways, and the clamped value is what the client
+  sees the moment its command returns — the echo is emitted before the OK
+- setting a knob twice does not duplicate it in the client's set, with frame
+  lines interleaved between the command and the echo
+- a name that is not a knob is rejected without killing the show
+- the viewer builds a slider and a box per float and a checkbox per bool,
+  rebuilds them on a cue change, takes a value the slider cannot land on, and
+  puts the real value back when the box is given nonsense
+
 On the real rig, through the widget on COM3:
 
 - `solid` holds a steady, correct colour — frames arriving whole and aligned
@@ -461,7 +521,7 @@ There is now a suite for all of this, which there was not before:
 
 ```sh
 cd desktop
-python -m unittest discover -s python/tests -v      # 95 tests
+python -m unittest discover -s python/tests -v      # 110 tests
 ```
 
 It needs nothing installed. Anything requiring the executable or a display

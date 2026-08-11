@@ -191,6 +191,18 @@ std::string StateMachinePattern::currentStateName() const
     return states[std::min(activeIndex, states.size() - 1)].name;
 }
 
+void StateMachinePattern::reflect(ecore::PropertyBag& bag)
+{
+    // The showing look's knobs, and only its. Empty before the first render,
+    // because the generators do not exist until the rig's shape is known - see
+    // ensureBuilt. main.cpp announces the set once a frame has been drawn for
+    // exactly that reason.
+    if (activeIndex < generators.size() && generators[activeIndex])
+    {
+        generators[activeIndex]->reflect(bag);
+    }
+}
+
 bool StateMachinePattern::setState(const std::string& stateName, std::string& outError)
 {
     size_t target = states.size();

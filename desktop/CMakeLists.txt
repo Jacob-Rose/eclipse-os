@@ -37,6 +37,7 @@ set(ECLIPSE_CORE_SOURCES
     ${ECLIPSE_SRC}/lib/ecore/hsv.cpp
     ${ECLIPSE_SRC}/lib/ecore/logging.cpp
     ${ECLIPSE_SRC}/lib/ecore/math.cpp
+    ${ECLIPSE_SRC}/lib/ecore/property.cpp
     ${ECLIPSE_SRC}/lib/ecore/range.cpp
     ${ECLIPSE_SRC}/lib/ecore/tickable.cpp
     ${ECLIPSE_SRC}/lib/ecore/timer.cpp

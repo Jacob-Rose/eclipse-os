@@ -525,6 +525,47 @@ namespace
         emit("STATE " + machine->currentStateName());
     }
 
+    /// The tunable knobs of whatever is showing, for a UI to build controls from.
+    ///
+    /// Emitted whenever the pattern or the state changes, because on a state
+    /// machine the knobs belong to the *look* — switching cue replaces the set
+    /// wholesale. A client rebuilds on the PARAMS line and fills from the PARAM
+    /// lines under it.
+    ///
+    ///   PARAMS mythos26 beat_pulse
+    ///   PARAM attack f 0.2 0 1
+    ///   PARAM hold b 1 0 1
+    ///
+    /// Bools carry a range too, pointless as it is, so one parser reads both.
+    void emitParams(ShowState& show)
+    {
+        StateMachinePattern* machine = show.pattern ? show.pattern->asStateMachine() : nullptr;
+
+        std::ostringstream header;
+        header << "PARAMS " << (show.pattern ? show.pattern->getName() : "none")
+               << " " << (machine ? machine->currentStateName() : "-");
+        emit(header.str());
+
+        if (!show.pattern)
+        {
+            return;
+        }
+
+        ecore::PropertyBag bag;
+        show.pattern->reflect(bag);
+
+        for (const ecore::Property& property : bag.all())
+        {
+            std::ostringstream out;
+            out << "PARAM " << property.name
+                << " " << (property.type == ecore::Property::Type::Bool ? "b" : "f")
+                << " " << property.get()
+                << " " << property.minValue
+                << " " << property.maxValue;
+            emit(out.str());
+        }
+    }
+
     /// Lists what the machine can hear, for `midi list` and `--list-midi`.
     ///
     /// Ports on the ignore list are shown, not hidden. Knowing that the one
@@ -648,6 +689,7 @@ namespace
             applyCoordFrame(show);
             emit("OK pattern " + next.name);
             emitStates(show);
+            emitParams(show);
             return;
         }
 
@@ -675,12 +717,117 @@ namespace
 
             emit("OK state " + words[1]);
             emit("STATE " + machine->currentStateName());
+            emitParams(show);
             return;
         }
 
         if (command == "states")
         {
             emitStates(show);
+            return;
+        }
+
+        if (command == "params")
+        {
+            // `params dump` prints the current set as one line of JSON, for
+            // keeping a tuning session that was otherwise going to evaporate.
+            // Nothing writes to a config file: what gets kept is a deliberate
+            // paste, not a side effect of turning a knob.
+            if (words.size() > 1 && words[1] == "dump")
+            {
+                ecore::PropertyBag bag;
+                if (show.pattern)
+                {
+                    show.pattern->reflect(bag);
+                }
+
+                std::ostringstream out;
+                out << "DUMP {";
+                bool first = true;
+                for (const ecore::Property& property : bag.all())
+                {
+                    out << (first ? "" : ", ") << "\"" << property.name << "\": ";
+                    if (property.type == ecore::Property::Type::Bool)
+                    {
+                        out << (property.get() != 0.0f ? "true" : "false");
+                    }
+                    else
+                    {
+                        out << property.get();
+                    }
+                    first = false;
+                }
+                out << "}";
+                emit(out.str());
+                emit("OK params dump " + std::to_string(bag.size()));
+                return;
+            }
+
+            emitParams(show);
+            emit("OK params");
+            return;
+        }
+
+        if (command == "param")
+        {
+            if (words.size() < 3)
+            {
+                emit("ERR param needs a name and a value");
+                return;
+            }
+
+            if (!show.pattern)
+            {
+                emit("ERR no pattern");
+                return;
+            }
+
+            float value = 0.0f;
+            if (!parseFloatArg(words[2], value))
+            {
+                // A bool reads better as on/off at a desk than as 1/0, and the
+                // two spellings cost one comparison each.
+                if (words[2] == "on" || words[2] == "true")        value = 1.0f;
+                else if (words[2] == "off" || words[2] == "false") value = 0.0f;
+                else
+                {
+                    emit("ERR '" + words[2] + "' is not a number");
+                    return;
+                }
+            }
+
+            ecore::PropertyBag bag;
+            show.pattern->reflect(bag);
+
+            if (!bag.set(words[1], value))
+            {
+                std::string known;
+                for (const ecore::Property& property : bag.all())
+                {
+                    known += (known.empty() ? "" : ", ") + property.name;
+                }
+                emit("ERR no param '" + words[1] + "'"
+                   + (known.empty() ? " (this look has none)" : " (have: " + known + ")"));
+                return;
+            }
+
+            // Say what it actually landed on, *before* the OK. A value outside
+            // the range is clamped, and a client that waits on the OK and then
+            // reads the value would otherwise race the line telling it so - it
+            // would see the old number about as often as the new one.
+            const ecore::Property* applied = bag.find(words[1]);
+            if (applied)
+            {
+                std::ostringstream out;
+                out << "PARAM " << applied->name
+                    << " " << (applied->type == ecore::Property::Type::Bool ? "b" : "f")
+                    << " " << applied->get()
+                    << " " << applied->minValue
+                    << " " << applied->maxValue;
+                emit(out.str());
+            }
+
+            emit("OK param " + words[1] + " " + words[2]);
             return;
         }
 
@@ -1388,6 +1535,14 @@ int main(int argc, char** argv)
 
         show.pattern->tick(deltaTime);
         show.pattern->render(show.context, show.colors);
+
+        // Once, after the first frame. A state machine's looks are not built
+        // until it has been rendered — that is when it learns the rig's shape —
+        // so announcing the knobs any earlier announces an empty set.
+        if (framesRendered == 0)
+        {
+            emitParams(show);
+        }
 
         // Push through the strip so the desktop path and the microcontroller
         // path agree on what a frame is.

@@ -11,6 +11,7 @@ one, so this stays runnable on a build machine and on a show laptop.
 
 from __future__ import annotations
 
+import json
 import sys
 import time
 import unittest
@@ -1082,6 +1083,212 @@ class ViewerOnTheShow(unittest.TestCase):
         self.settle(0.3)
         self.assertAlmostEqual(self.app._master, 0.7, places=2)
         self.assertEqual(self.app._status, "")
+
+    def test_the_looks_knobs_get_controls(self):
+        self.settle(1.0)
+        self.assertIn("attack", self.app._param_widgets)
+        self.assertIn("hold", self.app._param_widgets)
+
+        # a float gets a slider and a box; a bool gets neither box nor range
+        self.assertIsNotNone(self.app._param_widgets["attack"][1])
+        self.assertIsNone(self.app._param_widgets["hold"][1])
+
+    def test_a_cue_change_rebuilds_the_panel(self):
+        self.settle(1.0)
+        self.assertNotIn("base_gain", self.app._param_widgets)
+
+        self.app._run_button(("state", "vu_pulse"))
+        self.settle(1.0)
+
+        self.assertIn("base_gain", self.app._param_widgets)
+        self.assertEqual(self.app._status, "")
+
+    def test_a_slider_reaches_the_look(self):
+        self.settle(1.0)
+        self.app._on_param_slider("floor", "0.75")
+        self.settle(0.5)
+        self.assertEqual(self.app._status, "")
+        self.assertAlmostEqual(self.app.show.get_param("floor").value, 0.75, places=2)
+
+    def test_the_box_takes_a_value_the_slider_cannot_land_on(self):
+        """The whole reason there is a box beside the slider."""
+        self.settle(1.0)
+        _, entry = self.app._param_widgets["decay"]
+        entry.delete(0, "end")
+        entry.insert(0, "0.137")
+        self.app._on_param_entry("decay")
+        self.settle(0.5)
+        self.assertAlmostEqual(self.app.show.get_param("decay").value, 0.137, places=3)
+
+    def test_nonsense_in_the_box_puts_the_real_value_back(self):
+        self.settle(1.0)
+        _, entry = self.app._param_widgets["decay"]
+        live = self.app.show.get_param("decay").value
+
+        entry.delete(0, "end")
+        entry.insert(0, "banana")
+        self.app._on_param_entry("decay")
+        self.settle(0.4)
+
+        self.assertAlmostEqual(float(entry.get()), live, places=3)
+        self.assertAlmostEqual(self.app.show.get_param("decay").value, live, places=3)
+
+
+class LookParams(unittest.TestCase):
+    """The per-look tuning surface, over the protocol."""
+
+    @classmethod
+    def setUpClass(cls):
+        executable_or_skip()
+
+    def _show(self, **kwargs):
+        return ShowController(SHOW, dry_run=True, midi="", on_frame=lambda f: None,
+                              emit_rate=20.0, **kwargs)
+
+    def test_the_running_look_announces_its_knobs(self):
+        show = self._show()
+        try:
+            time.sleep(0.6)
+            names = [param.name for param in show.params]
+            self.assertEqual(names, ["attack", "decay", "floor", "hold"])
+
+            attack = show.get_param("attack")
+            self.assertEqual(attack.kind, "f")
+            self.assertFalse(attack.is_bool)
+            self.assertTrue(show.get_param("hold").is_bool)
+        finally:
+            show.stop()
+
+    def test_a_cue_change_replaces_the_set(self):
+        """The knobs belong to the look, not to the pattern."""
+        show = self._show()
+        try:
+            time.sleep(0.6)
+            first = show.params_revision
+
+            show.set_state("vu_pulse")
+            time.sleep(0.5)
+            self.assertGreater(show.params_revision, first)
+            self.assertIn("base_gain", [param.name for param in show.params])
+
+            show.set_state("tv_static")
+            time.sleep(0.5)
+            self.assertEqual([param.name for param in show.params], ["monochrome", "floor"])
+        finally:
+            show.stop()
+
+    def test_a_value_out_of_range_is_clamped_not_refused(self):
+        show = self._show()
+        try:
+            time.sleep(0.6)
+            show.set_param("attack", 99.0)
+            self.assertAlmostEqual(show.get_param("attack").value, 1.0, places=3)
+            show.set_param("attack", -5.0)
+            self.assertAlmostEqual(show.get_param("attack").value, 0.0, places=3)
+        finally:
+            show.stop()
+
+    def test_the_echo_lands_before_the_reply(self):
+        """A client that waits on OK and then reads must see the new value.
+
+        Emitted the other way round, this passes about half the time, which is
+        the worst kind of protocol bug to own.
+        """
+        show = self._show()
+        try:
+            time.sleep(0.6)
+            for target in (0.11, 0.22, 0.33, 0.44):
+                show.set_param("decay", target)
+                self.assertAlmostEqual(show.get_param("decay").value, target, places=3)
+        finally:
+            show.stop()
+
+    def test_setting_a_knob_does_not_duplicate_the_set(self):
+        """The echo updates in place; it does not append to the list."""
+        show = self._show()
+        try:
+            time.sleep(0.8)          # frame lines between the set and the echo
+            before = len(show.params)
+            show.set_param("floor", 0.5)
+            show.set_param("floor", 0.6)
+            time.sleep(0.3)
+            self.assertEqual(len(show.params), before)
+        finally:
+            show.stop()
+
+    def test_a_knob_reaches_the_render(self):
+        """The point of the whole thing: the value is the look's own field."""
+        frames = []
+        show = ShowController(SHOW, dry_run=True, midi="", bpm=128.0,
+                              on_frame=frames.append, emit_rate=40.0)
+        try:
+            time.sleep(1.0)
+            frames.clear()
+            time.sleep(0.8)
+            dark = min(max(frame[0]) for frame in frames)
+
+            show.set_param("floor", 0.8)
+            time.sleep(0.3)
+            frames.clear()
+            time.sleep(0.8)
+            lifted = min(max(frame[0]) for frame in frames)
+
+            self.assertLess(dark, 40)
+            self.assertGreater(lifted, 120)
+        finally:
+            show.stop()
+
+    def test_a_bool_takes_on_off_and_reaches_the_render(self):
+        frames = []
+        show = ShowController(SHOW, dry_run=True, midi="", on_frame=frames.append,
+                              emit_rate=40.0)
+        try:
+            show.set_state("tv_static_mono")
+            time.sleep(0.8)
+            self.assertTrue(show.get_param("monochrome").value)
+
+            show.set_param("monochrome", False)
+            time.sleep(0.3)
+            frames.clear()
+            time.sleep(0.5)
+
+            self.assertFalse(show.get_param("monochrome").value)
+            self.assertTrue(any(len(set(colour)) > 1 for frame in frames for colour in frame),
+                            "still grey after monochrome was turned off")
+        finally:
+            show.stop()
+
+    def test_a_name_that_is_not_a_knob_is_rejected_without_dying(self):
+        show = self._show()
+        try:
+            time.sleep(0.6)
+            with self.assertRaises(ShowError):
+                show.set_param("not_a_knob", 1.0)
+            self.assertTrue(show.is_running)
+        finally:
+            show.stop()
+
+    def test_dump_is_the_running_look_as_json(self):
+        show = self._show()
+        try:
+            time.sleep(0.6)
+            show.set_param("attack", 0.25)
+            dump = json.loads(show.dump_params())
+            self.assertAlmostEqual(dump["attack"], 0.25, places=3)
+            self.assertIsInstance(dump["hold"], bool)
+        finally:
+            show.stop()
+
+    def test_a_plain_pattern_offers_the_three_it_has(self):
+        show = self._show()
+        try:
+            time.sleep(0.6)
+            show.set_pattern("rainbow")
+            time.sleep(0.5)
+            self.assertEqual([param.name for param in show.params],
+                             ["speed", "width", "brightness"])
+        finally:
+            show.stop()
 
 
 if __name__ == "__main__":

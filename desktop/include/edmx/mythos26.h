@@ -68,6 +68,7 @@ namespace edmx
 
         virtual void tick(float deltaTime) override;
         virtual void render(eio::HSVStripNode* node, ecore::HSV& inOutColor) const override;
+        virtual void reflect(ecore::PropertyBag& bag) override;
 
         /// White for now. The whole look is one colour and one envelope, so
         /// this is the knob that changes it.
@@ -90,6 +91,15 @@ namespace edmx
 
         float getAttackSeconds() const { return attackSeconds; }
         float getDecaySeconds() const { return decaySeconds; }
+
+        /// RestartHold when set, Restart when not — the `hold` knob.
+        ///
+        /// Kept as a bool of its own rather than reflected off retriggerMode
+        /// because the tuning surface is floats and bools, and these are the
+        /// only two of the three modes that make sense for a single envelope on
+        /// a beat. Set it through setHoldOnRetrigger() so the mode follows.
+        bool bHoldOnRetrigger{true};
+        void setHoldOnRetrigger(bool bHold);
 
         /// Level held between pulses, 0..1. Zero is a hard blackout between
         /// beats; lift it if the rig needs to stay visible.
@@ -154,6 +164,7 @@ namespace edmx
 
         virtual void tick(float deltaTime) override;
         virtual void render(eio::HSVStripNode* node, ecore::HSV& inOutColor) const override;
+        virtual void reflect(ecore::PropertyBag& bag) override;
 
         /// The flash. Same shape as beat_pulse, on twos by default.
         Pattern_Mythos_BeatPulse pulse;
@@ -220,6 +231,7 @@ namespace edmx
 
         virtual void tick(float deltaTime) override;
         virtual void render(eio::HSVStripNode* node, ecore::HSV& inOutColor) const override;
+        virtual void reflect(ecore::PropertyBag& bag) override;
 
         /// True for greys, false for random hues.
         bool monochrome{false};
@@ -248,6 +260,7 @@ namespace edmx
 
         virtual void tick(float deltaTime) override;
         virtual void render(eio::HSVStripNode* node, ecore::HSV& inOutColor) const override;
+        virtual void reflect(ecore::PropertyBag& bag) override;
 
         /// Degrees. Set after construction, so every look in the table is built
         /// the same way — see the note on `look` in mythos26.cpp.

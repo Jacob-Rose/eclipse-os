@@ -20,6 +20,7 @@ tkinter, so there is nothing to install.
 
 from __future__ import annotations
 
+import math
 import threading
 import time
 import tkinter as tk
@@ -163,6 +164,23 @@ class Placement:
     y: float  # 0..1 down the canvas
 
 
+def _slider_step(minimum: float, maximum: float) -> float:
+    """A resolution that gives a slider a useful number of stops.
+
+    A hundred steps across whatever range the property declared, rounded down
+    to a power of ten so the numbers a slider lands on read as numbers -
+    0.01 and 0.1 rather than 0.0287. The box beside it is there for the values
+    between.
+    """
+    span = abs(maximum - minimum)
+    if span <= 0.0:
+        return 0.001
+
+    step = span / 100.0
+    magnitude = 10.0 ** math.floor(math.log10(step))
+    return max(magnitude, 0.001)
+
+
 def plan_layout(config: Config) -> List[Placement]:
     """Reads the rig's shape out of the config.
 
@@ -223,7 +241,9 @@ class ViewerApp:
         midi: Optional[str] = None,
         bpm: Optional[float] = None,
         width: int = 1000,
-        height: int = 420,
+        # Room for four rows of cue buttons under the canvas. The knobs sit
+        # beside them rather than below, so this does not grow with them.
+        height: int = 600,
     ) -> None:
         self.config_path = Path(config_path)
         self.config = Config.load(self.config_path)
@@ -309,13 +329,12 @@ class ViewerApp:
         )
         self.header.pack(fill="x")
 
-        self.canvas = tk.Canvas(
-            self.root, bg="#%02x%02x%02x" % BACKGROUND, highlightthickness=0
-        )
-        self.canvas.pack(fill="both", expand=True)
-
-        self._build_buttons()
-
+        # Packed from the bottom up, and the canvas last. The canvas is the only
+        # thing that expands, so packing it first lets it claim the window and
+        # push the controls off the bottom edge whenever they grow — which they
+        # do, every time a look with more knobs comes up. Bottom-up, the
+        # controls always get the height they asked for and the picture takes
+        # what is left.
         self.footer = tk.Label(
             self.root,
             anchor="w",
@@ -327,7 +346,14 @@ class ViewerApp:
             text="[space] blackout   [n]/[p] pattern   [↑]/[↓] master   "
             "[←]/[→] speed   [t] tap the beat   [q] quit",
         )
-        self.footer.pack(fill="x")
+        self.footer.pack(side="bottom", fill="x")
+
+        self._build_buttons()
+
+        self.canvas = tk.Canvas(
+            self.root, bg="#%02x%02x%02x" % BACKGROUND, highlightthickness=0
+        )
+        self.canvas.pack(fill="both", expand=True)
 
         self.canvas.bind("<Configure>", lambda event: self._rebuild_items())
 
@@ -356,8 +382,26 @@ class ViewerApp:
         rebuilding widgets on every pattern switch would make them flicker
         under the cursor, so they are packed and unpacked instead.
         """
-        self.button_panel = tk.Frame(self.root, bg=PANEL)
-        self.button_panel.pack(fill="x")
+        # A split, because the two halves answer different questions. The left
+        # is the cue list — what is running — and it is a fixed table you learn
+        # the shape of. The right is the running look's own knobs, which change
+        # every time the left is clicked. Mixing them in one column meant the
+        # buttons moved whenever a look with more properties came up.
+        #
+        # A real sash rather than two packed frames: how much room the knobs
+        # want depends on the look, and that is a judgement for whoever is at
+        # the desk rather than one to hardcode.
+        self.split = tk.PanedWindow(
+            self.root, orient="horizontal", bg=PANEL,
+            sashwidth=5, sashrelief="flat", borderwidth=0, showhandle=False,
+            opaqueresize=True,
+        )
+        self.split.pack(side="bottom", fill="x")
+
+        self.button_panel = tk.Frame(self.split, bg=PANEL)
+        self.param_pane = tk.Frame(self.split, bg=PANEL)
+        self.split.add(self.button_panel, stretch="always", minsize=260)
+        self.split.add(self.param_pane, stretch="always", minsize=180)
 
         self._state_rows: List[tk.Frame] = []
         self._state_buttons: Dict[str, tk.Button] = {}
@@ -460,7 +504,194 @@ class ViewerApp:
         self.master_slider.pack(side="left", padx=3)
 
         self.tempo_row.pack(fill="x")
+
+        # -- the running look's own knobs, in the right pane ----------------
+        # Everything on the left is fixed furniture. This panel is not: what it
+        # holds comes from whatever is running, over the protocol.
+        tk.Label(self.param_pane, text="look", bg=PANEL, fg=TEXT_DIM,
+                 font=("Consolas", 9), anchor="w", padx=8).pack(fill="x", pady=(4, 0))
+
+        self.param_panel = tk.Frame(self.param_pane, bg=PANEL)
+        self.param_panel.pack(fill="both", expand=True, padx=4, pady=2)
+        self._param_widgets: Dict[str, Tuple[tk.Variable, Optional[tk.Entry]]] = {}
+        self._param_sent: Dict[str, float] = {}
+        self._param_revision = -1
+        self._param_writing = False
+        self._sash_placed = False
+        self._split_height = 0
+
         self._refresh_buttons()
+
+    def _resize_split(self) -> None:
+        """Sizes the split to whichever half is taller.
+
+        A PanedWindow keeps whatever height it was given and does not follow its
+        panes' requests, and both halves here change height while running — the
+        cue rows when a pattern has no states, the knobs on every cue change.
+        Without this it holds its first size and clips the taller side, which is
+        how the whole control strip ends up below the bottom of the window.
+        """
+        if self._closing:
+            return
+
+        # Both callers have just packed or destroyed widgets, and a requested
+        # size is not recomputed until tk goes idle. Measuring without this
+        # reads the layout as it was before the change that prompted the call.
+        self.split.update_idletasks()
+
+        wanted = max(self.button_panel.winfo_reqheight(), self.param_pane.winfo_reqheight())
+        if wanted > 1 and wanted != self._split_height:
+            self._split_height = wanted
+            self.split.configure(height=wanted)
+
+        # Give the knobs a share of the width the first time the window is real,
+        # then never touch the sash again: where it sits after that is a
+        # decision someone at the desk has made.
+        if not self._sash_placed and self.split.winfo_width() > 1:
+            self._sash_placed = True
+
+            # Enough for the widest cue row on the left and one column of knobs
+            # on the right. Both halves have a natural width and they add up to
+            # about the window, so this is close to what a drag would land on
+            # anyway - it just saves doing it on every launch.
+            self.split.sash_place(0, int(self.split.winfo_width() * 0.68), 0)
+
+    # -- the running look's knobs -----------------------------------------
+
+    def _build_params(self) -> None:
+        """Builds a control per property the running look offers.
+
+        Rebuilt from scratch whenever the set changes, unlike the state buttons
+        which are packed and unpacked: *which* knobs exist is a property of the
+        look, so there is no stable set of widgets to keep around. A cue change
+        replaces the panel.
+
+        A float gets a slider and a box. The slider is for finding a value and
+        the box is for saying one - a 0..3 slider 110 pixels wide cannot express
+        0.15, and an envelope tuned to the nearest pixel is not tuned.
+        """
+        for child in self.param_panel.winfo_children():
+            child.destroy()
+        self._param_widgets = {}
+        self._param_sent = {}
+
+        params = list(self.show.params)
+        if not params:
+            # Said out loud rather than left blank. An empty pane reads as a
+            # panel that failed to load; this reads as a look with no knobs,
+            # which is a real and common answer.
+            tk.Label(self.param_panel, text="nothing to tune", bg=PANEL, fg=TEXT_DIM,
+                     font=("Consolas", 9)).grid(row=0, column=0, sticky="w", padx=6, pady=2)
+            self._resize_split()
+            return
+
+        # One knob per row. Two columns fit in the pane only until a look turns
+        # up with a long name or a rig is run on a narrower window, and a
+        # control that is half off the edge is worse than one further down.
+        columns = 1
+        for index, param in enumerate(params):
+            cell = tk.Frame(self.param_panel, bg=PANEL)
+            cell.grid(row=index // columns, column=index % columns, sticky="w", padx=6, pady=1)
+
+            if param.is_bool:
+                variable: tk.Variable = tk.IntVar(value=1 if param.value else 0)
+                tk.Checkbutton(
+                    cell, text=param.name, variable=variable,
+                    bg=PANEL, fg=TEXT, selectcolor=BUTTON_BG,
+                    activebackground=PANEL, activeforeground=TEXT,
+                    font=("Consolas", 9), highlightthickness=0, borderwidth=0,
+                    command=lambda name=param.name, v=variable: self._apply_param(name, float(v.get())),
+                ).pack(side="left")
+                self._param_widgets[param.name] = (variable, None)
+                continue
+
+            # Fixed-width label so the sliders line up down the column. A name
+            # longer than this overflows into its own slider rather than
+            # shunting the row sideways out of the pane.
+            tk.Label(cell, text=param.name, bg=PANEL, fg=TEXT_DIM, width=14,
+                     anchor="w", font=("Consolas", 9)).pack(side="left")
+
+            variable = tk.DoubleVar(value=param.value)
+            tk.Scale(
+                cell,
+                from_=param.minimum, to=param.maximum,
+                resolution=_slider_step(param.minimum, param.maximum),
+                orient="horizontal", length=88, showvalue=False,
+                variable=variable,
+                command=lambda value, name=param.name: self._on_param_slider(name, value),
+                bg=PANEL, fg=TEXT, troughcolor=BUTTON_BG,
+                activebackground=BUTTON_BG_ACTIVE, highlightthickness=0,
+                borderwidth=0, sliderrelief="flat", font=("Consolas", 8),
+            ).pack(side="left", padx=(4, 2))
+
+            entry = tk.Entry(
+                cell, width=5, justify="right",
+                bg=BUTTON_BG, fg=TEXT, insertbackground=TEXT,
+                font=("Consolas", 9), relief="flat", highlightthickness=0,
+            )
+            entry.insert(0, f"{param.value:g}")
+            entry.bind("<Return>", lambda event, name=param.name: self._on_param_entry(name))
+            entry.bind("<FocusOut>", lambda event, name=param.name: self._on_param_entry(name))
+            entry.pack(side="left")
+
+            self._param_widgets[param.name] = (variable, entry)
+            self._param_sent[param.name] = param.value
+
+        self._resize_split()
+
+    def _on_param_slider(self, name: str, value: str) -> None:
+        try:
+            target = float(value)
+        except ValueError:
+            return
+
+        # tk fires this on every step of a drag, and _apply_param writes the
+        # clamped value back into the same variable, so without a dead-band the
+        # two bounce off each other. Same reason as the master slider.
+        if self._param_writing:
+            return
+        if abs(target - self._param_sent.get(name, float("nan"))) < 1e-9:
+            return
+
+        self._apply_param(name, target)
+
+    def _on_param_entry(self, name: str) -> None:
+        widgets = self._param_widgets.get(name)
+        if widgets is None or widgets[1] is None:
+            return
+        try:
+            target = float(widgets[1].get())
+        except ValueError:
+            # Put the real value back rather than arguing about it.
+            self._show_param(name)
+            return
+
+        self._apply_param(name, target)
+
+    def _apply_param(self, name: str, value: float) -> None:
+        self._param_sent[name] = value
+        self._guard(lambda: self.show.set_param(name, value), f"param {name}")
+
+        # The executable clamps to the range and echoes what it landed on, so
+        # the widgets follow the look rather than the other way round.
+        self._show_param(name)
+
+    def _show_param(self, name: str) -> None:
+        param = self.show.get_param(name)
+        widgets = self._param_widgets.get(name)
+        if param is None or widgets is None:
+            return
+
+        variable, entry = widgets
+        self._param_writing = True
+        try:
+            variable.set(1 if (param.is_bool and param.value) else (0 if param.is_bool else param.value))
+            if entry is not None:
+                entry.delete(0, "end")
+                entry.insert(0, f"{param.value:g}")
+        finally:
+            self._param_writing = False
+        self._param_sent[name] = param.value
 
     def _refresh_buttons(self) -> None:
         """Shows the state rows only when the pattern actually has states."""
@@ -483,6 +714,7 @@ class ViewerApp:
             )
 
         self._refresh_division_buttons()
+        self._resize_split()
 
     def _run_button(self, command: Tuple[str, str]) -> None:
         kind, value = command
@@ -656,6 +888,12 @@ class ViewerApp:
             self._button_signature = signature
             self._refresh_buttons()
             self._refresh_header()
+
+        # Same reason, for the knobs: the executable announces a new set on
+        # every pattern and state change, and the revision is what says so.
+        if self.show.params_revision != self._param_revision:
+            self._param_revision = self.show.params_revision
+            self._build_params()
 
         now = time.monotonic()
         elapsed = now - self._fps_marker
