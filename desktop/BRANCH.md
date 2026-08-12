@@ -473,6 +473,7 @@ to a garbage collector), python owns configuration and decisions.
 | `c260b13` | `eanim::AutomationCurve`, and `beat_pulse` rebuilt on it |
 | `e32c0d9` | `start.bat` |
 | `e9d96d0` | per-look tunable properties, and the viewer's split |
+| `ab92d49` | the obelisk as a device, and the USB link designed |
 
 ### library changes (`src/lib/`)
 
