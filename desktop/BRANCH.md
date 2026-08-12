@@ -559,6 +559,7 @@ to a garbage collector), python owns configuration and decisions.
 | `e32c0d9` | `start.bat` |
 | `e9d96d0` | per-look tunable properties, and the viewer's split |
 | `ab92d49` | the obelisk as a device, and the USB link designed |
+| `cbfd923` | `elink`: a desk drives a relic over USB, in cue and pixel modes |
 
 ### library changes (`src/lib/`)
 
