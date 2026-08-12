@@ -87,6 +87,33 @@ void HSVStrip::setHSV(uint16_t idx, float h, uint8_t s, uint8_t v)
     updateStripPixel(idx);
 }
 
+void HSVStrip::setPixelRGB(uint16_t idx, uint8_t r, uint8_t g, uint8_t b)
+{
+#if ERROR_CHECKING_ENABLED
+    if(idx >= getLength())
+    {
+#if DEBUG_LOGGING_ENABLED
+        std::string str = "HSVStrip::setPixelRGB - index out of range: " + std::to_string(idx);
+        dbgLog(str.c_str(), Verbosity::Error, Category::Library);
+#endif
+        return;
+    }
+#endif
+
+#if USING_NEOPIXEL
+    // Straight to the driver. No ColorHSV, no gamma32 - see the header.
+    strip.setPixelColor(idx, r, g, b);
+#else
+    if(hostPixels.size() < static_cast<size_t>(strip_HSV.size()) * 3)
+    {
+        hostPixels.assign(strip_HSV.size() * 3, 0);
+    }
+    hostPixels[idx * 3 + 0] = r;
+    hostPixels[idx * 3 + 1] = g;
+    hostPixels[idx * 3 + 2] = b;
+#endif
+}
+
 void HSVStrip::updateStripPixel(uint16_t idx)
 {
 #if USING_NEOPIXEL

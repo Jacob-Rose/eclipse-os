@@ -134,12 +134,60 @@ void obelisk::ObeliskCore::tick(float deltaTime)
     stateChangeTimer.tick(deltaTime);
 }
 
+void obelisk::ObeliskCore::say(const string& line)
+{
+    // Back up whatever cable the desk is on, rather than to Serial directly,
+    // so this still reaches a caller that plugged in a different transport.
+    if (elink::LinkTransport* transport = getLink().getTransport())
+    {
+        transport->writeLine(line.c_str());
+    }
+}
+
 bool obelisk::ObeliskCore::handleCommand(string msg)
 {
-    if (strcmp(msg.c_str(), "switch") == 0)  // strcmp returns 0 if strings are equal
+    // Trim: these arrive from a serial monitor as often as from a desk, and a
+    // trailing \r has cost more debugging time than it has any right to.
+    while (!msg.empty() && (msg.back() == '\r' || msg.back() == '\n' || msg.back() == ' '))
+    {
+        msg.pop_back();
+    }
+
+    // Was strcmp, which only ever resolved through whatever <cstring> Arduino.h
+    // drags in - msg is a std::string and has always been one.
+    if (msg == "switch")
     {
         dbgLog("ObeliskCore::handleCommand - switching patterns", Verbosity::Display, Category::Relic);
         stateMachine->setNextState(mainPatternState);
+        return true;
+    }
+
+    // Cue mode: the desk names a look and the obelisk renders it itself. The
+    // names are the ones the desk's own buttons send, so a cue list works over
+    // the link without either end knowing about the other's spelling.
+    if (msg.rfind("state ", 0) == 0)
+    {
+        const string wanted = msg.substr(6);
+
+        shared_ptr<State_GenericHSV> target{nullptr};
+        if (wanted == "seasons" || wanted == "main")   target = mainPatternState;
+        else if (wanted == "theater")                  target = theaterPatternState;
+        else if (wanted == "mono" || wanted == "test") target = testPatternState;
+
+        if (target)
+        {
+            stateMachine->setNextState(target);
+            say("EOSLINK state " + wanted);
+            return true;
+        }
+
+        say("EOSLINK unknown state " + wanted);
+        return true;
+    }
+
+    if (msg == "states")
+    {
+        say("EOSLINK states seasons theater mono");
         return true;
     }
 

@@ -25,7 +25,20 @@ DMX_CHANNEL_COUNT = 512
 #: rig is - which is how a 344-pixel relic fits.
 DMX_WIRE_TYPES = ("enttec_pro", "enttec_open")
 
-DEVICE_TYPES = ("enttec_pro", "enttec_open", "console", "preview", "none", "null")
+#: Types that drive an eclipse-os relic over its own USB cable, rather than a
+#: DMX widget. The frame buffer is the pixel buffer; see edmx::RelicUsbOutput.
+RELIC_TYPES = ("relic_usb", "relic_usb_cue")
+
+DEVICE_TYPES = (
+    "enttec_pro",
+    "enttec_open",
+    "relic_usb",
+    "relic_usb_cue",
+    "console",
+    "preview",
+    "none",
+    "null",
+)
 
 #: How a fixture's `position` is read. Must stay in step with edmx::CoordSpace
 #: in desktop/include/edmx/config.h.

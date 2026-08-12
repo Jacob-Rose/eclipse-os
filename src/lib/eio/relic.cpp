@@ -75,8 +75,14 @@ RelicCore::RelicCore()
 
 void RelicCore::preTick()
 {
-    lastFrameDT = std::chrono::steady_clock::now() - tickStartTime;
-    tickStartTime = std::chrono::steady_clock::now();
+    const auto now = std::chrono::steady_clock::now();
+
+    // The first frame gets nothing rather than the board's whole uptime. See
+    // hasTicked in the header for why that is not zero by default.
+    lastFrameDT = hasTicked ? (now - tickStartTime) : std::chrono::duration<double>(0.0);
+    hasTicked = true;
+
+    tickStartTime = now;
 }
 
 void RelicCore::tick(float deltaTime)
@@ -100,6 +106,31 @@ void RelicCore::runTick()
     dbgLog("RelicCore::runTick", Verbosity::Display, Category::OnTick);
 #endif
     preTick();
-    tick(lastFrameDT.count());
+
+    const float deltaTime = static_cast<float>(lastFrameDT.count());
+
+    // Read the cable first, so a frame that arrived this tick is on the strip
+    // by the time postTick shows it, rather than one frame late.
+    link.tick(deltaTime, coreIO.get());
+
+    // Cues run whichever mode we are in: a desk streaming pixels may still want
+    // to arm the look the relic will fall back to.
+    string command;
+    while(link.takeCommand(command))
+    {
+        handleCommand(command);
+    }
+
+    if(link.ownsPixels())
+    {
+        // The desk is driving. Deliberately not tick(): its pixels are already
+        // on the strip and a look rendered now would be thrown away.
+        tickWhileLinked(deltaTime);
+    }
+    else
+    {
+        tick(deltaTime);
+    }
+
     postTick();
 }

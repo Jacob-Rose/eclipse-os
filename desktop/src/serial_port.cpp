@@ -239,6 +239,24 @@ bool SerialPort::write(const uint8_t* data, size_t length, std::string& outError
     return true;
 }
 
+int SerialPort::readAvailable(uint8_t* out, size_t capacity)
+{
+    if (!isOpen() || !out || capacity == 0)
+    {
+        return isOpen() ? 0 : -1;
+    }
+
+    // The timeouts set in open() - ReadIntervalTimeout MAXDWORD with both
+    // totals at zero - are Win32's way of saying "return what is buffered and
+    // do not wait", which is exactly what a show loop can afford.
+    DWORD read = 0;
+    if (!::ReadFile(static_cast<HANDLE>(handle), out, static_cast<DWORD>(capacity), &read, nullptr))
+    {
+        return -1;
+    }
+    return static_cast<int>(read);
+}
+
 bool SerialPort::sendBreak(int microseconds, int markAfterMicroseconds, std::string& outError)
 {
     if (!isOpen())
@@ -393,8 +411,12 @@ bool SerialPort::open(const std::string& path, int baud, std::string& outError, 
 #ifdef CRTSCTS
     tty.c_cflag &= ~static_cast<tcflag_t>(CRTSCTS);
 #endif
+    // A pure poll: return whatever has arrived, immediately, and never wait.
+    // This was VTIME 5 back when nothing here read at all; a relic talks back
+    // over the same cable now, and half a second inside a 25ms frame budget is
+    // not a timeout, it is a stall.
     tty.c_cc[VMIN]  = 0;
-    tty.c_cc[VTIME] = 5; // 0.5s read timeout; we mostly write
+    tty.c_cc[VTIME] = 0;
 
     speed_t speed = B115200;
     if (!baudToSpeed(baud, speed))
@@ -458,6 +480,22 @@ bool SerialPort::write(const uint8_t* data, size_t length, std::string& outError
         written += static_cast<size_t>(chunk);
     }
     return true;
+}
+
+int SerialPort::readAvailable(uint8_t* out, size_t capacity)
+{
+    if (!isOpen() || !out || capacity == 0)
+    {
+        return isOpen() ? 0 : -1;
+    }
+
+    // VMIN 0 / VTIME 0 from open(): take what is buffered and return.
+    const ssize_t got = ::read(fd, out, capacity);
+    if (got < 0)
+    {
+        return (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) ? 0 : -1;
+    }
+    return static_cast<int>(got);
 }
 
 bool SerialPort::sendBreak(int microseconds, int markAfterMicroseconds, std::string& outError)

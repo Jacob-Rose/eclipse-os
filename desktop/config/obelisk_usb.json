@@ -1,0 +1,83 @@
+{
+  // The obelisk, on the wire.
+  //
+  // Same sculpture as config/obelisk.json and the same geometry - the only
+  // difference is where the frames go. That one stops at the viewer; this one
+  // drives the real thing over its USB cable.
+  //
+  //   eclipse-dmx --probe-relics                        who is out there
+  //   eclipse-dmx --config config/obelisk_usb.json      drive it
+  //   python -m eclipse_dmx view config/obelisk_usb.json --live
+  //
+  // The relic must be flashed with USE_RELIC_LINK on - see eclipse-os.ino.
+
+  "coord_space": "literal",
+
+  "device": {
+    // A relic, not a widget. "auto" here does not guess from a port name: it
+    // sends a Hello to every port and takes the one that answers, because on
+    // this machine a Pico and the DMX widget are both "COMn" with a description
+    // that names neither.
+    //
+    // Use "relic_usb_cue" instead to start in cue mode - the obelisk renders
+    // its own looks and this end only names them. `link pixels` and `link cue`
+    // switch live either way.
+    "type": "relic_usb",
+    "port": "auto",
+
+    // Ignored on USB CDC, where the baud rate is a number the host sets and
+    // neither end obeys. It is here because the probe has to open the port with
+    // something, and because a relic on a real UART would need it.
+    "baud": 115200,
+
+    // 30, not 40. The ceiling is the sculpture, not the cable: 344 WS2812s take
+    // 10.3ms to clock out and the relic's loop sleeps 30ms a tick in a dev
+    // build. Sending faster than it can draw does not make it draw faster - the
+    // extra frames are read and thrown away a tick later. Raise it once
+    // DEPLOYMENT is 1 on the relic, which takes its loop to ~20ms.
+    "fps": 30
+  },
+
+  "master": {
+    "brightness": 1.0,
+
+    // The only gamma in the path. A streamed frame arrives already RGB and goes
+    // to the pixel driver directly, skipping the HSV step and the gamma32 the
+    // sculpture applies to its own looks - so this correction happens exactly
+    // once and the viewer and the sculpture agree.
+    "gamma": 2.2
+  },
+
+  "pattern": {
+    "name": "obelisk_seasons",
+    "palette": "p_bluemagic"
+  },
+
+  // Eight runs of 43, exactly as config/obelisk.json - see the comments there,
+  // and read them beside the GenerateAxisRow calls in
+  // src/relics/obelisk/obelisk.cpp.
+  //
+  // Pixel n is channels 3n+1..3n+3, which is also the order the link sends
+  // them in, so this patch *is* the strip.
+  "fixtures": [
+    { "profile": "rgb3", "name": "a_up",   "address":   1, "count": 43,
+      "position": [0,  0], "position_step": [0,  1] },
+    { "profile": "rgb3", "name": "a_down", "address": 130, "count": 43,
+      "position": [1, 43], "position_step": [0, -1] },
+
+    { "profile": "rgb3", "name": "b_up",   "address": 259, "count": 43,
+      "position": [2,  0], "position_step": [0,  1] },
+    { "profile": "rgb3", "name": "b_down", "address": 388, "count": 43,
+      "position": [3, 43], "position_step": [0, -1] },
+
+    { "profile": "rgb3", "name": "c_up",   "address": 517, "count": 43,
+      "position": [4,  0], "position_step": [0,  1] },
+    { "profile": "rgb3", "name": "c_down", "address": 646, "count": 43,
+      "position": [5, 43], "position_step": [0, -1] },
+
+    { "profile": "rgb3", "name": "d_up",   "address": 775, "count": 43,
+      "position": [6,  0], "position_step": [0,  1] },
+    { "profile": "rgb3", "name": "d_down", "address": 904, "count": 43,
+      "position": [7, 43], "position_step": [0, -1] }
+  ]
+}

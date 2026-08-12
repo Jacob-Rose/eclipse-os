@@ -2,9 +2,20 @@
 
 What this branch adds, why, and how to pick it up cold.
 
-Base: `master` at `f29a6dd`. Nothing on the microcontroller path changes
-behaviour — the library edits are all behind `USE_ARDUINO`, and the Arduino
-build compiles exactly the same translation units it did before.
+Base: `master` at `f29a6dd`.
+
+For most of this branch nothing on the microcontroller path changed behaviour —
+the library edits were all behind `USE_ARDUINO`, and the Arduino build compiled
+exactly the same translation units it did before. **That stopped being true with
+the USB link.** The relic now reads its cable every tick, `eclipse-os.ino` picks
+which sculpture it is building for, and `RelicCore::preTick` no longer hands the
+first frame the board's entire uptime as a delta. See
+[over usb](#over-usb) and the note on the first frame below.
+
+The sketch itself is **not compiled here** — there is no Arduino toolchain on
+this machine. What is compiled and tested is everything under it, including
+`ObeliskCore`; see [the firmware is tested without being
+flashed](#the-firmware-is-tested-without-being-flashed).
 
 ---
 
@@ -53,6 +64,13 @@ python -m eclipse_dmx view config\uking_par36_x10.json --pattern obelisk_seasons
 # and the obelisk itself - 344 pixels, its own geometry, patterns rendered
 # on the shape they were written for
 python -m eclipse_dmx view config\obelisk.json --pattern obelisk_seasons
+
+# the link to a real sculpture, checked without one
+.\build\eclipse-dmx.exe --link-selftest
+.\build\eclipse-dmx.exe --probe-relics
+
+# and with one plugged in and flashed
+python -m eclipse_dmx view config\obelisk_usb.json --live
 ```
 
 On Linux the same thing with `./tools/setup-toolchain.sh` and `./build.sh`.
@@ -138,7 +156,8 @@ desktop/
 | `edmx::BeatClock` | where the beat is, and how fast |
 | `edmx::MidiInput` | tempo in, off winmm or an ALSA rawmidi device |
 | `edmx::FixtureMap` | HSV → RGB → channels, gamma, dimmer, parked channels |
-| `edmx::DmxOutput` | the wire: Enttec PRO, Enttec Open, console, or preview |
+| `edmx::DmxOutput` | the wire: Enttec PRO, Enttec Open, a relic on USB, console, or preview |
+| `elink` | the frame format between a desk and a relic — shared with the firmware |
 | `main.cpp` | frame timing, the stdin control protocol, the frame stream |
 | `python/` | configuration, validation, driving a running process |
 | `python/viewer.py` | the window |
@@ -395,33 +414,99 @@ glow is nine canvas items and tk recolours them one at a time from python, so
 repainting a frame already on screen, which the 60Hz pump over a 30fps stream
 makes half of them.
 
-### over usb: designed, not built
+### over usb
 
-The obelisk can be patched and previewed, but the frames stop at the viewer.
-What is missing is a wire, so a laptop can take a relic over for a show and hand
-it back. `readme.md` has the full design; the parts worth having here:
+A laptop takes a relic over for a show and hands it back.
 
-**Both modes, not a choice between them.** Cue commands (`state theater`,
-`set floor 0.3`) are a few bytes and the relic renders its own looks; a pixel
-stream is 1032 bytes at 40fps and puts *any* desk look on the relic. Pixel mode
-is what a show seizes, and when the stream lapses the relic falls back to cue
-mode and keeps running its own patterns — a dropped cable should dim a look, not
-black out a sculpture.
+```sh
+eclipse-dmx --probe-relics
+python -m eclipse_dmx view config/obelisk_usb.json --live
+```
 
-**The bandwidth is not the problem, and the obvious number is a red herring.**
-`Serial.begin(9600)` reads like a 9600-baud ceiling and is not one: on an RP2040
-`Serial` is USB CDC, where the baud rate is a value the host sets and neither end
-obeys. ~41 KB/s is about 4% of what the link carries. The real ceiling is at the
-other end — 344 WS2812s are 10.3ms of `show()` on their own, against a 25ms
-budget at 40fps.
+Two modes, and they are not alternatives: a **cue** is `state theater` and the
+relic renders its own looks; a **pixel** frame is 1044 bytes at 30fps and puts
+*any* desk look on the sculpture. `link cue` / `link pixels` switch live, and
+cues are sent in either mode because arming the fallback is exactly what you
+want set before a stream drops.
 
-**Three things that will bite.** `USE_SERIAL_INPUT` is `1 && !DEPLOYMENT`, so
-the build that would be on the sculpture at a show is exactly the build with no
-way in. Gamma has to be applied at exactly one end — a streamed frame is already
-RGB and should skip `HSVStrip`'s `gamma32` rather than go through it twice. And
-a relic built with `USE_SERIAL_MQTT` already has a line-based bridge on that
-port; the obelisk does not, but that is worth knowing before load-in rather than
-during it.
+**The takeover ends by itself.** Half a second without a pixel frame and the
+relic takes its own back. Not a design flourish — a pulled USB cable should cost
+a look, not black out a sculpture in front of a room. `link release` and closing
+the show both end it immediately instead, because a set that ends should end
+rather than fade out on a timeout.
+
+**One format, both ends.** `src/lib/elink/` is compiled into the firmware *and*
+into this, exactly like the patterns, so there is no second definition of the
+wire to drift. Magic, type, length, payload, CRC — with a resync scan, because a
+relic gets plugged into a running desk and the first bytes it ever sees are the
+tail of something. The CRC is there because the failure it catches is silent: a
+corrupt pixel frame is not an error anyone sees, it is one wrong-coloured frame
+that reads as a glitch in the look rather than as a bad cable.
+
+**Finding it is a handshake, not a guess.** `"port": "auto"` sends a Hello to
+every port and takes what answers by name. Guessing from the port name cannot
+work here — a Pico is USB CDC and the DMX widget is FTDI, and on Windows both
+are `COMn` with a description naming neither; this machine's widget calls itself
+`\Device\VCP0`. A wrong guess means a show quietly driving something that
+ignores it.
+
+**Bandwidth was never the problem, and the obvious number is a red herring.**
+`Serial.begin()` reads like a baud ceiling and is not one: on an RP2040 `Serial`
+is USB CDC, where the rate is a value the host sets and neither end obeys. 31
+KB/s is about 3% of what the link carries. The ceiling is the sculpture — 344
+WS2812s are 10.3ms of `show()` against a 30ms loop — which is why the config says
+30fps and not 40.
+
+Three things that would have bitten, all now closed:
+
+- **`DEPLOYMENT` disabled serial input.** `USE_SERIAL_INPUT` was
+  `1 && !DEPLOYMENT`, so the build that goes on a sculpture for a show was
+  exactly the build with no way in. `USE_RELIC_LINK` is its own flag, on in both.
+- **Gamma, exactly once.** A streamed frame is already RGB and goes through
+  `HSVStrip::setPixelRGB` straight to the driver, skipping the `gamma32` the
+  sculpture applies to its own looks. Through `strip_HSV` it would be corrected
+  twice and everything below mid-brightness would crush toward black — quiet
+  failure, which is why it got its own door rather than a flag on `setHSV`.
+- **`Serial` may be taken.** `USE_SERIAL_MQTT` puts a line-based bridge on that
+  port; the sketch now refuses to compile with both on.
+
+**The relic stays dimmer than the picture, on purpose.**
+`setGlobalBrightness(EBrightness::HIGH)` is 63/255 and the link does not bypass
+it: that is a current limit, and 344 pixels at full white is about 20A. A Hello
+reports it so it is at least visible rather than mysterious.
+
+### the firmware is tested without being flashed
+
+`--link-selftest` is 41 checks and the last block is the important one: it
+constructs a **real `ObeliskCore`** — its geometry, its state machine,
+`RelicCore::runTick` and the gating inside it — and drives it through a loopback
+transport. That is the code the Pico executes, compiled with `USE_ARDUINO=0`.
+
+This is what `eclipse_relic_firmware` in the CMakeLists is for. The rule
+everywhere else is that patterns are shared and device layers are not, and that
+still holds — nothing in the show runner constructs an `ObeliskCore`. But it is
+firmware, the Arduino toolchain is the only thing that normally compiles it, and
+shipping a changed `ObeliskCore` unbuilt is not a position to be in when the next
+step is reflashing a sculpture.
+
+It earned itself immediately: `ObeliskCore::handleCommand` was calling `strcmp`
+with no `<cstring>` in sight, resolving only through whatever Arduino.h drags in.
+And it found the first-frame bug below.
+
+What it cannot cover is what only exists on the device: the USB stack, the
+WS2812 write, and every question about timing.
+
+### the first frame was the whole uptime
+
+`RelicCore::preTick` computed its delta against a default-constructed
+`steady_clock::time_point`, which is that clock's epoch. So the *first* frame
+after boot got a delta of however long the board had been powered, and every
+animation on every relic jumped that far in one step before the first pixel was
+lit. On a Pico the setup delays make it about five seconds; on a host it is
+hours.
+
+Fixed, and it is a real behaviour change on the microcontroller — the only one
+on this branch.
 
 ### the viewer
 
@@ -477,8 +562,24 @@ to a garbage collector), python owns configuration and decisions.
 
 ### library changes (`src/lib/`)
 
-These are the only edits outside `desktop/`. All of them are behind
-`USE_ARDUINO` or are strict fixes.
+Up to the USB link these were the only edits outside `desktop/`, all of them
+behind `USE_ARDUINO` or strict fixes. The link added more, and they are *not* all
+inert on the microcontroller:
+
+- **`elink/`** (new) — `frame.{h,cpp}` is the wire format and `relic_link.{h,cpp}`
+  is the relic's end of it. Portable: no Arduino, no allocation on the hot path,
+  a byte at a time in and a buffer out. `serial_transport.h` is the only
+  Arduino-only file, and it is eleven lines.
+- **`eio/hsv_strip.{h,cpp}`** — `setPixelRGB` writes a pixel straight to the
+  driver with no HSV step and no gamma, for a frame that arrived already
+  rendered. On a host it lands in a buffer a test can read.
+- **`eio/relic.{h,cpp}`** — `RelicCore` owns a `RelicLink`. `runTick` reads the
+  cable, drains cues into `handleCommand`, and calls `tickWhileLinked` instead of
+  `tick` while the desk owns the pixels. **And `preTick` no longer gives the
+  first frame the board's whole uptime as a delta** — see below.
+- **`relics/obelisk/obelisk.{h,cpp}`** — `handleCommand` takes `state seasons |
+  theater | mono` and `states`, so cue mode has looks to name. Its `strcmp` is
+  now a `std::string` comparison; it never included `<cstring>`.
 
 - **`ecore/core.h`, `ecore/fp.h`** — platform includes guarded. Arduino path
   untouched.
@@ -576,6 +677,42 @@ And, for mythos26 and the beat clock:
 - 50 new tests, none of which need a MIDI device: `--midi ""` keeps the suite
   off whatever happens to be plugged into the machine running it
 
+And, for the USB link — all of it without a sculpture attached, over
+`--link-selftest`'s loopback:
+
+- a clean frame lands byte for byte, and leaves `strip_HSV` alone
+- garbage in front of a frame is discarded and the frame still arrives: a stray
+  magic byte, a doubled one, and the tail of a previous frame
+- one flipped bit is caught by the CRC, and the strip is not touched
+- an absurd length does not wedge the reader waiting for bytes that will never
+  come; it recovers on the very next frame
+- a byte-at-a-time trickle is identical to a burst
+- a frame sized for a longer relic lights what fits rather than being refused
+- a frame for a strip that does not exist is counted, and still counts as a
+  takeover — going dark would hide the mistake
+- the holdover expires in synthetic time, and `Release` ends it at once
+- commands arrive as text, and typing into a serial monitor still becomes one
+- the obelisk's own frame is 1044 bytes and all 1032 pixel bytes survive it
+- and on a **real `ObeliskCore`**: it runs its own look unlinked, the desk takes
+  the pixels, the desk's frame is what is lit, a cue lands mid-stream, and after
+  a release its own look is running again
+
+And on this end:
+
+- a `link` command on a DMX show is refused, by name, without killing it
+- the viewer draws a relic row only when the config names one, opens with
+  `pixels` lit, and never lights `release` — it is an action, not a mode
+- `config/obelisk_usb.json` and `config/obelisk.json` resolve to the same 344
+  fixtures at the same channels with the same coordinates, which is the check
+  that stops two files describing one sculpture from drifting
+
+Not covered, and not coverable here: the USB stack, the WS2812 write, and
+timing. `--probe-relics` finding nothing on a machine whose only serial device
+is the DMX widget is the one on-hardware check that has run.
+
+`readme.md` has a first-light order to work through with the sculpture in front
+of you, arranged so each step proves one thing and the cheap ones come first.
+
 And, for the obelisk as a device:
 
 - the config resolves to 344 pixels at consecutive channels, highest 1032, with
@@ -625,7 +762,7 @@ There is now a suite for all of this, which there was not before:
 
 ```sh
 cd desktop
-python -m unittest discover -s python/tests -v      # 130 tests
+python -m unittest discover -s python/tests -v      # 145 tests
 ```
 
 It needs nothing installed. Anything requiring the executable or a display
@@ -803,11 +940,17 @@ listing online.
   doing the right thing", not "what will the room look like".
 - **The viewer's layout is 2D only.** `position` takes x and y; a rig hung at
   different heights and depths flattens.
-- **The obelisk is patched but not wired.** Its frames stop at the viewer.
-  Nothing has been built toward the USB link — the design above and in
-  `readme.md` is written, and no line of it exists.
+- **The link has never met a sculpture.** Everything above it is tested,
+  including a real `ObeliskCore` on a loopback, but no frame has reached a Pico.
+  The USB stack, the WS2812 write and every question of timing are open.
+- **The sketch is not compiled by anything here.** No Arduino toolchain on this
+  machine; `eclipse-os.ino` is the one file on this branch that nothing builds.
 - **One relic per config, and one port.** Nothing fans a look out to several
   sculptures at once.
+- **No flow control on the link.** The desk sends at `device.fps` and the relic
+  reads up to 4096 bytes a tick; if the desk is faster the excess is read and
+  dropped a tick later rather than backing up, but nothing tells the desk to
+  slow down.
 - **The obelisk is drawn flat.** Its eight strips read as eight columns rather
   than as four sides of a pillar, because the viewer has no notion of a rig
   wrapping around anything. It answers "is each pixel doing the right thing".
@@ -835,10 +978,10 @@ listing online.
 6. **Is one universe enough long-term?** Ten 7-channel fixtures is 70 channels,
    so there is a lot of headroom, but multi-universe is a real change if it is
    ever needed.
-7. **Does the USB link get built next?** The design is in `readme.md` and it is
-   two halves: a `RelicUsbOutput` on this side, and a frame reader on the
-   sculpture. The desktop half can be written and tested against a loopback
-   without touching an obelisk; the firmware half means reflashing one.
+7. **What happens on the first real frame?** The link is built and tested
+   against a loopback, and has never met a Pico. `readme.md` has a first-light
+   order; step 6 — pulling the cable mid-run and watching the obelisk take its
+   own pixels back — is the one worth doing before trusting it in a room.
 8. **How many relics at once?** One port per sculpture is fine for one. Three
    obelisks on one laptop is a different shape of problem — either three
    processes, or something that fans a look out, and that is worth deciding
@@ -848,3 +991,12 @@ listing online.
    marked, would make a look easier to judge — but it is the first thing in the
    viewer that would be specific to one rig's shape rather than read from its
    config.
+10. **Is half a second the right holdover?** Long enough to ride out a missed
+   frame, short enough that a dead cable is a stumble. Untested against a real
+   one, and the number is one line: `RelicLink::setHoldover`.
+11. **Should the desk match the relic's brightness, or the other way round?**
+   The sculpture runs at `EBrightness::HIGH`, which is 63/255, and the link does
+   not bypass it because it is a current limit. So the viewer is four times
+   brighter than the thing it is a picture of. Either the desk dims its picture
+   to match, or the relic's limit becomes a number the desk can read and
+   compensate for — the second is more useful and more dangerous.

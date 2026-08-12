@@ -11,6 +11,8 @@
 #include <string>
 #include <vector>
 
+#include "lib/elink/frame.h"
+
 #include "edmx/serial_port.h"
 
 ///
@@ -110,6 +112,13 @@ namespace edmx
         virtual float maxFrameRate() const { return 0.0f; }
 
         virtual std::string describe() const = 0;
+
+        /// Non-null when this output is a relic on a USB cable, so the command
+        /// layer can forward cues to it. A virtual rather than a dynamic_cast
+        /// for the same reason Pattern::asStateMachine is one: the library
+        /// builds without RTTI on the microcontroller side and there is no
+        /// reason for the two to diverge.
+        virtual class RelicUsbOutput* asRelicLink() { return nullptr; }
     };
 
 
@@ -192,6 +201,77 @@ namespace edmx
     };
 
 
+    /// An eclipse-os relic on the other end of a USB cable.
+    ///
+    /// Not DMX at all. The frame buffer is already the pixel buffer — three
+    /// consecutive channels per pixel, in strip order — so a frame is that
+    /// buffer wrapped in an elink header and put on the wire. The relic writes
+    /// it straight to its LEDs and hands its own patterns back when we stop.
+    ///
+    /// Two modes, and they are not alternatives:
+    ///
+    ///   Pixels  we render and the relic displays. Any desk look reaches the
+    ///           sculpture, including ones never compiled into it.
+    ///   Cue     we send `state x` and the relic renders its own looks. Almost
+    ///           no bandwidth, and it survives a cable nobody trusts.
+    ///
+    /// Cues are sent in either mode: arming the look a relic will fall back to
+    /// is exactly what you want set before a stream drops.
+    class RelicUsbOutput : public DmxOutput
+    {
+    public:
+        enum class Mode
+        {
+            Pixels,
+            Cue
+        };
+
+        RelicUsbOutput(const std::string& inPort, int inBaud, Mode inMode);
+        ~RelicUsbOutput() override;
+
+        bool open(std::string& outError) override;
+        void close() override;
+        bool isOpen() const override;
+        bool sendFrame(const DmxUniverse& universe, std::string& outError) override;
+        std::string describe() const override;
+        void setUniverseLength(int channels) override;
+
+        RelicUsbOutput* asRelicLink() override { return this; }
+
+        /// Sends a line for the relic's own handleCommand. Works in both modes.
+        bool sendCommand(const std::string& text, std::string& outError);
+
+        /// Hands the pixels back now, rather than letting the relic time out.
+        bool release(std::string& outError);
+
+        void setMode(Mode inMode) { mode = inMode; }
+        Mode getMode() const { return mode; }
+
+        /// Lines the relic has sent since the last call, log and all. Never
+        /// waits; an empty vector means it has not said anything yet.
+        std::vector<std::string> drainRelicLines();
+
+    private:
+        bool sendRaw(const uint8_t* payload, uint16_t length, uint8_t type, std::string& outError);
+
+        /// How many writes in a row may fail before the show gives up. At 30fps
+        /// this is about two thirds of a second, which is longer than any
+        /// stutter and shorter than anyone would stand looking at a frozen rig.
+        static constexpr int MAX_CONSECUTIVE_FAILURES = 20;
+
+        std::string port;
+        int baud;
+        Mode mode;
+        int pixelCount{0};
+        int consecutiveFailures{0};
+        SerialPort serial;
+
+        std::vector<uint8_t> packet;  // reused every frame, no per-frame allocation
+        std::vector<uint8_t> payload;
+        std::string inbound;          // partial line from the relic
+    };
+
+
     /// No wire at all: renders, and drops the frame on the floor.
     ///
     /// This is the honest output for a rig whose destination is the interface
@@ -228,4 +308,33 @@ namespace edmx
     /// Picks the first attached serial port that looks like a DMX widget, for
     /// `"port": "auto"`. Empty string when nothing plausible is present.
     std::string autoDetectPort();
+
+
+    struct RelicProbe
+    {
+        std::string port;
+        std::string identity; ///< what the relic answered, minus the prefix
+    };
+
+    /// Asks every attached port whether it is a relic, and reports the ones
+    /// that answer.
+    ///
+    /// A guess from the port name is not available here. A relic is a Pico on
+    /// USB CDC and a DMX widget is an FTDI part, and on Windows both are just
+    /// "COMn" with a description out of the registry that names neither — this
+    /// machine's widget reports itself as `\Device\VCP0`. Picking the wrong one
+    /// would mean a show quietly driving a widget that ignores it.
+    ///
+    /// So we ask. A Hello is seven bytes and a relic answers it by name, which
+    /// makes this the only detection that cannot be wrong. Anything that does
+    /// not answer inside `millisecondsEach` is not a relic.
+    ///
+    /// The seven bytes do reach whatever is on the other end. On a DMX widget
+    /// they are data with no break in front of them, which every receiver
+    /// ignores by construction — but it is the reason this is a deliberate step
+    /// rather than something that happens on every startup.
+    std::vector<RelicProbe> probeRelicPorts(int baud, int millisecondsEach = 250);
+
+    /// First port that answers a Hello. Empty when none do.
+    std::string autoDetectRelicPort(int baud);
 }

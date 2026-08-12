@@ -51,6 +51,13 @@ set(ECLIPSE_CORE_SOURCES
     ${ECLIPSE_SRC}/lib/eanim/noise.cpp
     ${ECLIPSE_SRC}/lib/eanim/processor_float.cpp
 
+    # The wire between a desk and a relic. Built here as well as on the
+    # microcontroller, and for the same reason the patterns are: one definition
+    # of the format, so the two ends cannot drift. It also means the frame
+    # parser that runs on the sculpture is the one the tests run.
+    ${ECLIPSE_SRC}/lib/elink/frame.cpp
+    ${ECLIPSE_SRC}/lib/elink/relic_link.cpp
+
     ${ECLIPSE_SRC}/lib/eio/hsv_strip.cpp
     ${ECLIPSE_SRC}/lib/eio/relic.cpp
     ${ECLIPSE_SRC}/lib/eio/screen_drawer.cpp
@@ -112,6 +119,31 @@ list(APPEND ECLIPSE_CORE_SOURCES ${ECLIPSE_RELIC_SOURCES})
 
 add_library(eclipse_core STATIC ${ECLIPSE_CORE_SOURCES})
 
+# ---------------------------------------------------------------------------
+# The relic's *device* layer, built for the host.
+#
+# Everywhere else in this file the rule is that patterns are shared and device
+# layers are not, and that still holds: nothing in the show runner constructs an
+# ObeliskCore, and it never will - it builds a neopixel strip on a pin this
+# machine does not have.
+#
+# It is here for one reason. This is firmware, the Arduino toolchain is the only
+# thing that normally compiles it, and shipping a changed ObeliskCore unbuilt is
+# not a position to be in when the next step is reflashing a sculpture. With
+# USE_ARDUINO=0 the neopixel path drops out and everything above it - the state
+# machine, the strip segments, the command handling, RelicCore::runTick and the
+# link inside it - is ordinary C++ that a host can run.
+#
+# So `--link-selftest` drives the real ObeliskCore through the real link. What
+# that cannot cover is anything that only exists on the device: the USB stack,
+# the WS2812 write, and every question about timing.
+# ---------------------------------------------------------------------------
+add_library(eclipse_relic_firmware STATIC
+    ${ECLIPSE_SRC}/relics/obelisk/obelisk.cpp
+)
+target_include_directories(eclipse_relic_firmware PUBLIC ${ECLIPSE_SRC})
+target_link_libraries(eclipse_relic_firmware PUBLIC eclipse_core)
+
 target_include_directories(eclipse_core PUBLIC
     ${ECLIPSE_SRC}
 )
@@ -151,7 +183,7 @@ target_link_libraries(edmx PUBLIC eclipse_core)
 # the executable
 # ---------------------------------------------------------------------------
 add_executable(eclipse-dmx src/main.cpp)
-target_link_libraries(eclipse-dmx PRIVATE edmx)
+target_link_libraries(eclipse-dmx PRIVATE edmx eclipse_relic_firmware)
 
 # ---------------------------------------------------------------------------
 # platform bits

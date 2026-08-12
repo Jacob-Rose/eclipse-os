@@ -6,7 +6,9 @@
 #include "edmx/dmx_output.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cstdio>
+#include <thread>
 
 using namespace edmx;
 
@@ -230,6 +232,216 @@ std::string ConsoleOutput::describe() const
 }
 
 // ============================================================================
+// Relic over USB
+// ============================================================================
+
+RelicUsbOutput::RelicUsbOutput(const std::string& inPort, int inBaud, Mode inMode)
+    : port(inPort), baud(inBaud), mode(inMode)
+{
+    packet.resize(elink::HEADER_SIZE + elink::MAX_PAYLOAD + elink::TRAILER_SIZE);
+}
+
+RelicUsbOutput::~RelicUsbOutput()
+{
+    // Give the pixels back on the way out rather than leaving the relic to
+    // notice we stopped. A show that ends should end, not fade to a timeout.
+    if (serial.isOpen())
+    {
+        std::string ignored;
+        release(ignored);
+    }
+}
+
+void RelicUsbOutput::setUniverseLength(int channels)
+{
+    // Three channels a pixel. A patch that does not divide evenly is a config
+    // that is not describing a pixel strip, and the extra channels have nowhere
+    // to go, so round down rather than send a partial pixel.
+    pixelCount = std::max(0, channels / 3);
+
+    const size_t needed = elink::PIXEL_HEADER_SIZE + static_cast<size_t>(pixelCount) * 3;
+    payload.assign(needed, 0);
+}
+
+bool RelicUsbOutput::open(std::string& outError)
+{
+    // Never 1200. On an RP2040 that rate is the "touch to reboot into BOOTSEL"
+    // signal the uploader uses, so opening a relic at it would drop the
+    // sculpture into a bootloader instead of driving it.
+    const int safeBaud = (baud == 1200) ? 115200 : baud;
+
+    if (!serial.open(port, safeBaud, outError))
+    {
+        return false;
+    }
+
+    consecutiveFailures = 0;
+
+    // Say hello before anything else. The relic answers with what it actually
+    // is - its strips and their lengths - so a mismatch between this config and
+    // that sculpture shows up in the log at load-in rather than as a
+    // half-lit rig during a set.
+    std::string ignored;
+    sendRaw(nullptr, 0, static_cast<uint8_t>(elink::FrameType::Hello), ignored);
+    return true;
+}
+
+void RelicUsbOutput::close()
+{
+    if (serial.isOpen())
+    {
+        std::string ignored;
+        release(ignored);
+    }
+    serial.close();
+}
+
+bool RelicUsbOutput::isOpen() const
+{
+    return serial.isOpen();
+}
+
+bool RelicUsbOutput::sendRaw(const uint8_t* inPayload, uint16_t length, uint8_t type, std::string& outError)
+{
+    if (!serial.isOpen())
+    {
+        outError = "relic link is not open";
+        return false;
+    }
+
+    const size_t written = elink::writeFrame(static_cast<elink::FrameType>(type),
+                                             inPayload, length,
+                                             packet.data(), packet.size());
+    if (written == 0)
+    {
+        outError = "elink frame of " + std::to_string(length) + " bytes could not be built";
+        return false;
+    }
+
+    if (serial.write(packet.data(), written, outError))
+    {
+        consecutiveFailures = 0;
+        return true;
+    }
+
+    // A write that times out is usually the relic being briefly behind rather
+    // than gone: USB CDC is flow-controlled, so a device that has not drained
+    // its buffer stops the host writing until it does. Ending a show over one
+    // slow frame would be absurd - the relic still has the last frame on it and
+    // will keep it for the holdover.
+    //
+    // Sustained failure is different, and after about a second of it the cable
+    // really is out. Then it is an error, and the show says so.
+    ++consecutiveFailures;
+    if (consecutiveFailures < MAX_CONSECUTIVE_FAILURES)
+    {
+        outError.clear();
+        return true;
+    }
+
+    outError = "relic on " + port + " stopped taking frames after "
+             + std::to_string(consecutiveFailures) + " tries: " + outError;
+    return false;
+}
+
+bool RelicUsbOutput::sendFrame(const DmxUniverse& universe, std::string& outError)
+{
+    if (mode == Mode::Cue)
+    {
+        // The relic is rendering its own looks. Sending it pixels as well would
+        // take them away from it, which is the opposite of what cue mode is.
+        return true;
+    }
+
+    if (pixelCount <= 0)
+    {
+        outError = "relic link has no pixels to send (patch resolves to " + std::to_string(pixelCount) + ")";
+        return false;
+    }
+
+    elink::PixelHeader header;
+    header.strip = 0;
+    header.start = 0;
+    header.count = static_cast<uint16_t>(pixelCount);
+    elink::writePixelHeader(header, payload.data());
+
+    std::copy(universe.data(),
+              universe.data() + static_cast<size_t>(pixelCount) * 3,
+              payload.begin() + elink::PIXEL_HEADER_SIZE);
+
+    return sendRaw(payload.data(), static_cast<uint16_t>(payload.size()),
+                   static_cast<uint8_t>(elink::FrameType::Pixels), outError);
+}
+
+bool RelicUsbOutput::sendCommand(const std::string& text, std::string& outError)
+{
+    if (text.empty() || text.size() > elink::MAX_PAYLOAD)
+    {
+        outError = "relic command must be 1.." + std::to_string(elink::MAX_PAYLOAD) + " characters";
+        return false;
+    }
+
+    return sendRaw(reinterpret_cast<const uint8_t*>(text.data()),
+                   static_cast<uint16_t>(text.size()),
+                   static_cast<uint8_t>(elink::FrameType::Command), outError);
+}
+
+bool RelicUsbOutput::release(std::string& outError)
+{
+    return sendRaw(nullptr, 0, static_cast<uint8_t>(elink::FrameType::Release), outError);
+}
+
+std::vector<std::string> RelicUsbOutput::drainRelicLines()
+{
+    std::vector<std::string> lines;
+    if (!serial.isOpen())
+    {
+        return lines;
+    }
+
+    uint8_t chunk[512];
+    for (int pass = 0; pass < 8; ++pass)
+    {
+        const int got = serial.readAvailable(chunk, sizeof(chunk));
+        if (got <= 0)
+        {
+            break;
+        }
+
+        for (int i = 0; i < got; ++i)
+        {
+            const char c = static_cast<char>(chunk[i]);
+            if (c == '\n' || c == '\r')
+            {
+                if (!inbound.empty())
+                {
+                    lines.push_back(inbound);
+                    inbound.clear();
+                }
+            }
+            else if (inbound.size() < 512)
+            {
+                inbound.push_back(c);
+            }
+            else
+            {
+                // A relic mid-reboot emits a lot before it emits a newline.
+                inbound.clear();
+            }
+        }
+    }
+
+    return lines;
+}
+
+std::string RelicUsbOutput::describe() const
+{
+    return std::string("relic_usb on ") + port + ", "
+         + (mode == Mode::Cue ? "cue" : "pixel") + " mode, "
+         + std::to_string(pixelCount) + " pixels";
+}
+
+// ============================================================================
 // Preview
 // ============================================================================
 
@@ -280,6 +492,18 @@ std::unique_ptr<DmxOutput> edmx::makeDmxOutput(const std::string& type,
     {
         return std::unique_ptr<DmxOutput>(new PreviewOutput("watch it with --emit-frames"));
     }
+    if (type == "relic_usb" || type == "relic_usb_cue")
+    {
+        if (port.empty())
+        {
+            outError = "no serial port for relic_usb (set device.port, or plug the relic in for \"auto\")";
+            return nullptr;
+        }
+        const RelicUsbOutput::Mode mode = (type == "relic_usb_cue")
+            ? RelicUsbOutput::Mode::Cue
+            : RelicUsbOutput::Mode::Pixels;
+        return std::unique_ptr<DmxOutput>(new RelicUsbOutput(port, baud, mode));
+    }
     if (type == "enttec_pro")
     {
         if (port.empty())
@@ -300,8 +524,90 @@ std::unique_ptr<DmxOutput> edmx::makeDmxOutput(const std::string& type,
     }
 
     outError = "unknown device type '" + type
-             + "' (expected enttec_pro, enttec_open, console or preview)";
+             + "' (expected enttec_pro, enttec_open, relic_usb, relic_usb_cue,"
+               " console or preview)";
     return nullptr;
+}
+
+std::vector<RelicProbe> edmx::probeRelicPorts(int baud, int millisecondsEach)
+{
+    static const std::string kPrefix = "EOSLINK hello ";
+
+    std::vector<RelicProbe> found;
+
+    // See RelicUsbOutput::open: 1200 reboots an RP2040 into its bootloader, and
+    // a probe that bricks a show mid-load-in would be a memorable bug.
+    const int safeBaud = (baud == 1200) ? 115200 : baud;
+
+    for (const SerialPortInfo& info : SerialPort::enumeratePorts())
+    {
+        SerialPort probe;
+        std::string error;
+        if (!probe.open(info.path, safeBaud, error))
+        {
+            // Held by something else, or not openable. Not a relic today.
+            continue;
+        }
+
+        uint8_t frame[elink::HEADER_SIZE + elink::TRAILER_SIZE];
+        const size_t written = elink::writeFrame(elink::FrameType::Hello, nullptr, 0,
+                                                 frame, sizeof(frame));
+        if (written == 0 || !probe.write(frame, written, error))
+        {
+            probe.close();
+            continue;
+        }
+
+        // Poll rather than sleep the whole budget: a relic answers inside a
+        // tick or two, and waiting the full window on every port would make
+        // this take as long as there are ports.
+        std::string buffered;
+        const auto deadline = std::chrono::steady_clock::now()
+                            + std::chrono::milliseconds(millisecondsEach);
+
+        while (std::chrono::steady_clock::now() < deadline)
+        {
+            uint8_t chunk[256];
+            const int got = probe.readAvailable(chunk, sizeof(chunk));
+            if (got > 0)
+            {
+                buffered.append(reinterpret_cast<const char*>(chunk), static_cast<size_t>(got));
+
+                const size_t at = buffered.find(kPrefix);
+                if (at != std::string::npos)
+                {
+                    const size_t end = buffered.find_first_of("\r\n", at);
+                    if (end != std::string::npos)
+                    {
+                        RelicProbe result;
+                        result.port = info.path;
+                        result.identity = buffered.substr(at + kPrefix.size(),
+                                                          end - at - kPrefix.size());
+                        found.push_back(result);
+                        break;
+                    }
+                }
+            }
+            else if (got < 0)
+            {
+                break;
+            }
+            else
+            {
+                std::this_thread::sleep_for(std::chrono::milliseconds(5));
+            }
+        }
+
+        probe.close();
+    }
+
+    return found;
+}
+
+std::string edmx::autoDetectRelicPort(int baud)
+{
+    const std::vector<RelicProbe> found = probeRelicPorts(baud);
+    return found.empty() ? std::string() : found.front().port;
 }
 
 std::string edmx::autoDetectPort()

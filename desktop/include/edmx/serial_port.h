@@ -72,6 +72,15 @@ namespace edmx
         /// short write or a device that went away mid-show.
         bool write(const uint8_t* data, size_t length, std::string& outError);
 
+        /// Takes whatever has already arrived, up to `capacity`, and returns
+        /// how many bytes that was. Never waits: zero means "nothing yet", not
+        /// an error.
+        ///
+        /// A relic talks back — its log lines and its answer to a Hello come up
+        /// the same cable the frames go down — and a show loop cannot stop to
+        /// listen. Returns -1 on a port that has actually failed.
+        int readAvailable(uint8_t* out, size_t capacity);
+
         /// Holds the line low for `microseconds`, then releases it and idles
         /// (marks) for `markAfterMicroseconds`. Used only by the Open DMX path.
         bool sendBreak(int microseconds, int markAfterMicroseconds, std::string& outError);

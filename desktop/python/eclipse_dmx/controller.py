@@ -182,6 +182,16 @@ class ShowController:
         #: The set being read right now, or None between blocks.
         self._params_open: Optional[List[Param]] = None
 
+        #: "pixels" or "cue" when this show drives a relic over USB. Tracked
+        #: rather than asked for, because the executable only announces it in
+        #: reply to a command.
+        self.link_mode: str = "pixels"
+
+        #: Lines a relic has sent up its cable, newest last. Bounded, like the
+        #: rest of the event list: a show left running overnight must not grow
+        #: a list per frame.
+        self.relic_lines: List[str] = []
+
         self._process: Optional[subprocess.Popen] = None
         self._replies: "queue.Queue[str]" = queue.Queue()
         self._events: List[str] = []
@@ -334,6 +344,13 @@ class ShowController:
 
         if line.startswith("FIXTURES "):
             self.fixture_names = line.split()[1:]
+
+        # What a relic on the other end of a USB cable has to say: its answer to
+        # a Hello, and a note each time a takeover starts or lapses. Kept
+        # bounded for the same reason frame lines are not kept at all.
+        if line.startswith("RELIC "):
+            self.relic_lines.append(line[len("RELIC "):])
+            del self.relic_lines[:-32]
 
         # A state machine announces its looks when it starts and whenever the
         # pattern changes. A plain pattern announces an empty list, which is how
@@ -603,6 +620,21 @@ class ShowController:
     def set_free_run(self, enable: bool = True) -> None:
         """Whether the rig keeps pulsing after the external clock stops."""
         self.command(f"midi free-run {'on' if enable else 'off'}")
+
+    def set_link_mode(self, mode: str) -> None:
+        """`pixels` to drive a relic's LEDs from here, `cue` to give them back.
+
+        Raises ShowError when the show is not on a relic link at all, which is
+        the honest answer: there is nothing to hand over.
+        """
+        if mode not in ("pixels", "cue"):
+            raise ShowError(f"link mode must be 'pixels' or 'cue', got '{mode}'")
+        self.command(f"link {mode}")
+        self.link_mode = mode
+
+    def release_link(self) -> None:
+        """Hands a relic its own pixels back now, without leaving pixel mode."""
+        self.command("link release")
 
     def set_beat_division(self, beats: int) -> None:
         """How often the beat-driven looks fire: 1, 2 or 4 beats per hit.

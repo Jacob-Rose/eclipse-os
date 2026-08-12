@@ -50,6 +50,9 @@ namespace obelisk
         virtual bool handleCommand(string msg) override;
 
     protected:
+        /// A line back to whoever is on the other end of the link.
+        void say(const string& line);
+
         std::unique_ptr<StateMachine_GenericHSV> stateMachine{ nullptr };
         std::unique_ptr<StateManager> stateManager{ nullptr };
 

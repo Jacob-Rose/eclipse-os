@@ -28,7 +28,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple, Union
 
-from .config import Config
+from .config import RELIC_TYPES, Config
 from .controller import Frame, ShowController, ShowError
 from .patterns import list_patterns
 
@@ -116,6 +116,18 @@ TEMPO_BUTTONS: List[Tuple[str, Tuple[str, str]]] = [
     ("120", ("bpm", "120")),
     ("128", ("bpm", "128")),
     ("140", ("bpm", "140")),
+]
+
+#: For a show driving a relic over USB. "pixels" renders here and streams the
+#: frame; "cue" gives the sculpture its own looks back and only names them.
+#: "release" hands the pixels over without leaving pixel mode - the button to
+#: reach for when a look needs to come off the sculpture right now.
+#:
+#: Dimmed and inert on a show that is not on a relic link.
+LINK_BUTTONS: List[Tuple[str, Tuple[str, str]]] = [
+    ("pixels", ("link", "pixels")),
+    ("cue", ("link", "cue")),
+    ("release", ("link", "release")),
 ]
 
 #: How often the beat-driven looks fire. "auto" hands each look back its own
@@ -291,6 +303,10 @@ class ViewerApp:
         #: The frame currently on the canvas, so a repaint of it can be skipped.
         self._painted: Optional[Frame] = None
 
+        #: How many lines the relic has sent, so the note beside the link
+        #: buttons is refreshed when it says something and not every pump.
+        self._relic_said = 0
+
         self._fps = 0.0
         self._fps_marker = time.monotonic()
         self._fps_counted = 0
@@ -337,6 +353,7 @@ class ViewerApp:
             self._guard(lambda: self.show.set_state(state), "state")
 
         self._refresh_header()
+        self._refresh_link_buttons()
         self._pump_id = self.root.after(16, self._pump)
 
     # -- window ------------------------------------------------------------
@@ -528,6 +545,34 @@ class ViewerApp:
         self.master_slider.pack(side="left", padx=3)
 
         self.tempo_row.pack(fill="x")
+
+        # -- the relic on the other end of the cable ------------------------
+        # Only meaningful on a show driving one, so the row is packed only when
+        # the config says so - a dead row of buttons on a DMX rig would be
+        # furniture that does nothing.
+        self.link_row = tk.Frame(self.button_panel, bg=PANEL)
+
+        tk.Label(self.link_row, text="relic ", bg=PANEL, fg=TEXT_DIM,
+                 font=("Consolas", 9)).pack(side="left")
+
+        self._link_buttons: Dict[str, tk.Button] = {}
+        for label, command in LINK_BUTTONS:
+            button = tk.Button(
+                self.link_row, text=label, font=("Consolas", 9),
+                bg=BUTTON_BG, fg=BUTTON_FG, activebackground=BUTTON_BG_ACTIVE,
+                activeforeground=BUTTON_FG, relief="flat", padx=8, pady=3,
+                highlightthickness=0, borderwidth=0,
+                command=lambda c=command: self._run_button(c),
+            )
+            button.pack(side="left", padx=3, pady=3)
+            self._link_buttons[command[1]] = button
+
+        self.link_note = tk.Label(self.link_row, text="", bg=PANEL, fg=TEXT_DIM,
+                                  font=("Consolas", 9))
+        self.link_note.pack(side="left", padx=8)
+
+        if self.config.device.type in RELIC_TYPES:
+            self.link_row.pack(fill="x")
 
         # -- the running look's own knobs, in the right pane ----------------
         # Everything on the left is fixed furniture. This panel is not: what it
@@ -756,10 +801,33 @@ class ViewerApp:
             elif kind == "div":
                 self.show.set_beat_division(int(value))
                 self._division = value
+            elif kind == "link":
+                if value == "release":
+                    self.show.release_link()
+                else:
+                    self.show.set_link_mode(value)
 
         self._guard(apply, kind)
         self._refresh_buttons()
         self._refresh_division_buttons()
+        self._refresh_link_buttons()
+
+    def _refresh_link_buttons(self) -> None:
+        """Lights the mode the relic is in, and shows the last thing it said.
+
+        `release` is never lit: it is an action, not a mode - the sculpture goes
+        back to its own look and this end stays in pixel mode, ready to take it
+        again on the next frame.
+        """
+        if self.config.device.type not in RELIC_TYPES:
+            return
+
+        for value, button in self._link_buttons.items():
+            active = (value == self.show.link_mode)
+            button.configure(bg=BUTTON_BG_ACTIVE if active else BUTTON_BG)
+
+        said = self.show.relic_lines[-1] if self.show.relic_lines else ""
+        self.link_note.configure(text=said[:60])
 
     def _refresh_division_buttons(self) -> None:
         """Lights the selected division, and dims them all when nothing running
@@ -961,6 +1029,14 @@ class ViewerApp:
             self._button_signature = signature
             self._refresh_buttons()
             self._refresh_header()
+
+        # A relic says when a takeover starts or lapses, and the note beside the
+        # link buttons is where that belongs - the alternative is watching a
+        # sculpture to find out whether it is still listening.
+        relic_said = len(self.show.relic_lines)
+        if relic_said != self._relic_said:
+            self._relic_said = relic_said
+            self._refresh_link_buttons()
 
         # Same reason, for the knobs: the executable announces a new set on
         # every pattern and state change, and the revision is what says so.

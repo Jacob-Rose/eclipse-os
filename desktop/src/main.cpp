@@ -34,6 +34,12 @@
 
 #include "lib/ecore/hsv.h"
 #include "lib/eio/hsv_strip.h"
+#include "lib/eio/relic.h"
+#include "lib/elink/relic_link.h"
+
+// The relic's own device layer, built for the host so --link-selftest can drive
+// the code the sculpture actually runs. Nothing else here touches it.
+#include "relics/obelisk/obelisk.h"
 
 #include "edmx/beat_clock.h"
 #include "edmx/config.h"
@@ -72,6 +78,8 @@ namespace
             "  eclipse-dmx --list-ports\n"
             "  eclipse-dmx --list-midi\n"
             "  eclipse-dmx --midi-selftest\n"
+            "  eclipse-dmx --link-selftest\n"
+            "  eclipse-dmx --probe-relics\n"
             "  eclipse-dmx --list-patterns\n"
             "  eclipse-dmx --list-palettes\n"
             "  eclipse-dmx --list-profiles\n"
@@ -82,7 +90,7 @@ namespace
             "  --frames <n>        render n frames then exit (0 = run until stopped)\n"
             "  --port <path>       override device.port\n"
             "  --device <type>     override device.type (enttec_pro, enttec_open,\n"
-            "                      console, preview)\n"
+            "                      relic_usb, relic_usb_cue, console, preview)\n"
             "  --pattern <name>    override pattern.name\n"
             "  --state <name>      open on this state, for a state machine pattern\n"
             "  --fps <n>           override device.fps\n"
@@ -119,6 +127,11 @@ namespace
             "  midi free-run <on|off>    keep pulsing when the clock stops\n"
             "  midi monitor <on|off>     print every message arriving, to identify a mapping\n"
             "  midi status               port, tempo, lock\n"
+            "  link pixels               drive the relic's LEDs from here\n"
+            "  link cue                  give them back; the relic runs its own looks\n"
+            "  link release              hand the pixels back now, staying in pixel mode\n"
+            "  link cmd <text>           send a line to the relic's own handleCommand\n"
+            "  link hello                ask the relic what it is\n"
             "  status                    report current state\n"
             "  quit                      shut down, sending one dark frame first\n"
             "\n";
@@ -140,6 +153,488 @@ namespace
             default:   break;
         }
         return "other";
+    }
+
+    /// A LinkTransport with a queue behind it, so the relic's end of the cable
+    /// can be driven with no cable.
+    class LoopbackTransport : public elink::LinkTransport
+    {
+    public:
+        int readByte() override
+        {
+            if (at >= incoming.size())
+            {
+                return -1;
+            }
+            return incoming[at++];
+        }
+
+        void writeLine(const char* text) override { said.emplace_back(text); }
+
+        void feed(const uint8_t* data, size_t length)
+        {
+            incoming.insert(incoming.end(), data, data + length);
+        }
+
+        void feedByte(uint8_t value) { incoming.push_back(value); }
+
+        std::vector<uint8_t> incoming;
+        size_t at{0};
+        std::vector<std::string> said;
+    };
+
+    /// A relic with one strip and a cable going nowhere.
+    ///
+    /// The strip is heap-owned by the RelicIO because that is how a real relic
+    /// holds it, and holding it any other way here would test a different
+    /// object lifetime than the one that ships.
+    struct FakeRelic
+    {
+        explicit FakeRelic(uint16_t pixels)
+        {
+            std::unique_ptr<eio::HSVStrip> owned(new eio::HSVStrip(pixels, 0));
+            strip = owned.get();
+            io.strips.emplace(uint8_t{0}, std::move(owned));
+            link.setTransport(&wire);
+        }
+
+        eio::RelicIO io;
+        eio::HSVStrip* strip{nullptr};
+        LoopbackTransport wire;
+        elink::RelicLink link;
+    };
+
+    /// Drives the relic's end of the link with a synthesised desk and checks
+    /// what lands on the strip. Returns 0 on success.
+    ///
+    /// This is the firmware, running on a laptop. `elink::FrameReader` and
+    /// `elink::RelicLink` are the same translation units the sculpture will
+    /// execute, and `eio::HSVStrip` is the same framebuffer — so the resync, the
+    /// checksum, the takeover and the handback are all tested here before
+    /// anything is flashed. What it cannot cover is the USB stack underneath and
+    /// the timing of a real WS2812 write.
+    ///
+    /// Synthetic time throughout: RelicLink::tick takes its delta rather than
+    /// reading a clock, so a holdover expiring is a number, not a wait.
+    int runLinkSelfTest()
+    {
+        int failures = 0;
+
+        const auto check = [&failures](const char* what, long long got, long long expected) {
+            std::ostringstream line;
+            const bool ok = (got == expected);
+            line << (ok ? "SELFTEST ok   " : "SELFTEST FAIL ") << what
+                 << " got=" << got << " expected=" << expected;
+            emit(line.str());
+            if (!ok)
+            {
+                ++failures;
+            }
+        };
+
+        // A relic with one 8-pixel strip. Small enough to state every expected
+        // byte, which is the point: a 344-pixel check that fails tells you
+        // nothing about where.
+        constexpr uint16_t kPixels = 8;
+
+        const auto buildPixelFrame = [](uint16_t start, uint16_t count,
+                                        uint8_t seed, std::vector<uint8_t>& out) {
+            std::vector<uint8_t> payload(elink::PIXEL_HEADER_SIZE + count * 3u);
+            elink::PixelHeader header;
+            header.strip = 0;
+            header.start = start;
+            header.count = count;
+            elink::writePixelHeader(header, payload.data());
+            for (uint16_t i = 0; i < count * 3u; ++i)
+            {
+                payload[elink::PIXEL_HEADER_SIZE + i] = static_cast<uint8_t>(seed + i);
+            }
+
+            out.assign(elink::HEADER_SIZE + payload.size() + elink::TRAILER_SIZE, 0);
+            const size_t written = elink::writeFrame(elink::FrameType::Pixels,
+                                                     payload.data(),
+                                                     static_cast<uint16_t>(payload.size()),
+                                                     out.data(), out.size());
+            out.resize(written);
+        };
+
+        // ---- a clean pixel frame lands on the strip ------------------------
+        {
+            FakeRelic relic(kPixels);
+
+            std::vector<uint8_t> frame;
+            buildPixelFrame(0, kPixels, 10, frame);
+            relic.wire.feed(frame.data(), frame.size());
+
+            relic.link.tick(0.025f, &relic.io);
+
+            check("pixels: frame accepted", relic.link.getReader().framesAccepted(), 1);
+            check("pixels: none rejected", relic.link.getReader().framesRejected(), 0);
+            check("pixels: link owns the strip", relic.link.ownsPixels() ? 1 : 0, 1);
+
+            const std::vector<uint8_t>& lit = relic.strip->getHostPixels();
+            check("pixels: buffer sized", static_cast<long long>(lit.size()), kPixels * 3);
+
+            int wrong = 0;
+            for (uint16_t i = 0; i < kPixels * 3u; ++i)
+            {
+                if (lit[i] != static_cast<uint8_t>(10 + i))
+                {
+                    ++wrong;
+                }
+            }
+            check("pixels: every byte is what was sent", wrong, 0);
+
+            // The relic's own framebuffer must be untouched: it is what its
+            // patterns read, and it should still hold the look underneath.
+            check("pixels: strip_HSV left alone",
+                  relic.strip->getStripHSV()[0].getValAs8(), 0);
+
+        }
+
+        // ---- garbage in front of a frame is discarded, not fatal ------------
+        {
+            FakeRelic relic(kPixels);
+
+            // The tail of a previous frame, a lone magic byte, a doubled magic
+            // byte - the three shapes a reconnect actually produces.
+            const uint8_t junk[] = {0x00, 0xFF, 0xEC, 0x99, 0xEC, 0xEC, 0x41, 0x42};
+            relic.wire.feed(junk, sizeof(junk));
+
+            std::vector<uint8_t> frame;
+            buildPixelFrame(0, kPixels, 200, frame);
+            relic.wire.feed(frame.data(), frame.size());
+
+            relic.link.tick(0.025f, &relic.io);
+
+            check("resync: frame still accepted", relic.link.getReader().framesAccepted(), 1);
+            check("resync: nothing rejected", relic.link.getReader().framesRejected(), 0);
+            check("resync: first pixel correct", relic.strip->getHostPixels()[0], 200);
+
+        }
+
+        // ---- a corrupted byte is caught by the checksum ---------------------
+        {
+            FakeRelic relic(kPixels);
+
+            std::vector<uint8_t> frame;
+            buildPixelFrame(0, kPixels, 77, frame);
+            frame[elink::HEADER_SIZE + elink::PIXEL_HEADER_SIZE + 2] ^= 0x40;
+            relic.wire.feed(frame.data(), frame.size());
+
+            relic.link.tick(0.025f, &relic.io);
+
+            check("crc: rejected", relic.link.getReader().framesRejected(), 1);
+            check("crc: not accepted", relic.link.getReader().framesAccepted(), 0);
+            check("crc: strip untouched", relic.link.ownsPixels() ? 1 : 0, 0);
+
+        }
+
+        // ---- a bad length does not wedge the reader -------------------------
+        {
+            elink::FrameReader reader;
+            const uint8_t bogus[] = {elink::MAGIC_0, elink::MAGIC_1, 0x01, 0xFF, 0xFF};
+            for (uint8_t byte : bogus)
+            {
+                reader.push(byte);
+            }
+
+            check("length: absurd length rejected", reader.framesRejected(), 1);
+            check("length: reader is idle again", reader.isIdle() ? 1 : 0, 1);
+
+            // And it takes the very next frame.
+            std::vector<uint8_t> frame;
+            buildPixelFrame(0, 2, 1, frame);
+            int accepted = 0;
+            for (uint8_t byte : frame)
+            {
+                if (reader.push(byte))
+                {
+                    ++accepted;
+                }
+            }
+            check("length: recovers immediately", accepted, 1);
+        }
+
+        // ---- the holdover hands the pixels back -----------------------------
+        {
+            FakeRelic relic(kPixels);
+            relic.link.setHoldover(0.5f);
+
+            std::vector<uint8_t> frame;
+            buildPixelFrame(0, kPixels, 5, frame);
+            relic.wire.feed(frame.data(), frame.size());
+            relic.link.tick(0.025f, &relic.io);
+            check("holdover: taken", relic.link.ownsPixels() ? 1 : 0, 1);
+
+            // Just under, still ours.
+            for (int i = 0; i < 18; ++i)
+            {
+                relic.link.tick(0.025f, &relic.io);
+            }
+            check("holdover: held at 0.475s", relic.link.ownsPixels() ? 1 : 0, 1);
+
+            // And over.
+            relic.link.tick(0.025f, &relic.io);
+            relic.link.tick(0.025f, &relic.io);
+            check("holdover: released", relic.link.ownsPixels() ? 1 : 0, 0);
+
+        }
+
+        // ---- Release hands them back at once --------------------------------
+        {
+            FakeRelic relic(kPixels);
+
+            std::vector<uint8_t> frame;
+            buildPixelFrame(0, kPixels, 5, frame);
+            relic.wire.feed(frame.data(), frame.size());
+            relic.link.tick(0.025f, &relic.io);
+
+            uint8_t releaseFrame[elink::HEADER_SIZE + elink::TRAILER_SIZE];
+            const size_t written = elink::writeFrame(elink::FrameType::Release, nullptr, 0,
+                                                     releaseFrame, sizeof(releaseFrame));
+            relic.wire.feed(releaseFrame, written);
+            relic.link.tick(0.025f, &relic.io);
+
+            check("release: given back", relic.link.ownsPixels() ? 1 : 0, 0);
+
+        }
+
+        // ---- commands arrive as text ----------------------------------------
+        {
+            elink::RelicLink link;
+            LoopbackTransport wire;
+            link.setTransport(&wire);
+
+            const std::string text = "state theater";
+            std::vector<uint8_t> frame(elink::HEADER_SIZE + text.size() + elink::TRAILER_SIZE);
+            const size_t written = elink::writeFrame(
+                elink::FrameType::Command,
+                reinterpret_cast<const uint8_t*>(text.data()),
+                static_cast<uint16_t>(text.size()),
+                frame.data(), frame.size());
+            wire.feed(frame.data(), written);
+
+            link.tick(0.025f, nullptr);
+
+            std::string got;
+            check("command: one queued", link.takeCommand(got) ? 1 : 0, 1);
+            check("command: text intact", got == text ? 1 : 0, 1);
+            check("command: queue empty after", link.takeCommand(got) ? 1 : 0, 0);
+        }
+
+        // ---- a human at a serial monitor still works ------------------------
+        {
+            elink::RelicLink link;
+            LoopbackTransport wire;
+            link.setTransport(&wire);
+
+            const char* typed = "switch\n";
+            wire.feed(reinterpret_cast<const uint8_t*>(typed), 7);
+            link.tick(0.025f, nullptr);
+
+            std::string got;
+            check("typed: line became a command", link.takeCommand(got) ? 1 : 0, 1);
+            check("typed: text intact", got == "switch" ? 1 : 0, 1);
+        }
+
+        // ---- a frame the desk sized for a longer relic is clipped ------------
+        {
+            FakeRelic relic(kPixels);
+
+            std::vector<uint8_t> frame;
+            buildPixelFrame(0, kPixels * 2, 1, frame);
+            relic.wire.feed(frame.data(), frame.size());
+            relic.link.tick(0.025f, &relic.io);
+
+            check("clip: frame accepted", relic.link.getReader().framesAccepted(), 1);
+            check("clip: took what fits", static_cast<long long>(relic.strip->getHostPixels().size()),
+                  kPixels * 3);
+            check("clip: first pixel correct", relic.strip->getHostPixels()[0], 1);
+
+        }
+
+        // ---- a frame for a strip this relic does not have -------------------
+        {
+            FakeRelic relic(kPixels);
+
+            std::vector<uint8_t> payload(elink::PIXEL_HEADER_SIZE + 3);
+            elink::PixelHeader header;
+            header.strip = 7;
+            header.start = 0;
+            header.count = 1;
+            elink::writePixelHeader(header, payload.data());
+
+            std::vector<uint8_t> frame(elink::HEADER_SIZE + payload.size() + elink::TRAILER_SIZE);
+            const size_t written = elink::writeFrame(elink::FrameType::Pixels,
+                                                     payload.data(),
+                                                     static_cast<uint16_t>(payload.size()),
+                                                     frame.data(), frame.size());
+            relic.wire.feed(frame.data(), written);
+            relic.link.tick(0.025f, &relic.io);
+
+            check("route: counted as unrouted", relic.link.framesUnrouted(), 1);
+            // Still a takeover: the desk is clearly driving, it is just aimed
+            // wrong, and going dark would hide that.
+            check("route: still a takeover", relic.link.ownsPixels() ? 1 : 0, 1);
+
+        }
+
+        // ---- a byte-at-a-time trickle is the same as a burst -----------------
+        {
+            FakeRelic relic(kPixels);
+
+            std::vector<uint8_t> frame;
+            buildPixelFrame(0, kPixels, 42, frame);
+
+            // One byte per tick, which is what a slow link actually looks like.
+            for (uint8_t byte : frame)
+            {
+                relic.wire.feedByte(byte);
+                relic.link.tick(0.001f, &relic.io);
+            }
+
+            check("trickle: accepted", relic.link.getReader().framesAccepted(), 1);
+            check("trickle: first pixel correct", relic.strip->getHostPixels()[0], 42);
+
+        }
+
+        // ---- the obelisk's own frame size round-trips ------------------------
+        {
+            constexpr uint16_t kObelisk = 344;
+            FakeRelic relic(kObelisk);
+
+            std::vector<uint8_t> frame;
+            buildPixelFrame(0, kObelisk, 3, frame);
+            // 5 header + 5 pixel header + 1032 pixel bytes + 2 crc
+            check("obelisk: frame is 1044 bytes on the wire",
+                  static_cast<long long>(frame.size()),
+                  elink::HEADER_SIZE + elink::PIXEL_HEADER_SIZE + kObelisk * 3 + elink::TRAILER_SIZE);
+
+            relic.wire.feed(frame.data(), frame.size());
+            relic.link.tick(0.025f, &relic.io);
+
+            check("obelisk: accepted", relic.link.getReader().framesAccepted(), 1);
+
+            int wrong = 0;
+            for (uint16_t i = 0; i < kObelisk * 3u; ++i)
+            {
+                if (relic.strip->getHostPixels()[i] != static_cast<uint8_t>(3 + i))
+                {
+                    ++wrong;
+                }
+            }
+            check("obelisk: all 1032 bytes correct", wrong, 0);
+
+        }
+
+        // ---- the sculpture's own main loop ----------------------------------
+        //
+        // Everything above tests the link in isolation. This runs the real
+        // ObeliskCore - its geometry, its state machine, RelicCore::runTick and
+        // the gating inside it - which is the code the Pico will execute, minus
+        // the neopixel driver and the USB stack under it.
+        {
+            obelisk::ObeliskCore core;
+            LoopbackTransport wire;
+            core.getLink().setTransport(&wire);
+            core.getLink().setIdentity("obelisk");
+
+            // Free-running first: its own look, on its own pixels.
+            core.runTick();
+            core.runTick();
+            check("firmware: runs its own look unlinked", core.getLink().ownsPixels() ? 1 : 0, 0);
+
+            // Now the desk takes it.
+            constexpr uint16_t kObelisk = 344;
+            std::vector<uint8_t> frame;
+            buildPixelFrame(0, kObelisk, 90, frame);
+            wire.feed(frame.data(), frame.size());
+            core.runTick();
+
+            check("firmware: desk took the pixels", core.getLink().ownsPixels() ? 1 : 0, 1);
+
+            // Reaching into the relic the way the link does, to read back what
+            // would have gone to the LEDs.
+            const eio::HSVStrip* strip = nullptr;
+            if (core.getIO())
+            {
+                auto found = core.getIO()->strips.find(0);
+                if (found != core.getIO()->strips.end())
+                {
+                    strip = found->second.get();
+                }
+            }
+            check("firmware: strip found", strip != nullptr ? 1 : 0, 1);
+            if (strip)
+            {
+                check("firmware: obelisk is 344 pixels", strip->getLength(), kObelisk);
+
+                int wrong = 0;
+                for (uint16_t i = 0; i < kObelisk * 3u; ++i)
+                {
+                    if (strip->getHostPixels()[i] != static_cast<uint8_t>(90 + i))
+                    {
+                        ++wrong;
+                    }
+                }
+                check("firmware: the desk's frame is what is lit", wrong, 0);
+            }
+
+            // A cue reaches handleCommand even mid-stream.
+            const std::string cue = "state theater";
+            std::vector<uint8_t> cueFrame(elink::HEADER_SIZE + cue.size() + elink::TRAILER_SIZE);
+            const size_t written = elink::writeFrame(
+                elink::FrameType::Command,
+                reinterpret_cast<const uint8_t*>(cue.data()),
+                static_cast<uint16_t>(cue.size()),
+                cueFrame.data(), cueFrame.size());
+            wire.feed(cueFrame.data(), written);
+            core.runTick();
+
+            int acknowledged = 0;
+            for (const std::string& said : wire.said)
+            {
+                if (said == "EOSLINK state theater")
+                {
+                    ++acknowledged;
+                }
+            }
+            check("firmware: cue reached the relic mid-stream", acknowledged, 1);
+
+            // And the handback, asked for rather than timed out - runTick takes
+            // its delta from a real clock, so a holdover here would mean
+            // actually waiting. The timeout path is covered above, in synthetic
+            // time; what this checks is that RelicCore goes back to rendering
+            // its own look once the link lets go.
+            uint8_t releaseFrame[elink::HEADER_SIZE + elink::TRAILER_SIZE];
+            const size_t releaseSize = elink::writeFrame(elink::FrameType::Release, nullptr, 0,
+                                                         releaseFrame, sizeof(releaseFrame));
+            wire.feed(releaseFrame, releaseSize);
+            core.runTick();
+
+            check("firmware: pixels handed back", core.getLink().ownsPixels() ? 1 : 0, 0);
+
+            // The proof it is rendering again: its own look writes through
+            // strip_HSV, which the streamed frames deliberately never touch.
+            core.runTick();
+            core.runTick();
+            if (strip)
+            {
+                int lit = 0;
+                for (const ecore::HSV& colour : const_cast<eio::HSVStrip*>(strip)->getStripHSV())
+                {
+                    if (colour.getValAs8() > 0)
+                    {
+                        ++lit;
+                    }
+                }
+                check("firmware: its own look is running again", lit > 0 ? 1 : 0, 1);
+            }
+        }
+
+        emit(failures == 0 ? "SELFTEST PASS" : "SELFTEST FAILURES " + std::to_string(failures));
+        return failures == 0 ? 0 : 1;
     }
 
     /// Drives the MIDI handling with a synthesised Mixxx stream and checks what
@@ -648,6 +1143,98 @@ namespace
             return;
         }
 
+        if (command == "link")
+        {
+            RelicUsbOutput* relic = show.output ? show.output->asRelicLink() : nullptr;
+            if (!relic)
+            {
+                emit("ERR link needs device.type relic_usb; this show is on "
+                   + show.config.device.type);
+                return;
+            }
+
+            if (words.size() < 2)
+            {
+                emit("ERR link needs pixels, cue, release, hello or cmd");
+                return;
+            }
+
+            std::string error;
+            const std::string& what = words[1];
+
+            if (what == "pixels" || what == "cue")
+            {
+                const bool cue = (what == "cue");
+                relic->setMode(cue ? RelicUsbOutput::Mode::Cue : RelicUsbOutput::Mode::Pixels);
+
+                // Leaving pixel mode means handing the relic its own looks back
+                // now, rather than making it wait out the holdover with a
+                // frozen frame on it.
+                if (cue && !relic->release(error))
+                {
+                    emit("WARN link release: " + error);
+                }
+                emit("OK link " + what);
+                return;
+            }
+
+            if (what == "release")
+            {
+                if (!relic->release(error))
+                {
+                    emit("ERR link " + error);
+                    return;
+                }
+                emit("OK link release");
+                return;
+            }
+
+            if (what == "hello")
+            {
+                if (!relic->sendCommand("hello", error))
+                {
+                    emit("ERR link " + error);
+                    return;
+                }
+                emit("OK link hello");
+                return;
+            }
+
+            if (what == "cmd")
+            {
+                if (words.size() < 3)
+                {
+                    emit("ERR link cmd needs something to send");
+                    return;
+                }
+
+                // Everything after "link cmd", verbatim, because the relic's own
+                // handleCommand parses whatever it likes and we should not be
+                // in the middle of that.
+                const size_t at = line.find("cmd");
+                std::string text = line.substr(at + 3);
+                while (!text.empty() && (text.front() == ' ' || text.front() == '\t'))
+                {
+                    text.erase(text.begin());
+                }
+                while (!text.empty() && (text.back() == '\r' || text.back() == '\n'))
+                {
+                    text.pop_back();
+                }
+
+                if (!relic->sendCommand(text, error))
+                {
+                    emit("ERR link " + error);
+                    return;
+                }
+                emit("OK link cmd " + text);
+                return;
+            }
+
+            emit("ERR link does not know '" + what + "'");
+            return;
+        }
+
         if (command == "pattern")
         {
             if (words.size() < 2)
@@ -696,6 +1283,29 @@ namespace
 
         if (command == "state")
         {
+            // In cue mode the relic is the thing rendering, so a cue is for it
+            // rather than for our own state machine. Forwarded verbatim: the
+            // relic's handleCommand decides whether it knows the name, and this
+            // end has no business guessing at another device's look list.
+            RelicUsbOutput* relic = show.output ? show.output->asRelicLink() : nullptr;
+            if (relic && relic->getMode() == RelicUsbOutput::Mode::Cue)
+            {
+                if (words.size() < 2)
+                {
+                    emit("ERR state needs a name");
+                    return;
+                }
+
+                std::string error;
+                if (!relic->sendCommand(line, error))
+                {
+                    emit("ERR link " + error);
+                    return;
+                }
+                emit("OK state " + words[1] + " (to the relic)");
+                return;
+            }
+
             StateMachinePattern* machine = show.pattern ? show.pattern->asStateMachine() : nullptr;
             if (!machine)
             {
@@ -1204,6 +1814,20 @@ int main(int argc, char** argv)
         {
             return runMidiSelfTest();
         }
+        else if (arg == "--link-selftest")
+        {
+            return runLinkSelfTest();
+        }
+        else if (arg == "--probe-relics")
+        {
+            const std::vector<RelicProbe> found = probeRelicPorts(115200);
+            for (const RelicProbe& relic : found)
+            {
+                emit("RELIC " + relic.port + "\t" + relic.identity);
+            }
+            emit("OK " + std::to_string(found.size()) + " relics");
+            return found.empty() ? 1 : 0;
+        }
         else if (arg == "--list-patterns")
         {
             for (const std::string& name : patternNames())
@@ -1331,11 +1955,25 @@ int main(int argc, char** argv)
     std::string port = show.config.device.port;
     if (port == "auto")
     {
-        port = autoDetectPort();
+        const bool isRelic = show.config.device.type == "relic_usb"
+                          || show.config.device.type == "relic_usb_cue";
+
+        // A relic is found by asking, not by guessing at a port name: on this
+        // machine the DMX widget and a Pico are both "COMn" with a description
+        // that names neither, and picking the widget would mean a show driving
+        // something that ignores it. See probeRelicPorts.
+        port = isRelic ? autoDetectRelicPort(show.config.device.baud) : autoDetectPort();
+
         const bool needsWire = show.config.device.type != "console"
                             && show.config.device.type != "preview"
                             && show.config.device.type != "none"
                             && show.config.device.type != "null";
+        if (port.empty() && isRelic)
+        {
+            logLine("error: device.port is \"auto\" but no relic answered on any port");
+            emit("ERR no relic found");
+            return 1;
+        }
         if (port.empty() && needsWire)
         {
             logLine("error: device.port is \"auto\" but no serial port was found");
@@ -1579,6 +2217,18 @@ int main(int argc, char** argv)
             emit("ERR output " + error);
             exitCode = 1;
             break;
+        }
+
+        // What the relic has to say. It answers a Hello by naming its strips and
+        // their lengths, and it says so when a takeover starts or lapses - all
+        // of which is worth having in the log of a show rather than only in a
+        // serial monitor nobody has open.
+        if (RelicUsbOutput* relic = show.output->asRelicLink())
+        {
+            for (const std::string& said : relic->drainRelicLines())
+            {
+                emit("RELIC " + said);
+            }
         }
 
         // Whatever the MIDI monitor caught, drained here rather than emitted

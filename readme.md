@@ -52,6 +52,12 @@ simple wrapper layers for:
 ### esm
 a simple generic state machine. additional layer for hsv blending between states.
 
+### elink
+the wire between a desktop and a relic. one frame format, compiled into both
+ends, so a laptop can stream a relic's pixels for a show or just name the look
+it should run - and the relic takes its own pixels back the moment the stream
+stops. see [desktop/readme.md](desktop/readme.md#over-usb).
+
 ### ewifi (experimental)
 easy to understand wifi manager. easy way to hide secrets.
 
@@ -106,13 +112,33 @@ You need the [arduino-cli](https://arduino.github.io/arduino-cli/), the RP2040 c
 
    (Adafruit GFX + BusIO come along as dependencies.)
 
-3. Create your secrets file from the template (compile fails without it):
+3. Create your secrets file from the template — only needed for a relic that
+   talks to Home Assistant (see **Which relic** below); the obelisk builds
+   without one:
 
    ```sh
    cp secrets.h.example secrets.h
    ```
 
 4. Apply the library patches below (see **Library Patches**) — currently still required.
+
+#### Which relic
+
+A board is flashed for exactly one sculpture, and one line at the top of
+`eclipse-os.ino` says which:
+
+```cpp
+#define RELIC RELIC_OBELISK      // or RELIC_WHITEBOARD
+```
+
+Everything else follows from it. The obelisk has no network and needs no
+`secrets.h`; the whiteboard cannot work without both.
+
+`USE_RELIC_LINK`, just below it, is the desk's cable — see
+[desktop/readme.md](desktop/readme.md#over-usb). Leave it on: a laptop can then
+take the sculpture's pixels for a show and hand them back, and typing commands
+into a serial monitor still works exactly as before. It is deliberately not
+gated on `DEPLOYMENT`, unlike the raw serial input it replaced.
 
 #### Build / upload / monitor
 

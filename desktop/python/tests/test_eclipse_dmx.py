@@ -33,6 +33,7 @@ from eclipse_dmx.controller import ShowController, ShowError, _parse_frame  # no
 RIG = DESKTOP / "config" / "uking_par36_x10.json"
 SHOW = DESKTOP / "config" / "mythos26.json"
 OBELISK = DESKTOP / "config" / "obelisk.json"
+OBELISK_USB = DESKTOP / "config" / "obelisk_usb.json"
 
 #: The sculpture's own numbers, from src/relics/obelisk/state_obelisk.h and the
 #: eight GenerateAxisRow calls in obelisk.cpp. The config has to agree with
@@ -286,6 +287,123 @@ class TheObelisk(unittest.TestCase):
     def test_a_bad_coord_space_is_rejected(self):
         with self.assertRaises(ConfigError):
             Config.from_dict({"coord_space": "sideways", "fixtures": []})
+
+
+class TheObeliskOnAWire(unittest.TestCase):
+    """The same sculpture, patched to its own USB cable instead of the viewer."""
+
+    def test_loads_clean(self):
+        config = Config.load(OBELISK_USB)
+        self.assertEqual(config.validate(), [])
+        self.assertEqual(config.device.type, "relic_usb")
+
+    def test_the_patch_is_the_same_sculpture(self):
+        """Two files describing one object. They must not drift."""
+        wired = Config.load(OBELISK_USB)
+        preview = Config.load(OBELISK)
+
+        self.assertEqual(
+            [(f.name, f.start_channel, f.position) for f in wired.fixtures],
+            [(f.name, f.start_channel, f.position) for f in preview.fixtures],
+        )
+        self.assertEqual(wired.coord_space, preview.coord_space)
+
+    def test_a_relic_is_not_bound_by_a_universe(self):
+        config = Config.load(OBELISK_USB)
+        self.assertGreater(config.highest_channel(), 512)
+        self.assertEqual(config.validate(), [])
+
+    def test_cue_mode_is_a_device_type(self):
+        config = Config.load(OBELISK_USB)
+        config.device.type = "relic_usb_cue"
+        self.assertEqual(config.validate(), [])
+
+    def test_frame_rate_stays_under_what_the_relic_can_draw(self):
+        """344 WS2812s are 10.3ms of show() and the relic's loop sleeps 30ms.
+
+        Sending faster does not draw faster; the extra frames are read and
+        dropped a tick later. This is a note-to-self with teeth.
+        """
+        self.assertLessEqual(Config.load(OBELISK_USB).device.fps, 30.0)
+
+
+class TheLinkProtocol(unittest.TestCase):
+    """The wire format and the relic's end of it, exercised by the executable.
+
+    `--link-selftest` drives elink and a real ObeliskCore with no hardware:
+    resync, checksums, the takeover and the handback. It is the firmware's own
+    code, so this is the closest thing to testing the sculpture that exists
+    without flashing one.
+    """
+
+    def test_selftest_passes(self):
+        import subprocess
+
+        executable = executable_or_skip()
+        result = subprocess.run(
+            [str(executable), "--link-selftest"],
+            capture_output=True, text=True, timeout=120,
+        )
+
+        failures = [line for line in result.stdout.splitlines() if "FAIL" in line]
+        self.assertEqual(failures, [], "\n".join(failures))
+        self.assertIn("SELFTEST PASS", result.stdout)
+        self.assertEqual(result.returncode, 0)
+
+    def test_selftest_covers_the_obelisks_own_frame(self):
+        """A 344-pixel frame is the thing that will actually be sent."""
+        import subprocess
+
+        executable = executable_or_skip()
+        result = subprocess.run(
+            [str(executable), "--link-selftest"],
+            capture_output=True, text=True, timeout=120,
+        )
+
+        checks = [line for line in result.stdout.splitlines() if line.startswith("SELFTEST ok")]
+        self.assertTrue(any("obelisk: all 1032 bytes correct" in line for line in checks))
+        self.assertTrue(any("firmware: desk took the pixels" in line for line in checks))
+        self.assertTrue(any("firmware: pixels handed back" in line for line in checks))
+
+    def test_link_commands_are_refused_off_a_link(self):
+        """A DMX show has nothing to hand over, and should say so rather than
+        pretend."""
+        show = ShowController(RIG, dry_run=True, on_frame=lambda f: None)
+        try:
+            time.sleep(0.4)
+            with self.assertRaises(ShowError):
+                show.set_link_mode("cue")
+            # And the show survives being asked.
+            self.assertTrue(show.is_running)
+        finally:
+            show.stop()
+
+    def test_a_bad_link_mode_is_caught_before_the_wire(self):
+        show = ShowController(RIG, dry_run=True, on_frame=lambda f: None)
+        try:
+            with self.assertRaises(ShowError):
+                show.set_link_mode("sideways")
+        finally:
+            show.stop()
+
+    def test_probe_does_not_claim_a_dmx_widget(self):
+        """The whole point of probing rather than guessing at port names.
+
+        Passes trivially with nothing attached; the case it guards is a machine
+        with a widget on it, which is this one.
+        """
+        import subprocess
+
+        executable = executable_or_skip()
+        result = subprocess.run(
+            [str(executable), "--probe-relics"],
+            capture_output=True, text=True, timeout=120,
+        )
+
+        for line in result.stdout.splitlines():
+            if line.startswith("RELIC "):
+                # Anything listed answered a Hello by name, so it really is one.
+                self.assertIn("\t", line)
 
 
 class PositionStep(unittest.TestCase):
@@ -1258,6 +1376,11 @@ class ViewerOnTheObelisk(unittest.TestCase):
         self.app._paint(painted)
         self.assertIs(self.app._painted, painted)
 
+    def test_the_link_row_is_only_there_for_a_relic(self):
+        """A dead row of buttons on a DMX rig is furniture that does nothing."""
+        self.settle(0.8)
+        self.assertFalse(self.app.link_row.winfo_ismapped())
+
     def test_runs_are_labelled_rather_than_pixels(self):
         """Eight legends, not 344."""
         self.settle(0.8)
@@ -1270,6 +1393,59 @@ class ViewerOnTheObelisk(unittest.TestCase):
             sorted(texts),
             ["a_down", "a_up", "b_down", "b_up", "c_down", "c_up", "d_down", "d_up"],
         )
+
+
+class ViewerOnARelic(unittest.TestCase):
+    """The relic row, on a config that names one.
+
+    Dry-run, so no cable is opened and the executable is on `console` - the row
+    is drawn from the *config*, which is what a desk needs to see before it
+    plugs anything in.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        executable_or_skip()
+        try:
+            import tkinter
+        except ImportError as error:
+            raise unittest.SkipTest(f"no tkinter: {error}")
+        try:
+            tkinter.Tk().destroy()
+        except Exception as error:
+            raise unittest.SkipTest(f"no display: {error}")
+
+    def setUp(self):
+        from eclipse_dmx.viewer import ViewerApp
+
+        self.app = ViewerApp(OBELISK_USB, pattern="obelisk_seasons")
+
+    def tearDown(self):
+        self.app._quit()
+
+    def settle(self, seconds=1.0):
+        end = time.monotonic() + seconds
+        while time.monotonic() < end:
+            self.app.root.update()
+            time.sleep(0.02)
+
+    def test_the_row_is_shown(self):
+        self.settle(0.8)
+        self.assertTrue(self.app.link_row.winfo_ismapped())
+        self.assertEqual(sorted(self.app._link_buttons), ["cue", "pixels", "release"])
+
+    def test_pixel_mode_is_lit_to_start(self):
+        from eclipse_dmx.viewer import BUTTON_BG_ACTIVE
+
+        self.settle(0.8)
+        self.assertEqual(self.app._link_buttons["pixels"]["bg"], BUTTON_BG_ACTIVE)
+
+    def test_release_is_never_lit(self):
+        """It is an action, not a mode."""
+        from eclipse_dmx.viewer import BUTTON_BG
+
+        self.settle(0.8)
+        self.assertEqual(self.app._link_buttons["release"]["bg"], BUTTON_BG)
 
 
 class ViewerOnTheShow(unittest.TestCase):
