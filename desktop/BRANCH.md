@@ -657,6 +657,7 @@ to a garbage collector), python owns configuration and decisions.
 | `e9d96d0` | per-look tunable properties, and the viewer's split |
 | `ab92d49` | the obelisk as a device, and the USB link designed |
 | `cbfd923` | `elink`: a desk drives a relic over USB, in cue and pixel modes |
+| `dcac323` | it runs on the obelisk; reflashing needs no button; C++23 fallout |
 
 ### library changes (`src/lib/`)
 
