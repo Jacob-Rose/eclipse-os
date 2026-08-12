@@ -5,7 +5,7 @@
 
 #pragma once
 
-#include <array>
+#include <algorithm>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -21,18 +21,37 @@ namespace edmx
 {
     static constexpr int DMX_CHANNEL_COUNT = 512;
 
-    /// A single DMX512 universe. Channels are addressed the way the fixture
-    /// manuals do, 1..512, and stored 0-based behind that.
+    /// The frame buffer: every channel the rig owns, addressed the way fixture
+    /// manuals number them, 1..N, and stored 0-based behind that.
+    ///
+    /// N is the *rig's*, not DMX's. On a DMX universe it is 512 and nothing
+    /// ever asks for more. But the same buffer is what a relic's LED strip is
+    /// rendered into, and the obelisk is 344 pixels at three slots each — 1032.
+    /// A pixel rig is not sending DMX512 and is not bound by its slot count, so
+    /// the limit lives on the outputs that actually speak DMX (they clamp at
+    /// DMX_CHANNEL_COUNT) rather than on the buffer they read from.
     class DmxUniverse
     {
     public:
-        DmxUniverse() { clear(); }
+        DmxUniverse() : DmxUniverse(DMX_CHANNEL_COUNT) {}
 
-        void clear() { channels.fill(0); }
+        explicit DmxUniverse(int inChannelCount)
+        {
+            resize(inChannelCount);
+        }
+
+        /// Sizes the buffer to a rig. Clamped to at least one DMX universe, so
+        /// a rig smaller than 512 still hands a full universe to a DMX widget.
+        void resize(int inChannelCount)
+        {
+            channels.assign(static_cast<size_t>(std::max(inChannelCount, DMX_CHANNEL_COUNT)), 0);
+        }
+
+        void clear() { std::fill(channels.begin(), channels.end(), uint8_t{0}); }
 
         void setChannel(int channel1Based, uint8_t value)
         {
-            if (channel1Based < 1 || channel1Based > DMX_CHANNEL_COUNT)
+            if (channel1Based < 1 || static_cast<size_t>(channel1Based) > channels.size())
             {
                 return;
             }
@@ -41,7 +60,7 @@ namespace edmx
 
         uint8_t getChannel(int channel1Based) const
         {
-            if (channel1Based < 1 || channel1Based > DMX_CHANNEL_COUNT)
+            if (channel1Based < 1 || static_cast<size_t>(channel1Based) > channels.size())
             {
                 return 0;
             }
@@ -52,7 +71,7 @@ namespace edmx
         size_t size() const { return channels.size(); }
 
     private:
-        std::array<uint8_t, DMX_CHANNEL_COUNT> channels{};
+        std::vector<uint8_t> channels;
     };
 
 
@@ -173,8 +192,33 @@ namespace edmx
     };
 
 
+    /// No wire at all: renders, and drops the frame on the floor.
+    ///
+    /// This is the honest output for a rig whose destination is the interface
+    /// rather than hardware — the obelisk, until the USB link to it exists.
+    /// `console` would do the job but prints a line per frame to stderr, which
+    /// buries the log of a show you are actually watching in the viewer; and
+    /// unlike `console` this does not pretend the rig is a DMX one.
+    class PreviewOutput : public DmxOutput
+    {
+    public:
+        explicit PreviewOutput(std::string inWhat) : what(std::move(inWhat)) {}
+
+        bool open(std::string& outError) override;
+        void close() override;
+        bool isOpen() const override;
+        bool sendFrame(const DmxUniverse& universe, std::string& outError) override;
+        std::string describe() const override;
+
+    private:
+        std::string what;
+        bool opened{false};
+    };
+
+
     /// Builds the output named by `type` ("enttec_pro", "enttec_open",
-    /// "console"). Returns nullptr and fills outError on an unknown type.
+    /// "console", "preview"). Returns nullptr and fills outError on an unknown
+    /// type.
     std::unique_ptr<DmxOutput> makeDmxOutput(const std::string& type,
                                              const std::string& port,
                                              int baud,

@@ -324,7 +324,8 @@ def build_parser() -> argparse.ArgumentParser:
                           help="address stride, when not using --profile")
     generate.add_argument("--order", default="rgb",
                           help="channel order, when not using --profile")
-    generate.add_argument("--device", default="enttec_pro", help="enttec_pro, enttec_open or console")
+    generate.add_argument("--device", default="enttec_pro",
+                          help="enttec_pro, enttec_open, console or preview")
     generate.add_argument("--port", default="auto")
     generate.add_argument("--pattern", default="palette_wave", choices=PATTERN_NAMES)
     generate.add_argument("--output", "-o", default="-", help="output path, or - for stdout")

@@ -145,6 +145,17 @@ BUTTON_FG = "#c8d0d8"
 GLOW_RINGS = 8
 GLOW_EXTENT = 2.6  # outermost ring, in multiples of the fixture radius
 
+#: Past this many nodes the rig is drawn as bare pixels: one dot each, no glow,
+#: no per-node labels.
+#:
+#: Not a style choice. A glow is nine canvas items, and tk recolours items one
+#: at a time from python - so a 344-pixel relic would be 3096 itemconfig calls
+#: per repaint, which does not fit in a frame and drags the whole window down.
+#: It is also the wrong picture: glows exist to suggest beams from fixtures
+#: that light a room, and a strip is a strip. You want to read the shape of the
+#: thing, and at this density the dots make the shape on their own.
+DENSE_ABOVE = 64
+
 
 def _blend(color: RGB, background: RGB, alpha: float) -> str:
     """`color` over `background` at `alpha`, as a tk hex string."""
@@ -152,6 +163,16 @@ def _blend(color: RGB, background: RGB, alpha: float) -> str:
         max(0, min(255, int(round(c * alpha + b * (1.0 - alpha)))))
         for c, b in zip(color, background)
     )
+
+
+def _run_name(name: str) -> str:
+    """`a_up_17` -> `a_up`: the run a node belongs to.
+
+    Bulk patching appends `_1`, `_2`, ... to a bank's name, so dropping that
+    suffix recovers the name the config actually wrote.
+    """
+    head, sep, tail = name.rpartition("_")
+    return head if sep and tail.isdigit() else name
 
 
 @dataclass
@@ -266,6 +287,9 @@ class ViewerApp:
         self._lock = threading.Lock()
         self._latest: Optional[Frame] = None
         self._frames_seen = 0
+
+        #: The frame currently on the canvas, so a repaint of it can be skipped.
+        self._painted: Optional[Frame] = None
 
         self._fps = 0.0
         self._fps_marker = time.monotonic()
@@ -782,6 +806,13 @@ class ViewerApp:
             for place in self.placements
         ]
 
+        # Checked before the closest-pair scan below, which is quadratic and
+        # would be measuring a gap the dense path does not use.
+        if len(self.placements) > DENSE_ABOVE:
+            self._build_dense_items(points)
+            self._paint(self._current_frame(), force=True)
+            return
+
         # Size the fixtures to the gap between the closest pair, so a dense rig
         # does not draw as one smear and a sparse one does not draw as
         # pinpricks. The budget is the *glow*, not the disc: neighbouring beams
@@ -847,7 +878,49 @@ class ViewerApp:
 
         # Repaint immediately so a resize does not blank the rig until the next
         # frame arrives - which, if the show has ended, is never.
-        self._paint(self._current_frame())
+        self._paint(self._current_frame(), force=True)
+
+    def _build_dense_items(self, points: List[Tuple[float, float]]) -> None:
+        """One dot per node, for a rig too dense to draw as beams.
+
+        Labels go on the *run* rather than the node: 344 names is not a legend,
+        it is a smear. A run is a group of consecutive nodes sharing a name
+        before the index the patcher appended - which on the obelisk is exactly
+        one strip up one side, the unit you actually want to pick out.
+        """
+        # Dots want to nearly touch, so the strip reads as a strip. The vertical
+        # gap is the tight one: eight columns of 43 in a landscape canvas.
+        gaps = [
+            ((ax - bx) ** 2 + (ay - by) ** 2) ** 0.5
+            for (ax, ay), (bx, by) in zip(points, points[1:])
+            if (ax - bx) ** 2 + (ay - by) ** 2 > 0.0
+        ]
+        radius = max(min((min(gaps) if gaps else 6.0) * 0.55, 9.0), 1.5)
+
+        for (cx, cy) in points:
+            core = self.canvas.create_oval(
+                cx - radius,
+                cy - radius,
+                cx + radius,
+                cy + radius,
+                outline="",
+                fill="#%02x%02x%02x" % BACKGROUND,
+            )
+            self._items.append({"rings": (), "core": core})
+
+        runs: Dict[str, List[float]] = {}
+        for place, (cx, _) in zip(self.placements, points):
+            runs.setdefault(_run_name(place.name), []).append(cx)
+
+        label_y = max(y for _, y in points) + radius + 14
+        for name, xs in runs.items():
+            self.canvas.create_text(
+                sum(xs) / len(xs),
+                label_y,
+                text=name,
+                fill=TEXT_DIM,
+                font=("Consolas", 8),
+            )
 
     # -- the show ----------------------------------------------------------
 
@@ -905,7 +978,17 @@ class ViewerApp:
 
         self._pump_id = self.root.after(16, self._pump)
 
-    def _paint(self, frame: Optional[Frame]) -> None:
+    def _paint(self, frame: Optional[Frame], force: bool = False) -> None:
+        # Repainting the frame already on screen costs one itemconfig per item
+        # and buys nothing. It is free to skip on a ten-par rig and it is the
+        # difference between smooth and not on a 344-pixel one, where the pump
+        # runs at 60Hz over a 30fps frame stream and half the passes are
+        # redundant by construction. `force` is for a resize, where the items
+        # are new and the frame is not.
+        if not force and frame is self._painted:
+            return
+        self._painted = frame
+
         for index, item in enumerate(self._items):
             color: RGB = (0, 0, 0)
             if frame is not None and index < len(frame):

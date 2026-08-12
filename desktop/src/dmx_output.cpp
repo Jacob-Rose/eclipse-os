@@ -186,7 +186,10 @@ float EnttecOpenOutput::maxFrameRate() const
 // ============================================================================
 
 ConsoleOutput::ConsoleOutput(int inChannelsShown)
-    : channelsShown(std::max(0, std::min(inChannelsShown, DMX_CHANNEL_COUNT)))
+    // Not capped at DMX_CHANNEL_COUNT: a pixel rig's buffer is longer than a
+    // universe, and asking to see channel 900 of one is a reasonable thing to
+    // do. Past the end of the buffer getChannel reads 0, which is the truth.
+    : channelsShown(std::max(0, inChannelsShown))
 {
 }
 
@@ -227,6 +230,39 @@ std::string ConsoleOutput::describe() const
 }
 
 // ============================================================================
+// Preview
+// ============================================================================
+
+bool PreviewOutput::open(std::string& outError)
+{
+    (void)outError;
+    opened = true;
+    return true;
+}
+
+void PreviewOutput::close()
+{
+    opened = false;
+}
+
+bool PreviewOutput::isOpen() const
+{
+    return opened;
+}
+
+bool PreviewOutput::sendFrame(const DmxUniverse& universe, std::string& outError)
+{
+    (void)universe;
+    (void)outError;
+    return true;
+}
+
+std::string PreviewOutput::describe() const
+{
+    return "preview (nothing on a wire; " + what + ")";
+}
+
+// ============================================================================
 // Factory
 // ============================================================================
 
@@ -239,6 +275,10 @@ std::unique_ptr<DmxOutput> edmx::makeDmxOutput(const std::string& type,
     if (type == "console" || type == "none" || type == "null")
     {
         return std::unique_ptr<DmxOutput>(new ConsoleOutput(consoleChannels));
+    }
+    if (type == "preview")
+    {
+        return std::unique_ptr<DmxOutput>(new PreviewOutput("watch it with --emit-frames"));
     }
     if (type == "enttec_pro")
     {
@@ -259,7 +299,8 @@ std::unique_ptr<DmxOutput> edmx::makeDmxOutput(const std::string& type,
         return std::unique_ptr<DmxOutput>(new EnttecOpenOutput(port));
     }
 
-    outError = "unknown device type '" + type + "' (expected enttec_pro, enttec_open or console)";
+    outError = "unknown device type '" + type
+             + "' (expected enttec_pro, enttec_open, console or preview)";
     return nullptr;
 }
 

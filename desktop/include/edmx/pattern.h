@@ -70,8 +70,24 @@ namespace edmx
         /// Position of each fixture along the rig, 0..1, index-aligned.
         std::vector<float> positions;
 
+        /// Where each node actually is, in the pattern's own coordinate space,
+        /// when the rig knows. Empty means "derive it from `positions` and
+        /// `coords`", which is what every DMX rig does.
+        ///
+        /// The difference matters for a rig that is not a line. A truss of ten
+        /// pars is one-dimensional and a single 0..1 position describes it
+        /// completely; the obelisk is not. Its 344 pixels are eight vertical
+        /// runs around four sides, and the whole reason `obelisk_seasons` puts
+        /// a different palette on each side is that it reads x as *which side*
+        /// and y as *how far up*. Run that through one scalar and every side
+        /// gets the same colour, which looks plausible and is wrong.
+        ///
+        /// So a rig that states real coordinates hands them over untouched —
+        /// see Config::coordSpace.
+        std::vector<ecore::Coordinate> nodeCoords;
+
         /// Resolved for the running pattern: its own default frame, with any
-        /// config override applied on top.
+        /// config override applied on top. Unused when nodeCoords is set.
         CoordFrame coords;
     };
 

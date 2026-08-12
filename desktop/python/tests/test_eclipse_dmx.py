@@ -32,6 +32,14 @@ from eclipse_dmx.controller import ShowController, ShowError, _parse_frame  # no
 
 RIG = DESKTOP / "config" / "uking_par36_x10.json"
 SHOW = DESKTOP / "config" / "mythos26.json"
+OBELISK = DESKTOP / "config" / "obelisk.json"
+
+#: The sculpture's own numbers, from src/relics/obelisk/state_obelisk.h and the
+#: eight GenerateAxisRow calls in obelisk.cpp. The config has to agree with
+#: these or a look tuned on the desk is tuned on the wrong shape.
+OBELISK_SIDE_LENGTH = 43
+OBELISK_STRIPS = 8
+OBELISK_PIXELS = OBELISK_SIDE_LENGTH * OBELISK_STRIPS
 
 
 def executable_or_skip():
@@ -211,6 +219,108 @@ class CoordSpans(unittest.TestCase):
             config.validate()
 
 
+class TheObelisk(unittest.TestCase):
+    """The sculpture as a device this desk can patch patterns for.
+
+    Not a DMX rig: 344 pixels at three channels each is 1032, twice a universe,
+    and legal exactly because nothing is putting it on a DMX wire.
+    """
+
+    def test_loads_clean(self):
+        config = Config.load(OBELISK)
+        self.assertEqual(config.validate(), [])
+        self.assertEqual(len(config.fixtures), OBELISK_PIXELS)
+
+    def test_pixels_are_consecutive_with_no_gaps(self):
+        config = Config.load(OBELISK)
+        self.assertEqual(
+            [f.start_channel for f in config.fixtures],
+            [1 + index * 3 for index in range(OBELISK_PIXELS)],
+        )
+        self.assertEqual(config.highest_channel(), OBELISK_PIXELS * 3)
+
+    def test_reaching_past_a_universe_is_not_a_warning_here(self):
+        """The rig is the buffer. Only a DMX wire has 512 slots."""
+        config = Config.load(OBELISK)
+        self.assertGreater(config.highest_channel(), 512)
+        self.assertEqual(config.validate(), [])
+
+    def test_the_same_patch_on_a_dmx_wire_does_warn(self):
+        """And the moment it is one, the overflow is real again."""
+        config = Config.load(OBELISK)
+        config.device.type = "enttec_open"
+        with self.assertRaises(ConfigError):
+            config.validate()
+
+    def test_coordinates_are_the_sculptures_own(self):
+        """x is which strip, y is how far up - the space the looks were tuned in.
+
+        These are the coordinates ObeliskIO::init builds on the sculpture. The
+        down strips running 43..1 against the up strips' 0..42 is the firmware's
+        own off-by-one, reproduced on purpose.
+        """
+        config = Config.load(OBELISK)
+        self.assertEqual(config.coord_space, "literal")
+
+        positions = [f.position for f in config.fixtures]
+        for strip in range(OBELISK_STRIPS):
+            run = positions[strip * OBELISK_SIDE_LENGTH:(strip + 1) * OBELISK_SIDE_LENGTH]
+            self.assertTrue(all(point[0] == float(strip) for point in run))
+
+            if strip % 2 == 0:
+                self.assertEqual([point[1] for point in run],
+                                 [float(y) for y in range(OBELISK_SIDE_LENGTH)])
+            else:
+                self.assertEqual([point[1] for point in run],
+                                 [float(OBELISK_SIDE_LENGTH - y) for y in range(OBELISK_SIDE_LENGTH)])
+
+    def test_literal_positions_survive_a_round_trip(self):
+        """Unlike addressing, this is not resolved away on load."""
+        again = Config.from_dict(Config.load(OBELISK).to_dict())
+        self.assertEqual(again.coord_space, "literal")
+        self.assertEqual(
+            [f.position for f in again.fixtures],
+            [f.position for f in Config.load(OBELISK).fixtures],
+        )
+
+    def test_a_bad_coord_space_is_rejected(self):
+        with self.assertRaises(ConfigError):
+            Config.from_dict({"coord_space": "sideways", "fixtures": []})
+
+
+class PositionStep(unittest.TestCase):
+    """One entry describing a run rather than a point."""
+
+    def test_a_bank_ramps_from_its_stated_position(self):
+        config = Config.from_dict({
+            "fixtures": [
+                {"profile": "rgb3", "name": "run", "address": 1, "count": 4,
+                 "position": [2.0, 10.0], "position_step": [0.0, -1.0]}
+            ],
+        })
+        self.assertEqual(
+            [f.position for f in config.fixtures],
+            [[2.0, 10.0], [2.0, 9.0], [2.0, 8.0], [2.0, 7.0]],
+        )
+
+    def test_without_a_step_the_whole_bank_stays_put(self):
+        """The behaviour that was there before, unchanged."""
+        config = Config.from_dict({
+            "fixtures": [
+                {"profile": "rgb3", "name": "run", "address": 1, "count": 3,
+                 "position": [0.5, 0.25]}
+            ],
+        })
+        self.assertEqual([f.position for f in config.fixtures], [[0.5, 0.25]] * 3)
+
+    def test_without_a_position_a_bank_still_spreads_evenly(self):
+        config = Config.from_dict({
+            "fixtures": [{"profile": "rgb3", "name": "run", "address": 1, "count": 3}],
+        })
+        self.assertEqual([f.position for f in config.fixtures],
+                         [[0.0, 0.0], [0.5, 0.0], [1.0, 0.0]])
+
+
 class Layout(unittest.TestCase):
     """The viewer's picture is the config's shape, not a hardcoded rig."""
 
@@ -361,6 +471,83 @@ class FrameStream(unittest.TestCase):
             show.stop()
 
         self.assertAlmostEqual(measured, 20.0, delta=20.0 * 0.15)
+
+
+class ObeliskOnTheDesk(unittest.TestCase):
+    """The sculpture's own looks, rendered on the sculpture's own shape."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.executable = executable_or_skip()
+
+    def _last_frame(self, pattern):
+        """One settled frame of `pattern`, as 344 (r, g, b)."""
+        frames = []
+        show = ShowController(OBELISK, dry_run=True, on_frame=frames.append, emit_rate=20.0)
+        try:
+            show.set_pattern(pattern)
+            time.sleep(1.2)
+        finally:
+            show.stop()
+
+        self.assertTrue(frames, "no frames arrived")
+        return frames[-1]
+
+    def test_preview_runs_with_no_widget_attached(self):
+        """Not --dry-run: the config's own output, on a machine with no wire.
+
+        "auto" with nothing plugged in is a startup error for a DMX rig, and
+        must not be one for a rig that was never going to touch a wire.
+        """
+        frames = []
+        show = ShowController(OBELISK, dry_run=False, on_frame=frames.append)
+        try:
+            time.sleep(1.0)
+            self.assertTrue(show.is_running)
+        finally:
+            show.stop()
+
+        self.assertTrue(frames)
+
+    def test_the_whole_strip_reaches_the_frame(self):
+        """Including the 173 pixels that sit past channel 512."""
+        frame = self._last_frame("obelisk_seasons")
+        self.assertEqual(len(frame), OBELISK_PIXELS)
+        self.assertTrue(any(colour != (0, 0, 0) for colour in frame[171:]))
+
+    def test_the_patch_matches_what_python_resolved(self):
+        """Both sides parse this file, so they can disagree. Catch it."""
+        import subprocess
+
+        result = subprocess.run(
+            [str(self.executable), "--config", str(OBELISK), "--show-patch"],
+            capture_output=True, text=True, timeout=60,
+        )
+        stated = [line.split() for line in result.stdout.splitlines() if line.startswith("PATCH ")]
+        self.assertEqual(len(stated), OBELISK_PIXELS)
+
+        config = Config.load(OBELISK)
+        for fields, fixture in zip(stated, config.fixtures):
+            name, red = fields[1], int(fields[2].removeprefix("r="))
+            self.assertEqual(name, fixture.name)
+            self.assertEqual(red, fixture.start_channel + fixture.offsets()[0])
+
+    def test_each_side_gets_its_own_season(self):
+        """The reason the coordinates have to be literal.
+
+        obelisk_seasons picks a palette from a node's x, which is which strip it
+        is on. Collapse the rig to a single 0..1 position and every side gets
+        the same colour - which looks fine, and is the wrong picture entirely.
+        """
+        frame = self._last_frame("obelisk_seasons")
+        sides = [frame[side * 2 * OBELISK_SIDE_LENGTH + 20] for side in range(4)]
+        self.assertEqual(len(set(sides)), 4, f"sides are not distinct: {sides}")
+
+    def test_a_strip_is_not_flat(self):
+        """And the reason y has to span 43 rather than 0..1: the noise field."""
+        frame = self._last_frame("obelisk_seasons")
+        run = frame[:OBELISK_SIDE_LENGTH]
+        self.assertGreater(len(set(run)), 1)
 
 
 class JacketStateMachine(unittest.TestCase):
@@ -996,6 +1183,93 @@ class ViewerWindow(unittest.TestCase):
         self.settle(0.4)
         self.assertNotEqual(self.app.current_pattern, before)
         self.assertEqual(self.app._status, "")
+
+
+class ViewerOnTheObelisk(unittest.TestCase):
+    """344 pixels in a window that was built for ten pars."""
+
+    @classmethod
+    def setUpClass(cls):
+        executable_or_skip()
+        try:
+            import tkinter
+        except ImportError as error:
+            raise unittest.SkipTest(f"no tkinter: {error}")
+        try:
+            tkinter.Tk().destroy()
+        except Exception as error:
+            raise unittest.SkipTest(f"no display: {error}")
+
+    def setUp(self):
+        from eclipse_dmx.viewer import ViewerApp
+
+        self.app = ViewerApp(OBELISK, pattern="obelisk_seasons")
+
+    def tearDown(self):
+        self.app._quit()
+
+    def settle(self, seconds=1.2):
+        end = time.monotonic() + seconds
+        while time.monotonic() < end:
+            self.app.root.update()
+            time.sleep(0.02)
+
+    def test_every_pixel_is_drawn_once(self):
+        self.settle(0.8)
+        self.assertEqual(len(self.app._items), OBELISK_PIXELS)
+
+    def test_dense_rigs_drop_the_glow(self):
+        """3096 canvas items per repaint does not fit in a frame."""
+        self.settle(0.8)
+        self.assertTrue(all(not item["rings"] for item in self.app._items))
+
+    def test_pixels_stay_inside_the_canvas(self):
+        for width, height in [(1000, 600), (640, 320), (1600, 900)]:
+            with self.subTest(size=(width, height)):
+                self.app.root.geometry(f"{width}x{height}")
+                self.settle(0.6)
+
+                canvas_w = self.app.canvas.winfo_width()
+                canvas_h = self.app.canvas.winfo_height()
+                for item in self.app._items:
+                    x0, y0, x1, y1 = self.app.canvas.coords(item["core"])
+                    self.assertGreaterEqual(x0, -0.5)
+                    self.assertLessEqual(x1, canvas_w + 0.5)
+                    self.assertGreaterEqual(y0, -0.5)
+                    self.assertLessEqual(y1, canvas_h + 0.5)
+
+    def test_the_four_sides_are_visibly_different(self):
+        """The picture shows what the coordinates promised."""
+        from eclipse_dmx.viewer import BACKGROUND
+
+        self.settle(2.0)
+        fills = [self.app.canvas.itemcget(item["core"], "fill") for item in self.app._items]
+        self.assertNotEqual(fills[0], "#%02x%02x%02x" % BACKGROUND)
+
+        sides = [fills[side * 2 * OBELISK_SIDE_LENGTH + 20] for side in range(4)]
+        self.assertEqual(len(set(sides)), 4, f"sides are not distinct: {sides}")
+
+    def test_a_repeated_frame_is_not_repainted(self):
+        """The pump runs at 60Hz over a 30fps stream; half of it is redundant."""
+        self.settle(1.0)
+        painted = self.app._painted
+        self.assertIsNotNone(painted)
+
+        self.app._paint(painted)
+        self.assertIs(self.app._painted, painted)
+
+    def test_runs_are_labelled_rather_than_pixels(self):
+        """Eight legends, not 344."""
+        self.settle(0.8)
+        texts = [
+            self.app.canvas.itemcget(item, "text")
+            for item in self.app.canvas.find_all()
+            if self.app.canvas.type(item) == "text"
+        ]
+        self.assertEqual(
+            sorted(texts),
+            ["a_down", "a_up", "b_down", "b_up", "c_down", "c_up", "d_down", "d_up"],
+        )
 
 
 class ViewerOnTheShow(unittest.TestCase):

@@ -1,0 +1,76 @@
+{
+  // The obelisk, as a device this desk can make patterns for.
+  //
+  // This is not a DMX rig. It is the sculpture itself: one WS2812 run of 344
+  // pixels, four sides at two vertical strips each, driven by a Pico. Nothing
+  // here goes on a wire yet - "preview" renders the frames and drops them, and
+  // the viewer is the destination:
+  //
+  //   python -m eclipse_dmx view config/obelisk.json --pattern obelisk_seasons
+  //
+  // The point of the file is that a look tuned on this desk is tuned on the
+  // real geometry, so what you see is what the sculpture will do.
+
+  // Positions below are the obelisk's own coordinates, not arbitrary units, so
+  // they reach the pattern untouched. x is which strip (0..7, four sides at two
+  // each) and y is how far up (0..43). That is the exact space every
+  // Pattern_Obelisk_* look was written against - it is where obelisk_seasons
+  // gets a different palette per side, and where its noise field gets the
+  // variation that keeps it from reading as flat colour.
+  "coord_space": "literal",
+
+  "device": {
+    // No hardware behind this yet. See "over usb" in readme.md for what
+    // replaces it.
+    "type": "preview",
+    "fps": 40
+  },
+
+  "master": {
+    "brightness": 1.0,
+    // The sculpture gamma-corrects inside HSVStrip::updateStripPixel, on its
+    // way from HSV to the pixel. A streamed frame is already RGB and skips
+    // that, so this stays the only correction in the path and the sculpture
+    // shows what the viewer shows. Exactly one end does it.
+    "gamma": 2.2
+  },
+
+  "pattern": {
+    "name": "obelisk_seasons",
+    "palette": "p_bluemagic"
+  },
+
+  // Eight runs of 43, one entry each. These are the same eight rows that
+  // ObeliskIO::init builds on the sculpture, in the same order, with the same
+  // coordinates - read them side by side with the GenerateAxisRow calls in
+  // src/relics/obelisk/obelisk.cpp.
+  //
+  // Each pixel is three channels, so a run of 43 is 129 of them and the next
+  // run starts 129 later. The last reaches 1032, which is twice a DMX universe
+  // and perfectly legal: nothing is putting this on a DMX wire.
+  //
+  // The down strips start at y=43 and step -1, so they run 43..1 where the up
+  // strips run 0..42. That is off by one from a strict mirror, and it is what
+  // the sculpture does - the looks were tuned through it.
+  "fixtures": [
+    { "profile": "rgb3", "name": "a_up",   "address":   1, "count": 43,
+      "position": [0,  0], "position_step": [0,  1] },
+    { "profile": "rgb3", "name": "a_down", "address": 130, "count": 43,
+      "position": [1, 43], "position_step": [0, -1] },
+
+    { "profile": "rgb3", "name": "b_up",   "address": 259, "count": 43,
+      "position": [2,  0], "position_step": [0,  1] },
+    { "profile": "rgb3", "name": "b_down", "address": 388, "count": 43,
+      "position": [3, 43], "position_step": [0, -1] },
+
+    { "profile": "rgb3", "name": "c_up",   "address": 517, "count": 43,
+      "position": [4,  0], "position_step": [0,  1] },
+    { "profile": "rgb3", "name": "c_down", "address": 646, "count": 43,
+      "position": [5, 43], "position_step": [0, -1] },
+
+    { "profile": "rgb3", "name": "d_up",   "address": 775, "count": 43,
+      "position": [6,  0], "position_step": [0,  1] },
+    { "profile": "rgb3", "name": "d_down", "address": 904, "count": 43,
+      "position": [7, 43], "position_step": [0, -1] }
+  ]
+}

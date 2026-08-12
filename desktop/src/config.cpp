@@ -214,6 +214,26 @@ bool edmx::loadConfig(const std::string& path, Config& outConfig, std::string& o
         }
     }
 
+    // ---- coordinate space ---------------------------------------------
+    // Same idea as addressing, for the other set of numbers in the file:
+    // it says what a fixture's "position" means, and nothing else.
+    {
+        const std::string space = root["coord_space"].asString("normalized");
+        if (space == "literal" || space == "pattern")
+        {
+            config.coordSpace = CoordSpace::Literal;
+        }
+        else if (space == "normalized" || space == "normalised" || space == "rig")
+        {
+            config.coordSpace = CoordSpace::Normalized;
+        }
+        else
+        {
+            outError = path + ": coord_space must be \"normalized\" or \"literal\", got '" + space + "'";
+            return false;
+        }
+    }
+
     // ---- device -------------------------------------------------------
     {
         const JsonValue& device = root["device"];
@@ -527,6 +547,25 @@ bool edmx::loadConfig(const std::string& path, Config& outConfig, std::string& o
                 const JsonValue& position = entry["position"];
                 const bool explicitPosition = position.isArray() && position.size() >= 1;
 
+                // How far the bank moves per fixture. This is what lets one
+                // entry describe a *run* rather than a point, which is the
+                // whole of a relic's geometry: the obelisk's eight vertical
+                // strips are eight of these, and they read alongside the eight
+                // GenerateAxisRow calls in obelisk.cpp that build the same
+                // thing on the sculpture. Absent, the bank sits where it is
+                // stated and the old behaviour stands.
+                const JsonValue& positionStep = entry["position_step"];
+                const bool hasStep = positionStep.isArray() && positionStep.size() >= 1;
+                const float stepX = hasStep ? positionStep[0].asFloat(0.0f) : 0.0f;
+                const float stepY = (hasStep && positionStep.size() >= 2) ? positionStep[1].asFloat(0.0f) : 0.0f;
+
+                if (hasStep && !explicitPosition)
+                {
+                    config.warnings.push_back("fixture entry " + std::to_string(i)
+                                            + " has \"position_step\" but no \"position\" to step from;"
+                                              " starting the run at the origin");
+                }
+
                 for (int index = 0; index < count; ++index)
                 {
                     const std::string name = (count == 1)
@@ -536,11 +575,16 @@ bool edmx::loadConfig(const std::string& path, Config& outConfig, std::string& o
                     Fixture fixture = instantiateProfile(profile, name, address + (index * spacing));
                     fixture.brightness = trim;
 
-                    if (explicitPosition)
+                    if (explicitPosition || hasStep)
                     {
-                        // a single stated position applies to the whole bank
-                        fixture.positionX = position[0].asFloat(0.0f);
-                        fixture.positionY = (position.size() >= 2) ? position[1].asFloat(0.0f) : 0.0f;
+                        // a stated position is where the bank starts; without a
+                        // step the whole bank stays there, as it always has
+                        const float baseX = explicitPosition ? position[0].asFloat(0.0f) : 0.0f;
+                        const float baseY = (explicitPosition && position.size() >= 2)
+                            ? position[1].asFloat(0.0f) : 0.0f;
+
+                        fixture.positionX = baseX + stepX * static_cast<float>(index);
+                        fixture.positionY = baseY + stepY * static_cast<float>(index);
                         fixture.hasPosition = true;
                     }
                     else if (count > 1)
@@ -614,9 +658,21 @@ bool edmx::loadConfig(const std::string& path, Config& outConfig, std::string& o
         }
     }
 
-    for (const std::string& warning : config.fixtures.validate())
+    // A DMX rig cannot reach past its universe; a pixel rig's buffer is however
+    // long the patch is, so there is nothing to run past and nothing to warn
+    // about. Which one this is follows from the output, not from the patch: the
+    // obelisk's 1032 channels are only legal because nothing is putting them on
+    // a DMX wire.
     {
-        config.warnings.push_back(warning);
+        const bool onDmxWire = config.device.type == "enttec_pro"
+                            || config.device.type == "enttec_open";
+        const int limit = onDmxWire ? DMX_CHANNEL_COUNT
+                                    : std::max(config.fixtures.highestChannel(), DMX_CHANNEL_COUNT);
+
+        for (const std::string& warning : config.fixtures.validate(limit))
+        {
+            config.warnings.push_back(warning);
+        }
     }
 
     outConfig = config;

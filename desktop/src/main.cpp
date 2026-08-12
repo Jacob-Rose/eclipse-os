@@ -81,7 +81,8 @@ namespace
             "  --dry-run           ignore device.type and print frames to stderr\n"
             "  --frames <n>        render n frames then exit (0 = run until stopped)\n"
             "  --port <path>       override device.port\n"
-            "  --device <type>     override device.type (enttec_pro, enttec_open, console)\n"
+            "  --device <type>     override device.type (enttec_pro, enttec_open,\n"
+            "                      console, preview)\n"
             "  --pattern <name>    override pattern.name\n"
             "  --state <name>      open on this state, for a state machine pattern\n"
             "  --fps <n>           override device.fps\n"
@@ -1331,7 +1332,11 @@ int main(int argc, char** argv)
     if (port == "auto")
     {
         port = autoDetectPort();
-        if (port.empty() && show.config.device.type != "console")
+        const bool needsWire = show.config.device.type != "console"
+                            && show.config.device.type != "preview"
+                            && show.config.device.type != "none"
+                            && show.config.device.type != "null";
+        if (port.empty() && needsWire)
         {
             logLine("error: device.port is \"auto\" but no serial port was found");
             emit("ERR no serial port found");
@@ -1357,12 +1362,12 @@ int main(int argc, char** argv)
     // A receiver keeps whatever it already had for slots that do not arrive,
     // so there is nothing to gain from shipping 442 trailing zeros every
     // frame. On a serial link that padding is most of the frame time.
+    //
+    // The same number sizes the frame buffer, which on a pixel rig is longer
+    // than a universe: the obelisk's 344 nodes are 1032 channels.
     {
-        int highest = 0;
-        for (const Fixture& fixture : show.config.fixtures.all())
-        {
-            highest = std::max(highest, fixtureHighestChannel(fixture));
-        }
+        const int highest = show.config.fixtures.highestChannel();
+        show.universe.resize(highest);
         show.output->setUniverseLength(highest);
     }
 
@@ -1450,6 +1455,19 @@ int main(int argc, char** argv)
     for (size_t idx = 0; idx < fixtureCount; ++idx)
     {
         show.context.positions[idx] = show.config.fixtures.normalizedPosition(idx);
+    }
+
+    // A rig that states real coordinates hands them straight to the pattern.
+    // See PatternContext::nodeCoords for why a single position is not enough
+    // to describe something that is not a line.
+    if (show.config.coordSpace == CoordSpace::Literal)
+    {
+        show.context.nodeCoords.resize(fixtureCount);
+        for (size_t idx = 0; idx < fixtureCount; ++idx)
+        {
+            const Fixture& fixture = show.config.fixtures[idx];
+            show.context.nodeCoords[idx] = ecore::Coordinate{fixture.positionX, fixture.positionY};
+        }
     }
 
     emit("READY fixtures=" + std::to_string(fixtureCount)

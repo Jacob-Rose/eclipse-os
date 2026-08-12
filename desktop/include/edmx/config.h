@@ -151,9 +151,29 @@ namespace edmx
         ZeroBased ///< first slot is 0 (what many fixture displays show)
     };
 
+    /// How the config's `position` fields are read.
+    ///
+    /// Same shape of decision as Addressing: it changes what the numbers in the
+    /// *file* mean, and nothing downstream of that.
+    enum class CoordSpace
+    {
+        /// Positions are arbitrary units describing where fixtures sit relative
+        /// to each other. They get normalised to 0..1 along the rig and then
+        /// stretched across whatever coordinate frame the pattern asked for.
+        /// This is what a truss of pars wants, and the default.
+        Normalized,
+
+        /// Positions are already in the pattern's coordinate space, and reach
+        /// the pattern untouched. This is what a relic wants: the obelisk's
+        /// config states the same 0..7 by 0..43 grid its firmware builds, so a
+        /// look renders on the desk exactly as it renders on the sculpture.
+        Literal
+    };
+
     struct Config
     {
         Addressing addressing{Addressing::OneBased};
+        CoordSpace coordSpace{CoordSpace::Normalized};
 
         DeviceConfig device;
         MasterConfig master;

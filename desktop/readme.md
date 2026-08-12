@@ -285,6 +285,7 @@ Channel numbers are 1-based, the way they read on a fixture's own display.
 | `dimmer_value` | what to hold the dimmer at, default 255 |
 | `static_channels` | absolute channel → fixed value, for strobe/mode channels |
 | `position` | `[x, y]`, where the fixture is in the rig; drives spatial patterns |
+| `position_step` | with `count`, how far the position moves per fixture |
 | `brightness` | per-fixture trim, 0..1 |
 
 `start_channel` points at red rather than at the fixture's own address, because
@@ -347,6 +348,61 @@ real spatial motion. Change them to take a different slice.
 
 `pattern.palette` takes either a built-in name from `kits/palettes.h` or an
 explicit list like `["#ff0044", "#22ffcc"]`. `--list-palettes` names them all.
+
+### the obelisk — a relic as a device
+
+Everything above runs a relic's *look* on somebody else's rig. `config/obelisk.json`
+is the other direction: the sculpture itself, patched as a device you can make
+patterns for.
+
+```sh
+python -m eclipse_dmx view config/obelisk.json --pattern obelisk_seasons
+```
+
+344 pixels — four sides, two vertical strips each, 43 tall. Nothing reaches
+hardware yet; see [over usb](#over-usb).
+
+Two things had to change to describe something that is not a truss of pars.
+
+**The frame buffer is the rig's, not DMX's.** 344 pixels at three channels each
+is 1032, twice a universe. That is only legal because nothing is putting it on a
+DMX wire, so the 512-slot limit moved off the buffer and onto the outputs that
+actually speak DMX. Patch the same file to `enttec_open` and the overflow is an
+error again, correctly.
+
+**Positions are coordinates, not an ordering.** A truss is one-dimensional and a
+single 0..1 position along it says everything. The obelisk is not, and
+`obelisk_seasons` reads x as *which side* and y as *how far up* — that is where
+its four palettes come from. Collapse that to one number and every side gets the
+same colour, which looks entirely plausible and is the wrong picture. So:
+
+```json
+"coord_space": "literal"
+```
+
+says the `position` fields are already in the pattern's own space and reach it
+untouched. The default, `"normalized"`, is the existing behaviour: spread the
+rig over 0..1 and let `coord_span_*` stretch it.
+
+Same shape of decision as `addressing` — it changes what the numbers in the
+*file* mean and nothing else.
+
+The geometry itself is eight entries, one per strip, because `position_step`
+lets one entry describe a run rather than a point:
+
+```json
+{ "profile": "rgb3", "name": "a_up", "address": 1, "count": 43,
+  "position": [0, 0], "position_step": [0, 1] }
+```
+
+Those eight lines are the eight `GenerateAxisRow` calls in
+`src/relics/obelisk/obelisk.cpp`, in the same order with the same numbers. Read
+them side by side — if the sculpture is ever rewired, they both change.
+
+The viewer switches to bare pixels above 64 nodes: one dot each, no glow, and
+labels on the run rather than on every pixel. A glow is nine canvas items and tk
+recolours them one at a time from python, so 344 of them would be 3096 calls per
+repaint and the window would crawl.
 
 ### mythos26 — the show
 
@@ -931,6 +987,93 @@ a channel map than most listings online.
 
 **console** (`"type": "console"`, or `--dry-run`) prints frames instead of
 sending them.
+
+**preview** (`"type": "preview"`) renders and drops the frame. For a rig whose
+destination is the viewer rather than hardware — which today is the obelisk.
+Unlike `console` it prints nothing, so the log of a show you are watching stays
+readable, and it does not claim the rig is a DMX one.
+
+## Over USB
+
+> Design, not built. Nothing in this section exists yet.
+
+The obelisk is a device this desk can patch and preview, but the frames stop at
+the viewer. What is missing is a wire to the sculpture, so a laptop can take a
+relic over for a show and hand it back afterwards.
+
+Two things want to travel, and they are not alternatives:
+
+| mode | what goes down the wire | costs | buys |
+| --- | --- | --- | --- |
+| **cue** | `state theater`, `set floor 0.3` | a few bytes, occasionally | the relic renders its own looks; survives a bad cable |
+| **pixel** | 1032 bytes, 40 times a second | ~41 KB/s, continuous | *any* desk look on the relic — mythos26, the beat, the knobs |
+
+Cue mode is the baseline and pixel mode is what a show seizes. When the pixel
+stream stops arriving the relic falls back to cue mode and keeps running its own
+patterns, which is the failure you want: a dropped USB cable dims a look rather
+than blacking out a sculpture.
+
+### is the bandwidth there
+
+Yes, comfortably, and the number that matters is not the one in the firmware.
+
+`Serial.begin(9600)` in `eclipse-os.ino` reads like a 9600-baud limit and is not
+one. On an RP2040 `Serial` is USB CDC — a virtual port over full-speed USB, where
+the baud rate is a value the host sets and neither end obeys. Real throughput is
+USB's, on the order of 1 MB/s. 41 KB/s is about 4% of it.
+
+The tighter constraint is at the other end. 344 WS2812s take ~30us each to clock
+out, so `show()` alone is **10.3ms**, and the relic's loop already sleeps 20-30ms
+per tick. 40fps needs a 25ms budget. It fits, but not with much room, and the
+honest opening move is 30fps with the option to drop.
+
+On a UART instead of USB CDC, 41 KB/s needs more than 412000 baud — possible at
+921600, but there is no reason to prefer it.
+
+### what has to be built
+
+**Desktop.** A `RelicUsbOutput` beside `EnttecProOutput` in `dmx_output.cpp`.
+The frame buffer already *is* the pixel buffer — the obelisk's 1032 channels are
+344 RGB triples in strip order — so `sendFrame` is a header plus
+`universe.data()`, and `SerialPort` already opens ports on both platforms.
+
+**Firmware.** A reader on `RelicCore` that owns the strip while a stream is
+arriving. Not `Serial.readString()`, which is line-and-timeout based and will
+happily cut a binary frame in half: this wants a magic byte, a length, a payload
+and a checksum, with a resync scan on a bad one.
+
+**The handover.** One flag on `RelicCore`: while a frame has arrived within the
+last ~500ms the state machine still ticks but does not write pixels, and when it
+lapses the relic's own look resumes from wherever it got to.
+
+### three things to get right
+
+**`DEPLOYMENT` currently disables serial input.** `USE_SERIAL_INPUT` is
+`1 && !DEPLOYMENT`, so the deployed build — the one that would be on the
+sculpture at a show — is exactly the build with no way in. The link needs to be
+its own flag, on in both.
+
+**Exactly one end applies gamma.** The sculpture's own path is HSV →
+`ColorHSV` → `gamma32` → pixel, all inside `HSVStrip::updateStripPixel`. A
+streamed frame is already RGB, so it should go to `setPixelColor` directly and
+skip that entirely — which leaves `master.gamma` on the desk as the only
+correction, and means the sculpture shows what the viewer shows, since both read
+the same buffer.
+
+The failure if it is plumbed through `strip_HSV` instead is quiet rather than
+loud: gamma twice, and everything below mid-brightness crushes toward black.
+
+**`Serial` may already be taken.** A relic built with `USE_SERIAL_MQTT` puts a
+line-based MQTT bridge on the same port, and binary frames interleaved with that
+will corrupt both. The obelisk does not use MQTT, so it is free — but the check
+belongs in the design, not in a debugging session at load-in.
+
+### what it does not solve
+
+Multiple relics need multiple ports; nothing here fans out. And the relic's
+frame rate is its own — the desk cannot make an obelisk render faster than its
+`show()` allows, so a 40fps desk driving a 30fps relic drops frames at the relic
+rather than stretching the look.
 
 ## What is not here yet
 

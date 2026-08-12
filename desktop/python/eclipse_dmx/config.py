@@ -20,7 +20,16 @@ from typing import Any, Dict, List, Optional, Sequence, Union
 
 DMX_CHANNEL_COUNT = 512
 
-DEVICE_TYPES = ("enttec_pro", "enttec_open", "console")
+#: Types that put frames on a DMX wire, and are therefore bound by the 512
+#: slots a universe has. Everything else renders into a buffer as long as the
+#: rig is - which is how a 344-pixel relic fits.
+DMX_WIRE_TYPES = ("enttec_pro", "enttec_open")
+
+DEVICE_TYPES = ("enttec_pro", "enttec_open", "console", "preview", "none", "null")
+
+#: How a fixture's `position` is read. Must stay in step with edmx::CoordSpace
+#: in desktop/include/edmx/config.h.
+COORD_SPACES = ("normalized", "literal")
 
 PATTERN_NAMES = (
     # built-ins
@@ -504,29 +513,35 @@ class Fixture:
         order = self.channels.lower()
         return (order.index("r"), order.index("g"), order.index("b"))
 
-    def validate(self) -> None:
+    def validate(self, channel_limit: int = DMX_CHANNEL_COUNT) -> None:
+        """Raises on anything unusable.
+
+        `channel_limit` is how many channels the rig it belongs to actually
+        has: one universe for a DMX rig, the whole buffer for a pixel one. The
+        obelisk's last pixel sits at 1032 and that is not an error.
+        """
         where = f"fixture '{self.name}'"
 
         if self._offsets is None and sorted(self.channels.lower()) != ["b", "g", "r"]:
             raise ConfigError(f"{where}: channels '{self.channels}' must be a permutation of r, g and b")
 
-        if not 1 <= self.start_channel <= DMX_CHANNEL_COUNT:
-            raise ConfigError(f"{where}: start_channel {self.start_channel} is outside 1..{DMX_CHANNEL_COUNT}")
+        if not 1 <= self.start_channel <= channel_limit:
+            raise ConfigError(f"{where}: start_channel {self.start_channel} is outside 1..{channel_limit}")
 
-        if self.start_channel + max(self.offsets()) > DMX_CHANNEL_COUNT:
+        if self.start_channel + max(self.offsets()) > channel_limit:
             raise ConfigError(
                 f"{where}: start_channel {self.start_channel} leaves no room for its colour channels"
             )
 
-        if self.dimmer_channel and not 1 <= self.dimmer_channel <= DMX_CHANNEL_COUNT:
-            raise ConfigError(f"{where}: dimmer_channel {self.dimmer_channel} is outside 1..{DMX_CHANNEL_COUNT}")
+        if self.dimmer_channel and not 1 <= self.dimmer_channel <= channel_limit:
+            raise ConfigError(f"{where}: dimmer_channel {self.dimmer_channel} is outside 1..{channel_limit}")
 
         if not 0 <= self.dimmer_value <= 255:
             raise ConfigError(f"{where}: dimmer_value {self.dimmer_value} is outside 0..255")
 
         for channel, value in self.static_channels.items():
-            if not 1 <= int(channel) <= DMX_CHANNEL_COUNT:
-                raise ConfigError(f"{where}: static channel {channel} is outside 1..{DMX_CHANNEL_COUNT}")
+            if not 1 <= int(channel) <= channel_limit:
+                raise ConfigError(f"{where}: static channel {channel} is outside 1..{channel_limit}")
             if not 0 <= int(value) <= 255:
                 raise ConfigError(f"{where}: static channel {channel} value {value} is outside 0..255")
 
@@ -607,9 +622,19 @@ class Config:
 
     addressing: str = "one"
 
+    #: What the `position` fields mean. "normalized" spreads the rig across
+    #: 0..1 and lets the pattern's coordinate frame stretch it; "literal" hands
+    #: the numbers to the pattern as written, which is what a relic describing
+    #: its own geometry wants. See edmx::CoordSpace.
+    coord_space: str = "normalized"
+
     def display_channel(self, channel: int) -> int:
         """A one-based internal channel, back in the config's own numbering."""
         return channel - 1 if self.addressing == "zero" else channel
+
+    def highest_channel(self) -> int:
+        """The last channel any fixture touches: what sizes the frame buffer."""
+        return max((max(f.used_channels()) for f in self.fixtures), default=0)
 
     # -- building ---------------------------------------------------------
 
@@ -713,6 +738,8 @@ class Config:
         """
         if self.addressing not in ADDRESSING_MODES:
             raise ConfigError(f"addressing '{self.addressing}' is not one of {ADDRESSING_MODES}")
+        if self.coord_space not in COORD_SPACES:
+            raise ConfigError(f"coord_space '{self.coord_space}' is not one of {COORD_SPACES}")
 
         self.device.validate()
         self.master.validate()
@@ -725,13 +752,20 @@ class Config:
         warnings: List[str] = []
         claimed: Dict[int, str] = {}
 
+        # Only a DMX wire has 512 slots. A pixel rig's buffer is however long
+        # its patch is, so the obelisk's 1032 channels are not overflow - they
+        # are the rig. Matches loadConfig() in desktop/src/config.cpp.
+        limit = DMX_CHANNEL_COUNT
+        if self.device.type not in DMX_WIRE_TYPES:
+            limit = max(limit, self.highest_channel())
+
         for fixture in self.fixtures:
-            fixture.validate()
+            fixture.validate(limit)
 
             for channel in fixture.used_channels():
-                if channel > DMX_CHANNEL_COUNT:
+                if channel > limit:
                     warnings.append(
-                        f"fixture '{fixture.name}' reaches channel {channel}, past the end of the universe"
+                        f"fixture '{fixture.name}' reaches channel {channel}, past the end of the rig ({limit})"
                     )
                     continue
 
@@ -755,6 +789,9 @@ class Config:
         # back out and get biased a second time.
         return {
             "addressing": "one",
+            # Unlike addressing, this is not resolved away on load - a literal
+            # position stays literal - so it has to survive the round trip.
+            "coord_space": self.coord_space,
             "device": self.device.to_dict(),
             "master": self.master.to_dict(),
             "midi": self.midi.to_dict(),
@@ -790,6 +827,16 @@ class Config:
             bias = 0
         else:
             raise ConfigError(f"addressing must be \"zero\" or \"one\", got '{stated}'")
+
+        # The other set of numbers in the file. Same shape of decision as
+        # addressing: it says what `position` means, and nothing else.
+        space = str(data.get("coord_space", "normalized")).lower()
+        if space in ("literal", "pattern"):
+            config.coord_space = "literal"
+        elif space in ("normalized", "normalised", "rig"):
+            config.coord_space = "normalized"
+        else:
+            raise ConfigError(f"coord_space must be \"normalized\" or \"literal\", got '{space}'")
 
         device = data.get("device", {})
         config.device = DeviceConfig(
@@ -885,13 +932,29 @@ class Config:
                 trim = float(entry.get("brightness", 1.0))
                 stated_position = entry.get("position")
 
+                # How far the bank moves per fixture, which is what turns one
+                # entry into a *run* rather than a point. A relic's geometry is
+                # made of these: the obelisk's eight vertical strips are eight
+                # of them. Matches loadConfig() in desktop/src/config.cpp.
+                stated_step = entry.get("position_step")
+                if stated_step is not None:
+                    step_x = float(stated_step[0]) if len(stated_step) >= 1 else 0.0
+                    step_y = float(stated_step[1]) if len(stated_step) >= 2 else 0.0
+                else:
+                    step_x = step_y = 0.0
+
+                base_x = base_y = 0.0
+                if stated_position is not None:
+                    base_x = float(stated_position[0]) if len(stated_position) >= 1 else 0.0
+                    base_y = float(stated_position[1]) if len(stated_position) >= 2 else 0.0
+
                 for index in range(count):
                     name = prefix if count == 1 else f"{prefix}_{index + 1}"
                     fixture = model.instantiate(name, int(address) + bias + (index * step))
                     fixture.brightness = trim
 
-                    if stated_position is not None:
-                        fixture.position = list(stated_position)
+                    if stated_position is not None or stated_step is not None:
+                        fixture.position = [base_x + step_x * index, base_y + step_y * index]
                     elif count > 1:
                         fixture.position = [index / (count - 1), 0.0]
 

@@ -160,9 +160,17 @@ namespace edmx
                     float gamma,
                     DmxUniverse& universe) const;
 
-        /// Reports fixtures that overlap each other or run past channel 512.
-        /// Non-fatal by design: a rig mid-repatch should still light up.
-        std::vector<std::string> validate() const;
+        /// Highest channel any fixture in the patch touches. This is what sizes
+        /// the frame buffer, and on a pixel rig it is well past 512.
+        int highestChannel() const;
+
+        /// Reports fixtures that overlap each other or run past the end of the
+        /// buffer they are rendered into. Non-fatal by design: a rig mid-repatch
+        /// should still light up.
+        ///
+        /// `channelLimit` is what the rig can actually carry — one DMX universe
+        /// for a DMX rig, the whole pixel buffer for a relic.
+        std::vector<std::string> validate(int channelLimit = DMX_CHANNEL_COUNT) const;
 
     private:
         std::vector<Fixture> fixtures;

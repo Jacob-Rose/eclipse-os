@@ -403,7 +403,17 @@ void FixtureMap::render(const std::vector<ecore::HSV>& colors,
     }
 }
 
-std::vector<std::string> FixtureMap::validate() const
+int FixtureMap::highestChannel() const
+{
+    int highest = 0;
+    for (const Fixture& fixture : fixtures)
+    {
+        highest = std::max(highest, fixtureHighestChannel(fixture));
+    }
+    return highest;
+}
+
+std::vector<std::string> FixtureMap::validate(int channelLimit) const
 {
     std::vector<std::string> warnings;
 
@@ -420,10 +430,11 @@ std::vector<std::string> FixtureMap::validate() const
         }
 
         const int highest = fixtureHighestChannel(fixture);
-        if (highest > DMX_CHANNEL_COUNT)
+        if (highest > channelLimit)
         {
             warnings.push_back("fixture '" + fixture.name + "' reaches channel " + std::to_string(highest)
-                             + ", past the end of the universe (512); those channels will be dropped");
+                             + ", past the end of the rig (" + std::to_string(channelLimit)
+                             + "); those channels will be dropped");
         }
 
         std::vector<int> used = {

@@ -298,12 +298,22 @@ void GeneratorPattern::ensureNodes(const PatternContext& context)
     {
         auto node = std::make_shared<eio::HSVStripNode_Mapped2D>(segment.get(), static_cast<int>(idx));
 
-        // Give the generator a coordinate space it recognises, by running the
-        // rig across it. x picks up anything the pattern keys off sides or
-        // columns; y gives a noise field the range it needs to not read as
-        // flat colour.
-        const float position = (idx < context.positions.size()) ? context.positions[idx] : 0.0f;
-        node->coord = context.coords.at(position);
+        if (idx < context.nodeCoords.size())
+        {
+            // The rig knows where its nodes are. Hand them over as they were
+            // written: this is the obelisk describing itself in the space its
+            // own looks were tuned in, and stretching it would be a lie.
+            node->coord = context.nodeCoords[idx];
+        }
+        else
+        {
+            // Give the generator a coordinate space it recognises, by running
+            // the rig across it. x picks up anything the pattern keys off sides
+            // or columns; y gives a noise field the range it needs to not read
+            // as flat colour.
+            const float position = (idx < context.positions.size()) ? context.positions[idx] : 0.0f;
+            node->coord = context.coords.at(position);
+        }
 
         nodes.push_back(node);
     }

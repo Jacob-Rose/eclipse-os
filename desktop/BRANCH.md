@@ -49,6 +49,10 @@ cd desktop
 # or just look at it: a window, one disc per fixture, no hardware, no wire
 $env:PYTHONPATH = "python"
 python -m eclipse_dmx view config\uking_par36_x10.json --pattern obelisk_seasons
+
+# and the obelisk itself - 344 pixels, its own geometry, patterns rendered
+# on the shape they were written for
+python -m eclipse_dmx view config\obelisk.json --pattern obelisk_seasons
 ```
 
 On Linux the same thing with `./tools/setup-toolchain.sh` and `./build.sh`.
@@ -115,7 +119,7 @@ desktop/
                    state_machine, beat_clock, midi_input, mythos26
                    (the tuning surface itself is ecore::PropertyBag, in src/lib)
   src/             implementations + main.cpp (the show runner)
-  config/          example configs, including your rig and the show
+  config/          example configs, your rig, the show, and the obelisk itself
   python/          the wrapper package, and the viewer
   python/tests/    unittest suite, runnable with nothing installed
   tools/           toolchain setup, one script per platform
@@ -133,8 +137,8 @@ desktop/
 | `edmx::StateMachinePattern` | runs a whole `esm` machine, with its cross-fades |
 | `edmx::BeatClock` | where the beat is, and how fast |
 | `edmx::MidiInput` | tempo in, off winmm or an ALSA rawmidi device |
-| `edmx::FixtureMap` | HSV → RGB → DMX channels, gamma, dimmer, parked channels |
-| `edmx::DmxOutput` | the wire: Enttec PRO, Enttec Open, or console |
+| `edmx::FixtureMap` | HSV → RGB → channels, gamma, dimmer, parked channels |
+| `edmx::DmxOutput` | the wire: Enttec PRO, Enttec Open, console, or preview |
 | `main.cpp` | frame timing, the stdin control protocol, the frame stream |
 | `python/` | configuration, validation, driving a running process |
 | `python/viewer.py` | the window |
@@ -339,6 +343,86 @@ Live only, deliberately: `params dump` prints the set as a line of JSON, and
 nothing is written to a config file behind you. What gets kept is a paste, not a
 side effect of turning a knob.
 
+### the obelisk is a device now, not just a source of looks
+
+Everything above runs a relic's *look* on somebody else's rig.
+`config/obelisk.json` is the other direction: the sculpture itself, patched as a
+device you can make patterns for and watch.
+
+```sh
+python -m eclipse_dmx view config/obelisk.json --pattern obelisk_seasons
+```
+
+344 pixels — four sides, two vertical strips each, 43 tall. Nothing on a wire;
+that is the next section.
+
+Two assumptions had to come out, and both were load-bearing in a way that is
+worth recording, because each had a plausible wrong answer.
+
+**The 512-slot limit was on the wrong object.** 344 pixels at three channels is
+1032, twice a universe. The obvious reading is that the obelisk does not fit and
+needs a parallel pixel path — a second buffer type, a second output interface, a
+second render loop. It does not. A DMX universe is 512 because *DMX* is; the
+buffer is just channels, and a pixel rig's is as long as its patch. So
+`DmxUniverse` sizes at runtime, the limit moved onto the outputs that actually
+speak DMX, and `FixtureMap`, `--show-patch`, the frame stream and the viewer all
+work on the obelisk unchanged. Patch the same file to `enttec_open` and the
+overflow is an error again, which is the check that says the limit is now in the
+right place.
+
+**A position was an ordering, and it had to become a coordinate.** A truss is
+one-dimensional: a single 0..1 place along it says everything, and `CoordFrame`
+stretches that across whatever space the look wants. The obelisk is not a line.
+`obelisk_seasons` reads x as *which side* and y as *how far up* — that is where
+its four palettes come from — and collapsing that to one scalar gives every side
+the same colour. Which looks completely plausible on a rig of pars, and is the
+wrong picture.
+
+So `coord_space: "literal"` says the `position` fields are already in the
+pattern's space and reach it untouched, via `PatternContext::nodeCoords`. The
+default is unchanged. Same shape of decision as `addressing`: it changes what the
+numbers in the *file* mean and nothing else.
+
+The geometry is eight config entries, one per strip, because `position_step`
+lets one entry describe a run rather than a point. Those eight lines are the
+eight `GenerateAxisRow` calls in `src/relics/obelisk/obelisk.cpp` — same order,
+same numbers, including the firmware's own off-by-one where the down strips run
+43..1 against the up strips' 0..42. They are meant to be read side by side.
+
+The viewer switches to bare pixels above 64 nodes. That is not a style choice: a
+glow is nine canvas items and tk recolours them one at a time from python, so
+344 fixtures would be 3096 `itemconfig` calls per repaint. It also skips
+repainting a frame already on screen, which the 60Hz pump over a 30fps stream
+makes half of them.
+
+### over usb: designed, not built
+
+The obelisk can be patched and previewed, but the frames stop at the viewer.
+What is missing is a wire, so a laptop can take a relic over for a show and hand
+it back. `readme.md` has the full design; the parts worth having here:
+
+**Both modes, not a choice between them.** Cue commands (`state theater`,
+`set floor 0.3`) are a few bytes and the relic renders its own looks; a pixel
+stream is 1032 bytes at 40fps and puts *any* desk look on the relic. Pixel mode
+is what a show seizes, and when the stream lapses the relic falls back to cue
+mode and keeps running its own patterns — a dropped cable should dim a look, not
+black out a sculpture.
+
+**The bandwidth is not the problem, and the obvious number is a red herring.**
+`Serial.begin(9600)` reads like a 9600-baud ceiling and is not one: on an RP2040
+`Serial` is USB CDC, where the baud rate is a value the host sets and neither end
+obeys. ~41 KB/s is about 4% of what the link carries. The real ceiling is at the
+other end — 344 WS2812s are 10.3ms of `show()` on their own, against a 25ms
+budget at 40fps.
+
+**Three things that will bite.** `USE_SERIAL_INPUT` is `1 && !DEPLOYMENT`, so
+the build that would be on the sculpture at a show is exactly the build with no
+way in. Gamma has to be applied at exactly one end — a streamed frame is already
+RGB and should skip `HSVStrip`'s `gamma32` rather than go through it twice. And
+a relic built with `USE_SERIAL_MQTT` already has a line-based bridge on that
+port; the obelisk does not, but that is worth knowing before load-in rather than
+during it.
+
 ### the viewer
 
 ```sh
@@ -491,6 +575,24 @@ And, for mythos26 and the beat clock:
 - 50 new tests, none of which need a MIDI device: `--midi ""` keeps the suite
   off whatever happens to be plugged into the machine running it
 
+And, for the obelisk as a device:
+
+- the config resolves to 344 pixels at consecutive channels, highest 1032, with
+  no overlaps and no warnings — and **python and the executable name and place
+  every one of them identically**, which is now a test rather than a claim
+- reaching past 512 is silent on a preview rig and an error the moment the same
+  patch is pointed at `enttec_open`
+- the coordinates are the sculpture's own, strip by strip, down-strips reversed
+- the four seasons land on the four sides, and a strip is not flat — the two
+  things that fail silently if the coordinate space is wrong
+- the 173 pixels past channel 512 reach the frame stream
+- `position_step` ramps a bank; a bank with a position and no step still sits
+  where it always did, and one with neither still spreads evenly
+- literal positions survive a round trip through python
+- the viewer draws all 344 inside the canvas at three window sizes, drops the
+  glow, labels the eight runs rather than the pixels, and does not repaint a
+  frame already on screen
+
 And, for the per-look knobs:
 
 - every mythos26 look announces its own set, and a cue change replaces it
@@ -522,7 +624,7 @@ There is now a suite for all of this, which there was not before:
 
 ```sh
 cd desktop
-python -m unittest discover -s python/tests -v      # 110 tests
+python -m unittest discover -s python/tests -v      # 130 tests
 ```
 
 It needs nothing installed. Anything requiring the executable or a display
@@ -700,6 +802,14 @@ listing online.
   doing the right thing", not "what will the room look like".
 - **The viewer's layout is 2D only.** `position` takes x and y; a rig hung at
   different heights and depths flattens.
+- **The obelisk is patched but not wired.** Its frames stop at the viewer.
+  Nothing has been built toward the USB link — the design above and in
+  `readme.md` is written, and no line of it exists.
+- **One relic per config, and one port.** Nothing fans a look out to several
+  sculptures at once.
+- **The obelisk is drawn flat.** Its eight strips read as eight columns rather
+  than as four sides of a pillar, because the viewer has no notion of a rig
+  wrapping around anything. It answers "is each pixel doing the right thing".
 
 ---
 
@@ -724,3 +834,16 @@ listing online.
 6. **Is one universe enough long-term?** Ten 7-channel fixtures is 70 channels,
    so there is a lot of headroom, but multi-universe is a real change if it is
    ever needed.
+7. **Does the USB link get built next?** The design is in `readme.md` and it is
+   two halves: a `RelicUsbOutput` on this side, and a frame reader on the
+   sculpture. The desktop half can be written and tested against a loopback
+   without touching an obelisk; the firmware half means reflashing one.
+8. **How many relics at once?** One port per sculpture is fine for one. Three
+   obelisks on one laptop is a different shape of problem — either three
+   processes, or something that fans a look out, and that is worth deciding
+   before rather than after.
+9. **Is the obelisk's picture worth unfolding?** Its eight strips draw as eight
+   columns. Drawing it as four sides of a pillar, or unwrapped with the sides
+   marked, would make a look easier to judge — but it is the first thing in the
+   viewer that would be specific to one rig's shape rather than read from its
+   config.
