@@ -12,10 +12,10 @@ which sculpture it is building for, and `RelicCore::preTick` no longer hands the
 first frame the board's entire uptime as a delta. See
 [over usb](#over-usb) and the note on the first frame below.
 
-The sketch itself is **not compiled here** — there is no Arduino toolchain on
-this machine. What is compiled and tested is everything under it, including
-`ObeliskCore`; see [the firmware is tested without being
-flashed](#the-firmware-is-tested-without-being-flashed).
+**The link runs on a real obelisk**: flashed, driven, cued and handed back — see
+[it works on the sculpture](#it-works-on-the-sculpture). Getting the sketch to
+build at all required removing `using namespace std;` from three headers, which
+the arduino-pico core's move to C++23 had turned from untidy into fatal.
 
 ---
 
@@ -65,13 +65,20 @@ python -m eclipse_dmx view config\uking_par36_x10.json --pattern obelisk_seasons
 # on the shape they were written for
 python -m eclipse_dmx view config\obelisk.json --pattern obelisk_seasons
 
-# the link to a real sculpture, checked without one
+# the link, checked with no sculpture attached
 .\build\eclipse-dmx.exe --link-selftest
-.\build\eclipse-dmx.exe --probe-relics
 
 # and with one plugged in and flashed
+.\build\eclipse-dmx.exe --probe-relics
+.\build\eclipse-dmx.exe --config config\obelisk_usb.json --frames 90
 python -m eclipse_dmx view config\obelisk_usb.json --live
+
+# reflash it without reaching for the BOOTSEL button
+.\build\eclipse-dmx.exe --reboot-bootsel
 ```
+
+Building the firmware is a separate toolchain — arduino-cli in WSL, plus
+`tools/patch-libraries.sh` once. See the root readme.
 
 On Linux the same thing with `./tools/setup-toolchain.sh` and `./build.sh`.
 
@@ -474,6 +481,96 @@ Three things that would have bitten, all now closed:
 `setGlobalBrightness(EBrightness::HIGH)` is 63/255 and the link does not bypass
 it: that is a current limit, and 344 pixels at full white is about 20A. A Hello
 reports it so it is at least visible rather than mysterious.
+
+### it works on the sculpture
+
+Flashed and driven, on a real obelisk. What it said for itself:
+
+```
+RELIC COM4  obelisk strip=0:344 brightness=63
+RELIC EOSLINK take
+RELIC EOSLINK states seasons theater mono
+RELIC EOSLINK state theater
+RELIC EOSLINK release asked
+RELIC EOSLINK take
+```
+
+That is, in order: it names itself and its one 344-pixel strip, it accepts a
+takeover, it answers a cue query, it takes a cue, it hands the pixels back on
+`link cue`, and it takes them again on `link pixels`. A show killed with no
+release left it answering a Hello three seconds later, so a desk vanishing
+mid-frame does not wedge it.
+
+Firmware is 396 KB of flash (18%) and 71.5 KB of RAM (27%).
+
+And it **looks right on the sculpture** — watched during the run, so the patch,
+the strip order and the coordinate space all agree with the physical object.
+That is the half no protocol reply can tell you: a rig can answer every frame
+correctly and still be lighting the wrong pixels.
+
+### two USB CDC facts that made a working relic look dead
+
+Both cost real time, and neither is visible from anything the relic does. Worth
+having written down because the symptom is identical to "the firmware is broken".
+
+**DTR has to be asserted for CDC, and must not be for a DMX widget.** A CDC
+device reads DTR as "a host is here" and discards everything it writes until it
+is set. `SerialPort::open` deliberately left DTR alone — with a good comment
+about FTDI boards that wire it to a reset or an RS485 driver-enable, where
+asserting it holds the thing mute. Both are right; it is a parameter now.
+
+The symptom was `--probe-relics` finding nothing while the relic was running
+perfectly and answering the byte-identical frame sent by hand from PowerShell a
+moment later. Which is what finally located it: the difference between the two
+was DTR and a delay, and nothing else.
+
+**A CDC port is not ready when `open()` returns.** The host has to bring the
+line up and the device has to notice; anything written into that gap is gone.
+An immediate write is lost, 300ms later is reliable. Both the probe and
+`RelicUsbOutput::open` wait now — without it the first frames of every show
+would vanish, which reads as a rig that takes a moment to warm up rather than as
+a bug.
+
+### the toolchain moved to C++23, and our headers could not follow
+
+`eclipse-os.ino` had never been compiled on this machine. Getting it to build
+turned up one real problem, and it was ours.
+
+arduino-pico 6.0.0 builds at **`-std=gnu++23`**, and three headers here did
+`using namespace std;` at global scope — `ecore/name.h`, `ecore/range.h` and
+`eio/relic.h`. That opens `std` for every translation unit that includes them,
+so `std::byte` collided with Arduino's `byte`, `std::lerp` with `ecore::lerp`,
+and the errors landed deep inside `SPI.h` and `Common.h` where nothing looked
+wrong.
+
+The readme's two SPI patches existed to work around exactly this. They are gone
+now: the headers name what they need instead. `std::map` is *not* among them —
+Arduino has its own `map()`, and importing `std::map` beside it is the same
+collision in a smaller box, so that one stays qualified.
+
+The one remaining third-party patch (AnimatedGIF skipping `<Arduino.h>` because
+the core defines `PICO_BUILD`) is now `tools/patch-libraries.sh` rather than
+prose: idempotent, keeps a `.bak`, and reports the patches it found unnecessary
+so we learn when upstream fixes one.
+
+### reflashing without the BOOTSEL button
+
+`--reboot-bootsel`, and `link bootsel` on a show that already has the port open.
+
+Two mechanisms, tried in that order. An elink `Reboot` frame is deliberate and
+confirmable — only a relic running our firmware answers a Hello, so if one does
+we know exactly what we are rebooting. The 1200-baud touch is the fallback and
+is what every Arduino tool uses, so it also works on a relic flashed before the
+link existed, which is precisely the board you most want to reflash without
+reaching behind a sculpture.
+
+`Reboot` is its own frame type rather than a command string on purpose: it
+should be impossible to arrive at by fat-fingering a cue, and the relic does not
+come back from it.
+
+Confirmed on the obelisk, both directions: `--reboot-bootsel` took COM4 away and
+put `RPI-RP2` back on E:, dropping the `.uf2` on it brought the relic back, and
+it answered a Hello and took frames again — without anyone touching the button.
 
 ### the firmware is tested without being flashed
 
@@ -941,11 +1038,10 @@ listing online.
   doing the right thing", not "what will the room look like".
 - **The viewer's layout is 2D only.** `position` takes x and y; a rig hung at
   different heights and depths flattens.
-- **The link has never met a sculpture.** Everything above it is tested,
-  including a real `ObeliskCore` on a loopback, but no frame has reached a Pico.
-  The USB stack, the WS2812 write and every question of timing are open.
-- **The sketch is not compiled by anything here.** No Arduino toolchain on this
-  machine; `eclipse-os.ino` is the one file on this branch that nothing builds.
+- **Timing on the relic is unmeasured.** It accepts frames at 30fps and says so;
+  nothing has measured what it actually draws, or what `DEPLOYMENT 1` buys.
+- **The sketch is built by hand, not by CI.** `desktop/build.ps1` does not touch
+  it; it takes arduino-cli in WSL and `tools/patch-libraries.sh` first.
 - **One relic per config, and one port.** Nothing fans a look out to several
   sculptures at once.
 - **No flow control on the link.** The desk sends at `device.fps` and the relic
@@ -979,10 +1075,11 @@ listing online.
 6. **Is one universe enough long-term?** Ten 7-channel fixtures is 70 channels,
    so there is a lot of headroom, but multi-universe is a real change if it is
    ever needed.
-7. **What happens on the first real frame?** The link is built and tested
-   against a loopback, and has never met a Pico. `readme.md` has a first-light
-   order; step 6 — pulling the cable mid-run and watching the obelisk take its
-   own pixels back — is the one worth doing before trusting it in a room.
+7. **What does it want to run?** The link works and the picture is right, so the
+   open question is no longer whether but what: the obelisk has three looks of
+   its own and the desk can put anything on it, including `mythos26` and the
+   beat. Worth deciding what a show on this sculpture actually is before
+   building more machinery for it.
 8. **How many relics at once?** One port per sculpture is fine for one. Three
    obelisks on one laptop is a different shape of problem — either three
    processes, or something that fans a look out, and that is worth deciding

@@ -134,7 +134,7 @@ bool SerialPort::isOpen() const
     return handle != nullptr && handle != INVALID_HANDLE_VALUE;
 }
 
-bool SerialPort::open(const std::string& path, int baud, std::string& outError, int stopBits)
+bool SerialPort::open(const std::string& path, int baud, std::string& outError, int stopBits, bool assertDtr)
 {
     close();
 
@@ -166,11 +166,9 @@ bool SerialPort::open(const std::string& path, int baud, std::string& outError, 
     dcb.fParity         = FALSE;
     dcb.fOutxCtsFlow    = FALSE;
     dcb.fOutxDsrFlow    = FALSE;
-    // Leave DTR and RTS alone rather than asserting them. Neither line means
-    // anything to a DMX widget, but plenty of FTDI-based boards wire one of
-    // them to a reset or to the RS485 driver-enable, where asserting it holds
-    // the thing mute. Nothing downstream needs them, so do not drive them.
-    dcb.fDtrControl     = DTR_CONTROL_DISABLE;
+    // See the header: a DMX widget wants DTR left alone, a CDC device needs it
+    // asserted before it will believe anyone is listening.
+    dcb.fDtrControl     = assertDtr ? DTR_CONTROL_ENABLE : DTR_CONTROL_DISABLE;
     dcb.fRtsControl     = RTS_CONTROL_DISABLE;
     dcb.fOutX           = FALSE;
     dcb.fInX            = FALSE;
@@ -288,6 +286,39 @@ bool SerialPort::sendBreak(int microseconds, int markAfterMicroseconds, std::str
     return true;
 }
 
+bool SerialPort::touchAt1200(const std::string& path, std::string& outError)
+{
+    const std::string full = "\\\\.\\" + path;
+
+    HANDLE h = ::CreateFileA(full.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr,
+                             OPEN_EXISTING, 0, nullptr);
+    if (h == INVALID_HANDLE_VALUE)
+    {
+        outError = "could not open " + path + ": " + lastWindowsError();
+        return false;
+    }
+
+    DCB dcb{};
+    dcb.DCBlength = sizeof(dcb);
+    if (::GetCommState(h, &dcb))
+    {
+        dcb.BaudRate = 1200;
+        dcb.ByteSize = 8;
+        dcb.Parity   = NOPARITY;
+        dcb.StopBits = ONESTOPBIT;
+        dcb.fDtrControl = DTR_CONTROL_ENABLE;
+        ::SetCommState(h, &dcb);
+    }
+
+    // The board watches for the rate change *and* DTR going away, so drop it
+    // explicitly rather than trusting CloseHandle to do it.
+    ::EscapeCommFunction(h, CLRDTR);
+    ::Sleep(50);
+    ::CloseHandle(h);
+
+    return true;
+}
+
 std::vector<SerialPortInfo> SerialPort::enumeratePorts()
 {
     std::vector<SerialPortInfo> ports;
@@ -372,7 +403,7 @@ bool SerialPort::isOpen() const
     return fd >= 0;
 }
 
-bool SerialPort::open(const std::string& path, int baud, std::string& outError, int stopBits)
+bool SerialPort::open(const std::string& path, int baud, std::string& outError, int stopBits, bool assertDtr)
 {
     close();
 
@@ -437,6 +468,18 @@ bool SerialPort::open(const std::string& path, int baud, std::string& outError, 
         outError = "tcsetattr failed on " + path + ": " + lastPosixError();
         ::close(opened);
         return false;
+    }
+
+    // See the header. A CDC device needs DTR before it will believe the port
+    // belongs to anyone; a widget would rather we kept off the line.
+    {
+        int bits = 0;
+        if (::ioctl(opened, TIOCMGET, &bits) == 0)
+        {
+            if (assertDtr) { bits |= TIOCM_DTR; }
+            else           { bits &= ~TIOCM_DTR; }
+            ::ioctl(opened, TIOCMSET, &bits);
+        }
     }
 
     ::tcflush(opened, TCIOFLUSH);
@@ -522,6 +565,38 @@ bool SerialPort::sendBreak(int microseconds, int markAfterMicroseconds, std::str
         return false;
     }
     spinMicroseconds(markAfterMicroseconds);
+    return true;
+}
+
+bool SerialPort::touchAt1200(const std::string& path, std::string& outError)
+{
+    const int opened = ::open(path.c_str(), O_RDWR | O_NOCTTY | O_NONBLOCK);
+    if (opened < 0)
+    {
+        outError = "could not open " + path + ": " + lastPosixError();
+        return false;
+    }
+
+    termios tty{};
+    if (::tcgetattr(opened, &tty) == 0)
+    {
+        ::cfmakeraw(&tty);
+        ::cfsetispeed(&tty, B1200);
+        ::cfsetospeed(&tty, B1200);
+        ::tcsetattr(opened, TCSANOW, &tty);
+    }
+
+    // The board watches for the rate change *and* DTR going away.
+    int bits = 0;
+    if (::ioctl(opened, TIOCMGET, &bits) == 0)
+    {
+        bits &= ~TIOCM_DTR;
+        ::ioctl(opened, TIOCMSET, &bits);
+    }
+
+    usleep(50 * 1000);
+    ::close(opened);
+
     return true;
 }
 

@@ -80,6 +80,7 @@ namespace
             "  eclipse-dmx --midi-selftest\n"
             "  eclipse-dmx --link-selftest\n"
             "  eclipse-dmx --probe-relics\n"
+            "  eclipse-dmx --reboot-bootsel [--port <path>]\n"
             "  eclipse-dmx --list-patterns\n"
             "  eclipse-dmx --list-palettes\n"
             "  eclipse-dmx --list-profiles\n"
@@ -132,6 +133,7 @@ namespace
             "  link release              hand the pixels back now, staying in pixel mode\n"
             "  link cmd <text>           send a line to the relic's own handleCommand\n"
             "  link hello                ask the relic what it is\n"
+            "  link bootsel              reboot the relic for reflashing; it does not come back\n"
             "  status                    report current state\n"
             "  quit                      shut down, sending one dark frame first\n"
             "\n";
@@ -1120,8 +1122,20 @@ namespace
 
     /// Applies one line of the control protocol. Replies on stdout with OK or
     /// ERR so the wrapper can tell whether a command took.
-    void handleCommand(ShowState& show, const std::string& line)
+    void handleCommand(ShowState& show, const std::string& rawLine)
     {
+        // Strip a UTF-8 BOM. Anything that pipes a file of cues in - PowerShell
+        // does it by default - puts one on the first line, and it turns a
+        // perfectly good `link pixels` into `unknown command '<bom>link'`,
+        // which is a genuinely baffling thing to read.
+        std::string line = rawLine;
+        if (line.size() >= 3 && static_cast<unsigned char>(line[0]) == 0xEF
+                             && static_cast<unsigned char>(line[1]) == 0xBB
+                             && static_cast<unsigned char>(line[2]) == 0xBF)
+        {
+            line.erase(0, 3);
+        }
+
         const std::vector<std::string> words = splitWords(line);
         if (words.empty())
         {
@@ -1155,7 +1169,7 @@ namespace
 
             if (words.size() < 2)
             {
-                emit("ERR link needs pixels, cue, release, hello or cmd");
+                emit("ERR link needs pixels, cue, release, hello, cmd or bootsel");
                 return;
             }
 
@@ -1186,6 +1200,20 @@ namespace
                     return;
                 }
                 emit("OK link release");
+                return;
+            }
+
+            if (what == "bootsel")
+            {
+                if (!relic->rebootToBootloader(error))
+                {
+                    emit("ERR link " + error);
+                    return;
+                }
+                // The show keeps running and keeps rendering; there is simply
+                // nothing on the other end of the cable any more. Stopping it
+                // here would be a surprise when the point was to reflash.
+                emit("OK link bootsel (the relic is in its bootloader now)");
                 return;
             }
 
@@ -1762,6 +1790,17 @@ int main(int argc, char** argv)
     bool emitFrames = false;
     float emitRate = 30.0f;
 
+    // --port is read ahead of the loop as well as in it, because the one-shot
+    // actions below act the moment they are parsed and would otherwise not see
+    // a --port that came after them on the line.
+    for (int i = 1; i + 1 < argc; ++i)
+    {
+        if (std::string(argv[i]) == "--port")
+        {
+            portOverride = argv[i + 1];
+        }
+    }
+
     for (int i = 1; i < argc; ++i)
     {
         const std::string arg = argv[i];
@@ -1817,6 +1856,60 @@ int main(int argc, char** argv)
         else if (arg == "--link-selftest")
         {
             return runLinkSelfTest();
+        }
+        else if (arg == "--reboot-bootsel")
+        {
+            // Two ways in, tried in order of how much they can tell us.
+            //
+            // An elink Reboot frame is deliberate and confirmable: only a relic
+            // running our firmware answers a Hello, so if one does we know
+            // exactly what we are rebooting. The 1200-baud touch is the
+            // fallback, and it is what every Arduino tool uses - it works on a
+            // relic flashed before the link existed, which is precisely the
+            // board you most want to reflash without the button.
+            std::string target = portOverride;
+
+            if (target.empty())
+            {
+                const std::vector<RelicProbe> found = probeRelicPorts(115200);
+                if (!found.empty())
+                {
+                    target = found.front().port;
+                    logLine("relic on " + target + ": " + found.front().identity);
+
+                    RelicUsbOutput relic(target, 115200, RelicUsbOutput::Mode::Cue);
+                    std::string error;
+                    if (relic.open(error) && relic.rebootToBootloader(error))
+                    {
+                        emit("OK bootsel " + target);
+                        return 0;
+                    }
+                    logLine("asking nicely failed (" + error + "); trying the 1200 touch");
+                }
+            }
+
+            if (target.empty())
+            {
+                const std::vector<SerialPortInfo> ports = SerialPort::enumeratePorts();
+                if (ports.size() != 1)
+                {
+                    emit("ERR no relic answered, and " + std::to_string(ports.size())
+                       + " ports to guess between - name one with --port");
+                    return 1;
+                }
+                target = ports.front().path;
+            }
+
+            std::string error;
+            if (!SerialPort::touchAt1200(target, error))
+            {
+                emit("ERR bootsel " + error);
+                return 1;
+            }
+
+            emit("OK bootsel " + target + " (1200 touch; it is in the bootloader"
+                                          " if the port has gone)");
+            return 0;
         }
         else if (arg == "--probe-relics")
         {

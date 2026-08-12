@@ -11,6 +11,8 @@
 
 #if USE_ARDUINO
 
+#include <pico/bootrom.h>
+
 namespace elink
 {
     /// The link over the relic's own USB cable.
@@ -36,6 +38,20 @@ namespace elink
         void writeLine(const char* text) override
         {
             Serial.println(text);
+        }
+
+        /// Into the boot ROM, and that is the last thing this program does.
+        ///
+        /// The core also reboots on the classic 1200-baud touch, which is what
+        /// `arduino-cli upload` uses and what keeps every other tool working.
+        /// This exists beside it because the touch means closing the port and
+        /// reopening it at a different rate, and a desk that already holds the
+        /// port open for a show would rather just ask.
+        void rebootToBootloader() override
+        {
+            Serial.flush();     // the "EOSLINK bootsel" line, before we go
+            delay(20);          // and time for the host to actually read it
+            reset_usb_boot(0, 0);
         }
     };
 }

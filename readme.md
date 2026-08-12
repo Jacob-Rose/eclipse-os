@@ -120,7 +120,11 @@ You need the [arduino-cli](https://arduino.github.io/arduino-cli/), the RP2040 c
    cp secrets.h.example secrets.h
    ```
 
-4. Apply the library patches below (see **Library Patches**) — currently still required.
+4. Apply the remaining library patch (see **Library Patches**):
+
+   ```sh
+   tools/patch-libraries.sh
+   ```
 
 #### Which relic
 
@@ -142,9 +146,18 @@ gated on `DEPLOYMENT`, unlike the raw serial input it replaced.
 
 #### Build / upload / monitor
 
-1. compile.sh -> compile for raspberry pico w (use as reference, easy to change per chipset)
-2. upload.sh -> upload compiled project to first found device
-3. monitor.sh -> view serial out of first found device
+1. `tools/build-firmware.sh` -> compile and leave a `.uf2` in `build-firmware/`
+2. compile.sh -> compile for raspberry pico w (use as reference, easy to change per chipset)
+3. upload.sh -> upload compiled project to first found device
+4. monitor.sh -> view serial out of first found device
+
+To get the `.uf2` onto the board, either drop it on the `RPI-RP2` drive, or -
+if the board is already running a build with the link in it - put it into its
+bootloader from the desk without touching the BOOTSEL button:
+
+```sh
+desktop/build/eclipse-dmx --reboot-bootsel
+```
 
 ### Windows
 
@@ -157,22 +170,37 @@ I would recommend just running this in WSL for these tools.
    >  [Arduino-Pico GitHub w/ Install Instructions](https://github.com/earlephilhower/arduino-pico) 
 3. Get Adafruit GC9A01 and AnimatedGif libraries in Arduino IDE
    > Can be downloaded + auto-setup in Arduino IDE Library Manager
-4. Apply the patches in **Library Patches** below.
+4. Apply the remaining patch in **Library Patches** below.
 
 ## Library Patches (IMPORTANT)
 
-These are hand-edits to installed core/library files (not in this repo, so they don't survive a core/lib reinstall). They're still required as of the versions noted in the setup above — try without them first in case upstream has fixed it.
+One patch left, and it is scripted now:
 
-- **SPI** (`rp2040` core, `.../libraries/SPI/src/`) — `byte` collides with `std::byte` once the project drags `using namespace std;` into scope:
-   - `SPI.h` line ~50: change `byte transfer(uint8_t data)` to `uint8_t transfer(uint8_t data)`
-   - `SPIHelper.h` line 6: add `#pragma once`
-- **AnimatedGIF** (`.../libraries/AnimatedGIF/src/AnimatedGIF.h`) — the current arduino-pico core defines `PICO_BUILD`, so the header skips its `#include <Arduino.h>` while `AnimatedGIF.cpp` still calls `millis()`/`delay()` (`'millis' was not declared in this scope`). Force the include back in by adding, right after the `#else / #include <Arduino.h> / #endif` block near the top:
+```sh
+tools/patch-libraries.sh
+```
 
-   ```cpp
-   #if defined( ARDUINO )
-   #include <Arduino.h>
-   #endif
-   ```
+It is idempotent, keeps a `.bak` beside anything it edits, and tells you which
+patches were already unnecessary — so you find out when upstream has fixed one
+instead of carrying it forever. It still has to be re-run after a library
+reinstall, because these are edits to files outside this repo.
+
+- **AnimatedGIF** (`.../libraries/AnimatedGIF/src/AnimatedGIF.h`) — the core
+  defines `PICO_BUILD`, so the header takes a non-Arduino branch and skips
+  `#include <Arduino.h>` while `AnimatedGIF.cpp` goes on calling `millis()` and
+  `delay()`. Symptom: `'millis' was not declared in this scope`. Still needed as
+  of AnimatedGIF 2.2.0.
+
+**The SPI patches are gone**, and it is worth knowing why rather than just
+deleting them. They existed because `eio/relic.h` did `using namespace std;` at
+global scope, which put `std::byte` in scope for every translation unit that
+included it — and then Arduino's own `byte` was ambiguous, with the error
+appearing deep inside `SPI.h` where nothing looked wrong.
+
+That got much worse with core 6.0.0, which builds at **`-std=gnu++23`**: `std`
+now also has `lerp`, and `makeWord` in `Common.h` broke the same way. Patching a
+C++23 core's headers is a losing game, so the headers here no longer open `std`
+at all. See the note in `src/lib/ecore/name.h`.
 
 ### Raspberry Pico / This software Programming Tips
 

@@ -8,7 +8,8 @@
 #include <numeric>
 #include <random>
 
-using namespace std;
+// Nothing here needs std unqualified, and see name.h for why a header must not
+// open it anyway.
 
 namespace ecore
 {

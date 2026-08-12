@@ -91,6 +91,13 @@ void RelicLink::handleFrame(eio::RelicIO* io)
             answerHello(io);
             break;
 
+        case FrameType::Reboot:
+            // Say so before going, because after this there is no link to say
+            // anything on. The relic comes back as a mass-storage device.
+            transport->writeLine("EOSLINK bootsel");
+            transport->rebootToBootloader();
+            break;
+
         case FrameType::Release:
             // The clean end of a show, rather than waiting out the holdover.
             if (streaming)

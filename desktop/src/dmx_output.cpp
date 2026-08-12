@@ -14,6 +14,15 @@ using namespace edmx;
 
 namespace
 {
+    /// How long a USB CDC port needs after opening before it will carry a byte.
+    ///
+    /// Found the hard way: --probe-relics reported nothing on a relic that was
+    /// running perfectly and answered the identical frame sent by hand a moment
+    /// later. Nothing is wrong with the device; the host simply has not
+    /// finished bringing the line up when CreateFile returns, and what you
+    /// write into that gap is gone.
+    constexpr int CDC_SETTLE_MS = 300;
+
     // Enttec DMX USB PRO framing
     constexpr uint8_t ENTTEC_START_OF_MESSAGE = 0x7E;
     constexpr uint8_t ENTTEC_END_OF_MESSAGE   = 0xE7;
@@ -270,12 +279,16 @@ bool RelicUsbOutput::open(std::string& outError)
     // sculpture into a bootloader instead of driving it.
     const int safeBaud = (baud == 1200) ? 115200 : baud;
 
-    if (!serial.open(port, safeBaud, outError))
+    if (!serial.open(port, safeBaud, outError, 1, /*assertDtr=*/true))
     {
         return false;
     }
 
     consecutiveFailures = 0;
+
+    // The port is not ready to carry anything yet - see CDC_SETTLE_MS. Without
+    // this the Hello below is dropped, and so are the first frames of the show.
+    std::this_thread::sleep_for(std::chrono::milliseconds(CDC_SETTLE_MS));
 
     // Say hello before anything else. The relic answers with what it actually
     // is - its strips and their lengths - so a mismatch between this config and
@@ -389,6 +402,20 @@ bool RelicUsbOutput::sendCommand(const std::string& text, std::string& outError)
 bool RelicUsbOutput::release(std::string& outError)
 {
     return sendRaw(nullptr, 0, static_cast<uint8_t>(elink::FrameType::Release), outError);
+}
+
+bool RelicUsbOutput::rebootToBootloader(std::string& outError)
+{
+    if (!sendRaw(nullptr, 0, static_cast<uint8_t>(elink::FrameType::Reboot), outError))
+    {
+        return false;
+    }
+
+    // The relic is gone the moment it reads that, so there is nothing left to
+    // hold the port open for - and leaving it open means the destructor's
+    // Release write fails into a device that is no longer there.
+    serial.close();
+    return true;
 }
 
 std::vector<std::string> RelicUsbOutput::drainRelicLines()
@@ -530,6 +557,9 @@ std::unique_ptr<DmxOutput> edmx::makeDmxOutput(const std::string& type,
 }
 
 std::vector<RelicProbe> edmx::probeRelicPorts(int baud, int millisecondsEach)
+// millisecondsEach is the listen window *after* the settle above, so the wall
+// clock cost per port is CDC_SETTLE_MS + however long the relic takes to
+// answer, which on a 30ms tick is one or two.
 {
     static const std::string kPrefix = "EOSLINK hello ";
 
@@ -543,11 +573,19 @@ std::vector<RelicProbe> edmx::probeRelicPorts(int baud, int millisecondsEach)
     {
         SerialPort probe;
         std::string error;
-        if (!probe.open(info.path, safeBaud, error))
+        // DTR on: a relic is a CDC device and will not answer without it.
+        if (!probe.open(info.path, safeBaud, error, 1, /*assertDtr=*/true))
         {
             // Held by something else, or not openable. Not a relic today.
             continue;
         }
+
+        // A CDC port is not ready the instant CreateFile returns. The host has
+        // to assert DTR and the device has to notice, and anything written
+        // before that lands nowhere - which reads exactly like a relic that
+        // did not answer. Measured on a Pico: an immediate write is lost, and
+        // it is reliable a few hundred milliseconds later.
+        std::this_thread::sleep_for(std::chrono::milliseconds(CDC_SETTLE_MS));
 
         uint8_t frame[elink::HEADER_SIZE + elink::TRAILER_SIZE];
         const size_t written = elink::writeFrame(elink::FrameType::Hello, nullptr, 0,

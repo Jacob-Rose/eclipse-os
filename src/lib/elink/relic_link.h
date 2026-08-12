@@ -54,6 +54,14 @@ namespace elink
         /// A line back to the desk. Text, not frames: the relic's log stream is
         /// already text and a human already reads it over the same cable.
         virtual void writeLine(const char* text) = 0;
+
+        /// Reboot into the USB bootloader and do not come back.
+        ///
+        /// On the transport rather than on RelicLink because it is the one
+        /// genuinely platform-specific thing in the whole link — it is a call
+        /// into the RP2040's boot ROM. The default does nothing, which is the
+        /// right answer for a host running this in a test.
+        virtual void rebootToBootloader() {}
     };
 
 

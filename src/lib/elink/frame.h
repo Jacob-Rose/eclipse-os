@@ -55,6 +55,17 @@ namespace elink
         /// Empty. Hands the pixels back immediately rather than waiting for the
         /// stream to time out, so a desk can end a show cleanly.
         Release = 0x04,
+
+        /// Empty. Reboots the relic into its USB bootloader, so it can be
+        /// reflashed without anyone reaching behind a sculpture for the BOOTSEL
+        /// button.
+        ///
+        /// The relic does not come back from this: it reboots as a mass-storage
+        /// device waiting for a .uf2, and only a flash or a power cycle brings
+        /// the sketch back. That is the point, and it is why this is its own
+        /// frame type rather than a command string — it should be impossible to
+        /// arrive at by fat-fingering a cue.
+        Reboot = 0x05,
     };
 
     /// The front of a Pixels payload.

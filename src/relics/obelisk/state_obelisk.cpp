@@ -23,7 +23,7 @@ int getSideIndex(HSVStripNode_Mapped2D* inNode)
 #if ERROR_CHECKING_ENABLED
     if(sideIdx >= 4)
     {
-        string str = "Pattern_Obelisk_Theater::render - sideIdx out of range: " + std::to_string(sideIdx) + " >= 4";
+        std::string str = "Pattern_Obelisk_Theater::render - sideIdx out of range: " + std::to_string(sideIdx) + " >= 4";
         //dbgLog(str.c_str(), Verbosity::Warning);
         return 0;
     }

@@ -244,6 +244,10 @@ namespace edmx
         /// Hands the pixels back now, rather than letting the relic time out.
         bool release(std::string& outError);
 
+        /// Reboots the relic into its USB bootloader so it can be reflashed.
+        /// The relic does not come back; the port disappears.
+        bool rebootToBootloader(std::string& outError);
+
         void setMode(Mode inMode) { mode = inMode; }
         Mode getMode() const { return mode; }
 

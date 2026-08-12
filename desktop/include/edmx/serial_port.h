@@ -64,7 +64,18 @@ namespace edmx
 
         /// Opens `path` at `baud`, 8 data bits, no parity, no flow control.
         /// `stopBits` is 1 for the PRO's framed protocol and 2 for raw DMX512.
-        bool open(const std::string& path, int baud, std::string& outError, int stopBits = 1);
+        ///
+        /// `assertDtr` decides whether the DTR line is driven, and the two
+        /// device families here want opposite answers.
+        ///
+        /// A DMX widget wants it left alone: plenty of FTDI boards wire DTR to
+        /// a reset or to an RS485 driver-enable, where asserting it holds the
+        /// thing mute. A USB CDC device wants it *on* — DTR is how a CDC host
+        /// says "I am here", and until it is set the device treats the port as
+        /// nobody's and throws away everything it writes. A relic with DTR low
+        /// looks exactly like a relic that is not running.
+        bool open(const std::string& path, int baud, std::string& outError,
+                  int stopBits = 1, bool assertDtr = false);
         void close();
         bool isOpen() const;
 
@@ -91,6 +102,19 @@ namespace edmx
         /// unfiltered: we would rather show a port we cannot use than hide the
         /// one the user needs.
         static std::vector<SerialPortInfo> enumeratePorts();
+
+        /// The 1200-baud touch: open at 1200, drop DTR, close.
+        ///
+        /// This is the convention every Arduino-family board uses to mean
+        /// "reboot into your bootloader", and it is what `arduino-cli upload`
+        /// does. An RP2040 running arduino-pico watches for exactly this and
+        /// calls into its boot ROM.
+        ///
+        /// It is a *signal*, not a transfer, so a board that takes it vanishes
+        /// from the port list a moment later and comes back as a mass-storage
+        /// device. Success here means the touch was delivered, not that anything
+        /// listened.
+        static bool touchAt1200(const std::string& path, std::string& outError);
 
     private:
         std::string openPath;

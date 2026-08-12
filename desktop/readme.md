@@ -1020,32 +1020,38 @@ eclipse-dmx --config config/obelisk_usb.json
 python -m eclipse_dmx view config/obelisk_usb.json --live
 ```
 
-### first light, in order
+### first light
 
-Nothing here has met a real sculpture yet, so do it in this order and stop at
-the first step that surprises you.
+Done, on a real obelisk. Recorded here because it is also the order to work
+through if a second sculpture ever misbehaves.
 
 1. **Flash it.** `eclipse-os.ino` with `RELIC RELIC_OBELISK` and
-   `USE_RELIC_LINK 1`. Leave `DEPLOYMENT 0` for now — the logs are worth more
-   than the frame rate on a first run.
-2. **Check it still runs its own looks.** Unplugged from any desk, the obelisk
-   should behave exactly as it did before. The link costs it a branch per tick
-   until something talks to it. If this is wrong, nothing after it matters.
-3. **`eclipse-dmx --probe-relics`.** Expect one line naming `obelisk`. Nothing
-   is lit yet; this is a seven-byte Hello and its answer. If the port is there
-   but silent, the link is not built into the firmware.
-4. **A serial monitor, and type `states`.** Expect
-   `EOSLINK states seasons theater mono`. This proves the cue path end to end
-   without a single pixel moving.
-5. **`eclipse-dmx --config config/obelisk_usb.json --frames 60`.** Two seconds
-   of `obelisk_seasons`, from the desk. Watch for `RELIC EOSLINK take` in the
-   log — that is the sculpture confirming the takeover.
-6. **Pull the cable mid-run.** The obelisk should go back to its own look inside
-   half a second. This is the one that matters for a show.
-7. **Then the viewer:** `python -m eclipse_dmx view config/obelisk_usb.json --live`.
+   `USE_RELIC_LINK 1`. `DEPLOYMENT 0` on a first run — the logs are worth more
+   than the frame rate. Build is 396 KB of flash (18%) and 71.5 KB of RAM (27%).
+2. **`eclipse-dmx --probe-relics`.** ✓ `RELIC COM4  obelisk strip=0:344
+   brightness=63`. That is the sculpture naming itself, its one strip, its
+   length, and the current limit it will apply on top of anything sent.
+   `strip=0:344` matching the patch is the check worth making.
+3. **A frame.** `--config config/obelisk_usb.json --frames 90` ✓, with
+   `RELIC EOSLINK take` in the log — the sculpture confirming the takeover.
+4. **Cues.** `link cmd states` ✓ `EOSLINK states seasons theater mono`, and
+   `link cmd state theater` ✓ `EOSLINK state theater`.
+5. **Both modes.** `link cue` ✓ `EOSLINK release asked`, then a cue in cue mode,
+   then `link pixels` ✓ `EOSLINK take` again.
+6. **An abrupt disconnect.** The show killed with no release; the relic answered
+   a Hello again three seconds later ✓. The holdover itself is covered in
+   synthetic time by `--link-selftest`; what this proves is that a desk
+   vanishing mid-frame does not leave the sculpture wedged.
 
-If step 5 lights the wrong pixels rather than none, the patch and the strip
-disagree — compare the Hello's `strip=0:344` against `--show-patch`.
+7. **Reflashing with no button.** `--reboot-bootsel` ✓ (COM4 gone, `RPI-RP2`
+   mounted), `.uf2` dropped on it ✓, relic back and taking frames ✓.
+
+And it looks right on the sculpture — confirmed by eye during the run above, so
+the patch, the strip order and the coordinate space all agree with the physical
+object. That is the half no protocol reply can tell you.
+
+If the wrong pixels ever light rather than none, the patch and the strip
+disagree: compare the Hello's `strip=0:344` against `--show-patch`.
 
 Two things travel, and they are not alternatives:
 
@@ -1088,6 +1094,49 @@ into a running desk and the first bytes it ever sees are the tail of something.
 
 Pixel payloads carry a strip id, a start and a count, so a frame does not have to
 be the whole strip and a relic with more than one is addressable.
+
+### reflashing without the BOOTSEL button
+
+```sh
+eclipse-dmx --reboot-bootsel          # find it, reboot it, drop the .uf2 on RPI-RP2
+```
+
+and `link bootsel` from a running show, when the port is already open.
+
+Two mechanisms, tried in that order. An elink `Reboot` frame is deliberate and
+confirmable — only a relic running our firmware answers a Hello, so if one does
+we know exactly what we are rebooting. The **1200-baud touch** is the fallback:
+it is the convention every Arduino-family board uses, which means it also works
+on a relic flashed before the link existed, and that is precisely the board you
+most want to reflash without reaching behind a sculpture.
+
+`Reboot` is its own frame type rather than a command string on purpose. The
+relic does not come back from it — it reboots as a mass-storage device and waits
+for a `.uf2` — so it should be impossible to arrive at by fat-fingering a cue.
+
+Note the deliberate 1200 guard in `RelicUsbOutput::open`: a show config that
+somehow asked for `"baud": 1200` would otherwise drop the sculpture into its
+bootloader instead of driving it.
+
+### two things about USB CDC that cost an hour
+
+Both of these make a perfectly healthy relic look dead, and neither is visible
+from anything the relic does.
+
+**DTR has to be asserted.** A CDC device treats DTR as "a host is here", and
+until it is set it throws away everything it writes. `SerialPort::open` used to
+deliberately leave DTR alone — correct for a DMX widget, where plenty of FTDI
+boards wire it to a reset or an RS485 driver-enable and asserting it holds the
+thing mute. So it is a parameter now, and the two device families get opposite
+answers. Symptom if you get it wrong: the port opens, the relic is running, and
+`--probe-relics` reports nothing at all.
+
+**The port is not ready when `open()` returns.** The host has to bring the line
+up and the device has to notice, and anything written into that gap is simply
+gone. Measured on a Pico: an immediate write is lost, 300ms later is reliable.
+Both `--probe-relics` and `RelicUsbOutput::open` wait now — otherwise the first
+frames of a show would go missing, which reads as a rig that takes a moment to
+"warm up" rather than as a bug.
 
 ### finding the relic
 

@@ -16,7 +16,21 @@
 #include "hsv_strip.h"
 
 using namespace ecore;
-using namespace std;
+
+// `using namespace std;` used to live here, and it leaked into every relic and
+// every state through them - state_generic.cpp's unqualified clamp() only ever
+// compiled because of it. It also made SPI.h and Common.h fail to parse once
+// the core moved to -std=gnu++23, because std::byte and Arduino's byte are then
+// both in scope wherever this header has been included first.
+//
+// The names it was actually providing, and nothing else. Not `map` - Arduino
+// has its own map(), and importing std::map beside it is the same collision in
+// a smaller box. That one gets qualified below.
+using std::string;
+using std::unique_ptr;
+using std::shared_ptr;
+using std::make_unique;
+using std::make_shared;
 
 namespace eio
 {
@@ -51,7 +65,7 @@ namespace eio
 
     public:
         // each relic can define an enum for the bytes to be per-device specific
-        std::map<uint8_t, unique_ptr<HSVStripSegment>> strip_segments;
+        std::map<uint8_t, unique_ptr<HSVStripSegment>> strip_segments; // std:: - see above
         std::map<uint8_t, unique_ptr<HSVStrip>> strips;
 
         EBrightness currentBrightness;

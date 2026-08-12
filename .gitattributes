@@ -1,0 +1,11 @@
+# Shell scripts must keep LF endings even when checked out on Windows.
+#
+# The readme tells Windows users to build the firmware in WSL, and a script with
+# CRLF endings fails there with `bad interpreter: /bin/bash^M` - or, worse,
+# survives the shebang and then breaks on a line continuation somewhere in the
+# middle. Nothing on Windows needs these to be CRLF; bash is the only thing that
+# reads them.
+*.sh text eol=lf
+
+# Same argument, for the same reason: WSL runs these.
+tools/* text eol=lf
