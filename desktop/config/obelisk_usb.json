@@ -35,7 +35,7 @@
     // build. Sending faster than it can draw does not make it draw faster - the
     // extra frames are read and thrown away a tick later. Raise it once
     // DEPLOYMENT is 1 on the relic, which takes its loop to ~20ms.
-    "fps": 30
+    "fps": 24
   },
 
   "master": {

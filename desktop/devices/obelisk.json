@@ -27,9 +27,13 @@
     "port": "auto",
     "baud": 115200,
 
-    // 30, not 40. The ceiling is the sculpture: 344 WS2812s take 10.3ms to
-    // clock out and the relic's loop sleeps 30ms a tick in a dev build.
-    "fps": 30
+    // 24. The ceiling is the sculpture, not the cable: 344 WS2812s take 10.3ms
+    // to clock out and the relic's loop sleeps 30ms a tick in a dev build, so
+    // it draws somewhere near 25 whatever it is sent. Asking for more does not
+    // make it draw faster - the extra frames are read and dropped a tick later
+    // - and asking for a rate it can actually hold keeps the frames evenly
+    // spaced, which a look notices more than four extra frames a second.
+    "fps": 24
   },
 
   // Eight runs of 43, one entry each - the same eight rows ObeliskIO::init

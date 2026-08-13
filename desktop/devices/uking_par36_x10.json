@@ -35,7 +35,14 @@
   "output": {
     "type": "enttec_open",
     "port": "auto",
-    "fps": 40,
+
+    // 24, to sit with the obelisk rather than above it. The wire could carry
+    // far more - 70 channels at 250k is a frame every 3ms - but the show loop
+    // renders at the *fastest* device's rate and each device sends when it is
+    // due, so a truss at 40 beside a sculpture at 24 means the sculpture takes
+    // an uneven 3 slots out of every 5. Even spacing is worth more to a look
+    // than frames a par cannot resolve anyway.
+    "fps": 24,
     "console_channels": 24
   },
 

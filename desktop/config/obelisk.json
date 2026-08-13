@@ -23,7 +23,7 @@
     // No hardware behind this yet. See "over usb" in readme.md for what
     // replaces it.
     "type": "preview",
-    "fps": 40
+    "fps": 24
   },
 
   "master": {

@@ -30,7 +30,7 @@
   "device": {
     "type": "enttec_open",
     "port": "auto",
-    "fps": 40,
+    "fps": 24,
     "console_channels": 24
   },
 
