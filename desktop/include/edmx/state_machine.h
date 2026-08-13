@@ -57,17 +57,6 @@ namespace edmx
         std::function<std::shared_ptr<eanim::GeneratorHSV>()> make;
         std::function<void(eanim::GeneratorHSV*, bool inputA, bool inputB)> applyInput;
 
-        /// Optional, and only for looks that fire on the beat: how many beats
-        /// go by between hits. Leave it empty for a look that does not pulse.
-        ///
-        /// A function rather than a virtual on the generator for the same
-        /// reason applyInput is one — the library builds without RTTI on the
-        /// microcontroller and a dynamic_cast here would diverge the two. The
-        /// table knows the concrete type; nothing else needs to.
-        std::function<void(eanim::GeneratorHSV*, int beatsPerPulse)> applyDivision;
-
-        /// What this look opens on, when the machine has no override set.
-        int defaultBeatsPerPulse{1};
     };
 
 
@@ -115,20 +104,6 @@ namespace edmx
         /// are remote buttons; here they are whatever the UI wires them to.
         void setInput(bool inputA, bool inputB);
 
-        /// How many beats between hits, for every look here that pulses:
-        /// 1 on every beat, 2 on every other, 4 once a bar.
-        ///
-        /// Zero means "each look's own default", which is how a machine holding
-        /// both an on-every-beat look and an on-twos look can switch between
-        /// them without the operator having to reset this each time. Any other
-        /// value overrides all of them, because a deliberate choice at the desk
-        /// should survive a cue change.
-        void setBeatDivision(int beatsPerPulse);
-        int getBeatDivision() const { return beatDivision; }
-
-        /// What the running look is actually pulsing on, override or default.
-        int currentBeatDivision() const;
-
     private:
         void ensureBuilt(const PatternContext& context);
 
@@ -140,9 +115,6 @@ namespace edmx
 
         bool inputA{false};
         bool inputB{false};
-
-        /// 0 = each look's own default; see setBeatDivision.
-        int beatDivision{0};
 
         /// Carried from tick() to render(): the machine cannot be ticked until
         /// the rig's shape is known, and only render() is handed that.

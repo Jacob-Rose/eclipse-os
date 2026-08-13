@@ -130,15 +130,6 @@ LINK_BUTTONS: List[Tuple[str, Tuple[str, str]]] = [
     ("release", ("link", "release")),
 ]
 
-#: How often the beat-driven looks fire. "auto" hands each look back its own
-#: default, which for beat_pulse is every beat and for vu_pulse is every other.
-DIVISION_BUTTONS: List[Tuple[str, Tuple[str, str]]] = [
-    ("auto", ("div", "0")),
-    ("on 1", ("div", "1")),
-    ("on 2", ("div", "2")),
-    ("on 4", ("div", "4")),
-]
-
 # ===========================================================================
 
 # A dark room, so the lights are the brightest thing on screen.
@@ -574,10 +565,6 @@ class ViewerApp:
         #: last (states, current) the buttons were drawn for
         self._button_signature: Tuple[Tuple[str, ...], str] = ((), "")
 
-        #: Selected beat division, as the button value. "0" is each look's own
-        #: default, which is what the executable starts on.
-        self._division = "0"
-
         self.show = ShowController(
             self.config_path,
             executable=executable,
@@ -761,21 +748,6 @@ class ViewerApp:
                 highlightthickness=0, borderwidth=0,
                 command=lambda c=command: self._run_button(c),
             ).pack(side="left", padx=3, pady=3)
-
-        tk.Label(self.tempo_row, text="   fire ", bg=PANEL, fg=TEXT_DIM,
-                 font=("Consolas", 9)).pack(side="left")
-
-        self._division_buttons: Dict[str, tk.Button] = {}
-        for label, command in DIVISION_BUTTONS:
-            button = tk.Button(
-                self.tempo_row, text=label, font=("Consolas", 9),
-                bg=BUTTON_BG, fg=BUTTON_FG, activebackground=BUTTON_BG_ACTIVE,
-                activeforeground=BUTTON_FG, relief="flat", padx=8, pady=3,
-                highlightthickness=0, borderwidth=0,
-                command=lambda c=command: self._run_button(c),
-            )
-            button.pack(side="left", padx=3, pady=3)
-            self._division_buttons[command[1]] = button
 
         # -- master brightness ---------------------------------------------
         # A slider rather than more buttons: this is the one control that gets
@@ -1035,7 +1007,6 @@ class ViewerApp:
                 fg=BUTTON_FG if known else TEXT_DIM,
             )
 
-        self._refresh_division_buttons()
         self._resize_split()
 
     def _run_button(self, command: Tuple[str, str]) -> None:
@@ -1051,9 +1022,6 @@ class ViewerApp:
                 self.show.tap_beat()
             elif kind == "bpm":
                 self.show.set_bpm(float(value))
-            elif kind == "div":
-                self.show.set_beat_division(int(value))
-                self._division = value
             elif kind == "link":
                 if value == "release":
                     self.show.release_link()
@@ -1062,7 +1030,6 @@ class ViewerApp:
 
         self._guard(apply, kind)
         self._refresh_buttons()
-        self._refresh_division_buttons()
         self._refresh_link_buttons()
 
     def _refresh_link_buttons(self) -> None:
@@ -1081,17 +1048,6 @@ class ViewerApp:
 
         said = self.show.relic_lines[-1] if self.show.relic_lines else ""
         self.link_note.configure(text=said[:60])
-
-    def _refresh_division_buttons(self) -> None:
-        """Lights the selected division, and dims them all when nothing running
-        pulses on the beat."""
-        available = bool(self.show.state_names)
-        for value, button in self._division_buttons.items():
-            active = available and value == self._division
-            button.configure(
-                bg=BUTTON_BG_ACTIVE if active else BUTTON_BG,
-                fg=BUTTON_FG if available else TEXT_DIM,
-            )
 
     def _set_input(self, channel: str, down: bool) -> None:
         if not self.show.state_names:
@@ -1295,8 +1251,6 @@ class ViewerApp:
             source,
         ]
 
-        if self._division != "0":
-            parts.append(f"on {self._division}")
         if self._blackout:
             parts.append("BLACKOUT")
         line = "   ·   ".join(parts)

@@ -222,12 +222,21 @@ Seven states, of which four are written:
 | `tv_static` | every fixture a new colour, every frame |
 | `slot_5`–`slot_7` | placeholders |
 
-How often the beat-driven looks fire is a desk control, not a config one:
-`beat div 1|2|4`, or **on 1 / on 2 / on 4** in the viewer. It overrides every
-look at once, because a choice made at the desk should survive a cue change;
-`beat div 0` ("auto") hands each look back its own default, which is 1 for
-`beat_pulse` and 2 for `vu_pulse`. What it divides is the beat *count*, not the
-tempo — dividing the tempo would stretch the envelope and the hit would go soft.
+Both beat looks fire on every beat. What tells them apart is the envelope, and
+it is stated in the cue list beside the name — `beat_pulse` opens at 0.15/0.60,
+`vu_pulse` shorter and sharper at 0.10/0.45 because it sits over a lit wash.
+Attack and decay are what a beat look *is*, so they belong there rather than in
+a constructor; they stay live knobs at the desk once it is running.
+
+**There used to be a divider** — `beat div 1|2|4`, and on 1 / on 2 / on 4 in the
+viewer. Removed. It divided correctly (8, 4 and 2 pulses in four seconds at
+128bpm, measured) and still felt wrong on a rig, because the clock counts beats
+and has no idea which of them is the one: "on 4" fired at the right *rate* on an
+arbitrary beat of the bar. Firing at the right rate in the wrong place is worse
+than not offering it, and a tap to re-seat it is not something anyone can use
+mid-set. `beat div` is now rejected outright rather than ignored, because
+without that the word falls through to the tap and an old cue file would shove
+the downbeat instead.
 
 The static looks hash `(frame, fixture index)` rather than keeping a random
 generator, which lets `render()` stay const and stateless and makes any given
@@ -855,8 +864,9 @@ And, for mythos26 and the beat clock:
   killing the show
 - the viewer's tempo readout, its tap/bpm/division buttons and the master
   brightness slider all take, and the slider and the arrow keys stay in step
-- `beat_pulse` opens on every beat and `vu_pulse` on twos, without anyone
-  selecting anything; `on 1` and `on 4` override both, `auto` hands them back
+- both beat looks fire on every beat, and each opens on the attack and decay its
+  line in the cue list gives it - 0.15/0.60 and 0.10/0.45 - which stay live
+  knobs at the desk
 - `tv_static_mono` is grey on every fixture of every frame, `tv_static` is not,
   fixtures differ from each other, and consecutive frames differ
 - `--midi-selftest`: 23 checks over a synthesised Mixxx stream, a bare clock
@@ -1134,11 +1144,9 @@ listing online.
   control-change mapping to patterns, no faders. `MidiInput::handleMessage` is
   where that starts.
 - **Bars** — the clock counts beats, not bars, because nothing upstream reliably
-  says where a bar begins. `beat div 4` fires once every four beats but has no
-  idea which of them is the one; a tap is what puts it there.
-- **Sub-beat division** — `beat div` goes 1, 2, 4: slower than the beat, not
-  faster. Eighths would need the envelope to shorten with them, which is a
-  different pattern rather than a different number.
+  says where a bar begins. This is why the beat divider was removed rather than
+  fixed: anything firing less often than every beat has to know *which* beat,
+  and nothing here does.
 - **Stereo VU** — only the mono signals are read. The mapping sends left and
   right separately, which a rig split into two halves could use.
 - **The viewer draws discs, not beams.** Fixtures with a real position in space

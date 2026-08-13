@@ -136,26 +136,18 @@ void StateMachinePattern::render(const PatternContext& context, std::vector<ecor
         return;
     }
 
-    // Feed the momentary inputs and the beat division to whichever looks take
-    // them, then let the machine run: states write through their nodes into the
-    // strip, and a transition blends two states' buffers into it.
+    // Feed the momentary inputs to whichever looks take them, then let the
+    // machine run: states write through their nodes into the strip, and a
+    // transition blends two states' buffers into it.
     //
     // Applied to every state, not just the active one, because a cross-fade
-    // renders two of them and a look arriving mid-fade on the wrong division
+    // renders two of them and a look arriving mid-fade with a stale input
     // would be visible.
     for (size_t idx = 0; idx < states.size(); ++idx)
     {
         if (states[idx].applyInput && generators[idx])
         {
             states[idx].applyInput(generators[idx].get(), inputA, inputB);
-        }
-
-        if (states[idx].applyDivision && generators[idx])
-        {
-            const int division = (beatDivision > 0)
-                ? beatDivision
-                : states[idx].defaultBeatsPerPulse;
-            states[idx].applyDivision(generators[idx].get(), division);
         }
     }
 
@@ -246,24 +238,6 @@ void StateMachinePattern::setInput(bool inA, bool inB)
 {
     inputA = inA;
     inputB = inB;
-}
-
-void StateMachinePattern::setBeatDivision(int beatsPerPulse)
-{
-    beatDivision = std::max(beatsPerPulse, 0);
-}
-
-int StateMachinePattern::currentBeatDivision() const
-{
-    if (beatDivision > 0)
-    {
-        return beatDivision;
-    }
-    if (activeIndex < states.size())
-    {
-        return states[activeIndex].defaultBeatsPerPulse;
-    }
-    return 1;
 }
 
 // ============================================================================

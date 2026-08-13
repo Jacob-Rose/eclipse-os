@@ -516,17 +516,28 @@ rename it in three places — there, `MYTHOS26_STATES` in
 `python/eclipse_dmx/config.py`, and the button table in
 `python/eclipse_dmx/viewer.py`.
 
-##### how often it fires
+##### the shape of a hit
 
-`beat div 1 | 2 | 4` on stdin, or the **on 1 / on 2 / on 4** buttons in the
-viewer: every beat, every other, or once a bar. It overrides every beat-driven
-look at once, because a choice made at the desk should survive a cue change.
-`beat div 0` — **auto** in the viewer — hands each look back its own default,
-which is 1 for `beat_pulse` and 2 for `vu_pulse`.
+Both beat looks fire on every beat. What makes them different is the envelope,
+and that is stated in the cue list beside the name:
 
-What it divides is the beat *count*, not the tempo. Dividing the tempo would
-stretch the envelope with it and the hit would go soft at slower divisions; the
-point of "on twos" is the same crack, half as often.
+```cpp
+//                                          attack  decay
+beatLook<Pattern_Mythos_BeatPulse>("beat_pulse", 0.15f, 0.60f),
+beatLook<Pattern_Mythos_VuPulse>  ("vu_pulse",   0.10f, 0.45f),
+```
+
+Attack and decay are what a beat look *is* — a crack and a trail, or a swell and
+a long fall — so they belong where the cue list is rather than buried in a
+constructor. They stay live knobs once it is running; these are what it opens
+on. `vu_pulse` opens shorter and sharper because it sits over a lit wash.
+
+**There used to be a divider here** — `beat div 1 | 2 | 4`, and **on 1 / on 2 /
+on 4** in the viewer. It is gone. It divided the beat count correctly and still
+felt wrong on a rig, because the clock counts beats and has no idea which of
+them is the one: "on 4" fired at the right *rate* on an arbitrary beat of the
+bar. Firing at the right rate in the wrong place is worse than not offering it,
+and a `beat` tap to re-seat it was never a fix anyone could use mid-set.
 
 Which beat of the pair or the bar it lands on is whichever one was current when
 the count started — the clock counts beats, not bars, because nothing upstream
@@ -618,8 +629,8 @@ of those takes a trigger.
 
 #### what a beat landing mid-pass does
 
-The envelope is longer than a beat at any tempo this runs at, so at `beat div 1`
-the fall never finishes. `envelope.retriggerMode` decides what happens then:
+The envelope is longer than a beat at any tempo this runs at, so the fall never
+finishes. `envelope.retriggerMode` decides what happens then:
 
 | mode | what it does |
 | --- | --- |
@@ -926,7 +937,7 @@ quit
 state <name>              states                 input <a|b> <on|off>
 params                    params dump            param <name> <value>
 
-bpm <float>               beat                   beat div <0|1|2|4>
+bpm <float>               beat
 midi open <spec>          midi close             midi align
 midi free-run <on|off>    midi monitor <on|off>  midi list / midi status
 
@@ -1345,11 +1356,9 @@ obelisk draw faster than its `show()` allows.
 - **MIDI out.** Input only, and only tempo off it — no control-change mapping
   to patterns, no faders. `MidiInput::handleMessage` is where that would start.
 - **Bars.** The clock counts beats, not bars, because nothing upstream reliably
-  says where a bar begins. `beat div 4` fires once every four beats but has no
-  idea which of them is the one; a tap is what puts it there.
-- **Sub-beat division.** `beat div` goes 1, 2, 4 — slower than the beat, not
-  faster. Eighths and sixteenths would need the envelope to shorten with them,
-  which is a different pattern rather than a different number.
+  says where a bar begins. This is why the beat divider was removed rather than
+  fixed: anything that fires less often than every beat needs to know *which*
+  beat, and nothing here does.
 - **Stereo VU.** Only the mono meters are read. The mapping sends left and
   right separately, which a rig split into two halves could use.
 

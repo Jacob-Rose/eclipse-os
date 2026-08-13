@@ -105,15 +105,6 @@ namespace edmx
         /// beats; lift it if the rig needs to stay visible.
         float floorLevel{0.0f};
 
-        /// Beats between hits: 1 on every beat, 2 on every other, 4 once a bar.
-        ///
-        /// Which beat of the pair or the bar it lands on is whichever one was
-        /// current when the count started — the clock counts beats, not bars,
-        /// because nothing upstream reliably says where a bar begins. `beat`
-        /// (a tap) re-seats it, which is how you move it onto the one.
-        void setBeatsPerPulse(int beats);
-        int getBeatsPerPulse() const { return beatsPerPulse; }
-
         /// The level the envelope is at right now, 0..1. Exposed for tests and
         /// for anything that wants to show the beat on screen.
         float getLevel() const { return level; }
@@ -126,8 +117,6 @@ namespace edmx
 
     private:
         BeatClock* clock{nullptr};
-
-        int beatsPerPulse{1};
 
         /// What setEnvelope() was last given. Kept only so the numbers can be
         /// read back; the curve is what actually runs.
@@ -201,8 +190,12 @@ namespace edmx
         /// instantaneous level instead.
         float baseSmoothing{0.25f};
 
-        void setBeatsPerPulse(int beats) { pulse.setBeatsPerPulse(beats); }
-        int getBeatsPerPulse() const { return pulse.getBeatsPerPulse(); }
+        /// The flash's envelope, forwarded, so a cue list can shape a vu_pulse
+        /// the same way it shapes a beat_pulse. See beatLook in mythos26.cpp.
+        void setEnvelope(float attackSeconds, float decaySeconds)
+        {
+            pulse.setEnvelope(attackSeconds, decaySeconds);
+        }
 
         /// The wash level right now, for tests.
         float getBaseLevel() const { return baseLevel; }

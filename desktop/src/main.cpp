@@ -119,8 +119,6 @@ namespace
             "  blackout <on|off>         hold the rig dark without losing the look\n"
             "  bpm <float>               set the tempo by hand\n"
             "  beat                      a downbeat, now - tap it, or trigger a cue\n"
-            "  beat div <1|2|4>          fire on every beat, every other, or once a bar\n"
-            "                            (0 gives each look back its own default)\n"
             "  midi list                 MIDI inputs the machine can see\n"
             "  midi open <spec>          follow tempo from that input\n"
             "  midi close                stop following, keep the tempo\n"
@@ -1251,7 +1249,6 @@ namespace
             << " fixtures=" << show.config.fixtureCount()
             << " devices=" << show.devices.size()
             << " " << sharedBeatClock().describe(nowSeconds())
-            << " div=" << (machine ? machine->currentBeatDivision() : 0)
             << " " << sharedAudioLevel().describe(nowSeconds())
             << " vu=" << (sharedAudioLevel().isAnyLive(nowSeconds()) ? "live" : "none")
             << " midi=" << (show.midi.isOpen() ? ("\"" + show.midi.getPortName() + "\"") : "none")
@@ -1701,31 +1698,22 @@ namespace
 
         if (command == "beat")
         {
-            // beat div <n> - how often the beat-driven looks fire.
+            // `beat div` is gone, and is rejected rather than ignored.
+            //
+            // It divided the beat count correctly and still felt wrong on a
+            // rig, because the clock counts beats and has no idea which of them
+            // is the one - so "on 4" fired at the right rate on an arbitrary
+            // beat of the bar. What shapes a hit now is its envelope, which is
+            // per look and live.
+            //
+            // Said outright because the alternative is worse: without this the
+            // word falls through to the tap below, and an old cue file asking
+            // for `beat div 4` would silently shove the downbeat instead.
             if (words.size() >= 2 && (words[1] == "div" || words[1] == "divide"))
             {
-                StateMachinePattern* machine = show.pattern ? show.pattern->asStateMachine() : nullptr;
-                if (!machine)
-                {
-                    emit("ERR beat div needs a state machine pattern");
-                    return;
-                }
-                if (words.size() < 3)
-                {
-                    emit("ERR beat div needs 1, 2, 4, or 0 for each look's own default");
-                    return;
-                }
-
-                float value = 0.0f;
-                if (!parseFloatArg(words[2], value) || value < 0.0f || value > 64.0f)
-                {
-                    emit("ERR beat div: '" + words[2] + "' is not a beat count");
-                    return;
-                }
-
-                machine->setBeatDivision(static_cast<int>(value));
-                emit("OK beat div " + words[2]);
-                emit("DIV " + std::to_string(machine->currentBeatDivision()));
+                emit("ERR beat div is gone - a beat look's shape is its attack"
+                     " and decay now, per look: `params` to see them, `param"
+                     " attack <n>` to change one");
                 return;
             }
 

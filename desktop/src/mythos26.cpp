@@ -58,20 +58,11 @@ void Pattern_Mythos_BeatPulse::init()
     envelope.reset();
 }
 
-void Pattern_Mythos_BeatPulse::setBeatsPerPulse(int beats)
-{
-    beatsPerPulse = std::max(beats, 1);
-}
-
 void Pattern_Mythos_BeatPulse::tick(float deltaTime)
 {
     const double now = nowSeconds();
 
-    // Divide the beat count, not the tempo. Dividing the tempo would stretch
-    // the envelope with it and the hit would go soft at slower divisions; the
-    // point of "on twos" is the same crack, half as often.
-    const double position = clock->beatPosition(now) / static_cast<double>(beatsPerPulse);
-    const long long beat = static_cast<long long>(std::floor(position));
+    const long long beat = static_cast<long long>(std::floor(clock->beatPosition(now)));
 
     if (!started || beat != lastBeat)
     {
@@ -109,10 +100,9 @@ void Pattern_Mythos_BeatPulse::render(eio::HSVStripNode* node, ecore::HSV& inOut
 Pattern_Mythos_VuPulse::Pattern_Mythos_VuPulse()
     : meter(&sharedAudioLevel())
 {
-    // On twos by default. The table can override it and so can the desk, but
-    // this is the look's own idea of itself: with a lit wash underneath, a hit
-    // on every beat is too much light and the hits stop reading as hits.
-    pulse.setBeatsPerPulse(2);
+    // The flash sits over a lit wash here, so it wants a shorter, sharper
+    // envelope than beat_pulse's - see the cue list, which is where both
+    // looks' opening shapes live.
 }
 
 void Pattern_Mythos_VuPulse::reflect(ecore::PropertyBag& bag)
@@ -312,18 +302,25 @@ namespace
         return def;
     }
 
-    /// A look that fires on the beat, and can be told how often.
+    /// A look that fires on the beat, with the shape of its hit.
     ///
-    /// `beats` is what it opens on; `beat div` at the desk overrides every
-    /// look at once. The lambda is where the concrete type is known, which is
-    /// what keeps the machine itself from needing to know about any of them.
+    /// Attack and decay are what a beat look *is* - a crack and a trail, or a
+    /// swell and a long fall - so they belong in the cue list beside the name
+    /// rather than buried in a constructor. Both stay live knobs once it is
+    /// running; these are what it opens on.
+    ///
+    /// The lambda is where the concrete type is known, which is what keeps the
+    /// machine itself from needing to know about any of them.
     template <typename PatternT>
-    StateDef beatLook(const char* name, int beats)
+    StateDef beatLook(const char* name, float attackSeconds, float decaySeconds)
     {
-        StateDef def = look<PatternT>(name);
-        def.defaultBeatsPerPulse = beats;
-        def.applyDivision = [](eanim::GeneratorHSV* generator, int beatsPerPulse) {
-            static_cast<PatternT*>(generator)->setBeatsPerPulse(beatsPerPulse);
+        StateDef def;
+        def.name = name;
+        def.make = [attackSeconds, decaySeconds]() -> std::shared_ptr<eanim::GeneratorHSV> {
+            auto pattern = std::make_shared<PatternT>();
+            pattern->setEnvelope(attackSeconds, decaySeconds);
+            pattern->init();
+            return pattern;
         };
         return def;
     }
@@ -366,9 +363,17 @@ std::unique_ptr<StateMachinePattern> edmx::makeMythos26StateMachine()
     // changing its line here; nothing else in the runner, the protocol or the
     // UI needs to know. The remaining slot_* are placeholders.
     //
-    // The number on a beatLook is what it opens on - 1 is every beat, 2 every
-    // other, 4 once a bar. `beat div <n>` at the desk overrides all of them at
-    // once, and `beat div 0` hands them back their own defaults.
+    // The two numbers on a beatLook are its envelope: how long the hit takes to
+    // reach full, and how long it takes to fall back. They are the difference
+    // between a crack and a swell, and they are live knobs at the desk once it
+    // is running - these are what the cue opens on.
+    //
+    // Both fire on every beat. There used to be a beat divider here, and at the
+    // desk, so a look could hit on twos or once a bar. It divided correctly and
+    // still felt wrong, because the clock counts beats and has no idea which of
+    // them is the one - so "on 4" fired at the right rate on an arbitrary beat
+    // of the bar. Firing at the right rate in the wrong place is worse than not
+    // offering it.
     //
     // Renaming a state means renaming it in three places: here,
     // MYTHOS26_STATES in python/eclipse_dmx/config.py, and the button table in
@@ -377,8 +382,9 @@ std::unique_ptr<StateMachinePattern> edmx::makeMythos26StateMachine()
     // without one running.
     // ------------------------------------------------------------------
     std::vector<StateDef> states = {
-        beatLook<Pattern_Mythos_BeatPulse>("beat_pulse", 1),
-        beatLook<Pattern_Mythos_VuPulse>("vu_pulse", 2),
+        //                                          attack  decay
+        beatLook<Pattern_Mythos_BeatPulse>("beat_pulse", 0.15f, 0.60f),
+        beatLook<Pattern_Mythos_VuPulse>  ("vu_pulse",   0.10f, 0.45f),
 
         staticLook("tv_static_mono", true),
         staticLook("tv_static", false),

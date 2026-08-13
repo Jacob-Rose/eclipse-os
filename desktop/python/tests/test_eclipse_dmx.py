@@ -1003,64 +1003,79 @@ def _rising_edges(frames, threshold=128):
     return sum(1 for i in range(1, len(lit)) if lit[i] and not lit[i - 1])
 
 
-class BeatDivision(unittest.TestCase):
-    """on 1 / on 2 / on 4, and each look's own default."""
+class BeatLooks(unittest.TestCase):
+    """The looks that fire on the beat, and the envelope they open with.
+
+    There used to be a divider here - on 1 / on 2 / on 4. It divided correctly
+    and still felt wrong on a rig, because the clock counts beats and has no
+    idea which of them is the one, so "on 4" fired at the right rate on an
+    arbitrary beat of the bar. What shapes a hit now is its envelope, which is
+    per look, stated in the cue list, and live at the desk.
+    """
 
     @classmethod
     def setUpClass(cls):
         executable_or_skip()
 
-    def _count(self, state, seconds=4.0, division=None, bpm=120.0):
+    def _count(self, state, seconds=4.0, bpm=120.0):
         frames = []
         show = ShowController(
             SHOW, dry_run=True, midi="", bpm=bpm, on_frame=frames.append, emit_rate=40.0
         )
         try:
             show.set_state(state)
-            if division is not None:
-                show.set_beat_division(division)
             frames.clear()          # drop the cross-fade
             time.sleep(seconds)
         finally:
             show.stop()
         return _rising_edges(frames)
 
-    def test_vu_pulse_opens_on_twos(self):
-        """Its own default, without anyone selecting a division."""
-        beats = 120.0 / 60.0 * 4.0          # 8 beats in the window
-        self.assertAlmostEqual(self._count("vu_pulse"), beats / 2, delta=1.5)
-
-    def test_beat_pulse_opens_on_every_beat(self):
+    def test_beat_pulse_fires_on_every_beat(self):
         beats = 120.0 / 60.0 * 4.0
         self.assertAlmostEqual(self._count("beat_pulse"), beats, delta=2.0)
 
-    def test_the_selection_overrides_the_default(self):
-        """`on 1` should make vu_pulse fire every beat despite opening on twos."""
+    def test_vu_pulse_fires_on_every_beat_too(self):
+        """It used to open on twos. Without a divider there is one answer."""
         beats = 120.0 / 60.0 * 4.0
-        self.assertAlmostEqual(self._count("vu_pulse", division=1), beats, delta=2.0)
+        self.assertAlmostEqual(self._count("vu_pulse"), beats, delta=2.0)
 
-    def test_on_four_is_once_a_bar(self):
-        beats = 120.0 / 60.0 * 8.0
-        self.assertAlmostEqual(
-            self._count("beat_pulse", seconds=8.0, division=4), beats / 4, delta=1.5
-        )
-
-    def test_zero_hands_back_each_looks_default(self):
+    def test_the_cue_list_sets_the_envelope(self):
+        """beatLook's two numbers are what the look opens on."""
         show = ShowController(SHOW, dry_run=True, midi="", on_frame=lambda f: None)
         try:
+            show.set_state("beat_pulse")
+            time.sleep(0.4)
+            knobs = {p.name: p.value for p in show.params}
+            self.assertAlmostEqual(knobs["attack"], 0.15, places=3)
+            self.assertAlmostEqual(knobs["decay"], 0.60, places=3)
+
+            # vu_pulse opens shorter and sharper, over its lit wash.
             show.set_state("vu_pulse")
-            show.set_beat_division(1)
-            show.set_beat_division(0)
-            time.sleep(0.3)
-            self.assertIn("div=2", show.status(), "vu_pulse should be back on twos")
+            time.sleep(0.4)
+            knobs = {p.name: p.value for p in show.params}
+            self.assertAlmostEqual(knobs["attack"], 0.10, places=3)
+            self.assertAlmostEqual(knobs["decay"], 0.45, places=3)
         finally:
             show.stop()
 
-    def test_a_nonsense_division_is_rejected_without_dying(self):
+    def test_the_envelope_is_still_live(self):
+        """Stated in the cue list, tunable at the desk - both, not either."""
+        show = ShowController(SHOW, dry_run=True, midi="", on_frame=lambda f: None)
+        try:
+            show.set_state("beat_pulse")
+            time.sleep(0.4)
+            show.set_param("decay", 1.25)
+            time.sleep(0.3)
+            knobs = {p.name: p.value for p in show.params}
+            self.assertAlmostEqual(knobs["decay"], 1.25, places=3)
+        finally:
+            show.stop()
+
+    def test_beat_div_is_gone(self):
         show = ShowController(SHOW, dry_run=True, midi="", on_frame=lambda f: None)
         try:
             with self.assertRaises(ShowError):
-                show.command("beat div nonsense")
+                show.command("beat div 2")
             self.assertTrue(show.is_running)
         finally:
             show.stop()
@@ -1511,14 +1526,6 @@ class ViewerOnTheShow(unittest.TestCase):
         self.settle(0.5)
         self.assertEqual(self.app._status, "")
         self.assertIn("manual", self.app.header.cget("text"))
-
-    def test_the_division_buttons_take(self):
-        self.settle(0.8)
-        self.app._run_button(("div", "4"))
-        self.settle(0.5)
-        self.assertEqual(self.app._status, "")
-        self.assertIn("on 4", self.app.header.cget("text"))
-        self.assertIn("div=4", self.app.show.status())
 
     def test_the_master_slider_reaches_the_rig(self):
         self.settle(0.8)
