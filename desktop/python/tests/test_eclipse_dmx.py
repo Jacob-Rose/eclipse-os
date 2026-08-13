@@ -268,12 +268,16 @@ class TheObelisk(unittest.TestCase):
             run = positions[strip * OBELISK_SIDE_LENGTH:(strip + 1) * OBELISK_SIDE_LENGTH]
             self.assertTrue(all(point[0] == float(strip) for point in run))
 
+            # Up and down runs cover the *same* range, because the pixels
+            # physically line up. The down ones used to start a unit high; see
+            # the note in devices/obelisk.json.
             if strip % 2 == 0:
                 self.assertEqual([point[1] for point in run],
                                  [float(y) for y in range(OBELISK_SIDE_LENGTH)])
             else:
                 self.assertEqual([point[1] for point in run],
-                                 [float(OBELISK_SIDE_LENGTH - y) for y in range(OBELISK_SIDE_LENGTH)])
+                                 [float(OBELISK_SIDE_LENGTH - 1 - y)
+                                  for y in range(OBELISK_SIDE_LENGTH)])
 
     def test_literal_positions_survive_a_round_trip(self):
         """Unlike addressing, this is not resolved away on load."""
@@ -1099,9 +1103,17 @@ class TvStatic(unittest.TestCase):
         self.assertTrue(coloured, "every fixture came out grey")
 
     def test_fixtures_differ_from_each_other(self):
-        """Otherwise it is a flashing rig, not static."""
+        """Otherwise it is a flashing rig, not static.
+
+        The bar is "half the fixtures, up to 96 distinct values", not simply
+        half: gamma is not injective on bytes, so 354 fixtures drawing uniformly
+        from 256 greys and then being gamma-corrected land on about 145 distinct
+        values however random they are. Asking for 177 of them tests the
+        colour depth of the wire rather than whether the look is static.
+        """
         frames = self._frames("tv_static_mono")
-        varied = sum(1 for frame in frames if len(set(frame)) > len(frame) // 2)
+        wanted = min(len(frames[0]) // 2, 96)
+        varied = sum(1 for frame in frames if len(set(frame)) > wanted)
         self.assertGreater(varied, len(frames) * 0.8)
 
     def test_consecutive_frames_differ(self):
@@ -1249,11 +1261,11 @@ class ViewerWindow(unittest.TestCase):
                 self.app.root.geometry(f"{width}x{height}")
                 self.settle(0.6)
 
-                canvas_w = self.app.canvas.winfo_width()
-                canvas_h = self.app.canvas.winfo_height()
-                self.assertEqual(len(self.app._items), 10)
+                canvas_w = self.app._panels[0].canvas.winfo_width()
+                canvas_h = self.app._panels[0].canvas.winfo_height()
+                self.assertEqual(len(self.app._panels[0]._items), 10)
 
-                cores = [self.app.canvas.coords(item["core"]) for item in self.app._items]
+                cores = [self.app._panels[0].canvas.coords(item["core"]) for item in self.app._panels[0]._items]
                 radius = (cores[0][2] - cores[0][0]) / 2
                 glow = radius * GLOW_EXTENT
 
@@ -1268,7 +1280,7 @@ class ViewerWindow(unittest.TestCase):
         from eclipse_dmx.viewer import GLOW_EXTENT
 
         self.settle(0.6)
-        cores = [self.app.canvas.coords(item["core"]) for item in self.app._items]
+        cores = [self.app._panels[0].canvas.coords(item["core"]) for item in self.app._panels[0]._items]
         centres = [((x0 + x1) / 2, (y0 + y1) / 2) for x0, y0, x1, y1 in cores]
         glow = (cores[0][2] - cores[0][0]) / 2 * GLOW_EXTENT
 
@@ -1282,7 +1294,7 @@ class ViewerWindow(unittest.TestCase):
         from eclipse_dmx.viewer import BACKGROUND
 
         self.settle(1.5)
-        fills = [self.app.canvas.itemcget(item["core"], "fill") for item in self.app._items]
+        fills = [self.app._panels[0].canvas.itemcget(item["core"], "fill") for item in self.app._panels[0]._items]
         background = "#%02x%02x%02x" % BACKGROUND
         self.assertGreaterEqual(sum(1 for fill in fills if fill != background), 8)
         self.assertGreater(len(set(fills)), 2)
@@ -1291,7 +1303,7 @@ class ViewerWindow(unittest.TestCase):
         self.settle(0.8)
         self.app._toggle_blackout()
         self.settle(0.8)
-        fills = [self.app.canvas.itemcget(item["core"], "fill") for item in self.app._items]
+        fills = [self.app._panels[0].canvas.itemcget(item["core"], "fill") for item in self.app._panels[0]._items]
         self.assertTrue(all(fill == "#000000" for fill in fills))
 
     def test_pattern_cycling(self):
@@ -1334,12 +1346,12 @@ class ViewerOnTheObelisk(unittest.TestCase):
 
     def test_every_pixel_is_drawn_once(self):
         self.settle(0.8)
-        self.assertEqual(len(self.app._items), OBELISK_PIXELS)
+        self.assertEqual(len(self.app._panels[0]._items), OBELISK_PIXELS)
 
     def test_dense_rigs_drop_the_glow(self):
         """3096 canvas items per repaint does not fit in a frame."""
         self.settle(0.8)
-        self.assertTrue(all(not item["rings"] for item in self.app._items))
+        self.assertTrue(all(not item["rings"] for item in self.app._panels[0]._items))
 
     def test_pixels_stay_inside_the_canvas(self):
         for width, height in [(1000, 600), (640, 320), (1600, 900)]:
@@ -1347,10 +1359,10 @@ class ViewerOnTheObelisk(unittest.TestCase):
                 self.app.root.geometry(f"{width}x{height}")
                 self.settle(0.6)
 
-                canvas_w = self.app.canvas.winfo_width()
-                canvas_h = self.app.canvas.winfo_height()
-                for item in self.app._items:
-                    x0, y0, x1, y1 = self.app.canvas.coords(item["core"])
+                canvas_w = self.app._panels[0].canvas.winfo_width()
+                canvas_h = self.app._panels[0].canvas.winfo_height()
+                for item in self.app._panels[0]._items:
+                    x0, y0, x1, y1 = self.app._panels[0].canvas.coords(item["core"])
                     self.assertGreaterEqual(x0, -0.5)
                     self.assertLessEqual(x1, canvas_w + 0.5)
                     self.assertGreaterEqual(y0, -0.5)
@@ -1361,7 +1373,7 @@ class ViewerOnTheObelisk(unittest.TestCase):
         from eclipse_dmx.viewer import BACKGROUND
 
         self.settle(2.0)
-        fills = [self.app.canvas.itemcget(item["core"], "fill") for item in self.app._items]
+        fills = [self.app._panels[0].canvas.itemcget(item["core"], "fill") for item in self.app._panels[0]._items]
         self.assertNotEqual(fills[0], "#%02x%02x%02x" % BACKGROUND)
 
         sides = [fills[side * 2 * OBELISK_SIDE_LENGTH + 20] for side in range(4)]
@@ -1385,9 +1397,9 @@ class ViewerOnTheObelisk(unittest.TestCase):
         """Eight legends, not 344."""
         self.settle(0.8)
         texts = [
-            self.app.canvas.itemcget(item, "text")
-            for item in self.app.canvas.find_all()
-            if self.app.canvas.type(item) == "text"
+            self.app._panels[0].canvas.itemcget(item, "text")
+            for item in self.app._panels[0].canvas.find_all()
+            if self.app._panels[0].canvas.type(item) == "text"
         ]
         self.assertEqual(
             sorted(texts),

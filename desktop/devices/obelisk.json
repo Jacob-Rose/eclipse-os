@@ -1,0 +1,69 @@
+{
+  // The obelisk. A device definition, not a show.
+  //
+  // This describes what the sculpture *is*: 344 pixels, four sides at two
+  // vertical strips each, 43 tall, on a Pico at the end of a USB cable. It says
+  // nothing about what it should be doing - that belongs to whichever
+  // environment puts it in a room.
+  //
+  // Referred to by name from an environment:
+  //
+  //   "devices": [ { "device": "obelisk", "offset": [0, 0] } ]
+  //
+  // The relic must be flashed with USE_RELIC_LINK on - see eclipse-os.ino.
+
+  "name": "obelisk",
+
+  // Positions below are the obelisk's own coordinates, so they reach the
+  // pattern untouched (after whatever the environment's placement does to
+  // them). x is which strip, 0..7, four sides at two each; y is how far up,
+  // 0..43. That is the space every Pattern_Obelisk_* look was written against -
+  // it is where obelisk_seasons gets a different palette per side, and where
+  // its noise field gets the variation that keeps it from reading as flat.
+  "coord_space": "literal",
+
+  "output": {
+    "type": "relic_usb",
+    "port": "auto",
+    "baud": 115200,
+
+    // 30, not 40. The ceiling is the sculpture: 344 WS2812s take 10.3ms to
+    // clock out and the relic's loop sleeps 30ms a tick in a dev build.
+    "fps": 30
+  },
+
+  // Eight runs of 43, one entry each - the same eight rows ObeliskIO::init
+  // builds on the sculpture, in the same order with the same coordinates. Read
+  // them beside the GenerateAxisRow calls in src/relics/obelisk/obelisk.cpp.
+  //
+  // Each pixel is three channels, so a run of 43 is 129 and the next starts 129
+  // later. The last reaches 1032, which is twice a DMX universe and perfectly
+  // legal: nothing is putting this on a DMX wire.
+  //
+  // The down strips start at y=42 and step -1, so they run 42..0 - exactly the
+  // range the up strips cover, because the pixels physically line up. They used
+  // to start at 43, which put every down strip a whole unit above its
+  // neighbour and shifted half the sculpture against the other half for
+  // anything reading y. Fixed in obelisk.cpp too; these have to agree.
+  "fixtures": [
+    { "profile": "rgb3", "name": "a_up",   "address":   1, "count": 43,
+      "position": [0,  0], "position_step": [0,  1] },
+    { "profile": "rgb3", "name": "a_down", "address": 130, "count": 43,
+      "position": [1, 42], "position_step": [0, -1] },
+
+    { "profile": "rgb3", "name": "b_up",   "address": 259, "count": 43,
+      "position": [2,  0], "position_step": [0,  1] },
+    { "profile": "rgb3", "name": "b_down", "address": 388, "count": 43,
+      "position": [3, 42], "position_step": [0, -1] },
+
+    { "profile": "rgb3", "name": "c_up",   "address": 517, "count": 43,
+      "position": [4,  0], "position_step": [0,  1] },
+    { "profile": "rgb3", "name": "c_down", "address": 646, "count": 43,
+      "position": [5, 42], "position_step": [0, -1] },
+
+    { "profile": "rgb3", "name": "d_up",   "address": 775, "count": 43,
+      "position": [6,  0], "position_step": [0,  1] },
+    { "profile": "rgb3", "name": "d_down", "address": 904, "count": 43,
+      "position": [7, 42], "position_step": [0, -1] }
+  ]
+}

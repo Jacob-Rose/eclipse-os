@@ -1,0 +1,50 @@
+{
+  // Ten U'King Par 36 on one DMX line, 7-channel mode. A device definition.
+  //
+  // The whole rig is one entry: the uking_par36 profile knows the channel
+  // layout, "count" patches ten of them one footprint apart, and the parked
+  // strobe/mode/colour channels come along for free.
+  //
+  // Set each fixture's own address on its display to match:
+  //   par_1  ->   1      par_6  ->  36
+  //   par_2  ->   8      par_7  ->  43
+  //   par_3  ->  15      par_8  ->  50
+  //   par_4  ->  22      par_9  ->  57
+  //   par_5  ->  29      par_10 ->  64
+  //
+  // So par_1 occupies 1-7, par_2 occupies 8-14, and so on up to 70. That leaves
+  // 442 channels free on the universe.
+  //
+  // Ten identical pars are indistinguishable from a config file, so walk the
+  // rig once with:
+  //   eclipse-dmx --config <environment> --pattern identify
+
+  "name": "pars",
+
+  // Normalized: the pars are a line, and where they sit in a pattern's space is
+  // the environment's business. Their positions here are only their order along
+  // the truss.
+  "coord_space": "normalized",
+
+  // The widget on this rig is a bare FTDI cable - it enumerates as
+  // "FT232R USB UART" with a stock, unprogrammed EEPROM, which is exactly what
+  // QLC+ shows for it too. There is no firmware in it, so the host generates
+  // the DMX break itself: that is "enttec_open", not "enttec_pro".
+  //
+  // "baud" is ignored here; the open path is always DMX's own 250000 8N2.
+  "output": {
+    "type": "enttec_open",
+    "port": "auto",
+    "fps": 40,
+    "console_channels": 24
+  },
+
+  "fixtures": [
+    {
+      "profile": "uking_par36",
+      "name": "par",
+      "address": 1,
+      "count": 10
+    }
+  ]
+}

@@ -618,20 +618,57 @@ class Fixture:
 
 
 @dataclass
-class Config:
-    """A whole rig: device, trim, look and patch.
+class Placement:
+    """Where a device sits in the pattern's coordinate space.
 
-    Channel numbers on `Fixture` are always one-based internally, whatever the
-    file said. `addressing` records only how the file we read was *numbered*, so
-    that anything printing channels back to a user can speak the same dialect
-    their fixture displays do. See `display_channel`.
+    `world = local * scale + offset`. `fit` states an extent instead of a
+    scale - "make this device one unit wide" - which is what you want when the
+    device's own units are its own business. See edmx::Placement.
     """
 
-    device: DeviceConfig = field(default_factory=DeviceConfig)
-    master: MasterConfig = field(default_factory=MasterConfig)
-    midi: MidiConfig = field(default_factory=MidiConfig)
-    pattern: PatternConfig = field(default_factory=PatternConfig)
+    offset: List[float] = field(default_factory=lambda: [0.0, 0.0])
+    scale: List[float] = field(default_factory=lambda: [1.0, 1.0])
+    fit: Optional[List[float]] = None
+
+    #: How big this device's panel is drawn, relative to an even share of the
+    #: window. Purely a view property: it does not touch a single coordinate the
+    #: pattern sees.
+    #:
+    #: Explicit rather than inferred from the geometry. A pillar and a truss
+    #: plainly want different panel shapes, but *how* different is a judgement
+    #: about the room and the screen - something you tune by looking at the
+    #: window, not something a fixture list can tell you.
+    view_scale: List[float] = field(default_factory=lambda: [1.0, 1.0])
+
+    def to_dict(self) -> Dict[str, Any]:
+        out: Dict[str, Any] = {}
+        if self.offset != [0.0, 0.0]:
+            out["offset"] = list(self.offset)
+        if self.scale != [1.0, 1.0]:
+            out["scale"] = list(self.scale)
+        if self.fit is not None:
+            out["fit"] = list(self.fit)
+        if self.view_scale != [1.0, 1.0]:
+            out["view_scale"] = list(self.view_scale)
+        return out
+
+
+@dataclass
+class Device:
+    """One physical thing the desk can light.
+
+    A device owns its geometry, how its numbers are read, and its own way onto a
+    wire. It does not own a pattern or a tempo - those belong to the show, and
+    every device in an environment shares them. Must stay in step with
+    edmx::Device in desktop/include/edmx/config.h.
+    """
+
+    name: str = "rig"
+    source: str = ""
+
+    output: DeviceConfig = field(default_factory=DeviceConfig)
     fixtures: List[Fixture] = field(default_factory=list)
+    placement: Placement = field(default_factory=Placement)
 
     addressing: str = "one"
 
@@ -640,6 +677,84 @@ class Config:
     #: the numbers to the pattern as written, which is what a relic describing
     #: its own geometry wants. See edmx::CoordSpace.
     coord_space: str = "normalized"
+
+    brightness: float = 1.0
+
+    def display_channel(self, channel: int) -> int:
+        """A one-based internal channel, back in this device's own numbering."""
+        return channel - 1 if self.addressing == "zero" else channel
+
+    def highest_channel(self) -> int:
+        """The last channel this device touches: what sizes its frame buffer."""
+        return max((max(f.used_channels()) for f in self.fixtures), default=0)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "name": self.name,
+            "addressing": "one",
+            "coord_space": self.coord_space,
+            "output": self.output.to_dict(),
+            "fixtures": [fixture.to_dict() for fixture in self.fixtures],
+        }
+
+
+@dataclass
+class Config:
+    """An environment: the devices in a room, and the show running on them.
+
+    Still called Config because it is what a config file loads into, and a file
+    describing one rig is an environment with one device in it - which is how
+    every config written before environments existed is read.
+
+    Channel numbers on `Fixture` are always one-based internally, whatever the
+    file said; a device's `addressing` records only how its file was *numbered*,
+    so anything printing channels back can speak the dialect the fixture
+    displays do.
+    """
+
+    master: MasterConfig = field(default_factory=MasterConfig)
+    midi: MidiConfig = field(default_factory=MidiConfig)
+    pattern: PatternConfig = field(default_factory=PatternConfig)
+
+    devices: List[Device] = field(default_factory=lambda: [Device()])
+
+    # -- the single-device view -------------------------------------------
+    #
+    # Most of this package, and every config written before environments, deals
+    # in one rig. These keep that reading working: `fixtures` is every device's
+    # in order - which is the order the pattern renders and the frame stream
+    # reports - and `device`, `addressing` and `coord_space` are the first
+    # device's, because with one device there is no other answer.
+
+    @property
+    def fixtures(self) -> List[Fixture]:
+        return [fixture for device in self.devices for fixture in device.fixtures]
+
+    @property
+    def device(self) -> DeviceConfig:
+        return self.devices[0].output
+
+    @property
+    def addressing(self) -> str:
+        return self.devices[0].addressing
+
+    @addressing.setter
+    def addressing(self, value: str) -> None:
+        self.devices[0].addressing = value
+
+    @property
+    def coord_space(self) -> str:
+        return self.devices[0].coord_space
+
+    @coord_space.setter
+    def coord_space(self, value: str) -> None:
+        self.devices[0].coord_space = value
+
+    def device_named(self, name: str) -> Optional[Device]:
+        for device in self.devices:
+            if device.name == name:
+                return device
+        return None
 
     def display_channel(self, channel: int) -> int:
         """A one-based internal channel, back in the config's own numbering."""
@@ -652,8 +767,18 @@ class Config:
     # -- building ---------------------------------------------------------
 
     def add_fixture(self, fixture: Fixture) -> Fixture:
-        self.fixtures.append(fixture)
+        """Adds to the first device, which is the only one a builder makes."""
+        self.devices[0].fixtures.append(fixture)
         return fixture
+
+    def add_device(self, device: Device) -> Device:
+        """Adds a whole device. The first `Config()` already holds an empty one,
+        so a second call here is what turns a rig into an environment."""
+        if len(self.devices) == 1 and not self.devices[0].fixtures:
+            self.devices[0] = device
+        else:
+            self.devices.append(device)
+        return device
 
     def add_bank(
         self,
@@ -749,47 +874,62 @@ class Config:
         With `strict_overlap` a channel claimed by two fixtures is an error;
         turn it off if you are deliberately stacking fixtures on one address.
         """
-        if self.addressing not in ADDRESSING_MODES:
-            raise ConfigError(f"addressing '{self.addressing}' is not one of {ADDRESSING_MODES}")
-        if self.coord_space not in COORD_SPACES:
-            raise ConfigError(f"coord_space '{self.coord_space}' is not one of {COORD_SPACES}")
-
-        self.device.validate()
         self.master.validate()
         self.midi.validate()
         self.pattern.validate()
 
+        if not self.devices:
+            raise ConfigError("an environment needs at least one device")
         if not self.fixtures:
             raise ConfigError("a config needs at least one fixture; there is nothing to light otherwise")
 
         warnings: List[str] = []
-        claimed: Dict[int, str] = {}
 
-        # Only a DMX wire has 512 slots. A pixel rig's buffer is however long
-        # its patch is, so the obelisk's 1032 channels are not overflow - they
-        # are the rig. Matches loadConfig() in desktop/src/config.cpp.
-        limit = DMX_CHANNEL_COUNT
-        if self.device.type not in DMX_WIRE_TYPES:
-            limit = max(limit, self.highest_channel())
+        for device in self.devices:
+            if device.addressing not in ADDRESSING_MODES:
+                raise ConfigError(
+                    f"[{device.name}] addressing '{device.addressing}' is not one of {ADDRESSING_MODES}")
+            if device.coord_space not in COORD_SPACES:
+                raise ConfigError(
+                    f"[{device.name}] coord_space '{device.coord_space}' is not one of {COORD_SPACES}")
 
-        for fixture in self.fixtures:
-            fixture.validate(limit)
+            device.output.validate()
 
-            for channel in fixture.used_channels():
-                if channel > limit:
-                    warnings.append(
-                        f"fixture '{fixture.name}' reaches channel {channel}, past the end of the rig ({limit})"
-                    )
-                    continue
+            # Channels are only claimed *within* a device: two rigs on two
+            # wires both start at 1 and are not fighting over anything. This is
+            # the difference between an environment and a bigger universe.
+            claimed: Dict[int, str] = {}
 
-                owner = claimed.get(channel)
-                if owner is not None and owner != fixture.name:
-                    message = f"channel {channel} is claimed by both '{owner}' and '{fixture.name}'"
-                    if strict_overlap:
-                        raise ConfigError(message)
-                    warnings.append(message)
-                else:
-                    claimed[channel] = fixture.name
+            # Only a DMX wire has 512 slots. A pixel rig's buffer is however
+            # long its patch is, so the obelisk's 1032 channels are not
+            # overflow - they are the rig. Matches loadConfig() in
+            # desktop/src/config.cpp.
+            limit = DMX_CHANNEL_COUNT
+            if device.output.type not in DMX_WIRE_TYPES:
+                limit = max(limit, device.highest_channel())
+
+            prefix = f"[{device.name}] " if len(self.devices) > 1 else ""
+
+            for fixture in device.fixtures:
+                fixture.validate(limit)
+
+                for channel in fixture.used_channels():
+                    if channel > limit:
+                        warnings.append(
+                            f"{prefix}fixture '{fixture.name}' reaches channel {channel},"
+                            f" past the end of the rig ({limit})"
+                        )
+                        continue
+
+                    owner = claimed.get(channel)
+                    if owner is not None and owner != fixture.name:
+                        message = (f"{prefix}channel {channel} is claimed by both"
+                                   f" '{owner}' and '{fixture.name}'")
+                        if strict_overlap:
+                            raise ConfigError(message)
+                        warnings.append(message)
+                    else:
+                        claimed[channel] = fixture.name
 
         return warnings
 
@@ -800,17 +940,35 @@ class Config:
         # fixtures below carry resolved one-based channels. Saying so explicitly
         # means a zero-based config that round-trips through here cannot come
         # back out and get biased a second time.
-        return {
-            "addressing": "one",
-            # Unlike addressing, this is not resolved away on load - a literal
-            # position stays literal - so it has to survive the round trip.
-            "coord_space": self.coord_space,
-            "device": self.device.to_dict(),
+        show: Dict[str, Any] = {
             "master": self.master.to_dict(),
             "midi": self.midi.to_dict(),
             "pattern": self.pattern.to_dict(),
-            "fixtures": [fixture.to_dict() for fixture in self.fixtures],
         }
+
+        # One device round-trips as the single-rig shape, because that is what
+        # it is and writing it as an environment would mean emitting a separate
+        # device file to point at. More than one has to be an environment, with
+        # each device written out in full rather than by reference - a
+        # round-tripped config must not depend on files it did not carry.
+        if len(self.devices) == 1:
+            device = self.devices[0]
+            show.update({
+                "addressing": "one",
+                # Unlike addressing, this is not resolved away on load - a
+                # literal position stays literal - so it has to survive.
+                "coord_space": device.coord_space,
+                "device": device.output.to_dict(),
+                "fixtures": [fixture.to_dict() for fixture in device.fixtures],
+            })
+            return show
+
+        show["devices"] = [
+            {**device.to_dict(), **device.placement.to_dict(),
+             **({"brightness": device.brightness} if device.brightness != 1.0 else {})}
+            for device in self.devices
+        ]
+        return show
 
     def to_json(self, indent: int = 2) -> str:
         return json.dumps(self.to_dict(), indent=indent)
@@ -826,17 +984,26 @@ class Config:
     # -- loading ----------------------------------------------------------
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "Config":
-        config = cls()
+    @staticmethod
+    def _device_from_dict(data: Dict[str, Any], name: str = "rig", source: str = "") -> Device:
+        """Reads one device: how its numbers are read, where its frames go, and
+        what its fixtures are.
+
+        `data` is the object holding the device's keys - a whole device file, or
+        a whole legacy single-rig config, which is the same shape by
+        construction. Must stay in step with parseDevice() in
+        desktop/src/config.cpp.
+        """
+        device = Device(name=name, source=source)
 
         # Read first: every channel number below is interpreted through it.
         # Must stay in step with loadConfig() in desktop/src/config.cpp.
         stated = str(data.get("addressing", "one")).lower()
         if stated in ("zero", "zero-based", "0"):
-            config.addressing = "zero"
+            device.addressing = "zero"
             bias = 1  # a config address of 0 is DMX slot 1
         elif stated in ("one", "one-based", "1"):
-            config.addressing = "one"
+            device.addressing = "one"
             bias = 0
         else:
             raise ConfigError(f"addressing must be \"zero\" or \"one\", got '{stated}'")
@@ -845,67 +1012,22 @@ class Config:
         # addressing: it says what `position` means, and nothing else.
         space = str(data.get("coord_space", "normalized")).lower()
         if space in ("literal", "pattern"):
-            config.coord_space = "literal"
+            device.coord_space = "literal"
         elif space in ("normalized", "normalised", "rig"):
-            config.coord_space = "normalized"
+            device.coord_space = "normalized"
         else:
             raise ConfigError(f"coord_space must be \"normalized\" or \"literal\", got '{space}'")
 
-        device = data.get("device", {})
-        config.device = DeviceConfig(
-            type=device.get("type", config.device.type),
-            port=device.get("port", config.device.port),
-            baud=int(device.get("baud", config.device.baud)),
-            fps=float(device.get("fps", config.device.fps)),
-            console_channels=int(device.get("console_channels", config.device.console_channels)),
-        )
 
-        master = data.get("master", {})
-        config.master = MasterConfig(
-            brightness=float(master.get("brightness", config.master.brightness)),
-            gamma=float(master.get("gamma", config.master.gamma)),
-        )
-
-        # Naming a port counts as asking for MIDI, the same way the executable
-        # reads it - see loadConfig() in desktop/src/config.cpp.
-        midi = data.get("midi", {})
-
-        # A bare string is allowed for the common "just this one device" case,
-        # matching the executable.
-        stated_ignore = midi.get("ignore", [])
-        if isinstance(stated_ignore, str):
-            stated_ignore = [stated_ignore]
-
-        config.midi = MidiConfig(
-            enabled=bool(midi.get("enabled", "port" in midi)),
-            port=midi.get("port", config.midi.port),
-            ignore=[str(fragment) for fragment in stated_ignore if fragment],
-            clock=bool(midi.get("clock", config.midi.clock)),
-            notes=bool(midi.get("notes", config.midi.notes)),
-            beat_note=int(midi.get("beat_note", config.midi.beat_note)),
-            bpm_note=int(midi.get("bpm_note", config.midi.bpm_note)),
-            vu_instant_note=int(midi.get("vu_instant_note", config.midi.vu_instant_note)),
-            vu_average_note=int(midi.get("vu_average_note", config.midi.vu_average_note)),
-            vu_meter_note=int(midi.get("vu_meter_note", config.midi.vu_meter_note)),
-            beat_channel=int(midi.get("beat_channel", config.midi.beat_channel)),
-            bpm=float(midi.get("bpm", config.midi.bpm)),
-            free_run=bool(midi.get("free_run", config.midi.free_run)),
-        )
-
-        pattern = data.get("pattern", {})
-        config.pattern = PatternConfig(
-            name=pattern.get("name", config.pattern.name),
-            speed=float(pattern.get("speed", config.pattern.speed)),
-            width=float(pattern.get("width", config.pattern.width)),
-            brightness=float(pattern.get("brightness", config.pattern.brightness)),
-            palette=pattern.get("palette", config.pattern.palette),
-            color=pattern.get("color", config.pattern.color),
-            state=pattern.get("state", config.pattern.state),
-            # absent stays absent, so the pattern's own frame survives
-            coord_origin_x=_optional_float(pattern.get("coord_origin_x")),
-            coord_origin_y=_optional_float(pattern.get("coord_origin_y")),
-            coord_span_x=_optional_float(pattern.get("coord_span_x")),
-            coord_span_y=_optional_float(pattern.get("coord_span_y")),
+        # `output` is the name now; `device` is still read so every config written
+        # before environments existed keeps working.
+        block = data.get("output") or data.get("device") or {}
+        device.output = DeviceConfig(
+            type=block.get("type", device.output.type),
+            port=block.get("port", device.output.port),
+            baud=int(block.get("baud", device.output.baud)),
+            fps=float(block.get("fps", device.output.fps)),
+            console_channels=int(block.get("console_channels", device.output.console_channels)),
         )
 
         # A config's own profiles shadow the built-ins, matching the executable.
@@ -971,7 +1093,7 @@ class Config:
                     elif count > 1:
                         fixture.position = [index / (count - 1), 0.0]
 
-                    config.add_fixture(fixture)
+                    device.fixtures.append(fixture)
                 continue
 
             # An absent dimmer_channel means "this fixture has no dimmer" in
@@ -981,9 +1103,9 @@ class Config:
             stated_dimmer = entry.get("dimmer_channel")
             dimmer_channel = 0 if stated_dimmer is None else int(stated_dimmer) + bias
 
-            config.add_fixture(
+            device.fixtures.append(
                 Fixture(
-                    name=entry.get("name", f"fixture_{len(config.fixtures) + 1}"),
+                    name=entry.get("name", f"fixture_{len(device.fixtures) + 1}"),
                     start_channel=int(entry.get("start_channel", 1 - bias)) + bias,
                     channels=entry.get("channels", "rgb"),
                     dimmer_channel=dimmer_channel,
@@ -997,7 +1119,185 @@ class Config:
                 )
             )
 
+
+        return device
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any], base_dir: Optional[Path] = None) -> "Config":
+        """Reads an environment, or a single rig read as one.
+
+        Which shape a file is depends on one thing: whether it has a `devices`
+        array. `base_dir` is where device references are resolved from, and
+        defaults to the working directory - `Config.load` passes the config's
+        own folder.
+        """
+        config = cls()
+
+
+        master = data.get("master", {})
+        config.master = MasterConfig(
+            brightness=float(master.get("brightness", config.master.brightness)),
+            gamma=float(master.get("gamma", config.master.gamma)),
+        )
+
+        # Naming a port counts as asking for MIDI, the same way the executable
+        # reads it - see loadConfig() in desktop/src/config.cpp.
+        midi = data.get("midi", {})
+
+        # A bare string is allowed for the common "just this one device" case,
+        # matching the executable.
+        stated_ignore = midi.get("ignore", [])
+        if isinstance(stated_ignore, str):
+            stated_ignore = [stated_ignore]
+
+        config.midi = MidiConfig(
+            enabled=bool(midi.get("enabled", "port" in midi)),
+            port=midi.get("port", config.midi.port),
+            ignore=[str(fragment) for fragment in stated_ignore if fragment],
+            clock=bool(midi.get("clock", config.midi.clock)),
+            notes=bool(midi.get("notes", config.midi.notes)),
+            beat_note=int(midi.get("beat_note", config.midi.beat_note)),
+            bpm_note=int(midi.get("bpm_note", config.midi.bpm_note)),
+            vu_instant_note=int(midi.get("vu_instant_note", config.midi.vu_instant_note)),
+            vu_average_note=int(midi.get("vu_average_note", config.midi.vu_average_note)),
+            vu_meter_note=int(midi.get("vu_meter_note", config.midi.vu_meter_note)),
+            beat_channel=int(midi.get("beat_channel", config.midi.beat_channel)),
+            bpm=float(midi.get("bpm", config.midi.bpm)),
+            free_run=bool(midi.get("free_run", config.midi.free_run)),
+        )
+
+        pattern = data.get("pattern", {})
+        config.pattern = PatternConfig(
+            name=pattern.get("name", config.pattern.name),
+            speed=float(pattern.get("speed", config.pattern.speed)),
+            width=float(pattern.get("width", config.pattern.width)),
+            brightness=float(pattern.get("brightness", config.pattern.brightness)),
+            palette=pattern.get("palette", config.pattern.palette),
+            color=pattern.get("color", config.pattern.color),
+            state=pattern.get("state", config.pattern.state),
+            # absent stays absent, so the pattern's own frame survives
+            coord_origin_x=_optional_float(pattern.get("coord_origin_x")),
+            coord_origin_y=_optional_float(pattern.get("coord_origin_y")),
+            coord_span_x=_optional_float(pattern.get("coord_span_x")),
+            coord_span_y=_optional_float(pattern.get("coord_span_y")),
+        )
+
+
+        # ---- devices ----------------------------------------------------
+        stated_devices = data.get("devices")
+
+        if isinstance(stated_devices, list) and stated_devices:
+            config.devices = []
+            for index, entry in enumerate(stated_devices):
+                reference = entry.get("device") or entry.get("use")
+
+                if isinstance(reference, str) and reference:
+                    # By name: a device described once, in its own file, and
+                    # referred to from every show it appears in.
+                    path = _resolve_device_path(base_dir, reference)
+                    if path is None:
+                        raise ConfigError(
+                            f"cannot find device '{reference}'"
+                            f" (looked beside the config and in devices/)")
+
+                    body = json.loads(_strip_line_comments(path.read_text(encoding="utf-8")))
+                    if isinstance(body.get("device"), dict):
+                        body = body["device"]
+                    source = str(path)
+
+                elif isinstance(reference, dict) or entry.get("fixtures"):
+                    # Spelled out in place. Round-tripping an environment writes
+                    # this form, because a config that came back out referring to
+                    # files it did not carry would not be the same config.
+                    body = reference if isinstance(reference, dict) else entry
+                    source = ""
+
+                else:
+                    raise ConfigError(
+                        f"devices entry {index} has neither a \"device\" naming one"
+                        f" nor \"fixtures\" spelling one out")
+
+                device = cls._device_from_dict(
+                    body,
+                    name=str(entry.get("name") or body.get("name")
+                             or (reference if isinstance(reference, str) else f"device_{index}")),
+                    source=source,
+                )
+
+                # ---- placement ------------------------------------------
+                offset = entry.get("offset")
+                if offset is not None:
+                    device.placement.offset = [float(offset[0]),
+                                               float(offset[1]) if len(offset) > 1 else 0.0]
+
+                scale = entry.get("scale")
+                if isinstance(scale, (int, float)):
+                    device.placement.scale = [float(scale), float(scale)]
+                elif scale is not None:
+                    device.placement.scale = [float(scale[0]),
+                                              float(scale[1]) if len(scale) > 1 else float(scale[0])]
+
+                # null on an axis means "leave this one alone" - see the note in
+                # loadConfig() in desktop/src/config.cpp for why that is the
+                # case that matters.
+                fit = entry.get("fit")
+                if isinstance(fit, (int, float)):
+                    device.placement.fit = [float(fit), float(fit)]
+                elif fit is not None:
+                    device.placement.fit = [
+                        None if value is None else float(value)
+                        for value in list(fit)[:2]
+                    ]
+
+                # A view property, not a mapping one - the panel's size on
+                # screen, and nothing the pattern ever sees.
+                view = entry.get("view_scale")
+                if view is None and isinstance(entry.get("view"), dict):
+                    view = entry["view"].get("scale")
+                if isinstance(view, (int, float)):
+                    device.placement.view_scale = [float(view), float(view)]
+                elif view is not None:
+                    device.placement.view_scale = [
+                        float(view[0]),
+                        float(view[1]) if len(view) > 1 else float(view[0]),
+                    ]
+
+                device.brightness = float(entry.get("brightness", 1.0))
+
+                # ---- overrides ------------------------------------------
+                # A device file says what a sculpture *is*; where it is plugged
+                # in this week belongs to the room, not to the sculpture.
+                override = entry.get("output")
+                if isinstance(override, dict):
+                    device.output = DeviceConfig(
+                        type=override.get("type", device.output.type),
+                        port=override.get("port", device.output.port),
+                        baud=int(override.get("baud", device.output.baud)),
+                        fps=float(override.get("fps", device.output.fps)),
+                        console_channels=int(override.get("console_channels",
+                                                          device.output.console_channels)),
+                    )
+                if isinstance(entry.get("port"), str):
+                    device.output.port = entry["port"]
+
+                space = str(entry.get("coord_space", "")).lower()
+                if space in ("literal", "pattern"):
+                    device.coord_space = "literal"
+                elif space in ("normalized", "normalised", "rig"):
+                    device.coord_space = "normalized"
+                elif space:
+                    raise ConfigError(
+                        f"devices entry {index} coord_space must be"
+                        f" \"normalized\" or \"literal\", got '{space}'")
+
+                config.devices.append(device)
+        else:
+            # One rig, described in place. The environment is implicit and holds
+            # a single device sitting at the origin.
+            config.devices = [cls._device_from_dict(data, name=str(data.get("name", "rig")))]
+
         return config
+
 
     @classmethod
     def load(cls, path: Union[str, Path]) -> "Config":
@@ -1006,8 +1306,34 @@ class Config:
         The executable tolerates ``//`` comments; python's json does not, so we
         strip them here to keep the two readers interchangeable.
         """
-        text = Path(path).read_text(encoding="utf-8")
-        return cls.from_dict(json.loads(_strip_line_comments(text)))
+        source = Path(path)
+        text = source.read_text(encoding="utf-8")
+        return cls.from_dict(json.loads(_strip_line_comments(text)), base_dir=source.parent)
+
+
+def _resolve_device_path(base_dir: Optional[Path], reference: str) -> Optional[Path]:
+    """Finds the file behind a ``"device": "obelisk"`` reference.
+
+    Beside the environment first, then in ``devices/`` next to it, so a show can
+    keep a one-off rig in its own folder while the sculptures that appear in
+    every show live together. A reference may also be a path, with or without
+    the .json. Must stay in step with resolveDevicePath() in
+    desktop/src/config.cpp.
+    """
+    directory = Path(base_dir) if base_dir is not None else Path(".")
+    name = reference if reference.endswith(".json") else reference + ".json"
+
+    candidates = []
+    if "/" not in reference and "\\" not in reference:
+        candidates.append(directory / "devices" / name)
+        candidates.append(directory.parent / "devices" / name)
+    candidates.append(directory / name)
+    candidates.append(Path(name))
+
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    return None
 
 
 def _strip_line_comments(text: str) -> str:

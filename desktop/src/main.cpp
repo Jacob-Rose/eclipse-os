@@ -953,13 +953,38 @@ namespace
 
     /// Holds everything a running show mutates, so the command handler and the
     /// render loop have one place to agree on.
+    /// One device, running.
+    ///
+    /// Everything here is per-device because a room can hold a sculpture on a
+    /// USB cable and a truss on a DMX widget at once, and they agree on
+    /// precisely one thing: the pattern. Frame buffers, wires, refresh rates
+    /// and channel counts are all their own.
+    struct DeviceRuntime
+    {
+        const Device* config{nullptr};
+        std::unique_ptr<DmxOutput> output;
+        std::unique_ptr<eio::HSVStrip> strip;
+        DmxUniverse universe;
+
+        /// Where this device's fixtures sit in the show-wide run, which is the
+        /// order the pattern renders in and the frame stream reports.
+        size_t firstFixture{0};
+        size_t fixtureCount{0};
+
+        /// Devices do not share a refresh rate - a relic draws at 30 and a DMX
+        /// widget at 40 - so each one sends when it is due rather than every
+        /// device sending on the fastest one's schedule.
+        float fps{40.0f};
+        double nextSendAt{0.0};
+
+        const std::string& name() const { return config->name; }
+    };
+
     struct ShowState
     {
         Config config;
         std::unique_ptr<Pattern> pattern;
-        std::unique_ptr<DmxOutput> output;
-        std::unique_ptr<eio::HSVStrip> strip;
-        DmxUniverse universe;
+        std::vector<DeviceRuntime> devices;
         PatternContext context;
         std::vector<ecore::HSV> colors;
 
@@ -998,6 +1023,90 @@ namespace
         if (cfg.coordOriginY) show.context.coords.originY = *cfg.coordOriginY;
         if (cfg.coordSpanX)   show.context.coords.spanX   = *cfg.coordSpanX;
         if (cfg.coordSpanY)   show.context.coords.spanY   = *cfg.coordSpanY;
+
+        // ---- and where every node ends up in it -------------------------
+        //
+        // With more than one device this is the whole ballgame: the pattern
+        // renders into one space, and each device's placement decides which
+        // part of that space it occupies. Get it wrong and two rigs run the
+        // same look twice from scratch instead of one look across both.
+        //
+        // Local coordinates first, in whatever the device's own space is:
+        //
+        //   literal     the numbers as written - a relic describing its own
+        //               geometry, where the look was tuned against the object
+        //   normalized  0..1 along the rig, stretched across the pattern's
+        //               coordinate frame, which is what a truss of pars wants
+        //
+        // then `world = local * scale + offset` from the placement. Filled for
+        // every device, always: with one device at the default placement this
+        // is exactly what the single-rig path produced before.
+        show.context.nodeCoords.resize(show.context.fixtureCount);
+
+        size_t at = 0;
+        for (const Device& device : show.config.devices)
+        {
+            const size_t count = device.fixtures.size();
+
+            // Pass one: local coordinates, and how far they reach.
+            float minX = 0.0f, maxX = 0.0f, minY = 0.0f, maxY = 0.0f;
+            for (size_t idx = 0; idx < count; ++idx)
+            {
+                ecore::Coordinate local;
+
+                if (device.coordSpace == CoordSpace::Literal)
+                {
+                    local.x = device.fixtures[idx].positionX;
+                    local.y = device.fixtures[idx].positionY;
+                }
+                else
+                {
+                    local = show.context.coords.at(device.fixtures.normalizedPosition(idx));
+                }
+
+                if (idx == 0)
+                {
+                    minX = maxX = local.x;
+                    minY = maxY = local.y;
+                }
+                else
+                {
+                    minX = std::min(minX, local.x); maxX = std::max(maxX, local.x);
+                    minY = std::min(minY, local.y); maxY = std::max(maxY, local.y);
+                }
+
+                show.context.nodeCoords[at + idx] = local;
+            }
+
+            // Pass two: the placement, now that the extent is known. `fit`
+            // derives a scale from it and re-bases the corner to the offset;
+            // without it, scale and offset are used as written.
+            Placement resolved = device.placement;
+            float baseX = 0.0f;
+            float baseY = 0.0f;
+
+            if (device.placement.fitWidth)
+            {
+                const float extent = maxX - minX;
+                resolved.scaleX = (extent > 1e-6f) ? (*device.placement.fitWidth / extent) : 0.0f;
+                baseX = minX;
+            }
+            if (device.placement.fitHeight)
+            {
+                const float extent = maxY - minY;
+                resolved.scaleY = (extent > 1e-6f) ? (*device.placement.fitHeight / extent) : 0.0f;
+                baseY = minY;
+            }
+
+            for (size_t idx = 0; idx < count; ++idx)
+            {
+                const ecore::Coordinate& local = show.context.nodeCoords[at + idx];
+                show.context.nodeCoords[at + idx] =
+                    resolved.apply(local.x - baseX, local.y - baseY);
+            }
+
+            at += count;
+        }
     }
 
     /// Tells a UI which states it can offer, and which is showing.
@@ -1097,6 +1206,36 @@ namespace
         show.midi.setAudioLevel(&sharedAudioLevel());
     }
 
+    /// Every device's output, for a status line.
+    std::string describeOutputs(const ShowState& show)
+    {
+        std::string out;
+        for (const DeviceRuntime& device : show.devices)
+        {
+            out += (out.empty() ? "" : ", ") + device.name() + ":" + device.output->describe();
+        }
+        return out.empty() ? "none" : out;
+    }
+
+    /// The relics on the other end of this show's cables.
+    ///
+    /// A `link` command applies to all of them. One relic is the usual case and
+    /// then this is just "the relic"; with two sculptures on two cables, taking
+    /// the pixels of one and not the other is not a thing anyone means by
+    /// "link cue".
+    std::vector<RelicUsbOutput*> relicLinks(ShowState& show)
+    {
+        std::vector<RelicUsbOutput*> links;
+        for (DeviceRuntime& device : show.devices)
+        {
+            if (RelicUsbOutput* relic = device.output->asRelicLink())
+            {
+                links.push_back(relic);
+            }
+        }
+        return links;
+    }
+
     std::string describeState(const ShowState& show)
     {
         StateMachinePattern* machine = show.pattern ? show.pattern->asStateMachine() : nullptr;
@@ -1109,14 +1248,14 @@ namespace
             << " brightness=" << (show.pattern ? show.pattern->getBrightness() : 0.0f)
             << " master=" << show.masterBrightness
             << " blackout=" << (show.blackout ? "on" : "off")
-            << " fixtures=" << show.config.fixtures.size()
-            << " fps=" << show.config.device.fps
+            << " fixtures=" << show.config.fixtureCount()
+            << " devices=" << show.devices.size()
             << " " << sharedBeatClock().describe(nowSeconds())
             << " div=" << (machine ? machine->currentBeatDivision() : 0)
             << " " << sharedAudioLevel().describe(nowSeconds())
             << " vu=" << (sharedAudioLevel().isAnyLive(nowSeconds()) ? "live" : "none")
             << " midi=" << (show.midi.isOpen() ? ("\"" + show.midi.getPortName() + "\"") : "none")
-            << " output=" << (show.output ? show.output->describe() : "none");
+            << " output=" << describeOutputs(show);
         return out.str();
     }
 
@@ -1159,11 +1298,14 @@ namespace
 
         if (command == "link")
         {
-            RelicUsbOutput* relic = show.output ? show.output->asRelicLink() : nullptr;
-            if (!relic)
+            // Every relic in the room, because "link cue" means "give the
+            // sculptures their looks back", not "give one of them its look
+            // back". With the usual single relic this reads the same.
+            const std::vector<RelicUsbOutput*> relics = relicLinks(show);
+            if (relics.empty())
             {
-                emit("ERR link needs device.type relic_usb; this show is on "
-                   + show.config.device.type);
+                emit("ERR link needs a device with a relic_usb output; this show has "
+                   + describeOutputs(show));
                 return;
             }
 
@@ -1179,14 +1321,17 @@ namespace
             if (what == "pixels" || what == "cue")
             {
                 const bool cue = (what == "cue");
-                relic->setMode(cue ? RelicUsbOutput::Mode::Cue : RelicUsbOutput::Mode::Pixels);
-
-                // Leaving pixel mode means handing the relic its own looks back
-                // now, rather than making it wait out the holdover with a
-                // frozen frame on it.
-                if (cue && !relic->release(error))
+                for (RelicUsbOutput* relic : relics)
                 {
-                    emit("WARN link release: " + error);
+                    relic->setMode(cue ? RelicUsbOutput::Mode::Cue : RelicUsbOutput::Mode::Pixels);
+
+                    // Leaving pixel mode means handing the relic its own looks
+                    // back now, rather than making it wait out the holdover
+                    // with a frozen frame on it.
+                    if (cue && !relic->release(error))
+                    {
+                        emit("WARN link release: " + error);
+                    }
                 }
                 emit("OK link " + what);
                 return;
@@ -1194,10 +1339,13 @@ namespace
 
             if (what == "release")
             {
-                if (!relic->release(error))
+                for (RelicUsbOutput* relic : relics)
                 {
-                    emit("ERR link " + error);
-                    return;
+                    if (!relic->release(error))
+                    {
+                        emit("ERR link " + error);
+                        return;
+                    }
                 }
                 emit("OK link release");
                 return;
@@ -1205,10 +1353,13 @@ namespace
 
             if (what == "bootsel")
             {
-                if (!relic->rebootToBootloader(error))
+                for (RelicUsbOutput* relic : relics)
                 {
-                    emit("ERR link " + error);
-                    return;
+                    if (!relic->rebootToBootloader(error))
+                    {
+                        emit("ERR link " + error);
+                        return;
+                    }
                 }
                 // The show keeps running and keeps rendering; there is simply
                 // nothing on the other end of the cable any more. Stopping it
@@ -1219,10 +1370,13 @@ namespace
 
             if (what == "hello")
             {
-                if (!relic->sendCommand("hello", error))
+                for (RelicUsbOutput* relic : relics)
                 {
-                    emit("ERR link " + error);
-                    return;
+                    if (!relic->sendCommand("hello", error))
+                    {
+                        emit("ERR link " + error);
+                        return;
+                    }
                 }
                 emit("OK link hello");
                 return;
@@ -1250,7 +1404,12 @@ namespace
                     text.pop_back();
                 }
 
-                if (!relic->sendCommand(text, error))
+                bool sent = true;
+                for (RelicUsbOutput* relic : relics)
+                {
+                    sent = sent && relic->sendCommand(text, error);
+                }
+                if (!sent)
                 {
                     emit("ERR link " + error);
                     return;
@@ -1315,8 +1474,11 @@ namespace
             // rather than for our own state machine. Forwarded verbatim: the
             // relic's handleCommand decides whether it knows the name, and this
             // end has no business guessing at another device's look list.
-            RelicUsbOutput* relic = show.output ? show.output->asRelicLink() : nullptr;
-            if (relic && relic->getMode() == RelicUsbOutput::Mode::Cue)
+            const std::vector<RelicUsbOutput*> relics = relicLinks(show);
+            const bool anyInCueMode = std::any_of(relics.begin(), relics.end(),
+                [](RelicUsbOutput* relic) { return relic->getMode() == RelicUsbOutput::Mode::Cue; });
+
+            if (anyInCueMode)
             {
                 if (words.size() < 2)
                 {
@@ -1325,10 +1487,17 @@ namespace
                 }
 
                 std::string error;
-                if (!relic->sendCommand(line, error))
+                for (RelicUsbOutput* relic : relics)
                 {
-                    emit("ERR link " + error);
-                    return;
+                    if (relic->getMode() != RelicUsbOutput::Mode::Cue)
+                    {
+                        continue;
+                    }
+                    if (!relic->sendCommand(line, error))
+                    {
+                        emit("ERR link " + error);
+                        return;
+                    }
                 }
                 emit("OK state " + words[1] + " (to the relic)");
                 return;
@@ -1890,14 +2059,18 @@ int main(int argc, char** argv)
 
             if (target.empty())
             {
-                const std::vector<SerialPortInfo> ports = SerialPort::enumeratePorts();
-                if (ports.size() != 1)
-                {
-                    emit("ERR no relic answered, and " + std::to_string(ports.size())
-                       + " ports to guess between - name one with --port");
-                    return 1;
-                }
-                target = ports.front().path;
+                // Nothing answered, and the 1200-baud touch is not something to
+                // aim at a guess. It is the fallback for a relic flashed before
+                // the link existed - which we cannot tell apart from a DMX
+                // widget, and rebooting a widget mid-show because it happened
+                // to be the only port is not a mistake worth being capable of.
+                //
+                // So it has to be named. --list-ports says what is there.
+                emit("ERR no relic answered a Hello. If this is a relic flashed"
+                     " before the link existed, name its port: --reboot-bootsel"
+                     " --port COMn (--list-ports shows them). Nothing was"
+                     " touched.");
+                return 1;
             }
 
             std::string error;
@@ -1987,46 +2160,82 @@ int main(int argc, char** argv)
     // without counting them out by hand.
     if (showPatch)
     {
-        // Report in the config's own numbering, so these line up with what is
-        // dialled on the fixtures rather than with our internal 1-based slots.
-        const int bias = (show.config.addressing == Addressing::ZeroBased) ? -1 : 0;
-
-        emit(std::string("ADDRESSING ")
-           + ((show.config.addressing == Addressing::ZeroBased) ? "zero" : "one") + "-based");
-
-        int highest = 0;
-        for (const Fixture& fixture : show.config.fixtures.all())
+        size_t total = 0;
+        for (const Device& device : show.config.devices)
         {
-            std::ostringstream line;
-            line << "PATCH " << fixture.name
-                 << " r=" << (fixture.startChannel + fixture.offsetR + bias)
-                 << " g=" << (fixture.startChannel + fixture.offsetG + bias)
-                 << " b=" << (fixture.startChannel + fixture.offsetB + bias);
+            // Report in each device's own numbering, so these line up with what
+            // is dialled on the fixtures rather than with our internal 1-based
+            // slots. Addressing is per device now: two rigs in one room need
+            // not agree about it, and nothing says they will.
+            const int bias = (device.addressing == Addressing::ZeroBased) ? -1 : 0;
 
-            if (fixture.dimmerChannel > 0)
+            std::ostringstream header;
+            header << "DEVICE " << device.name
+                   << " fixtures=" << device.fixtures.size()
+                   << " addressing=" << ((device.addressing == Addressing::ZeroBased) ? "zero" : "one")
+                   << "-based"
+                   << " coords=" << ((device.coordSpace == CoordSpace::Literal) ? "literal" : "normalized")
+                   << " offset=" << device.placement.offsetX << "," << device.placement.offsetY
+                   << " scale=" << device.placement.scaleX << "," << device.placement.scaleY
+                   << " output=" << device.output.type;
+            emit(header.str());
+
+            int highest = 0;
+            for (const Fixture& fixture : device.fixtures.all())
             {
-                line << " dimmer=" << (fixture.dimmerChannel + bias)
-                     << "@" << static_cast<int>(fixture.dimmerValue);
-            }
-            for (const auto& entry : fixture.staticChannels)
-            {
-                line << " park[" << (entry.first + bias) << "]=" << static_cast<int>(entry.second);
+                std::ostringstream line;
+                line << "PATCH " << fixture.name
+                     << " r=" << (fixture.startChannel + fixture.offsetR + bias)
+                     << " g=" << (fixture.startChannel + fixture.offsetG + bias)
+                     << " b=" << (fixture.startChannel + fixture.offsetB + bias);
+
+                if (fixture.dimmerChannel > 0)
+                {
+                    line << " dimmer=" << (fixture.dimmerChannel + bias)
+                         << "@" << static_cast<int>(fixture.dimmerValue);
+                }
+                for (const auto& entry : fixture.staticChannels)
+                {
+                    line << " park[" << (entry.first + bias) << "]=" << static_cast<int>(entry.second);
+                }
+
+                emit(line.str());
+                highest = std::max(highest, fixtureHighestChannel(fixture));
             }
 
-            emit(line.str());
-            highest = std::max(highest, fixtureHighestChannel(fixture));
+            emit("OK " + device.name + ": " + std::to_string(device.fixtures.size())
+               + " fixtures, highest channel " + std::to_string(highest + bias));
+            total += device.fixtures.size();
         }
 
-        emit("OK " + std::to_string(show.config.fixtures.size())
-           + " fixtures, highest channel " + std::to_string(highest + bias));
+        emit("OK " + std::to_string(total) + " fixtures over "
+           + std::to_string(show.config.devices.size()) + " devices");
         return 0;
     }
 
-    if (!portOverride.empty())    show.config.device.port = portOverride;
-    if (!deviceOverride.empty())  show.config.device.type = deviceOverride;
     if (!patternOverride.empty()) show.config.pattern.name = patternOverride;
     if (!stateOverride.empty())   show.config.pattern.stateName = stateOverride;
-    if (fpsOverride > 0.0f)       show.config.device.fps = fpsOverride;
+
+    // Overrides that name a wire only make sense when there is one wire. The
+    // rest apply to everything, which is what --dry-run is for.
+    if (!portOverride.empty())
+    {
+        if (show.config.devices.size() != 1)
+        {
+            logLine("error: --port names one port, but this environment has "
+                  + std::to_string(show.config.devices.size()) + " devices");
+            emit("ERR --port is ambiguous with " + std::to_string(show.config.devices.size())
+               + " devices; set it in the environment instead");
+            return 1;
+        }
+        show.config.devices[0].output.port = portOverride;
+    }
+
+    for (Device& device : show.config.devices)
+    {
+        if (!deviceOverride.empty()) device.output.type = deviceOverride;
+        if (fpsOverride > 0.0f)      device.output.fps = fpsOverride;
+    }
 
     // Naming a port on the command line is asking for it, whatever the config
     // says; --no-midi is the way back out.
@@ -2040,96 +2249,122 @@ int main(int argc, char** argv)
 
     // last, so --dry-run wins over --device: asking for both means you want to
     // pick a widget type but not actually drive it yet.
-    if (dryRun)                   show.config.device.type = "console";
+    if (dryRun)
+    {
+        for (Device& device : show.config.devices)
+        {
+            device.output.type = "console";
+        }
+    }
 
     show.masterBrightness = show.config.master.brightness;
 
-    // ---- resolve the port ------------------------------------------------
-    std::string port = show.config.device.port;
-    if (port == "auto")
+    // ---- bring every device up -------------------------------------------
+    show.devices.resize(show.config.devices.size());
+
+    for (size_t i = 0; i < show.config.devices.size(); ++i)
     {
-        const bool isRelic = show.config.device.type == "relic_usb"
-                          || show.config.device.type == "relic_usb_cue";
+        Device& config = show.config.devices[i];
+        DeviceRuntime& device = show.devices[i];
 
-        // A relic is found by asking, not by guessing at a port name: on this
-        // machine the DMX widget and a Pico are both "COMn" with a description
-        // that names neither, and picking the widget would mean a show driving
-        // something that ignores it. See probeRelicPorts.
-        port = isRelic ? autoDetectRelicPort(show.config.device.baud) : autoDetectPort();
+        device.config = &config;
+        device.firstFixture = show.config.firstFixtureOf(i);
+        device.fixtureCount = config.fixtures.size();
 
-        const bool needsWire = show.config.device.type != "console"
-                            && show.config.device.type != "preview"
-                            && show.config.device.type != "none"
-                            && show.config.device.type != "null";
-        if (port.empty() && isRelic)
+        const std::string where = "[" + config.name + "] ";
+
+        // ---- resolve its port --------------------------------------------
+        std::string port = config.output.port;
+        if (port == "auto")
         {
-            logLine("error: device.port is \"auto\" but no relic answered on any port");
-            emit("ERR no relic found");
+            const bool isRelic = config.output.type == "relic_usb"
+                              || config.output.type == "relic_usb_cue";
+
+            // A relic is found by asking, not by guessing at a port name: on
+            // this machine the DMX widget and a Pico are both "COMn" with a
+            // description that names neither, and picking the widget would mean
+            // a show driving something that ignores it. See probeRelicPorts.
+            port = isRelic ? autoDetectRelicPort(config.output.baud) : autoDetectPort();
+
+            const bool needsWire = config.output.type != "console"
+                                && config.output.type != "preview"
+                                && config.output.type != "none"
+                                && config.output.type != "null";
+            if (port.empty() && isRelic)
+            {
+                logLine("error: " + where + "port is \"auto\" but no relic answered on any port");
+                emit("ERR " + config.name + ": no relic found");
+                return 1;
+            }
+            if (port.empty() && needsWire)
+            {
+                logLine("error: " + where + "port is \"auto\" but no serial port was found");
+                emit("ERR " + config.name + ": no serial port found");
+                return 1;
+            }
+            if (!port.empty())
+            {
+                logLine(where + "auto-detected port " + port);
+            }
+        }
+
+        device.output = makeDmxOutput(config.output.type, port, config.output.baud,
+                                      config.output.consoleChannels, error);
+        if (!device.output)
+        {
+            logLine("output error: " + where + error);
+            emit("ERR output " + config.name + ": " + error);
             return 1;
         }
-        if (port.empty() && needsWire)
+
+        // ---- send only the channels this device actually uses ------------
+        // A receiver keeps whatever it already had for slots that do not
+        // arrive, so there is nothing to gain from shipping 442 trailing zeros
+        // every frame. On a serial link that padding is most of the frame time.
+        //
+        // The same number sizes the frame buffer, which on a pixel rig is
+        // longer than a universe: the obelisk's 344 nodes are 1032 channels.
         {
-            logLine("error: device.port is \"auto\" but no serial port was found");
-            emit("ERR no serial port found");
+            const int highest = config.fixtures.highestChannel();
+            device.universe.resize(highest);
+            device.output->setUniverseLength(highest);
+        }
+
+        if (!device.output->open(error))
+        {
+            logLine("output error: " + where + error);
+            emit("ERR output " + config.name + ": " + error);
             return 1;
         }
-        if (!port.empty())
+        logLine(where + "output: " + device.output->describe());
+
+        // One HSV node per fixture. This is the same framebuffer the
+        // microcontroller build hands to the LEDs; here it feeds the patch.
+        device.strip.reset(new eio::HSVStrip(static_cast<uint16_t>(device.fixtureCount), 0));
+
+        // ---- do not outrun the wire --------------------------------------
+        // Asking for more frames than the link can carry does not make the rig
+        // faster. The driver queues the excess, the backlog grows without
+        // bound, and the widget ends up parsing half-written frames - which
+        // reads as a strobing, unblendable rig rather than as an error. Send at
+        // a rate the wire can deliver and every frame lands whole.
+        device.fps = config.output.fps;
+
+        const float outputCeiling = device.output->maxFrameRate();
+        if (outputCeiling > 0.0f && device.fps > outputCeiling)
         {
-            logLine("auto-detected port " + port);
+            std::ostringstream note;
+            note.setf(std::ios::fixed);
+            note.precision(1);
+            note << config.name << ": fps " << device.fps
+                 << " is more than " << device.output->describe()
+                 << " can carry; running at " << outputCeiling
+                 << ". Raise its baud for a faster refresh.";
+            logLine("warning: " + note.str());
+            emit("WARN " + note.str());
+
+            device.fps = outputCeiling;
         }
-    }
-
-    // ---- build the output ------------------------------------------------
-    show.output = makeDmxOutput(show.config.device.type, port, show.config.device.baud,
-                                show.config.device.consoleChannels, error);
-    if (!show.output)
-    {
-        logLine("output error: " + error);
-        emit("ERR output " + error);
-        return 1;
-    }
-
-    // ---- send only the channels the rig actually uses --------------------
-    // A receiver keeps whatever it already had for slots that do not arrive,
-    // so there is nothing to gain from shipping 442 trailing zeros every
-    // frame. On a serial link that padding is most of the frame time.
-    //
-    // The same number sizes the frame buffer, which on a pixel rig is longer
-    // than a universe: the obelisk's 344 nodes are 1032 channels.
-    {
-        const int highest = show.config.fixtures.highestChannel();
-        show.universe.resize(highest);
-        show.output->setUniverseLength(highest);
-    }
-
-    if (!show.output->open(error))
-    {
-        logLine("output error: " + error);
-        emit("ERR output " + error);
-        return 1;
-    }
-    logLine("output: " + show.output->describe());
-
-    // ---- do not outrun the wire ------------------------------------------
-    // Asking for more frames than the link can carry does not make the rig
-    // faster. The driver queues the excess, the backlog grows without bound,
-    // and the widget ends up parsing half-written frames - which reads as a
-    // strobing, unblendable rig rather than as an error. Render at a rate the
-    // wire can actually deliver and every frame lands whole.
-    const float outputCeiling = show.output->maxFrameRate();
-    if (outputCeiling > 0.0f && show.config.device.fps > outputCeiling)
-    {
-        std::ostringstream note;
-        note.setf(std::ios::fixed);
-        note.precision(1);
-        note << "device.fps " << show.config.device.fps
-             << " is more than " << show.output->describe()
-             << " can carry; running at " << outputCeiling
-             << ". Raise device.baud for a faster refresh.";
-        logLine("warning: " + note.str());
-        emit("WARN " + note.str());
-
-        show.config.device.fps = outputCeiling;
     }
 
     // ---- the beat --------------------------------------------------------
@@ -2174,36 +2409,46 @@ int main(int argc, char** argv)
         return 1;
     }
 
-    // ---- build the strip -------------------------------------------------
-    // One HSV node per fixture. This is the same framebuffer the microcontroller
-    // build hands to the LEDs; here it feeds the fixture patch instead.
-    const size_t fixtureCount = show.config.fixtures.size();
-    show.strip.reset(new eio::HSVStrip(static_cast<uint16_t>(fixtureCount), 0));
-
+    // ---- the shape of the whole show -------------------------------------
+    const size_t fixtureCount = show.config.fixtureCount();
     show.context.fixtureCount = fixtureCount;
-    applyCoordFrame(show);
+
+    // 0..1 across every device in order, for the patterns that sweep along a
+    // rig without caring about its shape. With two devices a chase runs through
+    // the first and on into the second, which is what you would want it to do.
     show.context.positions.resize(fixtureCount);
     for (size_t idx = 0; idx < fixtureCount; ++idx)
     {
-        show.context.positions[idx] = show.config.fixtures.normalizedPosition(idx);
+        show.context.positions[idx] = (fixtureCount <= 1)
+            ? 0.0f
+            : static_cast<float>(idx) / static_cast<float>(fixtureCount - 1);
     }
 
-    // A rig that states real coordinates hands them straight to the pattern.
-    // See PatternContext::nodeCoords for why a single position is not enough
-    // to describe something that is not a line.
-    if (show.config.coordSpace == CoordSpace::Literal)
+    // Fills nodeCoords, which is where the placements are actually applied.
+    applyCoordFrame(show);
+
     {
-        show.context.nodeCoords.resize(fixtureCount);
-        for (size_t idx = 0; idx < fixtureCount; ++idx)
-        {
-            const Fixture& fixture = show.config.fixtures[idx];
-            show.context.nodeCoords[idx] = ecore::Coordinate{fixture.positionX, fixture.positionY};
-        }
+        std::ostringstream ready;
+        ready << "READY fixtures=" << fixtureCount
+              << " devices=" << show.devices.size()
+              << " pattern=" << show.config.pattern.name;
+        emit(ready.str());
     }
 
-    emit("READY fixtures=" + std::to_string(fixtureCount)
-       + " pattern=" + show.config.pattern.name
-       + " output=" + show.output->describe());
+    // Which fixtures belong to which device, so a UI can draw them apart. Sent
+    // before the first frame, like STATES, so the window is built by the time
+    // colour arrives.
+    for (size_t i = 0; i < show.devices.size(); ++i)
+    {
+        const DeviceRuntime& device = show.devices[i];
+        std::ostringstream line;
+        line << "DEVICE " << i
+             << " " << device.name()
+             << " " << device.firstFixture
+             << " " << device.fixtureCount
+             << " " << device.output->describe();
+        emit(line.str());
+    }
 
     // Open on the look the config asked for. Warn rather than fail: a typo here
     // should still light the rig, on the machine's own default.
@@ -2232,12 +2477,17 @@ int main(int argc, char** argv)
 
     if (emitFrames)
     {
-        // Name the fixtures once, so the frame lines can stay compact.
+        // Name the fixtures once, so the frame lines can stay compact. Across
+        // every device, in the order the frame reports them; the DEVICE lines
+        // above say where each one's run starts.
         std::ostringstream names;
         names << "FIXTURES";
-        for (const Fixture& fixture : show.config.fixtures.all())
+        for (const Device& device : show.config.devices)
         {
-            names << " " << fixture.name;
+            for (const Fixture& fixture : device.fixtures.all())
+            {
+                names << " " << fixture.name;
+            }
         }
         emit(names.str());
     }
@@ -2250,7 +2500,17 @@ int main(int argc, char** argv)
 
     // ---- the show loop ---------------------------------------------------
     using clock = std::chrono::steady_clock;
-    const auto framePeriod = std::chrono::duration<double>(1.0 / static_cast<double>(show.config.device.fps));
+
+    // The loop renders at whatever the *fastest* device wants, and each device
+    // sends on its own schedule below. Rendering at the slowest would hold a
+    // 40fps truss back to a relic's 30; rendering at the fastest and letting
+    // the relic skip costs one extra render and keeps both correct.
+    float showFps = 1.0f;
+    for (const DeviceRuntime& device : show.devices)
+    {
+        showFps = std::max(showFps, device.fps);
+    }
+    const auto framePeriod = std::chrono::duration<double>(1.0 / static_cast<double>(showFps));
 
     auto lastFrame = clock::now();
     auto nextFrame = lastFrame;
@@ -2293,21 +2553,53 @@ int main(int argc, char** argv)
             emitParams(show);
         }
 
-        // Push through the strip so the desktop path and the microcontroller
-        // path agree on what a frame is.
-        for (size_t idx = 0; idx < fixtureCount && idx < show.colors.size(); ++idx)
+        // One render, then each device takes its own slice of it. This is the
+        // point of the whole arrangement: the look was computed once, in one
+        // coordinate space, and the sculpture and the truss are looking at
+        // different parts of the same picture rather than running it twice.
+        const float master = show.blackout ? 0.0f : show.masterBrightness;
+        const double frameSeconds = std::chrono::duration<double>(now.time_since_epoch()).count();
+
+        bool outputFailed = false;
+        for (DeviceRuntime& device : show.devices)
         {
-            show.strip->setHSV(static_cast<uint16_t>(idx), show.colors[idx]);
+            // Push through the strip so the desktop path and the
+            // microcontroller path agree on what a frame is.
+            for (size_t idx = 0; idx < device.fixtureCount; ++idx)
+            {
+                const size_t at = device.firstFixture + idx;
+                if (at < show.colors.size())
+                {
+                    device.strip->setHSV(static_cast<uint16_t>(idx), show.colors[at]);
+                }
+            }
+
+            device.universe.clear();
+            device.config->fixtures.render(device.strip->getStripHSV(),
+                                           master * device.config->brightness,
+                                           show.config.master.gamma,
+                                           device.universe);
+
+            // Its own rate, not the loop's. A relic that draws at 30 simply
+            // does not get every frame a 40fps truss does.
+            if (frameSeconds < device.nextSendAt)
+            {
+                continue;
+            }
+            device.nextSendAt = std::max(frameSeconds, device.nextSendAt)
+                              + 1.0 / static_cast<double>(std::max(device.fps, 1.0f));
+
+            if (!device.output->sendFrame(device.universe, error))
+            {
+                logLine("output error: [" + device.name() + "] " + error);
+                emit("ERR output " + device.name() + ": " + error);
+                outputFailed = true;
+                break;
+            }
         }
 
-        show.universe.clear();
-        const float master = show.blackout ? 0.0f : show.masterBrightness;
-        show.config.fixtures.render(show.strip->getStripHSV(), master, show.config.master.gamma, show.universe);
-
-        if (!show.output->sendFrame(show.universe, error))
+        if (outputFailed)
         {
-            logLine("output error: " + error);
-            emit("ERR output " + error);
             exitCode = 1;
             break;
         }
@@ -2316,11 +2608,17 @@ int main(int argc, char** argv)
         // their lengths, and it says so when a takeover starts or lapses - all
         // of which is worth having in the log of a show rather than only in a
         // serial monitor nobody has open.
-        if (RelicUsbOutput* relic = show.output->asRelicLink())
+        for (DeviceRuntime& device : show.devices)
         {
+            RelicUsbOutput* relic = device.output->asRelicLink();
+            if (!relic)
+            {
+                continue;
+            }
             for (const std::string& said : relic->drainRelicLines())
             {
-                emit("RELIC " + said);
+                // Named, because two sculptures on two cables both talk.
+                emit("RELIC " + device.name() + " " + said);
             }
         }
 
@@ -2394,15 +2692,22 @@ int main(int argc, char** argv)
 
                 std::ostringstream frame;
                 frame << "F";
-                for (const Fixture& fixture : show.config.fixtures.all())
+                // Every device's fixtures, in device order - the same order the
+                // DEVICE and FIXTURES lines described, so a viewer can slice
+                // this back apart without being told again every frame.
+                for (const DeviceRuntime& device : show.devices)
                 {
-                    char swatch[8];
-                    std::snprintf(swatch, sizeof(swatch), " %02x%02x%02x",
-                                  show.universe.getChannel(fixture.startChannel + fixture.offsetR),
-                                  show.universe.getChannel(fixture.startChannel + fixture.offsetG),
-                                  show.universe.getChannel(fixture.startChannel + fixture.offsetB));
-                    frame << swatch;
+                    for (const Fixture& fixture : device.config->fixtures.all())
+                    {
+                        char swatch[8];
+                        std::snprintf(swatch, sizeof(swatch), " %02x%02x%02x",
+                                      device.universe.getChannel(fixture.startChannel + fixture.offsetR),
+                                      device.universe.getChannel(fixture.startChannel + fixture.offsetG),
+                                      device.universe.getChannel(fixture.startChannel + fixture.offsetB));
+                        frame << swatch;
+                    }
                 }
+
                 emit(frame.str());
             }
         }
@@ -2429,12 +2734,15 @@ int main(int argc, char** argv)
 
     // One dark frame on the way out, so the rig does not hold its last look
     // forever after we let go of it.
-    show.universe.clear();
-    show.config.fixtures.render(std::vector<ecore::HSV>(fixtureCount), 0.0f,
-                                show.config.master.gamma, show.universe);
     std::string shutdownError;
-    show.output->sendFrame(show.universe, shutdownError);
-    show.output->close();
+    for (DeviceRuntime& device : show.devices)
+    {
+        device.universe.clear();
+        device.config->fixtures.render(std::vector<ecore::HSV>(device.fixtureCount), 0.0f,
+                                       show.config.master.gamma, device.universe);
+        device.output->sendFrame(device.universe, shutdownError);
+        device.output->close();
+    }
 
     // Before the reader goes, so the MIDI callback cannot fire into a clock
     // whose owner is on its way out.

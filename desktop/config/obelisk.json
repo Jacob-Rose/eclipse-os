@@ -49,28 +49,30 @@
   // run starts 129 later. The last reaches 1032, which is twice a DMX universe
   // and perfectly legal: nothing is putting this on a DMX wire.
   //
-  // The down strips start at y=43 and step -1, so they run 43..1 where the up
-  // strips run 0..42. That is off by one from a strict mirror, and it is what
-  // the sculpture does - the looks were tuned through it.
+  // The down strips start at y=42 and step -1, so they run 42..0 - exactly the
+  // range the up strips cover, because the pixels physically line up. They used
+  // to start at 43, which put every down strip a whole unit above its
+  // neighbour and shifted half the sculpture against the other half for
+  // anything reading y. Fixed in obelisk.cpp too; these have to agree.
   "fixtures": [
     { "profile": "rgb3", "name": "a_up",   "address":   1, "count": 43,
       "position": [0,  0], "position_step": [0,  1] },
     { "profile": "rgb3", "name": "a_down", "address": 130, "count": 43,
-      "position": [1, 43], "position_step": [0, -1] },
+      "position": [1, 42], "position_step": [0, -1] },
 
     { "profile": "rgb3", "name": "b_up",   "address": 259, "count": 43,
       "position": [2,  0], "position_step": [0,  1] },
     { "profile": "rgb3", "name": "b_down", "address": 388, "count": 43,
-      "position": [3, 43], "position_step": [0, -1] },
+      "position": [3, 42], "position_step": [0, -1] },
 
     { "profile": "rgb3", "name": "c_up",   "address": 517, "count": 43,
       "position": [4,  0], "position_step": [0,  1] },
     { "profile": "rgb3", "name": "c_down", "address": 646, "count": 43,
-      "position": [5, 43], "position_step": [0, -1] },
+      "position": [5, 42], "position_step": [0, -1] },
 
     { "profile": "rgb3", "name": "d_up",   "address": 775, "count": 43,
       "position": [6,  0], "position_step": [0,  1] },
     { "profile": "rgb3", "name": "d_down", "address": 904, "count": 43,
-      "position": [7, 43], "position_step": [0, -1] }
+      "position": [7, 42], "position_step": [0, -1] }
   ]
 }

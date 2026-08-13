@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 
+#include "lib/ecore/coord.h"
 #include "lib/ecore/hsv.h"
 
 #include "edmx/fixture.h"
@@ -20,9 +21,14 @@
 
 namespace edmx
 {
-    struct DeviceConfig
+    /// Where the frames go. One per device.
+    ///
+    /// Named `output` because `device` now means the physical thing this drives
+    /// - a sculpture, a truss of pars - and a device has an output the way it
+    /// has a name. Config files may still write `"device"` here; see loadConfig.
+    struct OutputConfig
     {
-        std::string type{"enttec_pro"}; ///< enttec_pro | enttec_open | console
+        std::string type{"enttec_pro"}; ///< enttec_pro | enttec_open | relic_usb | console | preview
         std::string port{"auto"};       ///< "auto", "COM3", "/dev/ttyUSB0"
         /// PRO link speed; ignored by enttec_open, which is always 250000.
         ///
@@ -170,25 +176,133 @@ namespace edmx
         Literal
     };
 
-    struct Config
+    /// Where a device sits in the pattern's coordinate space.
+    ///
+    /// A pattern renders into one space and knows nothing about how many
+    /// physical objects are in it. This is how an environment says "the pillar
+    /// is here and the truss is over there" - so a look that sweeps, or that
+    /// keys off a coordinate, does something coherent across both instead of
+    /// running twice from scratch.
+    ///
+    /// Applied as `world = local * scale + offset`, where `local` is whatever
+    /// the device's own coordinate space produced. Scale first, so an offset
+    /// always means the same thing whatever the device's own units were.
+    struct Placement
     {
+        float offsetX{0.0f};
+        float offsetY{0.0f};
+        float scaleX{1.0f};
+        float scaleY{1.0f};
+
+        /// "Make this device's own extent exactly this big", instead of stating
+        /// a scale.
+        ///
+        /// The obelisk is 8 by 43 in its own units. Putting it into a pattern
+        /// that thinks in 0..1 means a scale of 0.125 by 0.023256, which is a
+        /// pair of magic numbers that stop being right the moment the sculpture
+        /// is rewired. `"fit": [1, 1]` says the same thing and stays true.
+        ///
+        /// Resolved once the pattern's coordinate frame is known, because a
+        /// normalized device's extent depends on it. Offset then places the
+        /// fitted box's corner, so `fit` and `offset` compose the way you would
+        /// expect: fit it, then put it somewhere.
+        std::optional<float> fitWidth;
+        std::optional<float> fitHeight;
+
+        /// How big this device's panel is drawn, relative to an even share of
+        /// the viewer's window.
+        ///
+        /// Purely a view property: it does not touch a single coordinate the
+        /// pattern sees, and nothing in this executable reads it beyond
+        /// reporting it in --show-patch. It lives here so the schema has one
+        /// definition rather than two, the same as everything else.
+        ///
+        /// Explicit rather than inferred from the geometry. A pillar and a
+        /// truss plainly want different panel shapes, but *how* different is a
+        /// judgement about the room and the screen - something you tune by
+        /// looking at the window, not something a fixture list can tell you.
+        float viewScaleX{1.0f};
+        float viewScaleY{1.0f};
+
+        ecore::Coordinate apply(float x, float y) const
+        {
+            return ecore::Coordinate{x * scaleX + offsetX, y * scaleY + offsetY};
+        }
+    };
+
+    /// One physical thing the desk can light.
+    ///
+    /// A device owns its geometry, how its numbers are read, and its own way
+    /// onto a wire. It does *not* own a pattern or a tempo - those belong to
+    /// the show, and every device in an environment shares them. That is the
+    /// whole point: one look, rendered once, landing on everything at once.
+    ///
+    /// Device definitions live in their own files under `devices/` so a
+    /// sculpture is described once and referred to by name from every show it
+    /// appears in.
+    struct Device
+    {
+        std::string name;
+        /// The file this came from, so an error can say which.
+        std::string source;
+
         Addressing addressing{Addressing::OneBased};
         CoordSpace coordSpace{CoordSpace::Normalized};
 
-        DeviceConfig device;
+        OutputConfig output;
+        FixtureMap fixtures;
+        Placement placement;
+
+        /// Per-device trim, on top of the show's master.
+        float brightness{1.0f};
+    };
+
+    /// An environment: the devices in a room, and the show running on them.
+    ///
+    /// Still called Config because it is what a config file loads into, and a
+    /// file describing one rig is simply an environment with one device in it -
+    /// which is exactly how the legacy single-rig files are read.
+    struct Config
+    {
         MasterConfig master;
         MidiConfig midi;
         PatternConfig pattern;
-        FixtureMap fixtures;
+
+        std::vector<Device> devices;
 
         /// Warnings raised during load. Non-fatal: reported, then we light up.
         std::vector<std::string> warnings;
+
+        /// Fixtures across every device, in device order. This is the order the
+        /// pattern renders in and the order the frame stream reports.
+        size_t fixtureCount() const;
+
+        /// Where device `index` starts in that run.
+        size_t firstFixtureOf(size_t index) const;
     };
 
     /// Parses the config file at `path`. Returns false with `outError` set on a
     /// problem that would leave us unable to output at all (bad JSON, no
     /// fixtures, an unusable channel order).
+    ///
+    /// Two shapes are accepted, and which one a file is depends only on whether
+    /// it has a `devices` array:
+    ///
+    ///   environment  `devices: [...]`, each entry naming a device file and
+    ///                where it sits. master/pattern/midi belong to the show.
+    ///   single rig   `fixtures: [...]` at the top level, with `device` (or
+    ///                `output`) beside it. Read as an environment holding one
+    ///                unnamed device at the origin, which is what every config
+    ///                written before environments existed is.
+    ///
+    /// Device files referenced by an environment are resolved relative to the
+    /// environment's own directory, then to `devices/` beside it.
     bool loadConfig(const std::string& path, Config& outConfig, std::string& outError);
+
+    /// Parses a device definition file into `outDevice`. Environments do this
+    /// for each entry; it is exposed for tooling that wants to check one.
+    bool loadDevice(const std::string& path, Device& outDevice, std::string& outError,
+                    std::vector<std::string>* outWarnings = nullptr);
 
     /// Parses a colour written as "#rrggbb", "rrggbb", or an
     /// {"h":..,"s":..,"v":..} object. Returns false when it is neither.

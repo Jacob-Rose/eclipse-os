@@ -63,21 +63,21 @@
     { "profile": "rgb3", "name": "a_up",   "address":   1, "count": 43,
       "position": [0,  0], "position_step": [0,  1] },
     { "profile": "rgb3", "name": "a_down", "address": 130, "count": 43,
-      "position": [1, 43], "position_step": [0, -1] },
+      "position": [1, 42], "position_step": [0, -1] },
 
     { "profile": "rgb3", "name": "b_up",   "address": 259, "count": 43,
       "position": [2,  0], "position_step": [0,  1] },
     { "profile": "rgb3", "name": "b_down", "address": 388, "count": 43,
-      "position": [3, 43], "position_step": [0, -1] },
+      "position": [3, 42], "position_step": [0, -1] },
 
     { "profile": "rgb3", "name": "c_up",   "address": 517, "count": 43,
       "position": [4,  0], "position_step": [0,  1] },
     { "profile": "rgb3", "name": "c_down", "address": 646, "count": 43,
-      "position": [5, 43], "position_step": [0, -1] },
+      "position": [5, 42], "position_step": [0, -1] },
 
     { "profile": "rgb3", "name": "d_up",   "address": 775, "count": 43,
       "position": [6,  0], "position_step": [0,  1] },
     { "profile": "rgb3", "name": "d_down", "address": 904, "count": 43,
-      "position": [7, 43], "position_step": [0, -1] }
+      "position": [7, 42], "position_step": [0, -1] }
   ]
 }

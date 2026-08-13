@@ -18,6 +18,7 @@ import tempfile
 import threading
 import time
 from collections import deque
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, List, Optional, Sequence, Tuple, Union
 
@@ -32,6 +33,26 @@ Frame = List[Tuple[int, int, int]]
 
 class ShowError(RuntimeError):
     """Raised when the executable rejects a command or dies unexpectedly."""
+
+
+@dataclass
+class DeviceSpan:
+    """Which slice of a frame belongs to which device.
+
+    A frame is one flat run of fixtures across every device in the environment,
+    in order. This says where each device's run starts and how long it is, which
+    is all a UI needs to draw them apart.
+    """
+
+    index: int
+    name: str
+    first: int
+    count: int
+    output: str = ""
+
+    def slice(self, frame: Frame) -> Frame:
+        """This device's fixtures out of a whole-show frame."""
+        return frame[self.first:self.first + self.count]
 
 
 class Param:
@@ -163,6 +184,11 @@ class ShowController:
 
         #: Fixture names, in patch order, as the executable reported them.
         self.fixture_names: List[str] = []
+
+        #: One entry per device, in the order their fixtures appear in a frame.
+        #: Filled from the DEVICE lines the executable sends before the first
+        #: frame; a UI slices `Frame` with these.
+        self.devices: List[DeviceSpan] = []
 
         #: States the running pattern offers. Empty unless it is a state
         #: machine, which is exactly the condition a UI wants to test.
@@ -344,6 +370,26 @@ class ShowController:
 
         if line.startswith("FIXTURES "):
             self.fixture_names = line.split()[1:]
+
+        # DEVICE <index> <name> <first fixture> <count> <output...>
+        #
+        # Sent once, before the first frame, so a UI can build a panel per
+        # device and then slice every frame apart without being told again.
+        if line.startswith("DEVICE "):
+            parts = line.split(None, 5)
+            if len(parts) >= 5:
+                try:
+                    self.devices.append(DeviceSpan(
+                        index=int(parts[1]),
+                        name=parts[2],
+                        first=int(parts[3]),
+                        count=int(parts[4]),
+                        output=parts[5] if len(parts) > 5 else "",
+                    ))
+                except ValueError:
+                    # A malformed announcement must not take the viewer down;
+                    # the worst case is one device drawn with the rest.
+                    pass
 
         # What a relic on the other end of a USB cable has to say: its answer to
         # a Hello, and a note each time a takeover starts or lapses. Kept

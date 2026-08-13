@@ -144,6 +144,9 @@ DIVISION_BUTTONS: List[Tuple[str, Tuple[str, str]]] = [
 # A dark room, so the lights are the brightest thing on screen.
 BACKGROUND = (11, 13, 16)
 PANEL = "#14181d"
+#: The border and title bar of a device panel — enough to read as a window
+#: edge against the dark room without competing with the lights.
+PANEL_EDGE = "#2a323b"
 TEXT = "#c8d0d8"
 TEXT_DIM = "#6b7783"
 TEXT_WARN = "#e8a33d"
@@ -185,6 +188,240 @@ def _run_name(name: str) -> str:
     """
     head, sep, tail = name.rpartition("_")
     return head if sep and tail.isdigit() else name
+
+
+class DevicePanel:
+    """One device's own little window inside the main one.
+
+    An environment holds physical things - a pillar, a truss - and they do not
+    share a shape, a scale or a sensible place on screen. Drawing them into one
+    canvas means the 344-pixel sculpture squashes the ten pars into a corner.
+    So each gets a panel: drag it by the title bar, size it by the grip in the
+    bottom-right, and its fixtures lay themselves out into whatever room it
+    ends up with.
+
+    Panels are children of the desk surface rather than real OS windows, so they
+    move with the main window, stay on top of it, and cannot be lost behind it.
+    FL Studio's plugin windows work the same way and for the same reasons.
+    """
+
+    #: Grab area for the resize corner.
+    GRIP = 14
+    TITLE_HEIGHT = 20
+
+    def __init__(self, surface: tk.Widget, name: str, placements: List["Placement"],
+                 device=None, on_touched=None):
+        self.name = name
+        self.placements = placements
+        self.surface = surface
+        #: The config device behind this panel.
+        self.device = device
+        #: How much of the window this panel asks for, relative to an even
+        #: share. Straight out of the environment; see Placement.view_scale.
+        self.view_scale = list(device.placement.view_scale) if device else [1.0, 1.0]
+        #: Called the first time this panel is moved or sized by hand.
+        self._on_touched = on_touched
+
+        self.frame = tk.Frame(surface, bg=PANEL, highlightthickness=1,
+                              highlightbackground=PANEL_EDGE, highlightcolor=PANEL_EDGE)
+
+        self.title = tk.Label(
+            self.frame, text=f"  {name}  ({len(placements)})", anchor="w",
+            bg=PANEL, fg=TEXT_DIM, font=("Consolas", 9), cursor="fleur",
+        )
+        self.title.pack(side="top", fill="x")
+
+        self.canvas = tk.Canvas(self.frame, bg="#%02x%02x%02x" % BACKGROUND,
+                                highlightthickness=0)
+        self.canvas.pack(side="top", fill="both", expand=True)
+
+        # The grip sits *over* the canvas rather than beside it, so it costs no
+        # drawing room and lands where a resize handle is expected to be.
+        self.grip = tk.Frame(self.frame, bg=PANEL_EDGE, cursor="bottom_right_corner",
+                             width=self.GRIP, height=self.GRIP)
+        self.grip.place(relx=1.0, rely=1.0, anchor="se")
+
+        self._items: List[dict] = []
+        self._painted: Optional[Frame] = None
+        self._drag: Optional[Tuple[int, int]] = None
+
+        for widget in (self.title,):
+            widget.bind("<ButtonPress-1>", self._start_move)
+            widget.bind("<B1-Motion>", self._on_move)
+            widget.bind("<ButtonRelease-1>", self._end_drag)
+
+        self.grip.bind("<ButtonPress-1>", self._start_resize)
+        self.grip.bind("<B1-Motion>", self._on_resize)
+        self.grip.bind("<ButtonRelease-1>", self._end_drag)
+
+        self.canvas.bind("<Configure>", lambda event: self.rebuild())
+
+    # -- geometry ----------------------------------------------------------
+
+    def place(self, x: int, y: int, width: int, height: int) -> None:
+        self.frame.place(x=x, y=y, width=width, height=height)
+
+    def _start_move(self, event: "tk.Event") -> None:
+        self._drag = (event.x_root - self.frame.winfo_x(),
+                      event.y_root - self.frame.winfo_y())
+        self.frame.lift()
+        if self._on_touched:
+            self._on_touched()
+
+    def _on_move(self, event: "tk.Event") -> None:
+        if self._drag is None:
+            return
+        offset_x, offset_y = self._drag
+
+        # Kept inside the surface, with a strip of the title always reachable:
+        # a panel dragged past the edge would be unrecoverable without a way to
+        # scroll to it, and there is no such way.
+        limit_x = max(0, self.surface.winfo_width() - 40)
+        limit_y = max(0, self.surface.winfo_height() - self.TITLE_HEIGHT)
+
+        self.frame.place_configure(
+            x=max(0, min(event.x_root - offset_x, limit_x)),
+            y=max(0, min(event.y_root - offset_y, limit_y)),
+        )
+
+    def _start_resize(self, event: "tk.Event") -> None:
+        self._drag = (event.x_root - self.frame.winfo_width(),
+                      event.y_root - self.frame.winfo_height())
+        self.frame.lift()
+        if self._on_touched:
+            self._on_touched()
+
+    def _on_resize(self, event: "tk.Event") -> None:
+        if self._drag is None:
+            return
+        offset_x, offset_y = self._drag
+        self.frame.place_configure(
+            width=max(120, event.x_root - offset_x),
+            height=max(80, event.y_root - offset_y),
+        )
+
+    def _end_drag(self, event: "tk.Event") -> None:
+        self._drag = None
+
+    # -- drawing -----------------------------------------------------------
+
+    def rebuild(self) -> None:
+        """Lays this device's fixtures out for the panel's current size."""
+        self.canvas.delete("all")
+        self._items = []
+
+        width = max(self.canvas.winfo_width(), 1)
+        height = max(self.canvas.winfo_height(), 1)
+        if width <= 1 or height <= 1 or not self.placements:
+            return
+
+        margin_x = max(width * 0.08, 6.0)
+        margin_y = max(height * 0.10, 6.0)
+        label_room = 14 if len(self.placements) <= DENSE_ABOVE else 12
+
+        span_x = max(width - 2 * margin_x, 1.0)
+        span_y = max(height - 2 * margin_y - label_room, 1.0)
+
+        points = [
+            (margin_x + place.x * span_x, margin_y + place.y * span_y)
+            for place in self.placements
+        ]
+
+        if len(self.placements) > DENSE_ABOVE:
+            self._build_dense(points)
+        else:
+            self._build_glowing(points, span_x, span_y, margin_x, margin_y)
+
+        self._paint(self._painted, force=True)
+
+    def _build_glowing(self, points, span_x, span_y, margin_x, margin_y) -> None:
+        closest = min(span_x, span_y)
+        for i, (ax, ay) in enumerate(points):
+            for bx, by in points[i + 1:]:
+                closest = min(closest, ((ax - bx) ** 2 + (ay - by) ** 2) ** 0.5)
+
+        radius = closest * 0.5 / GLOW_EXTENT
+        radius = min(radius, margin_x / GLOW_EXTENT, margin_y / GLOW_EXTENT)
+        radius = max(min(radius, 44.0), 3.0)
+
+        for place, (cx, cy) in zip(self.placements, points):
+            rings = []
+            for index in range(GLOW_RINGS):
+                t = index / max(GLOW_RINGS - 1, 1)
+                ring_radius = radius * (GLOW_EXTENT - (GLOW_EXTENT - 1.0) * t)
+                rings.append((
+                    self.canvas.create_oval(
+                        cx - ring_radius, cy - ring_radius,
+                        cx + ring_radius, cy + ring_radius,
+                        outline="", fill="#%02x%02x%02x" % BACKGROUND,
+                    ),
+                    0.05 + 0.95 * (t ** 2.4),
+                ))
+
+            core = self.canvas.create_oval(
+                cx - radius, cy - radius, cx + radius, cy + radius,
+                outline="", fill="#%02x%02x%02x" % BACKGROUND,
+            )
+
+            self.canvas.create_text(cx, cy + radius * GLOW_EXTENT + 10,
+                                    text=place.name, fill=TEXT, font=("Consolas", 7))
+            self._items.append({"rings": rings, "core": core})
+
+    def _build_dense(self, points) -> None:
+        gaps = [
+            ((ax - bx) ** 2 + (ay - by) ** 2) ** 0.5
+            for (ax, ay), (bx, by) in zip(points, points[1:])
+            if (ax - bx) ** 2 + (ay - by) ** 2 > 0.0
+        ]
+        radius = max(min((min(gaps) if gaps else 6.0) * 0.55, 9.0), 1.0)
+
+        for (cx, cy) in points:
+            self._items.append({
+                "rings": (),
+                "core": self.canvas.create_oval(
+                    cx - radius, cy - radius, cx + radius, cy + radius,
+                    outline="", fill="#%02x%02x%02x" % BACKGROUND,
+                ),
+            })
+
+        runs: Dict[str, List[float]] = {}
+        for place, (cx, _) in zip(self.placements, points):
+            runs.setdefault(_run_name(place.name), []).append(cx)
+
+        # Only label the runs if the labels will read. Squeezed into a narrow
+        # pillar of a panel they overlap into "a_updownb_updown" and are worse
+        # than nothing - the shape is the information at that width, and the
+        # panel's own title still says which device this is.
+        widest = max((len(name) for name in runs), default=0)
+        spacing = self.canvas.winfo_width() / max(len(runs), 1)
+        if spacing < widest * 6 + 6:
+            return
+
+        label_y = max(y for _, y in points) + radius + 9
+        for name, xs in runs.items():
+            self.canvas.create_text(sum(xs) / len(xs), label_y, text=name,
+                                    fill=TEXT_DIM, font=("Consolas", 7))
+
+    def _paint(self, frame: Optional[Frame], force: bool = False) -> None:
+        if not force and frame is self._painted:
+            return
+        self._painted = frame
+
+        for index, item in enumerate(self._items):
+            color: RGB = (0, 0, 0)
+            if frame is not None and index < len(frame):
+                color = frame[index]
+
+            for oval, alpha in item["rings"]:
+                self.canvas.itemconfig(oval, fill=_blend(color, BACKGROUND, alpha))
+            self.canvas.itemconfig(item["core"], fill="#%02x%02x%02x" % color)
+
+    def paint(self, frame: Optional[Frame]) -> None:
+        """Takes this device's own slice of a whole-show frame."""
+        self._paint(frame)
+
+    def destroy(self) -> None:
+        self.frame.destroy()
 
 
 @dataclass
@@ -307,6 +544,20 @@ class ViewerApp:
         #: buttons is refreshed when it says something and not every pump.
         self._relic_said = 0
 
+        #: One panel per device. Built when the executable announces them.
+        self._panels: List[DevicePanel] = []
+        self._panel_signature: Tuple = ()
+
+        #: Narrowest a panel is tiled to. Below this the labels stop being
+        #: readable and dragging it becomes fiddly, at which point it is not a
+        #: window any more.
+        self.MIN_PANEL = 130
+
+        #: Set the moment a panel is dragged or sized. After that the window
+        #: stops re-tiling on resize, because a hand-placed layout is worth more
+        #: than an even one.
+        self._panels_touched = False
+
         self._fps = 0.0
         self._fps_marker = time.monotonic()
         self._fps_counted = 0
@@ -391,12 +642,14 @@ class ViewerApp:
 
         self._build_buttons()
 
-        self.canvas = tk.Canvas(
-            self.root, bg="#%02x%02x%02x" % BACKGROUND, highlightthickness=0
-        )
-        self.canvas.pack(fill="both", expand=True)
+        # The desk surface: not a canvas of its own, just the room the device
+        # panels live in. They are placed on it absolutely so they can be
+        # dragged; it expands, so they stay put relative to the window when it
+        # is resized rather than being re-tiled underneath the cursor.
+        self.surface = tk.Frame(self.root, bg="#%02x%02x%02x" % BACKGROUND)
+        self.surface.pack(fill="both", expand=True)
 
-        self.canvas.bind("<Configure>", lambda event: self._rebuild_items())
+        self.surface.bind("<Configure>", lambda event: self._on_surface_resized())
 
         self.root.bind("<space>", lambda event: self._toggle_blackout())
         self.root.bind("<Key-n>", lambda event: self._step_pattern(1))
@@ -410,8 +663,8 @@ class ViewerApp:
         self.root.bind("<Escape>", lambda event: self._quit())
         self.root.protocol("WM_DELETE_WINDOW", self._quit)
 
-        self._items: List[dict] = []
-        self._rebuild_items()
+        # Panels wait for the executable to say what devices there are - which
+        # arrives a moment after it starts. _pump builds them then.
 
     # -- buttons -----------------------------------------------------------
 
@@ -849,146 +1102,87 @@ class ViewerApp:
             button.configure(bg=BUTTON_BG_ACTIVE if down else BUTTON_BG)
 
     def _rebuild_items(self) -> None:
-        """Lays the fixtures out for the current window size.
+        """Builds one panel per device and tiles them across the surface.
 
-        Canvas items are created once and recoloured per frame. Deleting and
-        recreating 90 items thirty times a second is visible as flicker.
+        Called once the executable has announced its devices, and again if that
+        set ever changes. Not on every resize: panels are dragged and sized by
+        hand, and re-tiling them under the cursor because the window moved would
+        undo that.
         """
-        self.canvas.delete("all")
-        self._items = []
+        spans = list(self.show.devices)
+        signature = tuple((span.name, span.first, span.count) for span in spans)
+        if signature == self._panel_signature and self._panels:
+            return
+        self._panel_signature = signature
 
-        width = max(self.canvas.winfo_width(), 1)
-        height = max(self.canvas.winfo_height(), 1)
+        for panel in self._panels:
+            panel.destroy()
+        self._panels = []
+
+        if not spans:
+            return
+
+        # Fixtures come out of the config rather than off the wire, because the
+        # config is what knows where they physically are. The DEVICE lines say
+        # which slice of a frame is whose; the config says what that slice looks
+        # like.
+        for span in spans:
+            device = self.config.device_named(span.name)
+            if device is None and len(self.config.devices) == len(spans):
+                device = self.config.devices[span.index]
+            if device is None:
+                continue
+
+            self._panels.append(DevicePanel(
+                self.surface, span.name, plan_layout(device),
+                device=device, on_touched=self._mark_panels_touched))
+
+        self._tile_panels()
+
+    def _tile_panels(self) -> None:
+        """An opening arrangement: side by side, widest device first.
+
+        Only ever the starting point. Everything after this is whatever the
+        panels were dragged to.
+        """
+        if not self._panels:
+            return
+
+        width = max(self.surface.winfo_width(), 1)
+        height = max(self.surface.winfo_height(), 1)
         if width <= 1 or height <= 1:
             return
 
-        label_room = 30
-        margin_x = width * 0.09
-        margin_y = height * 0.13
+        # An even split, scaled per device by whatever its config asked for.
+        #
+        # Not inferred from the geometry: a pillar and a truss want different
+        # panel shapes, but *how* different is a judgement about the room and
+        # the screen, not something derivable from a fixture list. It is one
+        # vector in the environment - see Placement.view_scale - so it can be
+        # tuned by looking at the window rather than by rewriting a heuristic.
+        gap = 6
+        count = len(self._panels)
+        room = width - gap * (count + 1)
+        full_height = max(height - 2 * gap, 80)
 
-        span_x = max(width - 2 * margin_x, 1.0)
-        span_y = max(height - 2 * margin_y - label_room, 1.0)
+        scales = [panel.view_scale for panel in self._panels]
+        total = sum(scale[0] for scale in scales) or 1.0
 
-        points = [
-            (margin_x + place.x * span_x, margin_y + place.y * span_y)
-            for place in self.placements
-        ]
+        x = gap
+        for panel, scale in zip(self._panels, scales):
+            panel_width = max(int(room * scale[0] / total), self.MIN_PANEL)
+            panel_height = max(int(full_height * scale[1]), 90)
+            panel.place(x=x, y=gap, width=panel_width, height=panel_height)
+            x += panel_width + gap
 
-        # Checked before the closest-pair scan below, which is quadratic and
-        # would be measuring a gap the dense path does not use.
-        if len(self.placements) > DENSE_ABOVE:
-            self._build_dense_items(points)
-            self._paint(self._current_frame(), force=True)
+    def _mark_panels_touched(self) -> None:
+        self._panels_touched = True
+
+    def _on_surface_resized(self) -> None:
+        """Re-tile only while nothing has been moved by hand."""
+        if self._panels_touched:
             return
-
-        # Size the fixtures to the gap between the closest pair, so a dense rig
-        # does not draw as one smear and a sparse one does not draw as
-        # pinpricks. The budget is the *glow*, not the disc: neighbouring beams
-        # should meet, not overlap, or the rig reads as a single wash and you
-        # lose the per-fixture reading that is the whole point of looking.
-        closest = min(span_x, span_y)
-        for i, (ax, ay) in enumerate(points):
-            for bx, by in points[i + 1:]:
-                closest = min(closest, ((ax - bx) ** 2 + (ay - by) ** 2) ** 0.5)
-
-        radius = closest * 0.5 / GLOW_EXTENT
-
-        # Keep the outermost ring inside the canvas: an edge fixture clipped by
-        # the frame looks like a dark fixture.
-        radius = min(radius, margin_x / GLOW_EXTENT, margin_y / GLOW_EXTENT)
-        radius = max(min(radius, 44.0), 3.0)
-
-        for place, (cx, cy) in zip(self.placements, points):
-            rings = []
-            for index in range(GLOW_RINGS):
-                # index 0 is the outermost, faintest ring
-                t = index / max(GLOW_RINGS - 1, 1)
-                ring_radius = radius * (GLOW_EXTENT - (GLOW_EXTENT - 1.0) * t)
-                rings.append(
-                    (
-                        self.canvas.create_oval(
-                            cx - ring_radius,
-                            cy - ring_radius,
-                            cx + ring_radius,
-                            cy + ring_radius,
-                            outline="",
-                            fill="#%02x%02x%02x" % BACKGROUND,
-                        ),
-                        0.05 + 0.95 * (t ** 2.4),
-                    )
-                )
-
-            core = self.canvas.create_oval(
-                cx - radius,
-                cy - radius,
-                cx + radius,
-                cy + radius,
-                outline="",
-                fill="#%02x%02x%02x" % BACKGROUND,
-            )
-
-            self.canvas.create_text(
-                cx,
-                cy + radius * GLOW_EXTENT + 12,
-                text=place.name,
-                fill=TEXT,
-                font=("Consolas", 8),
-            )
-            self.canvas.create_text(
-                cx,
-                cy + radius * GLOW_EXTENT + 24,
-                text=f"@{place.address}",
-                fill=TEXT_DIM,
-                font=("Consolas", 8),
-            )
-
-            self._items.append({"rings": rings, "core": core})
-
-        # Repaint immediately so a resize does not blank the rig until the next
-        # frame arrives - which, if the show has ended, is never.
-        self._paint(self._current_frame(), force=True)
-
-    def _build_dense_items(self, points: List[Tuple[float, float]]) -> None:
-        """One dot per node, for a rig too dense to draw as beams.
-
-        Labels go on the *run* rather than the node: 344 names is not a legend,
-        it is a smear. A run is a group of consecutive nodes sharing a name
-        before the index the patcher appended - which on the obelisk is exactly
-        one strip up one side, the unit you actually want to pick out.
-        """
-        # Dots want to nearly touch, so the strip reads as a strip. The vertical
-        # gap is the tight one: eight columns of 43 in a landscape canvas.
-        gaps = [
-            ((ax - bx) ** 2 + (ay - by) ** 2) ** 0.5
-            for (ax, ay), (bx, by) in zip(points, points[1:])
-            if (ax - bx) ** 2 + (ay - by) ** 2 > 0.0
-        ]
-        radius = max(min((min(gaps) if gaps else 6.0) * 0.55, 9.0), 1.5)
-
-        for (cx, cy) in points:
-            core = self.canvas.create_oval(
-                cx - radius,
-                cy - radius,
-                cx + radius,
-                cy + radius,
-                outline="",
-                fill="#%02x%02x%02x" % BACKGROUND,
-            )
-            self._items.append({"rings": (), "core": core})
-
-        runs: Dict[str, List[float]] = {}
-        for place, (cx, _) in zip(self.placements, points):
-            runs.setdefault(_run_name(place.name), []).append(cx)
-
-        label_y = max(y for _, y in points) + radius + 14
-        for name, xs in runs.items():
-            self.canvas.create_text(
-                sum(xs) / len(xs),
-                label_y,
-                text=name,
-                fill=TEXT_DIM,
-                font=("Consolas", 8),
-            )
+        self._tile_panels()
 
     # -- the show ----------------------------------------------------------
 
@@ -1018,6 +1212,11 @@ class ViewerApp:
         with self._lock:
             frame = self._latest
             seen = self._frames_seen
+
+        # The DEVICE lines arrive on the reader thread a moment after start, so
+        # the panels are built from here rather than in __init__. Cheap once
+        # they exist: it compares a signature and returns.
+        self._rebuild_items()
 
         self._paint(frame)
 
@@ -1055,24 +1254,25 @@ class ViewerApp:
         self._pump_id = self.root.after(16, self._pump)
 
     def _paint(self, frame: Optional[Frame], force: bool = False) -> None:
-        # Repainting the frame already on screen costs one itemconfig per item
-        # and buys nothing. It is free to skip on a ten-par rig and it is the
-        # difference between smooth and not on a 344-pixel one, where the pump
-        # runs at 60Hz over a 30fps frame stream and half the passes are
-        # redundant by construction. `force` is for a resize, where the items
-        # are new and the frame is not.
+        """Hands each panel its own slice of the frame.
+
+        A frame is one flat run across every device in order; the DEVICE lines
+        said where each run starts. Slicing here rather than in the panels keeps
+        the panels ignorant of the environment they are in.
+        """
         if not force and frame is self._painted:
             return
         self._painted = frame
 
-        for index, item in enumerate(self._items):
-            color: RGB = (0, 0, 0)
-            if frame is not None and index < len(frame):
-                color = frame[index]
+        spans = list(self.show.devices)
+        for index, panel in enumerate(self._panels):
+            if frame is None:
+                panel.paint(None)
+            elif index < len(spans):
+                panel.paint(spans[index].slice(frame))
+            else:
+                panel.paint(frame)
 
-            for oval, alpha in item["rings"]:
-                self.canvas.itemconfig(oval, fill=_blend(color, BACKGROUND, alpha))
-            self.canvas.itemconfig(item["core"], fill="#%02x%02x%02x" % color)
 
     def _refresh_header(self) -> None:
         source = "LIVE" if self.live else "dry-run"

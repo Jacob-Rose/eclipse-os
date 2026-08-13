@@ -59,9 +59,21 @@
   "midi": {
     "enabled": true,
 
-    // The virtual cable, by name. Matched case-insensitively on a fragment, so
-    // this finds "loopMIDI Port", "eclipse", "Mixxx" and similar.
-    "port": "loopMIDI",
+    // Mixxx's own output, by name. Matched case-insensitively on a fragment.
+    //
+    // Straight off Mixxx rather than through a loopMIDI cable named something
+    // else: on this machine `--list-midi` shows
+    //
+    //     0  Traktor Kontrol S2 MK3      the controller, ignored below
+    //     1  eclipse-os OUT              a spare cable, nothing sends on it
+    //     2  Mixxx OUT                   this
+    //
+    // One less hop and one less thing to be wrong about at load-in - a cable
+    // named for the software at one end and the rig at the other invites
+    // exactly the mistake of pointing at the wrong one. Run `--list-midi` on
+    // the show laptop and use whatever Mixxx is actually writing to; if that is
+    // a plain "loopMIDI Port", name that instead.
+    "port": "Mixxx OUT",
 
     // Never open these, whatever "port" resolution would otherwise do.
     //

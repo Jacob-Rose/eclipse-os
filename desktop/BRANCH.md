@@ -144,7 +144,8 @@ desktop/
                    state_machine, beat_clock, midi_input, mythos26
                    (the tuning surface itself is ecore::PropertyBag, in src/lib)
   src/             implementations + main.cpp (the show runner)
-  config/          example configs, your rig, the show, and the obelisk itself
+  devices/         one file per physical thing: the obelisk, the ten pars
+  config/          environments - rooms with devices in them, and the show
   python/          the wrapper package, and the viewer
   python/tests/    unittest suite, runnable with nothing installed
   tools/           toolchain setup, one script per platform
@@ -162,6 +163,8 @@ desktop/
 | `edmx::StateMachinePattern` | runs a whole `esm` machine, with its cross-fades |
 | `edmx::BeatClock` | where the beat is, and how fast |
 | `edmx::MidiInput` | tempo in, off winmm or an ALSA rawmidi device |
+| `edmx::Device` | one physical thing: geometry, addressing, its own output |
+| `edmx::Config` | an environment: the devices in a room, and the show on them |
 | `edmx::FixtureMap` | HSV → RGB → channels, gamma, dimmer, parked channels |
 | `edmx::DmxOutput` | the wire: Enttec PRO, Enttec Open, a relic on USB, console, or preview |
 | `elink` | the frame format between a desk and a relic — shared with the firmware |
@@ -481,6 +484,93 @@ Three things that would have bitten, all now closed:
 `setGlobalBrightness(EBrightness::HIGH)` is 63/255 and the link does not bypass
 it: that is a current limit, and 344 pixels at full white is about 20A. A Hello
 reports it so it is at least visible rather than mysterious.
+
+### devices and environments
+
+The config used to be a rig. It is two things now, because it was always two
+things pretending to be one.
+
+A **device** is a physical object — a sculpture, a truss of pars. It owns its
+geometry, how its numbers are read, and its own way onto a wire. `devices/`
+holds them, described once, referred to by name.
+
+An **environment** is a room with things in it and the show running on them: it
+lists devices, says where each sits in the pattern's coordinate space, and holds
+the master, the pattern and the tempo. `config/mythos26.json` is the obelisk and
+the ten pars together, on one look.
+
+**One pattern renders once, across everything.** That is the whole point. The
+show loop renders into one colour buffer spanning every device in order, and
+each device takes its own slice into its own frame buffer and its own wire.
+Devices do not even share a frame rate — the obelisk draws at 30 and the truss
+at 40, so the loop runs at the faster and each sends when it is due.
+
+A config with `fixtures` at the top level and no `devices` array is read as an
+environment holding one device at the origin, which is exactly what every config
+written before this is. All five existing ones load unchanged.
+
+**The device's coordinates stay the device's.** This is the part that was got
+wrong first and is worth recording. The obvious move is to normalise every
+device into the pattern's 0..1 so they compose — and it destroys them: the
+obelisk's 0..7 across its faces is the number `obelisk_seasons` reads to pick a
+palette per side, so squashing it turns the sculpture one flat colour. So
+placements are an offset by default, `fit` exists for when a rescale is genuinely
+wanted, and `fit` takes `null` per axis so you can fit the one the pattern reads
+and leave the other alone.
+
+### the window is a desk now, not a canvas
+
+Each device gets its own panel inside the main window — dragged by its title
+bar, sized by a corner grip, laying its fixtures out into whatever room it ends
+up with. Children of the window rather than real OS windows, so they move with
+it and cannot be lost behind it. FL Studio's plugin windows, and for the same
+reasons.
+
+Drawing an environment into one shared canvas does not work at all: 344 pixels
+and ten pars have nothing in common as a picture, and the sculpture squashes the
+pars into a corner.
+
+How much room each panel opens with is `view_scale` in the environment. Two
+things about it are deliberate:
+
+**It is a view property.** It touches nothing the pattern sees. The executable
+parses it only so the schema has one definition, and reports it in
+`--show-patch`; the viewer is what acts on it.
+
+**It is explicit, not inferred.** The first attempt derived panel widths from
+each device's own aspect ratio, which is clever and wrong: a pillar and a truss
+plainly want different panel shapes, but *how* different is a judgement about
+the room and the screen. That is a number you tune by looking at the window, not
+one a fixture list can tell you.
+
+### the obelisk's down strips were a pixel out
+
+Found by looking at the sculpture in the new window.
+
+`ObeliskIO::init` built its four down runs starting at `WALL_SIDE_LENGTH`, so an
+up run covered y 0..42 while the down run beside it covered 43..1 — a whole unit
+high, on strips whose pixels physically line up. Anything reading y, which is
+every look on the sculpture because that is what the coordinate is *for*, saw
+half the obelisk shifted against the other half. Subtle on a noise field and
+obvious on a gradient.
+
+They start at `WALL_SIDE_LENGTH - 1` now and every run covers y 0..42. Pixel
+counts are untouched: 43 per run, 344 total. Fixed in `obelisk.cpp` and in the
+three configs that mirror that geometry, which have to agree.
+
+**Flashed to the sculpture**, so the fix is on the hardware and not only in the
+picture.
+
+### --reboot-bootsel could have rebooted a DMX widget
+
+Also worth recording, because it was a hazard I built and then walked into.
+
+With no relic answering, the 1200-baud fallback took "the only port" as its
+target. On a machine whose only serial device is the Enttec widget — which is
+this one, whenever the obelisk is unplugged — that aims a reboot-to-bootloader at
+a DMX widget mid-show. It refuses now and asks for `--port`, because a relic
+flashed before the link existed is exactly the thing we cannot tell apart from a
+widget, and guessing is not worth being capable of.
 
 ### it works on the sculpture
 
@@ -811,6 +901,23 @@ is the DMX widget is the one on-hardware check that has run.
 
 `readme.md` has a first-light order to work through with the sculpture in front
 of you, arranged so each step proves one thing and the cheap ones come first.
+
+And, for devices and environments:
+
+- all five configs written before environments load unchanged, as one device at
+  the origin, resolving to the same fixtures and channels they always did
+- `config/mythos26.json` resolves to two devices and 354 fixtures, and **python
+  and the executable agree on every one of them**
+- one pattern renders across both: `obelisk_seasons` on the environment puts
+  four distinct seasons on the obelisk's four faces *and* colour on the pars,
+  which is the check that the placements did not flatten the sculpture
+- an environment round-trips through python without needing the device files it
+  was built from
+- the obelisk's eight runs each cover y 0..42 with 43 pixels, up and down alike
+- the viewer builds one panel per device, tiles them by `view_scale`, and slices
+  each frame to the right one
+- on real hardware: the two-device show opened the obelisk on COM4 and the pars
+  on COM3 together, and the sculpture confirmed the takeover
 
 And, for the obelisk as a device:
 

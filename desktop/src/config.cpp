@@ -6,6 +6,7 @@
 #include "edmx/config.h"
 
 #include <algorithm>
+#include <fstream>
 #include <cctype>
 #include <cmath>
 #include <stdexcept>
@@ -176,22 +177,81 @@ std::vector<std::string> edmx::builtinPaletteNames()
     return names;
 }
 
-bool edmx::loadConfig(const std::string& path, Config& outConfig, std::string& outError)
+namespace
 {
-    JsonValue root;
-    if (!parseJsonFile(path, root, outError))
+    /// Finds the file behind a `"device": "obelisk"` reference.
+    ///
+    /// Looked for beside the environment first and then in `devices/` next to
+    /// it, so a show can keep a one-off rig in its own folder while the
+    /// sculptures that appear in every show live together. A reference may also
+    /// be a path, with or without the .json, because sooner or later someone
+    /// writes one.
+    bool resolveDevicePath(const std::string& environmentPath,
+                           const std::string& reference,
+                           std::string& outPath)
     {
+        std::string directory;
+        const size_t slash = environmentPath.find_last_of("/\\");
+        if (slash != std::string::npos)
+        {
+            directory = environmentPath.substr(0, slash + 1);
+        }
+
+        const bool named = reference.find('/') == std::string::npos
+                        && reference.find('\\') == std::string::npos;
+        const std::string withSuffix =
+            (reference.size() > 5 && reference.substr(reference.size() - 5) == ".json")
+                ? reference : (reference + ".json");
+
+        std::vector<std::string> candidates;
+        if (named)
+        {
+            candidates.push_back(directory + "devices/" + withSuffix);
+            candidates.push_back(directory + "../devices/" + withSuffix);
+        }
+        candidates.push_back(directory + withSuffix);
+        candidates.push_back(withSuffix);
+
+        for (const std::string& candidate : candidates)
+        {
+            std::ifstream probe(candidate);
+            if (probe.good())
+            {
+                outPath = candidate;
+                return true;
+            }
+        }
         return false;
     }
 
-    if (!root.isObject())
+    /// How many channels a device's frame buffer actually has.
+    ///
+    /// A DMX rig cannot reach past its universe; a pixel rig's buffer is as
+    /// long as its patch. Which one this is follows from the output, not from
+    /// the patch: the obelisk's 1032 channels are only legal because nothing is
+    /// putting them on a DMX wire.
+    int channelLimitFor(const Device& device)
     {
-        outError = path + ": top level must be a JSON object";
-        return false;
+        const bool onDmxWire = device.output.type == "enttec_pro"
+                            || device.output.type == "enttec_open";
+        return onDmxWire ? DMX_CHANNEL_COUNT
+                         : std::max(device.fixtures.highestChannel(), DMX_CHANNEL_COUNT);
     }
 
-    Config config;
-
+    /// Reads one device out of a JSON object: how its numbers are read, where
+    /// its frames go, and what its fixtures are.
+    ///
+    /// Split out from loadConfig because a device is now a thing in its own
+    /// file, and an environment parses several of them. `root` is the object
+    /// holding the device's keys - the whole file for a device definition, or
+    /// the whole file again for a legacy single-rig config, which is the same
+    /// shape by construction.
+    bool parseDevice(const JsonValue& root,
+                     const std::string& path,
+                     Device& device,
+                     std::vector<std::string>& warnings,
+                     std::string& outError)
+    {
     // ---- addressing ---------------------------------------------------
     // Read first: every channel number below is interpreted through it.
     int addressBias = 0;
@@ -199,13 +259,13 @@ bool edmx::loadConfig(const std::string& path, Config& outConfig, std::string& o
         const std::string mode = root["addressing"].asString("one");
         if (mode == "zero" || mode == "zero-based" || mode == "0")
         {
-            config.addressing = Addressing::ZeroBased;
+            device.addressing = Addressing::ZeroBased;
             // a config address of 0 is DMX slot 1
             addressBias = 1;
         }
         else if (mode == "one" || mode == "one-based" || mode == "1")
         {
-            config.addressing = Addressing::OneBased;
+            device.addressing = Addressing::OneBased;
         }
         else
         {
@@ -221,11 +281,11 @@ bool edmx::loadConfig(const std::string& path, Config& outConfig, std::string& o
         const std::string space = root["coord_space"].asString("normalized");
         if (space == "literal" || space == "pattern")
         {
-            config.coordSpace = CoordSpace::Literal;
+            device.coordSpace = CoordSpace::Literal;
         }
         else if (space == "normalized" || space == "normalised" || space == "rig")
         {
-            config.coordSpace = CoordSpace::Normalized;
+            device.coordSpace = CoordSpace::Normalized;
         }
         else
         {
@@ -236,20 +296,313 @@ bool edmx::loadConfig(const std::string& path, Config& outConfig, std::string& o
 
     // ---- device -------------------------------------------------------
     {
-        const JsonValue& device = root["device"];
-        config.device.type            = device["type"].asString(config.device.type);
-        config.device.port            = device["port"].asString(config.device.port);
-        config.device.baud            = device["baud"].asInt(config.device.baud);
-        config.device.fps             = device["fps"].asFloat(config.device.fps);
-        config.device.consoleChannels = device["console_channels"].asInt(config.device.consoleChannels);
+        // `output` is the name now; `device` is still read so every config written
+        // before environments existed keeps working.
+        const JsonValue& output = root["output"].isObject() ? root["output"] : root["device"];
+        device.output.type            = output["type"].asString(device.output.type);
+        device.output.port            = output["port"].asString(device.output.port);
+        device.output.baud            = output["baud"].asInt(device.output.baud);
+        device.output.fps             = output["fps"].asFloat(device.output.fps);
+        device.output.consoleChannels = output["console_channels"].asInt(device.output.consoleChannels);
 
-        if (config.device.fps <= 0.0f || config.device.fps > 200.0f)
+        if (device.output.fps <= 0.0f || device.output.fps > 200.0f)
         {
-            config.warnings.push_back("device.fps of " + std::to_string(config.device.fps)
+            warnings.push_back("device.fps of " + std::to_string(device.output.fps)
                                     + " is out of range; falling back to 40");
-            config.device.fps = 40.0f;
+            device.output.fps = 40.0f;
         }
     }
+
+    // ---- profiles -----------------------------------------------------
+    // User-defined models, on top of the shipped ones. Declaring the layout
+    // once here is what lets the fixtures array stay one line per bank.
+    std::vector<FixtureProfile> customProfiles;
+    {
+        const JsonValue& profiles = root["profiles"];
+        if (profiles.isObject())
+        {
+            for (const std::string& name : profiles.keys())
+            {
+                const JsonValue& entry = profiles[name];
+
+                FixtureProfile profile;
+                profile.name         = name;
+                profile.footprint    = entry["footprint"].asInt(3);
+                profile.redOffset    = entry["red"].asInt(1);
+                profile.greenOffset  = entry["green"].asInt(2);
+                profile.blueOffset   = entry["blue"].asInt(3);
+                profile.dimmerOffset = entry["dimmer"].asInt(0);
+                profile.dimmerValue  = static_cast<uint8_t>(std::clamp(entry["dimmer_value"].asInt(255), 0, 255));
+
+                const JsonValue& park = entry["park"];
+                if (park.isObject())
+                {
+                    for (const std::string& key : park.keys())
+                    {
+                        try
+                        {
+                            const int offset = std::stoi(key);
+                            const int value = std::clamp(park[key].asInt(0), 0, 255);
+                            profile.park.emplace_back(offset, static_cast<uint8_t>(value));
+                        }
+                        catch (const std::exception&)
+                        {
+                            warnings.push_back("profile '" + name + "': park key '" + key
+                                                    + "' is not a channel offset; skipping it");
+                        }
+                    }
+                }
+
+                std::string profileError;
+                if (!validateProfile(profile, profileError))
+                {
+                    outError = path + ": " + profileError;
+                    return false;
+                }
+
+                customProfiles.push_back(profile);
+            }
+        }
+    }
+
+    const auto findProfile = [&](const std::string& name, FixtureProfile& out) -> bool {
+        // a config's own profiles shadow the shipped ones, so a rig can
+        // correct a built-in without us having to ship a fix
+        for (const FixtureProfile& profile : customProfiles)
+        {
+            if (profile.name == name)
+            {
+                out = profile;
+                return true;
+            }
+        }
+        return lookupBuiltinProfile(name, out);
+    };
+
+    // ---- fixtures -----------------------------------------------------
+    {
+        const JsonValue& fixtures = root["fixtures"];
+        if (!fixtures.isArray() || fixtures.size() == 0)
+        {
+            outError = path + ": needs a non-empty \"fixtures\" array; there is nothing to light otherwise";
+            return false;
+        }
+
+        for (size_t i = 0; i < fixtures.size(); ++i)
+        {
+            const JsonValue& entry = fixtures[i];
+
+            const std::string profileName = entry["profile"].asString();
+
+            // ---- profile-driven: one entry patches a whole bank ----------
+            if (!profileName.empty())
+            {
+                FixtureProfile profile;
+                if (!findProfile(profileName, profile))
+                {
+                    std::string known;
+                    for (const std::string& candidate : builtinProfileNames())
+                    {
+                        known += (known.empty() ? "" : ", ") + candidate;
+                    }
+                    outError = path + ": unknown profile '" + profileName
+                             + "' (built-ins: " + known + "; or define it in \"profiles\")";
+                    return false;
+                }
+
+                // With a profile, the address is the fixture's own DMX address,
+                // the number set on its display. start_channel is accepted as a
+                // synonym because that is what people type.
+                // sentinel below any legal address in either numbering
+                const int missing = -1000;
+                int address = entry["address"].asInt(entry["start_channel"].asInt(missing));
+                if (address == missing)
+                {
+                    outError = path + ": fixture entry " + std::to_string(i)
+                             + " uses profile '" + profileName + "' but has no \"address\"";
+                    return false;
+                }
+                address += addressBias;
+
+                const int count = std::max(1, entry["count"].asInt(1));
+                // fixtures patched back to back sit one footprint apart, which
+                // is the overwhelmingly common case; spacing overrides it
+                const int spacing = entry["spacing"].asInt(profile.footprint);
+                const std::string prefix = entry["name"].asString(profileName);
+                const float trim = std::clamp(entry["brightness"].asFloat(1.0f), 0.0f, 1.0f);
+
+                const JsonValue& position = entry["position"];
+                const bool explicitPosition = position.isArray() && position.size() >= 1;
+
+                // How far the bank moves per fixture. This is what lets one
+                // entry describe a *run* rather than a point, which is the
+                // whole of a relic's geometry: the obelisk's eight vertical
+                // strips are eight of these, and they read alongside the eight
+                // GenerateAxisRow calls in obelisk.cpp that build the same
+                // thing on the sculpture. Absent, the bank sits where it is
+                // stated and the old behaviour stands.
+                const JsonValue& positionStep = entry["position_step"];
+                const bool hasStep = positionStep.isArray() && positionStep.size() >= 1;
+                const float stepX = hasStep ? positionStep[0].asFloat(0.0f) : 0.0f;
+                const float stepY = (hasStep && positionStep.size() >= 2) ? positionStep[1].asFloat(0.0f) : 0.0f;
+
+                if (hasStep && !explicitPosition)
+                {
+                    warnings.push_back("fixture entry " + std::to_string(i)
+                                            + " has \"position_step\" but no \"position\" to step from;"
+                                              " starting the run at the origin");
+                }
+
+                for (int index = 0; index < count; ++index)
+                {
+                    const std::string name = (count == 1)
+                        ? prefix
+                        : (prefix + "_" + std::to_string(index + 1));
+
+                    Fixture fixture = instantiateProfile(profile, name, address + (index * spacing));
+                    fixture.brightness = trim;
+
+                    if (explicitPosition || hasStep)
+                    {
+                        // a stated position is where the bank starts; without a
+                        // step the whole bank stays there, as it always has
+                        const float baseX = explicitPosition ? position[0].asFloat(0.0f) : 0.0f;
+                        const float baseY = (explicitPosition && position.size() >= 2)
+                            ? position[1].asFloat(0.0f) : 0.0f;
+
+                        fixture.positionX = baseX + stepX * static_cast<float>(index);
+                        fixture.positionY = baseY + stepY * static_cast<float>(index);
+                        fixture.hasPosition = true;
+                    }
+                    else if (count > 1)
+                    {
+                        // otherwise spread the bank evenly, so spatial patterns
+                        // sweep along it in patch order
+                        fixture.positionX = static_cast<float>(index) / static_cast<float>(count - 1);
+                        fixture.positionY = 0.0f;
+                        fixture.hasPosition = true;
+                    }
+
+                    device.fixtures.addFixture(fixture);
+                }
+
+                continue;
+            }
+
+            // ---- explicit: every channel spelled out ---------------------
+            Fixture fixture;
+            fixture.name         = entry["name"].asString("fixture_" + std::to_string(i));
+            fixture.startChannel = entry["start_channel"].asInt(static_cast<int>(i) * 3 + 1 - addressBias)
+                                 + addressBias;
+            fixture.channelOrder = entry["channels"].asString("rgb");
+
+            // An *absent* dimmer_channel means the fixture has no dimmer, in
+            // either numbering, so it stays 0 instead of being biased into
+            // channel 1. An explicit 0 under zero-based addressing is a real
+            // dimmer sitting in the first slot, and is shifted like any other.
+            const int dimmer = entry["dimmer_channel"].asInt(-1000);
+            fixture.dimmerChannel = (dimmer == -1000) ? 0 : (dimmer + addressBias);
+            fixture.dimmerValue  = static_cast<uint8_t>(std::clamp(entry["dimmer_value"].asInt(255), 0, 255));
+            fixture.brightness   = std::clamp(entry["brightness"].asFloat(1.0f), 0.0f, 1.0f);
+
+            std::string orderError;
+            if (!resolveChannelOrder(fixture, orderError))
+            {
+                outError = path + ": " + orderError;
+                return false;
+            }
+
+            const JsonValue& position = entry["position"];
+            if (position.isArray() && position.size() >= 1)
+            {
+                fixture.positionX = position[0].asFloat(0.0f);
+                fixture.positionY = (position.size() >= 2) ? position[1].asFloat(0.0f) : 0.0f;
+                fixture.hasPosition = true;
+            }
+
+            // static_channels is an object because JSON has no integer keys:
+            // {"7": 255} parks channel 7 at full.
+            const JsonValue& statics = entry["static_channels"];
+            if (statics.isObject())
+            {
+                for (const std::string& key : statics.keys())
+                {
+                    try
+                    {
+                        const int channel = std::stoi(key) + addressBias;
+                        const int value = std::clamp(statics[key].asInt(0), 0, 255);
+                        fixture.staticChannels.emplace_back(channel, static_cast<uint8_t>(value));
+                    }
+                    catch (const std::exception&)
+                    {
+                        warnings.push_back("fixture '" + fixture.name + "': static_channels key '"
+                                                + key + "' is not a channel number; skipping it");
+                    }
+                }
+            }
+
+            device.fixtures.addFixture(fixture);
+        }
+    }
+
+        return true;
+    }
+}
+
+bool edmx::loadDevice(const std::string& path, Device& outDevice, std::string& outError,
+                      std::vector<std::string>* outWarnings)
+{
+    JsonValue root;
+    if (!parseJsonFile(path, root, outError))
+    {
+        return false;
+    }
+
+    if (!root.isObject())
+    {
+        outError = path + ": top level must be a JSON object";
+        return false;
+    }
+
+    // A device file may wrap its contents in a "device" object or not. Both
+    // read the same; the wrapper only exists because it makes a file that is
+    // obviously a device rather than obviously anything else.
+    const JsonValue& body = root["device"].isObject() ? root["device"] : root;
+
+    Device device;
+    device.source = path;
+    device.name = body["name"].asString(root["name"].asString(""));
+
+    std::vector<std::string> warnings;
+    if (!parseDevice(body, path, device, warnings, outError))
+    {
+        return false;
+    }
+
+    if (outWarnings)
+    {
+        outWarnings->insert(outWarnings->end(), warnings.begin(), warnings.end());
+    }
+
+    outDevice = device;
+    return true;
+}
+
+bool edmx::loadConfig(const std::string& path, Config& outConfig, std::string& outError)
+{
+    JsonValue root;
+    if (!parseJsonFile(path, root, outError))
+    {
+        return false;
+    }
+
+    if (!root.isObject())
+    {
+        outError = path + ": top level must be a JSON object";
+        return false;
+    }
+
+    Config config;
 
     // ---- master -------------------------------------------------------
     {
@@ -426,255 +779,219 @@ bool edmx::loadConfig(const std::string& path, Config& outConfig, std::string& o
         }
     }
 
-    // ---- profiles -----------------------------------------------------
-    // User-defined models, on top of the shipped ones. Declaring the layout
-    // once here is what lets the fixtures array stay one line per bank.
-    std::vector<FixtureProfile> customProfiles;
+    // ---- devices ------------------------------------------------------
+    //
+    // Which shape this file is depends on one thing: whether it has a
+    // `devices` array. With one it is an environment and the devices are
+    // named elsewhere; without one it is a single rig described in place,
+    // which is every config written before environments existed.
+    const JsonValue& devices = root["devices"];
+
+    if (devices.isArray() && devices.size() > 0)
     {
-        const JsonValue& profiles = root["profiles"];
-        if (profiles.isObject())
+        for (size_t i = 0; i < devices.size(); ++i)
         {
-            for (const std::string& name : profiles.keys())
+            const JsonValue& entry = devices[i];
+
+            const std::string reference = entry["device"].asString(entry["use"].asString(""));
+
+            Device device;
+            std::vector<std::string> deviceWarnings;
+
+            if (!reference.empty())
             {
-                const JsonValue& entry = profiles[name];
-
-                FixtureProfile profile;
-                profile.name         = name;
-                profile.footprint    = entry["footprint"].asInt(3);
-                profile.redOffset    = entry["red"].asInt(1);
-                profile.greenOffset  = entry["green"].asInt(2);
-                profile.blueOffset   = entry["blue"].asInt(3);
-                profile.dimmerOffset = entry["dimmer"].asInt(0);
-                profile.dimmerValue  = static_cast<uint8_t>(std::clamp(entry["dimmer_value"].asInt(255), 0, 255));
-
-                const JsonValue& park = entry["park"];
-                if (park.isObject())
+                // By name: a device described once, in its own file, and
+                // referred to from every show it appears in.
+                std::string devicePath;
+                if (!resolveDevicePath(path, reference, devicePath))
                 {
-                    for (const std::string& key : park.keys())
-                    {
-                        try
-                        {
-                            const int offset = std::stoi(key);
-                            const int value = std::clamp(park[key].asInt(0), 0, 255);
-                            profile.park.emplace_back(offset, static_cast<uint8_t>(value));
-                        }
-                        catch (const std::exception&)
-                        {
-                            config.warnings.push_back("profile '" + name + "': park key '" + key
-                                                    + "' is not a channel offset; skipping it");
-                        }
-                    }
-                }
-
-                std::string profileError;
-                if (!validateProfile(profile, profileError))
-                {
-                    outError = path + ": " + profileError;
+                    outError = path + ": cannot find device '" + reference + "'"
+                               " (looked beside this file and in devices/)";
                     return false;
                 }
 
-                customProfiles.push_back(profile);
-            }
-        }
-    }
-
-    const auto findProfile = [&](const std::string& name, FixtureProfile& out) -> bool {
-        // a config's own profiles shadow the shipped ones, so a rig can
-        // correct a built-in without us having to ship a fix
-        for (const FixtureProfile& profile : customProfiles)
-        {
-            if (profile.name == name)
-            {
-                out = profile;
-                return true;
-            }
-        }
-        return lookupBuiltinProfile(name, out);
-    };
-
-    // ---- fixtures -----------------------------------------------------
-    {
-        const JsonValue& fixtures = root["fixtures"];
-        if (!fixtures.isArray() || fixtures.size() == 0)
-        {
-            outError = path + ": needs a non-empty \"fixtures\" array; there is nothing to light otherwise";
-            return false;
-        }
-
-        for (size_t i = 0; i < fixtures.size(); ++i)
-        {
-            const JsonValue& entry = fixtures[i];
-
-            const std::string profileName = entry["profile"].asString();
-
-            // ---- profile-driven: one entry patches a whole bank ----------
-            if (!profileName.empty())
-            {
-                FixtureProfile profile;
-                if (!findProfile(profileName, profile))
+                if (!loadDevice(devicePath, device, outError, &deviceWarnings))
                 {
-                    std::string known;
-                    for (const std::string& candidate : builtinProfileNames())
-                    {
-                        known += (known.empty() ? "" : ", ") + candidate;
-                    }
-                    outError = path + ": unknown profile '" + profileName
-                             + "' (built-ins: " + known + "; or define it in \"profiles\")";
                     return false;
                 }
+            }
+            else if (entry["fixtures"].isArray() || entry["device"].isObject())
+            {
+                // Spelled out in place. Round-tripping an environment writes
+                // this form, because a config that came back out referring to
+                // files it did not carry would not be the same config.
+                const JsonValue& body = entry["device"].isObject() ? entry["device"] : entry;
+                device.source = path;
+                device.name = body["name"].asString("device_" + std::to_string(i));
 
-                // With a profile, the address is the fixture's own DMX address,
-                // the number set on its display. start_channel is accepted as a
-                // synonym because that is what people type.
-                // sentinel below any legal address in either numbering
-                const int missing = -1000;
-                int address = entry["address"].asInt(entry["start_channel"].asInt(missing));
-                if (address == missing)
+                if (!parseDevice(body, path, device, deviceWarnings, outError))
                 {
-                    outError = path + ": fixture entry " + std::to_string(i)
-                             + " uses profile '" + profileName + "' but has no \"address\"";
                     return false;
                 }
-                address += addressBias;
-
-                const int count = std::max(1, entry["count"].asInt(1));
-                // fixtures patched back to back sit one footprint apart, which
-                // is the overwhelmingly common case; spacing overrides it
-                const int spacing = entry["spacing"].asInt(profile.footprint);
-                const std::string prefix = entry["name"].asString(profileName);
-                const float trim = std::clamp(entry["brightness"].asFloat(1.0f), 0.0f, 1.0f);
-
-                const JsonValue& position = entry["position"];
-                const bool explicitPosition = position.isArray() && position.size() >= 1;
-
-                // How far the bank moves per fixture. This is what lets one
-                // entry describe a *run* rather than a point, which is the
-                // whole of a relic's geometry: the obelisk's eight vertical
-                // strips are eight of these, and they read alongside the eight
-                // GenerateAxisRow calls in obelisk.cpp that build the same
-                // thing on the sculpture. Absent, the bank sits where it is
-                // stated and the old behaviour stands.
-                const JsonValue& positionStep = entry["position_step"];
-                const bool hasStep = positionStep.isArray() && positionStep.size() >= 1;
-                const float stepX = hasStep ? positionStep[0].asFloat(0.0f) : 0.0f;
-                const float stepY = (hasStep && positionStep.size() >= 2) ? positionStep[1].asFloat(0.0f) : 0.0f;
-
-                if (hasStep && !explicitPosition)
-                {
-                    config.warnings.push_back("fixture entry " + std::to_string(i)
-                                            + " has \"position_step\" but no \"position\" to step from;"
-                                              " starting the run at the origin");
-                }
-
-                for (int index = 0; index < count; ++index)
-                {
-                    const std::string name = (count == 1)
-                        ? prefix
-                        : (prefix + "_" + std::to_string(index + 1));
-
-                    Fixture fixture = instantiateProfile(profile, name, address + (index * spacing));
-                    fixture.brightness = trim;
-
-                    if (explicitPosition || hasStep)
-                    {
-                        // a stated position is where the bank starts; without a
-                        // step the whole bank stays there, as it always has
-                        const float baseX = explicitPosition ? position[0].asFloat(0.0f) : 0.0f;
-                        const float baseY = (explicitPosition && position.size() >= 2)
-                            ? position[1].asFloat(0.0f) : 0.0f;
-
-                        fixture.positionX = baseX + stepX * static_cast<float>(index);
-                        fixture.positionY = baseY + stepY * static_cast<float>(index);
-                        fixture.hasPosition = true;
-                    }
-                    else if (count > 1)
-                    {
-                        // otherwise spread the bank evenly, so spatial patterns
-                        // sweep along it in patch order
-                        fixture.positionX = static_cast<float>(index) / static_cast<float>(count - 1);
-                        fixture.positionY = 0.0f;
-                        fixture.hasPosition = true;
-                    }
-
-                    config.fixtures.addFixture(fixture);
-                }
-
-                continue;
             }
-
-            // ---- explicit: every channel spelled out ---------------------
-            Fixture fixture;
-            fixture.name         = entry["name"].asString("fixture_" + std::to_string(i));
-            fixture.startChannel = entry["start_channel"].asInt(static_cast<int>(i) * 3 + 1 - addressBias)
-                                 + addressBias;
-            fixture.channelOrder = entry["channels"].asString("rgb");
-
-            // An *absent* dimmer_channel means the fixture has no dimmer, in
-            // either numbering, so it stays 0 instead of being biased into
-            // channel 1. An explicit 0 under zero-based addressing is a real
-            // dimmer sitting in the first slot, and is shifted like any other.
-            const int dimmer = entry["dimmer_channel"].asInt(-1000);
-            fixture.dimmerChannel = (dimmer == -1000) ? 0 : (dimmer + addressBias);
-            fixture.dimmerValue  = static_cast<uint8_t>(std::clamp(entry["dimmer_value"].asInt(255), 0, 255));
-            fixture.brightness   = std::clamp(entry["brightness"].asFloat(1.0f), 0.0f, 1.0f);
-
-            std::string orderError;
-            if (!resolveChannelOrder(fixture, orderError))
+            else
             {
-                outError = path + ": " + orderError;
+                outError = path + ": devices entry " + std::to_string(i)
+                         + " has neither a \"device\" naming one nor \"fixtures\" spelling one out";
                 return false;
             }
 
-            const JsonValue& position = entry["position"];
-            if (position.isArray() && position.size() >= 1)
+            // An entry may name the instance, so two of the same sculpture in
+            // one room are tellable apart.
+            device.name = entry["name"].asString(
+                device.name.empty() ? (reference.empty() ? ("device_" + std::to_string(i)) : reference)
+                                    : device.name);
+
+            // ---- placement ---------------------------------------------
+            const JsonValue& offset = entry["offset"];
+            if (offset.isArray() && offset.size() >= 1)
             {
-                fixture.positionX = position[0].asFloat(0.0f);
-                fixture.positionY = (position.size() >= 2) ? position[1].asFloat(0.0f) : 0.0f;
-                fixture.hasPosition = true;
+                device.placement.offsetX = offset[0].asFloat(0.0f);
+                device.placement.offsetY = (offset.size() >= 2) ? offset[1].asFloat(0.0f) : 0.0f;
             }
 
-            // static_channels is an object because JSON has no integer keys:
-            // {"7": 255} parks channel 7 at full.
-            const JsonValue& statics = entry["static_channels"];
-            if (statics.isObject())
+            const JsonValue& scale = entry["scale"];
+            if (scale.isArray() && scale.size() >= 1)
             {
-                for (const std::string& key : statics.keys())
+                device.placement.scaleX = scale[0].asFloat(1.0f);
+                device.placement.scaleY = (scale.size() >= 2) ? scale[1].asFloat(1.0f)
+                                                             : device.placement.scaleX;
+            }
+            else if (scale.isNumber())
+            {
+                // A bare number scales both axes, which is what "make this
+                // half the size" almost always means.
+                device.placement.scaleX = scale.asFloat(1.0f);
+                device.placement.scaleY = device.placement.scaleX;
+            }
+
+            // null on an axis means "leave this one alone", which is the case
+            // that matters: mythos26 only reads y, so the obelisk wants its y
+            // fitted to the show's 0..1 while its x keeps its own 0..7 - the
+            // units obelisk_seasons reads to pick a palette per side. Fit both
+            // and a relic look goes flat.
+            const JsonValue& fit = entry["fit"];
+            if (fit.isArray() && fit.size() >= 1)
+            {
+                if (!fit[0].isNull())
                 {
-                    try
-                    {
-                        const int channel = std::stoi(key) + addressBias;
-                        const int value = std::clamp(statics[key].asInt(0), 0, 255);
-                        fixture.staticChannels.emplace_back(channel, static_cast<uint8_t>(value));
-                    }
-                    catch (const std::exception&)
-                    {
-                        config.warnings.push_back("fixture '" + fixture.name + "': static_channels key '"
-                                                + key + "' is not a channel number; skipping it");
-                    }
+                    device.placement.fitWidth = fit[0].asFloat(1.0f);
+                }
+                if (fit.size() >= 2 && !fit[1].isNull())
+                {
+                    device.placement.fitHeight = fit[1].asFloat(1.0f);
                 }
             }
+            else if (fit.isNumber())
+            {
+                device.placement.fitWidth = fit.asFloat(1.0f);
+                device.placement.fitHeight = *device.placement.fitWidth;
+            }
 
-            config.fixtures.addFixture(fixture);
+            // A view property, not a mapping one - the panel's size on screen,
+            // and nothing the pattern ever sees. Read here so the schema has
+            // one definition; the viewer is what acts on it.
+            const JsonValue& view = entry["view_scale"].isNull()
+                ? entry["view"]["scale"] : entry["view_scale"];
+            if (view.isArray() && view.size() >= 1)
+            {
+                device.placement.viewScaleX = view[0].asFloat(1.0f);
+                device.placement.viewScaleY = (view.size() >= 2) ? view[1].asFloat(1.0f)
+                                                                 : device.placement.viewScaleX;
+            }
+            else if (view.isNumber())
+            {
+                device.placement.viewScaleX = view.asFloat(1.0f);
+                device.placement.viewScaleY = device.placement.viewScaleX;
+            }
+
+            device.brightness = std::clamp(entry["brightness"].asFloat(1.0f), 0.0f, 1.0f);
+
+            // ---- overrides ---------------------------------------------
+            // A device file says what a sculpture *is*; where it is plugged in
+            // this week belongs to the room, not to the sculpture.
+            const JsonValue& output = entry["output"].isObject() ? entry["output"] : entry["device_output"];
+            if (output.isObject())
+            {
+                device.output.type            = output["type"].asString(device.output.type);
+                device.output.port            = output["port"].asString(device.output.port);
+                device.output.baud            = output["baud"].asInt(device.output.baud);
+                device.output.fps             = output["fps"].asFloat(device.output.fps);
+                device.output.consoleChannels = output["console_channels"].asInt(device.output.consoleChannels);
+            }
+            if (entry["port"].isString())
+            {
+                device.output.port = entry["port"].asString(device.output.port);
+            }
+
+            const std::string space = entry["coord_space"].asString("");
+            if (space == "literal" || space == "pattern")
+            {
+                device.coordSpace = CoordSpace::Literal;
+            }
+            else if (space == "normalized" || space == "normalised" || space == "rig")
+            {
+                device.coordSpace = CoordSpace::Normalized;
+            }
+            else if (!space.empty())
+            {
+                outError = path + ": devices entry " + std::to_string(i)
+                         + " coord_space must be \"normalized\" or \"literal\", got '" + space + "'";
+                return false;
+            }
+
+            for (const std::string& warning : deviceWarnings)
+            {
+                config.warnings.push_back("[" + device.name + "] " + warning);
+            }
+
+            config.devices.push_back(std::move(device));
         }
     }
-
-    // A DMX rig cannot reach past its universe; a pixel rig's buffer is however
-    // long the patch is, so there is nothing to run past and nothing to warn
-    // about. Which one this is follows from the output, not from the patch: the
-    // obelisk's 1032 channels are only legal because nothing is putting them on
-    // a DMX wire.
+    else
     {
-        const bool onDmxWire = config.device.type == "enttec_pro"
-                            || config.device.type == "enttec_open";
-        const int limit = onDmxWire ? DMX_CHANNEL_COUNT
-                                    : std::max(config.fixtures.highestChannel(), DMX_CHANNEL_COUNT);
+        // One rig, described in place. The environment is implicit and holds a
+        // single device sitting at the origin.
+        Device device;
+        device.source = path;
+        device.name = root["name"].asString("rig");
 
-        for (const std::string& warning : config.fixtures.validate(limit))
+        if (!parseDevice(root, path, device, config.warnings, outError))
         {
-            config.warnings.push_back(warning);
+            return false;
+        }
+
+        config.devices.push_back(std::move(device));
+    }
+
+    for (Device& device : config.devices)
+    {
+        for (const std::string& warning : device.fixtures.validate(channelLimitFor(device)))
+        {
+            config.warnings.push_back("[" + device.name + "] " + warning);
         }
     }
 
     outConfig = config;
     return true;
+}
+
+size_t Config::fixtureCount() const
+{
+    size_t total = 0;
+    for (const Device& device : devices)
+    {
+        total += device.fixtures.size();
+    }
+    return total;
+}
+
+size_t Config::firstFixtureOf(size_t index) const
+{
+    size_t at = 0;
+    for (size_t i = 0; i < index && i < devices.size(); ++i)
+    {
+        at += devices[i].fixtures.size();
+    }
+    return at;
 }

@@ -29,6 +29,17 @@ void ObeliskIO::init()
 
     HSVStrip* mainStrip = mainStripIt->second.get();
 
+    // Eight vertical runs: four sides, up and down each. Every run is
+    // WALL_SIDE_LENGTH pixels and every run's coordinates have to line up with
+    // its neighbour's, because the pixels physically do.
+    //
+    // The down runs start at WALL_SIDE_LENGTH - 1, not WALL_SIDE_LENGTH. They
+    // used to start at WALL_SIDE_LENGTH, which put them one whole unit above
+    // the up runs: an up run covered y 0..42 while the down run beside it
+    // covered 43..1. Anything reading y - which is every look here, that is
+    // what the coordinate is *for* - saw half the sculpture shifted by a pixel
+    // against the other half. Subtle on a noise field and obvious on a gradient.
+
     // Side A
 
     int id1 = static_cast<uint8_t>(StripSegmentID::SideA_Up);
@@ -37,7 +48,7 @@ void ObeliskIO::init()
 
     int id2 = static_cast<uint8_t>(StripSegmentID::SideA_Down);
     auto [it2, inserted2] = strip_segments.emplace(id2, make_unique<HSVStripSegment>(mainStrip, id2));
-    if (inserted2) HSVStripNodeFactory::GenerateAxisRow(it2->second.get(), WALL_SIDE_LENGTH , WALL_SIDE_LENGTH, Coord(1, WALL_SIDE_LENGTH), Coord(0, -1.f));
+    if (inserted2) HSVStripNodeFactory::GenerateAxisRow(it2->second.get(), WALL_SIDE_LENGTH , WALL_SIDE_LENGTH, Coord(1, WALL_SIDE_LENGTH - 1), Coord(0, -1.f));
     
     // Side B
 
@@ -47,7 +58,7 @@ void ObeliskIO::init()
 
     int id4 = static_cast<uint8_t>(StripSegmentID::SideB_Down);
     auto [it4, inserted4] = strip_segments.emplace(id4, make_unique<HSVStripSegment>(mainStrip, id4));
-    if (inserted4) HSVStripNodeFactory::GenerateAxisRow(it4->second.get(), WALL_SIDE_LENGTH * 3, WALL_SIDE_LENGTH, Coord(3, WALL_SIDE_LENGTH), Coord(0, -1.f));
+    if (inserted4) HSVStripNodeFactory::GenerateAxisRow(it4->second.get(), WALL_SIDE_LENGTH * 3, WALL_SIDE_LENGTH, Coord(3, WALL_SIDE_LENGTH - 1), Coord(0, -1.f));
     
     // Side C
 
@@ -57,7 +68,7 @@ void ObeliskIO::init()
 
     int id6 = static_cast<uint8_t>(StripSegmentID::SideC_Down);
     auto [it6, inserted6] = strip_segments.emplace(id6, make_unique<HSVStripSegment>(mainStrip, id6));
-    if (inserted6) HSVStripNodeFactory::GenerateAxisRow(it6->second.get(), WALL_SIDE_LENGTH * 5, WALL_SIDE_LENGTH, Coord(5, WALL_SIDE_LENGTH), Coord(0, -1.f));
+    if (inserted6) HSVStripNodeFactory::GenerateAxisRow(it6->second.get(), WALL_SIDE_LENGTH * 5, WALL_SIDE_LENGTH, Coord(5, WALL_SIDE_LENGTH - 1), Coord(0, -1.f));
     
     // Side D
 
@@ -67,7 +78,7 @@ void ObeliskIO::init()
 
     int id8 = static_cast<uint8_t>(StripSegmentID::SideD_Down);
     auto [it8, inserted8] = strip_segments.emplace(id8, make_unique<HSVStripSegment>(mainStrip, id8));
-    if (inserted8) HSVStripNodeFactory::GenerateAxisRow(it8->second.get(), WALL_SIDE_LENGTH * 7, WALL_SIDE_LENGTH, Coord(7, WALL_SIDE_LENGTH), Coord(0, -1.f));
+    if (inserted8) HSVStripNodeFactory::GenerateAxisRow(it8->second.get(), WALL_SIDE_LENGTH * 7, WALL_SIDE_LENGTH, Coord(7, WALL_SIDE_LENGTH - 1), Coord(0, -1.f));
     
     dbgLog("ObeliskIO::init", Verbosity::Verbose, Category::Relic);
 

@@ -41,6 +41,8 @@ namespace edmx
         bool isNull() const { return type == Type::Null; }
         bool isObject() const { return type == Type::Object; }
         bool isArray() const { return type == Type::Array; }
+        bool isNumber() const { return type == Type::Number; }
+        bool isString() const { return type == Type::String; }
 
         /// Lookup on an object. Returns a null value when the key (or the
         /// receiver) is not there, so chained access never needs guarding.

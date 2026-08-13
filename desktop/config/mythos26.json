@@ -1,27 +1,29 @@
 {
-  // mythos26, on the ten U'King Par 36.
+  // mythos26: the show. An environment - a room with things in it - rather than
+  // a rig.
   //
-  // Same rig as uking_par36_x10.json - see that file for the addresses and for
-  // why the widget is "enttec_open" rather than "enttec_pro". What is different
-  // here is the show: mythos26's own state machine, pulsing on the beat that
-  // arrives over MIDI.
+  // Two devices, one look. The pattern renders once into one coordinate space
+  // and both the truss and the sculpture take their part of it, which is the
+  // difference between a show and two rigs running the same look side by side.
   //
-  // Bench it with no hardware and no DJ software:
   //   eclipse-dmx --config config/mythos26.json --dry-run --bpm 128 --frames 80
+  //   python -m eclipse_dmx view config/mythos26.json --bpm 128
   //
-  // See what the machine can hear:
-  //   eclipse-dmx --list-midi
-
-  "device": {
-    "type": "enttec_open",
-    "port": "auto",
-    "fps": 40,
-    "console_channels": 24
-  },
+  // Add --live (or drop --dry-run) once both are actually plugged in. Either
+  // device can be commented out and the show still runs on the other.
 
   "master": {
     "brightness": 1.0,
     "gamma": 2.2
+  },
+
+  // The show: written for the rig rather than borrowed from a relic, and the
+  // first thing here that reads the beat. Its space is x flat, y running 0..1
+  // from the first fixture to the last - which is what the placements below are
+  // fitting the two devices into.
+  "pattern": {
+    "name": "mythos26",
+    "state": "beat_pulse"
   },
 
   // Tempo in.
@@ -43,6 +45,7 @@
   // "bpm" is the tempo before anything has been heard, and the one the rig
   // falls back to if the link goes quiet. "free_run" is what makes that a
   // fallback rather than a blackout.
+  //
   // "ignore" is what stops "auto" grabbing the DJ controller. It is a MIDI
   // input, it is often the only one on the machine, and every pad on it sends
   // notes - so it is both what auto would reach for and the last thing that
@@ -61,33 +64,43 @@
     "free_run": true
   },
 
-  // Seven states, four of them written:
-  //
-  //   beat_pulse      the whole rig hitting white on each beat - fast up,
-  //                   ~200ms back down, so it lands on the beat rather than
-  //                   throbbing near it
-  //   vu_pulse        the same flash on every second beat, over a red layer
-  //                   that follows the VU meter. Needs midi.vu_note.
-  //   tv_static_mono  every par a new grey, every frame
-  //   tv_static       every par a new colour, every frame
-  //
-  // slot_5 onwards are placeholders - a dim tinted breath - so the cue buttons
-  // and the cross-fades can be proved out before the looks exist.
-  //
-  // How often the beat-driven looks fire is a desk control, not a config one:
-  // "beat div 1|2|4" on stdin, or the on 1 / on 2 / on 4 buttons in the viewer.
-  "pattern": {
-    "name": "mythos26",
-    "state": "beat_pulse",
-    "brightness": 1.0
-  },
-
-  "fixtures": [
+  "devices": [
     {
-      "profile": "uking_par36",
-      "name": "par",
-      "address": 1,
-      "count": 10
+      // The pillar, at the origin, in its own coordinates.
+      //
+      // Deliberately no "fit" or "scale": the obelisk's 0..7 across the sides
+      // and 0..43 up the strips *is* its mapping, and it is the mapping every
+      // Pattern_Obelisk_* look was tuned against. Squash it into the show's
+      // 0..1 and obelisk_seasons goes one flat colour, because the number it
+      // reads to pick a palette per face is that 0..7.
+      "device": "obelisk",
+      "offset": [0, 0],
+
+      // Skinny on screen, full height - a pillar is a pillar. This is the
+      // panel's size in the window and nothing else; it does not touch a single
+      // coordinate the pattern sees.
+      "view_scale": [0.3, 1.0],
+
+      // Its own brightness limit is 63/255 in firmware and this sits on top of
+      // it. See "the sculpture is dimmer than the picture" in readme.md.
+      "brightness": 1.0
+    },
+    {
+      // The truss, clear of the sculpture. mythos26's own space is flat in x,
+      // so without an offset the pars would sit on top of the obelisk; at x 10
+      // they are past its 0..7, spanning the same y so the beat hits both.
+      "device": "uking_par36_x10",
+      "name": "pars",
+      "offset": [10, 0],
+
+      // Wide and short on screen: ten pars in a line want the width and none
+      // of the height.
+      "view_scale": [1.7, 0.45],
+
+      // Anything that wants the truss dimmer than the sculpture in the room
+      // goes here rather than in the device file: it is a property of this
+      // room, not of the lights.
+      "brightness": 1.0
     }
   ]
 }

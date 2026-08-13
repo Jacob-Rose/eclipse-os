@@ -103,6 +103,33 @@ desk with no rig attached.
 [space] blackout   [n]/[p] pattern   [↑]/[↓] master   [←]/[→] speed   [q] quit
 ```
 
+### the window
+
+**Each device gets its own panel inside the main window** — drag it by the
+title bar, size it by the grip in the bottom-right, and its fixtures lay
+themselves out into whatever room it ends up with. The panels are children of
+the window rather than real OS windows, so they move with it, stay on top of it,
+and cannot be lost behind it. FL Studio's plugin windows work the same way and
+for the same reasons.
+
+Drawing an environment into one shared canvas does not work: a 344-pixel
+sculpture and ten pars have nothing in common as a picture, and the sculpture
+squashes the pars into a corner.
+
+Panels open tiled and stop re-tiling the moment one is moved by hand, because a
+hand-placed layout is worth more than an even one.
+
+How much room each opens with is `view_scale` in the environment — `[0.3, 1.0]`
+for a pillar, `[1.7, 0.45]` for a truss. **It is a view property and touches
+nothing the pattern sees.** It is explicit rather than inferred from the
+geometry: a pillar and a truss plainly want different panel shapes, but *how*
+different is a judgement about the room and the screen, which you make by
+looking at the window and not from a fixture list.
+
+Above 64 fixtures a panel drops the glow and draws bare pixels. Not a style
+choice — a glow is nine canvas items and tk recolours them one at a time from
+python, so 344 of them would be 3096 calls per repaint.
+
 Under the picture is a split: the cue list on the left, and on the right the
 running look's own knobs — see [tuning a look while it runs](#tuning-a-look-while-it-runs).
 The two are separated because they answer different questions. The left is a
@@ -160,7 +187,63 @@ say what is behind it — list them and be explicit:
 ./build/eclipse-dmx --config config/example.json --port COM4
 ```
 
-## Config
+## Devices and environments
+
+A **device** is a physical thing: a sculpture, a truss of pars. It owns its
+geometry, how its numbers are read, and its own way onto a wire. It lives in
+`devices/`, described once, and is referred to by name.
+
+An **environment** is a room with things in it, and the show running on them. It
+lists devices, says where each one sits in the pattern's coordinate space, and
+holds the master, the pattern and the tempo — because those belong to the show,
+not to any one device.
+
+```json
+{
+  "master":  { "brightness": 1.0, "gamma": 2.2 },
+  "pattern": { "name": "mythos26", "state": "beat_pulse" },
+  "devices": [
+    { "device": "obelisk",         "offset": [0, 0],  "view_scale": [0.3, 1.0] },
+    { "device": "uking_par36_x10", "offset": [10, 0], "view_scale": [1.7, 0.45] }
+  ]
+}
+```
+
+`config/mythos26.json` is that, for real. **One pattern renders once across
+every device** — that is the whole point, and the difference between a show and
+two rigs running the same look side by side.
+
+A config with `fixtures` at the top level and no `devices` array is read as an
+environment holding one device at the origin, so every config written before
+this still works unchanged.
+
+### placing a device
+
+| field | what it does |
+| --- | --- |
+| `offset` | `[x, y]` added to the device's coordinates |
+| `scale` | `[x, y]` multiplied before the offset |
+| `fit` | `[w, h]` — scale so the device's own extent becomes this size; `null` on an axis leaves it alone |
+| `brightness` | per-device trim, on top of the show's master |
+| `output` | override the device file's port/type for this room |
+| `view_scale` | `[x, y]` — how big its panel is drawn, relative to an even share |
+
+`world = local * scale + offset`, where `local` is whatever the device's own
+coordinate space produced.
+
+**The device's coordinates are the device's.** The obelisk is 0..7 across its
+sides and 0..43 up its strips, and that is what every `Pattern_Obelisk_*` look
+was tuned against — squash it into a pattern's 0..1 and `obelisk_seasons` goes
+one flat colour, because the number it reads to pick a palette per face is that
+0..7. So `mythos26.json` places the obelisk with an offset and no scale at all,
+and moves the pars out to `x: 10` to sit clear of it.
+
+`fit` exists for when a device genuinely does need rescaling into a pattern's
+space, and takes `null` per axis so you can fit the one the pattern reads and
+leave the other alone.
+
+`view_scale` is a *view* property and touches nothing the pattern sees — see
+[the window](#the-window).
 
 ### fixture profiles — the short way
 
@@ -856,8 +939,17 @@ moment each beat lands, outside the frame rate limit. That is what the viewer's
 tempo readout is fed from.
 
 A relic on the other end of a link talks back, and whatever it says arrives as
-`RELIC <line>` — its answer to a Hello, and a note each time a takeover starts
-or lapses.
+`RELIC <device> <line>` — its answer to a Hello, and a note each time a takeover
+starts or lapses. Named, because an environment can hold two of them.
+
+Before the first frame the executable also sends one line per device:
+
+```
+DEVICE <index> <name> <first fixture> <count> <output>
+```
+
+A frame is one flat run of fixtures across every device in order, so those are
+what a UI slices it apart with. `FIXTURES` names them all, in the same order.
 
 ## Python wrapper
 
