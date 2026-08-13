@@ -1159,7 +1159,7 @@ class IgnoredDevices(unittest.TestCase):
     """The DJ controller must never become the tempo source."""
 
     def test_the_show_configs_ignore_the_controller(self):
-        for path in (SHOW, DESKTOP / "config" / "mythos26_mixxx.json"):
+        for path in (SHOW,):
             with self.subTest(config=path.name):
                 config = Config.load(path)
                 self.assertTrue(config.midi.ignores("Traktor Kontrol S2 MK3"))

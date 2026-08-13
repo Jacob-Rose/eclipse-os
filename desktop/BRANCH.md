@@ -293,7 +293,7 @@ intervals. Both are the defaults; see the table in `include/edmx/midi_input.h`.
 This part is now **confirmed against a real Mixxx** over loopMIDI, which it was
 not when the note map was first written.
 
-`config/mythos26_mixxx.json` is the load-in config with all of that named
+`config/mythos26.json` is the show with all of that named
 outright, and `readme.md` has the loopMIDI/Mixxx setup. `config/mythos26.json`
 stays the bench version: `auto`, internal tempo, no assumptions about what is
 plugged in.

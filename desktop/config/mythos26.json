@@ -26,40 +26,75 @@
     "state": "beat_pulse"
   },
 
-  // Tempo in.
+  // Tempo in, from Mixxx.
   //
-  // Mixxx: Preferences > Controllers, load the "MIDI for light" mapping and
-  // point its *output* at a virtual cable - loopMIDI on Windows. That cable is
-  // what we open here. "auto" will find a port called loopMIDI or Mixxx, but
-  // naming it outright is one less thing to be surprised by at load-in, and
-  // "--list-midi" prints what this machine can see.
+  // Setup, once:
   //
-  // The mapping sends notes, not beat clock: note 50 on each beat, and note 52
-  // carrying the tempo as velocity + 50. Those are the defaults below. Do not
-  // set beat_note to -1 with Mixxx - it also sends VU meters as notes, many
-  // times a second, and every one of them would read as a beat.
+  //   1. Mixxx: Preferences > Controllers > pick its MIDI output, load the
+  //      "MIDI for light" mapping, Apply.
+  //   2. In that mapping's Settings tab, leave "Enable VU mono average" on -
+  //      that is note 68, the two-second average, and it is what vu_pulse's red
+  //      backdrop reads. Tick "Enable VU mono current" too if you want note 64
+  //      available to looks that should hit on transients. Turn OFF MTC
+  //      timecode; nothing here reads it.
+  //   3. Run this config.
   //
-  // "clock" stays on for anything that is not Mixxx; it costs nothing when no
-  // 0xF8 ever arrives.
+  // The mapping sends notes, not beat clock. On its "Midi Channel" setting,
+  // default 1:
+  //
+  //     note 48   deck change
+  //     note 50   the beat, velocity 100      <- beat_note
+  //     note 52   the tempo, velocity bpm-50  <- bpm_note
+  //     note 64   VU mono, instantaneous      <- vu_instant_note
+  //     note 68   VU mono, 2-second average   <- vu_average_note
+  //     note 69   VU meter bar                <- vu_meter_note
+  //
+  // Which is why beat_note is a number and not -1. Take any note as a beat and
+  // the VU meters alone would fire dozens of times a second.
+  //
+  // "clock" stays on even though Mixxx sends no 0xF8: it costs nothing, and
+  // "ticks" staying at 0 in `midi status` is a useful confirmation that what is
+  // on this cable is what we think it is.
+  //
+  // Verify without guessing:
+  //   echo midi monitor on | eclipse-dmx --config config/mythos26.json
+  // Play a track. You should see "MIDI-IN ch=1 note_on 50 100" once a beat and
+  // "note_on 52 <bpm-50>" alongside it. If the numbers differ, change
+  // beat_note / bpm_note / beat_channel to match what you actually see.
   //
   // "bpm" is the tempo before anything has been heard, and the one the rig
   // falls back to if the link goes quiet. "free_run" is what makes that a
-  // fallback rather than a blackout.
-  //
-  // "ignore" is what stops "auto" grabbing the DJ controller. It is a MIDI
-  // input, it is often the only one on the machine, and every pad on it sends
-  // notes - so it is both what auto would reach for and the last thing that
-  // should be allowed to move the beat. See config/mythos26_mixxx.json for the
-  // load-in version of this block, which names the cable outright instead.
+  // fallback rather than a blackout - so this config still runs on its own at a
+  // bench with Mixxx nowhere in sight.
   "midi": {
     "enabled": true,
-    "port": "auto",
+
+    // Mixxx's own output, by name, matched case-insensitively on a fragment.
+    //
+    // Straight off Mixxx rather than through a loopMIDI cable: one less hop and
+    // one less thing to be wrong about at load-in. `--list-midi` prints what
+    // this machine can see; if Mixxx on your show laptop is writing to a plain
+    // "loopMIDI Port" instead, name that here.
+    "port": "Mixxx",
+
+    // Never open these, whatever "port" resolution would otherwise do.
+    //
+    // The S2 is a controller: its pads, jogs and transport all send notes, and
+    // one of them landing on note 50 would yank the beat grid mid-set. It is
+    // also frequently the only MIDI input on the machine, which is exactly when
+    // a fallback would reach for it. Naming "port" above already avoids it -
+    // this is the belt to that pair of braces, and it keeps working if the
+    // Mixxx port is missing at startup.
     "ignore": ["Traktor", "Kontrol"],
+
     "clock": true,
     "notes": true,
     "beat_note": 50,
     "bpm_note": 52,
-    "beat_channel": -1,
+    "vu_instant_note": 64,
+    "vu_average_note": 68,
+    "vu_meter_note": 69,
+    "beat_channel": 1,
     "bpm": 128,
     "free_run": true
   },

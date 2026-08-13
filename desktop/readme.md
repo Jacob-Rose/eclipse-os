@@ -718,37 +718,45 @@ eclipse-dmx --config config/mythos26.json --dry-run --bpm 128 --frames 80
 
 #### from Mixxx
 
-`config/mythos26_mixxx.json` is this, configured. Five steps.
+`config/mythos26.json` is this, configured. Three steps.
 
-**1. Make a virtual cable.** MIDI does not travel between two programs on one
-machine without one. On Windows that is [loopMIDI][loopmidi] (free); create a
-port and leave it running. macOS has one built in: Audio MIDI Setup → Window →
-Show MIDI Studio → IAC Driver → tick *Device is online*.
+**1. Load the mapping.** Mixxx → **Preferences → Controllers** → click its MIDI
+output → set *Load Mapping* to **MIDI for light** → **Apply**. The port must
+show as enabled; the mapping is output-only, so nothing will appear to happen
+yet.
 
-[loopmidi]: https://www.tobias-erichsen.de/software/loopmidi.html
-
-**2. Start the cable before Mixxx.** Mixxx enumerates MIDI devices once, at
-startup, and will not see a port created afterwards. This is the single most
-common reason the port is missing from its list.
-
-**3. Load the mapping.** Mixxx → **Preferences → Controllers** → click the
-loopMIDI port → set *Load Mapping* to **MIDI for light** → **Apply**. The port
-must show as enabled; the mapping is output-only, so nothing will appear to
-happen yet.
-
-**4. Set what it sends.** In that same panel, the mapping has a **Settings**
+**2. Set what it sends.** In that same panel, the mapping has a **Settings**
 tab. Leave *Enable Beat*, *Enable BPM* and *Enable VU mono average* on — notes
 50, 52 and 68, which is the minimum this needs. Tick *Enable VU mono current*
 (note 64) if you want the transient-reactive source too. Turn **off** *Enable
 MTC Timecode*; it defaults on and nothing here reads it. Note the *Midi Channel*
 setting, default 1.
 
-**5. Run.**
+**3. Run.**
 
 ```sh
-eclipse-dmx --list-midi                     # confirm the cable is visible
-eclipse-dmx --config config/mythos26_mixxx.json
+eclipse-dmx --list-midi                     # confirm Mixxx's port is visible
+eclipse-dmx --config config/mythos26.json
 ```
+
+The config names `"Mixxx"` and reads it directly. `--list-midi` on this machine
+shows:
+
+```
+MIDI 0  Traktor Kontrol S2 MK3      the controller, on midi.ignore
+MIDI 1  eclipse-os OUT              a spare cable, nothing sends on it
+MIDI 2  Mixxx OUT                   this
+```
+
+**If Mixxx's own port is not in that list**, it needs a virtual cable in the
+middle, and then you name *that* in `midi.port` instead. On Windows that is
+[loopMIDI][loopmidi] (free): create a port, and **start it before Mixxx** —
+Mixxx enumerates MIDI devices once, at startup, and will not see a port created
+afterwards, which is the single most common reason one is missing from its list.
+macOS has one built in: Audio MIDI Setup → Window → Show MIDI Studio → IAC
+Driver → tick *Device is online*.
+
+[loopmidi]: https://www.tobias-erichsen.de/software/loopmidi.html
 
 ##### what it sends
 
@@ -781,7 +789,7 @@ what you think it is.
 ##### verifying it, rather than hoping
 
 ```sh
-python -m eclipse_dmx midi-watch config/mythos26_mixxx.json --seconds 15
+python -m eclipse_dmx midi-watch config/mythos26.json --seconds 15
 ```
 
 Play a track. This listens, prints every message that arrives, and tells you
