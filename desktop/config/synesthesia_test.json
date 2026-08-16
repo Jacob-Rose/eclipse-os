@@ -1,0 +1,40 @@
+{
+  // The bench test for the OSC link. One probe, no hardware, no wire.
+  //
+  //   python -m eclipse_dmx osc config/synesthesia_test.json --device synesthesia
+  //
+  // A palette wave on a single sampled point, which is the smallest thing that
+  // proves the whole chain: pattern renders, patch writes, the emit stream
+  // reports it, and the colour lands on a Synesthesia control. If the control
+  // moves here, adding the same device entry to a real show will work.
+  //
+  // Run --test first if it does not move - that separates "the app is not
+  // listening" from "the show is not producing a colour", and the two failures
+  // look identical from here.
+
+  "master": {
+    "brightness": 1.0,
+    "gamma": 2.2
+  },
+
+  // Something that visibly cycles, so a stuck control is obvious. Slow: this
+  // is a wash behind visuals, and a hue sprinting through the wheel reads as
+  // noise rather than as the rig's colour.
+  "pattern": {
+    "name": "palette_wave",
+    "speed": 0.15,
+    "palette": "p_bluemagic"
+  },
+
+  "devices": [
+    {
+      "device": "synesthesia",
+
+      // Collapsed to a point at the middle of the show's space. With one
+      // fixture there is nothing for `fit` to spread, so this is really just
+      // saying "sample here" - see the note at the end of the device file.
+      "offset": [0.5, 0.5],
+      "fit": [0, 0]
+    }
+  ]
+}

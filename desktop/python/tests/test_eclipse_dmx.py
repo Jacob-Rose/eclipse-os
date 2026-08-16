@@ -11,6 +11,7 @@ one, so this stays runnable on a build machine and on a show laptop.
 
 from __future__ import annotations
 
+import io
 import json
 import sys
 import time
@@ -29,6 +30,7 @@ from eclipse_dmx.config import (  # noqa: E402
     MidiConfig,
 )
 from eclipse_dmx.controller import ShowController, ShowError, _parse_frame  # noqa: E402
+from eclipse_dmx import osc  # noqa: E402
 
 RIG = DESKTOP / "config" / "uking_par36_x10.json"
 SHOW = DESKTOP / "config" / "mythos26.json"
@@ -67,6 +69,190 @@ class FrameParsing(unittest.TestCase):
 
     def test_non_hex_rejected(self):
         self.assertIsNone(_parse_frame("F gggggg"))
+
+
+class OscEncoding(unittest.TestCase):
+    """The packet format, checked byte for byte.
+
+    Worth pinning down here rather than against the app: OSC is unacknowledged,
+    so a malformed packet is not rejected, it is ignored - and a control that
+    does not move looks exactly the same as a visualiser that was never running.
+    These tests are the only place the format gets to be wrong out loud.
+    """
+
+    def test_padding_and_layout(self):
+        packet = osc.encode("/controls/global/color/1", 1.0, 0.5, 0.0)
+
+        # Address (24 chars + null -> 28), tags ",fff" + null -> 8, 3 floats.
+        self.assertEqual(len(packet), 48)
+        self.assertEqual(packet[:24], b"/controls/global/color/1")
+        self.assertEqual(packet[24:28], b"\0\0\0\0")
+        self.assertEqual(packet[28:36], b",fff\0\0\0\0")
+
+    def test_floats_are_big_endian(self):
+        packet = osc.encode("/x", 1.0)
+        self.assertEqual(packet[-4:], b"\x3f\x80\x00\x00")
+
+    def test_every_block_is_four_byte_aligned(self):
+        # The address lengths either side of a boundary are where an off-by-one
+        # in the padding shows up, so walk a range rather than picking one.
+        for length in range(1, 12):
+            packet = osc.encode("/" + "a" * length, 0.25)
+            self.assertEqual(len(packet) % 4, 0, f"address of {length + 1} chars")
+
+    def test_no_arguments_still_valid(self):
+        self.assertEqual(osc.encode("/bang"), b"/bang\0\0\0,\0\0\0")
+
+    def test_endpoint_parsing(self):
+        self.assertEqual(osc.parse_endpoint("127.0.0.1:8000"), ("127.0.0.1", 8000))
+        self.assertEqual(osc.parse_endpoint("localhost"), ("localhost", 6000))
+        with self.assertRaises(ValueError):
+            osc.parse_endpoint("127.0.0.1:nope")
+
+
+class OscColour(unittest.TestCase):
+    """What actually goes out for a given frame byte."""
+
+    def setUp(self):
+        self.sent = []
+
+    def link(self, **kwargs):
+        made = osc.SynesthesiaLink("127.0.0.1:1", **kwargs)
+        made._send = self.sent.append       # no socket involved
+        return made
+
+    def test_normalised_from_bytes(self):
+        with self.link() as link:
+            link.send_color([255, 128, 0])
+        self.assertEqual(len(self.sent), 1)
+        self.assertEqual(self.sent[0][:24], b"/controls/global/color/1")
+
+    def test_separate_sends_three_messages(self):
+        with self.link(separate=True) as link:
+            link.send_color([255, 128, 0])
+        self.assertEqual(len(self.sent), 3)
+        for packet, suffix in zip(self.sent, (b"/r", b"/g", b"/b")):
+            self.assertTrue(packet.startswith(b"/controls/global/color/1" + suffix))
+
+    def test_gamma_is_undone_not_applied(self):
+        # 128 is mid-grey after a 2.2 gamma, so undoing it must move *up*
+        # towards linear. Getting the exponent the wrong way round would send
+        # 0.22 instead of 0.73, which reads as "the visuals went dark".
+        link = self.link(gamma=2.2)
+        self.assertAlmostEqual(link._normalize(128), 0.7312, places=3)
+        link.close()
+
+    def test_out_of_range_is_clamped(self):
+        link = self.link()
+        self.assertEqual(link._normalize(-5), 0.0)
+        self.assertEqual(link._normalize(300), 1.0)
+        link.close()
+
+
+class OscCommand(unittest.TestCase):
+    """The refusals, which are the only paths that reach no hardware at all."""
+
+    def run_cli(self, *argv) -> int:
+        from eclipse_dmx.cli import main
+
+        stderr, sys.stderr = sys.stderr, io.StringIO()
+        try:
+            return main(list(argv))
+        finally:
+            sys.stderr = stderr
+
+    def test_needs_a_config_or_a_test(self):
+        self.assertEqual(self.run_cli("osc"), 1)
+
+    def test_a_malformed_address_is_a_sentence_not_a_traceback(self):
+        self.assertEqual(self.run_cli("osc", "--test", "--address", "127.0.0.1:nope"), 1)
+
+
+class TheScenes(unittest.TestCase):
+    """The visualiser scenes, against what the sender assumes about them.
+
+    A scene is half of this feature rather than an attachment to it: the control
+    it exposes *is* the address eclipse-dmx aims at, and the sender cannot tell
+    when that stops being true. Nothing here needs Synesthesia - these are the
+    assumptions that can be checked on paper, and they are exactly the ones that
+    break silently.
+    """
+
+    SCENES = sorted((DESKTOP / "scenes").glob("*.synScene"))
+
+    def manifest(self, scene: Path) -> dict:
+        # Strict json, deliberately not the config loader's comment-tolerant
+        # one: Synesthesia's parser is strict, and a scene this suite accepts
+        # and the app rejects is worse than no test.
+        return json.loads((scene / "scene.json").read_text(encoding="utf-8"))
+
+    def test_there_are_scenes(self):
+        self.assertTrue(self.SCENES, "no .synScene folders in desktop/scenes")
+
+    def test_the_first_colour_control_is_the_rig_colour(self):
+        # The sender's default target is positional - color/1 is the first
+        # colour control in declaration order, not one named "1". Reordering a
+        # CONTROLS array therefore repoints every sender at once, with no error
+        # anywhere: the scene runs, the packets go out, nothing moves.
+        for scene in self.SCENES:
+            with self.subTest(scene=scene.name):
+                colours = [control["NAME"] for control in self.manifest(scene)["CONTROLS"]
+                           if control["TYPE"].split()[0] == "color"]
+                if not colours:
+                    # Allowed: a pure diagnostic scene takes nothing from the
+                    # rig and has nothing for the sender to aim at. The contract
+                    # is about scenes that do, not about every scene here.
+                    continue
+
+                # And the same name in every scene, so the stable by-name
+                # address works on all of them. Synesthesia lowercases control
+                # names and drops underscores for OSC, which is what makes
+                # `rig_color` reachable as /controls/scene/rigcolor.
+                self.assertEqual(colours[0], "rig_color")
+
+    def test_every_control_is_read_by_the_shader(self):
+        # A control that nothing reads is a knob that does nothing, which on a
+        # desk mid-set is indistinguishable from a broken one.
+        for scene in self.SCENES:
+            with self.subTest(scene=scene.name):
+                shader = (scene / "main.glsl").read_text(encoding="utf-8")
+                for control in self.manifest(scene)["CONTROLS"]:
+                    self.assertIn(control["NAME"], shader, control["NAME"])
+
+    def test_every_control_says_what_it_does(self):
+        for scene in self.SCENES:
+            with self.subTest(scene=scene.name):
+                for control in self.manifest(scene)["CONTROLS"]:
+                    self.assertTrue(control.get("DESCRIPTION", "").strip(),
+                                    f"{control['NAME']} has no DESCRIPTION")
+
+    def test_every_scene_declares_a_gpu_tier(self):
+        # Found the hard way: three scenes that compiled clean, loaded into the
+        # browser, and rendered black. 33 of the 36 scenes on the machine -
+        # every one the app ships, every marketplace scene, and every scene the
+        # app's own editor writes - declare GPU. The three that did not were
+        # ours. Nothing reports this: the tile appears, the shader is fine, the
+        # screen is black.
+        #
+        # 0 is what the app's own new-scene template uses, and what these are:
+        # the cheapest tier, no raymarching, no big loops.
+        for scene in self.SCENES:
+            with self.subTest(scene=scene.name):
+                self.assertIn("GPU", self.manifest(scene),
+                              "no GPU tier - the app loads this and renders black")
+
+    def test_the_thumbnail_is_there(self):
+        for scene in self.SCENES:
+            with self.subTest(scene=scene.name):
+                manifest = self.manifest(scene)
+                self.assertTrue((scene / manifest["IMAGE_PATH"]).is_file(),
+                                f"IMAGE_PATH names {manifest['IMAGE_PATH']}, which is not there")
+
+    def test_the_shader_has_an_entry_point(self):
+        for scene in self.SCENES:
+            with self.subTest(scene=scene.name):
+                shader = (scene / "main.glsl").read_text(encoding="utf-8")
+                self.assertIn("vec4 renderMain(", shader)
 
 
 class TheRig(unittest.TestCase):

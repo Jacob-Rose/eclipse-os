@@ -1,0 +1,55 @@
+{
+  // A probe, not a light.
+  //
+  // One fixture that exists so a single point of the look has a name and an
+  // address, and can be read back out of the frame stream:
+  //
+  //   python -m eclipse_dmx osc config/mythos26.json --device synesthesia
+  //
+  // That command samples this fixture and sends its colour to Synesthesia's
+  // colour control over OSC, so the visuals behind the rig are tinted by the
+  // same render that is lighting it. See python/eclipse_dmx/osc.py for the
+  // sender, and scenes/ for the scenes that receive it.
+  //
+  // Why a device rather than "average the rig": a rig is rarely one colour.
+  // The mean of a palette sweep across a truss is grey every time, and a
+  // primary colour that is always grey is worse than no feature. A device
+  // with one fixture says which point of the look counts, and the environment
+  // says where in the room that point is - which is the same sentence the
+  // obelisk and the truss are already written in.
+
+  "name": "synesthesia",
+
+  // Normalized, so `fit` in the environment entry is what places it. With one
+  // fixture there is nothing to spread: it lands wherever the entry puts it.
+  "coord_space": "normalized",
+
+  "output": {
+    // No wire. `preview` renders the frame and drops it, which is exactly
+    // right here - the frame's only destination is the `F` line on stdout
+    // that the osc command reads. `console` would do the same job and print
+    // a line per frame into the log of a show you are trying to watch.
+    "type": "preview",
+
+    // Matches the osc command's default --rate. This device's frames are only
+    // read by the emit stream, so the number that actually throttles the OSC
+    // is --rate; this one just keeps the two from disagreeing in --show-patch.
+    "fps": 30
+  },
+
+  // One RGB fixture at the bottom of the buffer. The address is arbitrary -
+  // nothing shares this device's buffer - so it is 1.
+  "fixtures": [
+    { "profile": "rgb3", "name": "primary", "address": 1, "position": [0, 0] }
+  ]
+
+  // Placement is deliberately not here: it belongs to the environment, which
+  // is the thing that knows where in the room this point should be sampled
+  // from. In config/mythos26.json's devices array:
+  //
+  //   { "device": "synesthesia", "offset": [0.5, 0.5], "fit": [0, 0] }
+  //
+  // `fit: [0, 0]` collapses the device to a point and `offset` puts that point
+  // mid-rig, so the colour sent is the colour the look is showing at the
+  // centre. Move the offset to sample somewhere else.
+}

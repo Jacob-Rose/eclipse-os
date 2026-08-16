@@ -1,0 +1,158 @@
+{
+	"CONTROLS" :
+	[
+		{
+			"DEFAULT" : [ 0.20, 0.99, 0.10 ],
+			"DESCRIPTION" : "The colour that survives. Driven over OSC by eclipse-dmx, so what the rig is showing is what stays in colour on screen. This is the FIRST colour control in this list, which is what makes it /controls/global/color/1 - the positional address is the order these are declared in, so moving it down this list repoints the sender. Its default is greenscreen green so the scene does something before anything is driving it.",
+			"IS_META" : true,
+			"NAME" : "rig_color",
+			"TYPE" : "color",
+			"UI_GROUP" : "Link"
+		},
+		{
+			"DEFAULT" : [ 0.20, 0.99, 0.10 ],
+			"DESCRIPTION" : "A key colour you set by hand, used instead of the rig's when 'Key by hand' is on. This exists because a running sender overwrites rig_color thirty times a second, which makes it impossible to try a different key while the link is live - and because grey and white cannot be keyed at all, so a rig on a white cue leaves you with no way to see the effect work.",
+			"NAME" : "manual_key",
+			"TYPE" : "color",
+			"UI_GROUP" : "Key"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Take the key from 'manual_key' instead of from the rig. Turn this on to prove the scene works independently of the link, or when the look on the truss is too close to white or grey to key anything - neutral colours have no hue to match.",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "key_by_hand",
+			"TYPE" : "toggle",
+			"UI_GROUP" : "Key"
+		},
+		{
+			"DEFAULT" : [ 0.50, 0.50, 0.55 ],
+			"DESCRIPTION" : "The tint of the black and white. 0.5 grey is exactly neutral; push it cool or warm from there. This is the scene's THIRD colour control, so /controls/global/color/3 lands here.",
+			"NAME" : "mono_tint",
+			"TYPE" : "color",
+			"UI_GROUP" : "Look"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Where the picture comes from. Auto asks the app, which is not always right: a sampler can hold media that every 'is there media' flag denies exists, and then the scene draws its fallback while your footage is sitting right there. If Auto shows the hue wheel with media plainly loaded, force it - Video is the usual answer, Image is for a still assigned to the image slot. Load Eclipse Media Probe to see which one has your picture in it.",
+			"LABELS" : [ "auto", "video / webcam", "still image", "test wheel" ],
+			"MAX" : 3,
+			"MIN" : 0,
+			"NAME" : "media_source",
+			"TYPE" : "dropdown",
+			"UI_GROUP" : "Media",
+			"VALUES" : [ 0, 1, 2, 3 ]
+		},
+		{
+			"DEFAULT" : 0.28,
+			"DESCRIPTION" : "The limit: how far from the key colour still counts as matching it. 0 keeps almost nothing, 1 keeps the whole frame. Set it with Show mask on.",
+			"MAX" : 1.0,
+			"MIN" : 0.0,
+			"NAME" : "color_limit",
+			"PARAMS" : 0.15,
+			"TYPE" : "slider smooth",
+			"UI_GROUP" : "Key"
+		},
+		{
+			"DEFAULT" : 0.06,
+			"DESCRIPTION" : "How soft the edge of the limit is. 0 is a hard cut, which on video reads as jagged; a little feather hides compression noise around the boundary.",
+			"MAX" : 0.5,
+			"MIN" : 0.0,
+			"NAME" : "feather",
+			"TYPE" : "slider",
+			"UI_GROUP" : "Key"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "What 'the same colour' means. Chroma ignores brightness, so a colour in shadow still matches - start here. Hue also ignores saturation, which is what you want when the rig is washing a wall and coming back pale. RGB is strict: it must match in brightness too.",
+			"LABELS" : [ "chroma (ignores brightness)", "hue only", "rgb (strict)" ],
+			"MAX" : 2,
+			"MIN" : 0,
+			"NAME" : "match_mode",
+			"TYPE" : "dropdown",
+			"UI_GROUP" : "Key",
+			"VALUES" : [ 0, 1, 2 ]
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Swaps which side of the limit keeps its colour. Off, the rig picks what stays alive. On, it picks what gets erased - the greenscreen reading of the same control, and a completely different look on the same footage.",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "invert_key",
+			"TYPE" : "toggle",
+			"UI_GROUP" : "Key"
+		},
+		{
+			"DEFAULT" : 0.2,
+			"DESCRIPTION" : "How much a bass hit widens the limit. The colour spreads on the beat and pulls back, rather than getting brighter - brightness is the rig's job and this would be fighting it for the same one.",
+			"MAX" : 1.0,
+			"MIN" : 0.0,
+			"NAME" : "beat_widen",
+			"TYPE" : "slider",
+			"UI_GROUP" : "Key"
+		},
+		{
+			"DEFAULT" : 1.0,
+			"DESCRIPTION" : "How far everything that did not match goes to black and white. 1 is fully monochrome; back it off to leave the footage recognisable under the effect.",
+			"MAX" : 1.0,
+			"MIN" : 0.0,
+			"NAME" : "desaturate",
+			"TYPE" : "slider",
+			"UI_GROUP" : "Look"
+		},
+		{
+			"DEFAULT" : 0.0,
+			"DESCRIPTION" : "Repaints what matched in the key colour exactly, keeping each pixel's own brightness. 0 leaves the media's own colour alone, which reads as 'this was always there'; 1 makes the screen the same colour as the rig, which reads as the lights spilling into the picture.",
+			"MAX" : 1.0,
+			"MIN" : 0.0,
+			"NAME" : "paint_with_key",
+			"TYPE" : "slider",
+			"UI_GROUP" : "Look"
+		},
+		{
+			"DEFAULT" : 1.25,
+			"DESCRIPTION" : "Saturation lift on what survived. Slightly above 1 by default: a merely-correct colour reads as washed out with a grey frame around it.",
+			"MAX" : 2.0,
+			"MIN" : 0.0,
+			"NAME" : "color_boost",
+			"TYPE" : "slider",
+			"UI_GROUP" : "Look"
+		},
+		{
+			"DEFAULT" : 1.0,
+			"DESCRIPTION" : "Output level.",
+			"MAX" : 2.0,
+			"MIN" : 0.0,
+			"NAME" : "brightness",
+			"TYPE" : "slider",
+			"UI_GROUP" : "Look"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Multiply the output by Synesthesia's master fade. Off by default, and deliberately: with it on, a fader at zero or a deck that is not on air makes this scene entirely black with nothing wrong with it - and since every other eclipse scene ignores the fade, the symptom is 'this one scene is black, the rest are fine', which reads as a fault and is not one. Turn it on when you want the fader to reach this scene.",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "respect_fade",
+			"TYPE" : "toggle",
+			"UI_GROUP" : "Look"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Shows the mask on its own. White is what keeps its colour, black is what goes monochrome. This is how you set the limit: widen until the thing you want is solid white and the rest is solid black.",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "show_mask",
+			"TYPE" : "toggle",
+			"UI_GROUP" : "Debug"
+		}
+	],
+	"CREDIT" : "eclipse-os",
+	"DESCRIPTION" : "Your media in black and white, except where it already matches the colour the lights are showing. The key colour arrives over OSC from eclipse-dmx, so the rig decides what stays in colour on screen. Works on its own too - with no media loaded it keys a hue wheel.",
+	"GPU" : 0,
+	"HEIGHT" : 1080,
+	"IMAGE_PATH" : "eclipse_chroma_key.png",
+	"MEDIA" : [ { "FILTER" : "linear", "WRAP" : "repeat" } ],
+	"TAGS" : [ "media", "key", "utility", "osc", "eclipse" ],
+	"TITLE" : "Eclipse Chroma Key",
+	"WIDTH" : 1920
+}

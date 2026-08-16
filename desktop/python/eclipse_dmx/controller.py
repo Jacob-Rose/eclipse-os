@@ -190,6 +190,13 @@ class ShowController:
         #: frame; a UI slices `Frame` with these.
         self.devices: List[DeviceSpan] = []
 
+        #: Devices in the show that have no wire, as (name, reason). A rig that
+        #: is not plugged in does not stop the show - it renders, it is in the
+        #: frame stream, it is on screen, it just goes nowhere - so this is the
+        #: only place a caller finds out, and a UI is expected to say so rather
+        #: than let a dark truss look like a working one.
+        self.offline_devices: List[Tuple[str, str]] = []
+
         #: States the running pattern offers. Empty unless it is a state
         #: machine, which is exactly the condition a UI wants to test.
         self.state_names: List[str] = []
@@ -220,6 +227,10 @@ class ShowController:
 
         self._process: Optional[subprocess.Popen] = None
         self._replies: "queue.Queue[str]" = queue.Queue()
+
+        #: Whether READY has been seen. Only start() cares, and only to tell an
+        #: ERR that is an answer from an ERR that is a refusal to start.
+        self._ready: bool = False
         self._events: List[str] = []
         self._warnings: List[str] = []
         self._reader_threads: List[threading.Thread] = []
@@ -274,6 +285,8 @@ class ShowController:
         if self._process is not None:
             raise ShowError("this show is already running")
 
+        self._ready = False
+        self.offline_devices = []
         self._process = subprocess.Popen(
             self._build_args(),
             stdin=subprocess.PIPE,
@@ -292,19 +305,41 @@ class ShowController:
         while time.monotonic() < deadline:
             if any(event.startswith("READY") for event in self._events):
                 return
-            failure = next((event for event in self._events if event.startswith("ERR")), None)
+            failure = self._startup_failure()
             if failure is not None:
                 self.stop()
-                raise ShowError(f"eclipse-dmx failed to start: {failure[4:]}")
+                raise ShowError(f"eclipse-dmx failed to start: {failure}")
+
             if self._process.poll() is not None:
-                self.stop()
-                raise ShowError(
-                    f"eclipse-dmx exited immediately with code {self._process.returncode}"
-                )
+                # It is gone, but its last lines may still be in the reader
+                # threads: a refusal to start is written and then exited on
+                # immediately, so poll() routinely wins that race. Drain before
+                # concluding it died without saying why - the reason is what the
+                # caller needs, and the exit code alone is 1 for everything.
+                for thread in self._reader_threads:
+                    thread.join(timeout=0.5)
+
+                failure = self._startup_failure()
+                # stop() clears _process, so take the code from it rather than
+                # reading the attribute back off a field that is now None.
+                code = self.stop()
+                if failure is not None:
+                    raise ShowError(f"eclipse-dmx failed to start: {failure}")
+                raise ShowError(f"eclipse-dmx exited immediately with code {code}")
             time.sleep(0.02)
 
         self.stop()
         raise ShowError("eclipse-dmx did not report READY in time")
+
+    def _startup_failure(self) -> Optional[str]:
+        """Why the show refused to start, or None while it still might.
+
+        Reads _events rather than the reply queue: _handle_stdout copies a
+        pre-READY ERR into both, so nothing has to be taken out of a queue a
+        later command is entitled to read.
+        """
+        failure = next((event for event in self._events if event.startswith("ERR")), None)
+        return None if failure is None else failure[len("ERR "):].strip()
 
     def _start_reader(self, stream, handler: Callable[[str], None]) -> None:
         thread = threading.Thread(target=self._pump, args=(stream, handler), daemon=True)
@@ -368,6 +403,15 @@ class ShowController:
                 self.on_midi(payload)
             return
 
+        # OFFLINE <device>: <reason>
+        #
+        # A device that came up without a wire. Deliberately not ERR: on this
+        # protocol ERR is how a *command* is refused, and start() reads a
+        # pre-READY ERR as a show that will not run - which this is not.
+        if line.startswith("OFFLINE "):
+            name, _, reason = line[len("OFFLINE "):].partition(":")
+            self.offline_devices.append((name.strip(), reason.strip()))
+
         if line.startswith("FIXTURES "):
             self.fixture_names = line.split()[1:]
 
@@ -429,7 +473,17 @@ class ShowController:
                         self.params[index] = param
                         break
 
+        if line.startswith("READY"):
+            self._ready = True
+
         if line.startswith("OK") or line.startswith("ERR"):
+            # Before READY nothing has been asked, so an ERR here is not an
+            # answer waiting to be collected - it is the show saying why it will
+            # not start, and it is the only place that reason appears. Put it in
+            # _events as well, or start() waits out a READY that is never coming
+            # and reports an exit code in place of "no relic found".
+            if not self._ready and line.startswith("ERR"):
+                self._events.append(line)
             self._replies.put(line)
         else:
             self._events.append(line)

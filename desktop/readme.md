@@ -172,6 +172,53 @@ F e3c545 d94616 d55b1c ...          one per frame, rrggbb per fixture
 `--emit-rate` caps it, 30 per second by default. It is a display rate, not the
 DMX refresh — the rig still runs at `device.fps` whatever the viewer asks for.
 
+### out to a visualiser
+
+The viewer is one client of that stream; here is the other. `osc` runs a show
+and sends one fixture's colour to an OSC colour control, so the visuals behind
+the truss are tinted by the same render that is lighting it:
+
+```sh
+cd python
+python -m eclipse_dmx osc --test                       # is anything listening
+python -m eclipse_dmx osc ../config/mythos26.json --device synesthesia
+```
+
+The first consumer is **Synesthesia** — and the scenes that read it are in
+`scenes/`. Two settings there, in **Settings → OSC**, and the first one is the
+one that bites: OSC **input** ships switched *off*, and off means the packets
+are discarded with no error at either end. The second is the port, `6000` out
+of the box, which is why that is what the sender defaults to.
+Start with `eclipse_link_test`, which is a test card for exactly this and tells
+apart the ways it can fail; `eclipse_chroma_key` is the look. Nothing about the
+sender is Synesthesia-specific: it is UDP, an address, and three floats.
+
+**Which colour**, and why it is one fixture rather than the rig. A rig is rarely
+one colour. The mean of a palette sweep across a truss is grey every time, and a
+"primary colour" that is always grey is worse than no feature — so `--device`
+names a point of the look instead. `devices/synesthesia.json` is one fixture
+with no wire, placed by the environment, existing only to be read back out of
+the frame stream. `--fixture N` indexes the flat run of fixtures directly.
+
+`--ungamma` defaults to the config's `master.gamma` and undoes it. The frame
+carries gamma already applied, because an LED is linear in duty cycle and an eye
+is not; a screen is downstream of a display that corrects again, and passing the
+corrected value on applies it twice and reads washed out.
+
+What it cannot tell you is whether any of it arrived. UDP is unacknowledged, and
+on Windows loopback a closed port does not even come back as an error — so a
+whole set aimed at a visualiser that was never started reports zero failures.
+That is why `--test`, which sweeps a hue with no show and no hardware, is the
+first thing to run: it separates "the app is not listening" from "the show is
+not producing a colour", and from across a room those look identical.
+
+Two more flags exist for one failure each. `--separate` sends r, g and b as
+three messages instead of one with three floats, for a build of the app that
+wants them that way. `--control` takes an address: the default
+`/controls/global/color/1` is **positional** — the first colour control in the
+order the running scene declares them — and `/controls/scene/<name>` is the
+stable alternative, at one address per scene.
+
 ## Run it for real
 
 ```sh
@@ -316,6 +363,14 @@ profile defined here shadows a built-in of the same name:
 run its own colour macro and ignore you entirely, until its mode channels are
 pinned. Putting that in the profile solves it once per model instead of once
 per rig.
+
+`red`, `green` and `blue` name where the renderer writes, not what comes out.
+The U'King UV par in `devices/uking_par36_x10.json` is three banks of UV LEDs
+behind a dimmer — the same shape as an RGB par, and patched with the same three
+fields — so it adds the look's three components together and lights with how
+bright and how *pale* the look is at its point. A single-colour fixture with N
+intensity channels fits here without a new kind of profile; it just means
+`--show-patch` says `r=` about a channel whose manual says something else.
 
 ### checking a patch
 
@@ -1047,6 +1102,7 @@ python -m eclipse_dmx patch my_rig.json        # print the resolved channel map
 python -m eclipse_dmx generate --profile uking_par36 --count 10 -o my_rig.json
 python -m eclipse_dmx run my_rig.json --dry-run --seconds 5
 python -m eclipse_dmx view my_rig.json          # watch it in a window
+python -m eclipse_dmx osc my_rig.json           # its colour out to a visualiser
 ```
 
 And a worked example with a cue list in `python/example_show.py`.
@@ -1368,8 +1424,10 @@ obelisk draw faster than its `show()` allows.
 desktop/
   include/edmx/    json, serial_port, dmx_output, fixture, config, pattern
   src/             implementations, plus main.cpp (the show runner)
-  config/          example configs
-  python/          the wrapper package
+  devices/         one file per physical thing: the obelisk, the truss of pars
+  config/          environments — rooms with devices in them, and the show
+  scenes/          Synesthesia scenes that take their colour from the rig
+  python/          the wrapper package, the viewer, and the OSC sender
   tools/           toolchain setup, one script per platform
   CMakeLists.txt   builds only the slice of the library that is off-Arduino clean
 ```

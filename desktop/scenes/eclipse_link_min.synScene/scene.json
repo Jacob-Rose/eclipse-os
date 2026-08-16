@@ -1,0 +1,29 @@
+{
+	"CONTROLS" :
+	[
+		{
+			"DEFAULT" : [ 0.35, 0.35, 0.35 ],
+			"DESCRIPTION" : "The colour the rig is showing. Driven over OSC by eclipse-dmx. FIRST colour control in this list, which is what makes it /controls/global/color/1 - the positional address is the order these are declared in. Grey is the 'nothing has arrived' default: an unconnected scene should look unmistakably unconnected rather than merely dark.",
+			"NAME" : "rig_color",
+			"TYPE" : "color",
+			"UI_GROUP" : "Link"
+		},
+		{
+			"DEFAULT" : 1.0,
+			"DESCRIPTION" : "Output level. It scales the field only - the sweep and the corner ignore it, so turning this to zero cannot produce the black screen this scene exists to rule out.",
+			"MAX" : 2.0,
+			"MIN" : 0.0,
+			"NAME" : "brightness",
+			"TYPE" : "slider",
+			"UI_GROUP" : "Link"
+		}
+	],
+	"CREDIT" : "eclipse-os",
+	"DESCRIPTION" : "The smallest scene that can answer 'is anything rendering at all'. No passes, no buffers, no textures, no media, and it ignores the master fade on purpose. If this is black, the problem is upstream of the shader. Run it when a bigger scene comes up black.",
+	"GPU" : 0,
+	"HEIGHT" : 1080,
+	"IMAGE_PATH" : "eclipse_link_min.png",
+	"TAGS" : [ "utility", "test", "osc", "eclipse" ],
+	"TITLE" : "Eclipse Link Minimal",
+	"WIDTH" : 1920
+}

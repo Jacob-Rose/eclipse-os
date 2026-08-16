@@ -975,6 +975,30 @@ namespace
         float fps{40.0f};
         double nextSendAt{0.0};
 
+        /// Why this device has no wire, or empty when it has one.
+        ///
+        /// A rig that is not plugged in must not stop the show. Half of what
+        /// this program is for is building a look before the truss exists, and
+        /// an environment names every device in the room whether or not today's
+        /// bench has all of them on it. So a device whose widget is missing
+        /// stays in the show and keeps rendering - it appears in the frame
+        /// stream, the viewer draws it, the pattern spans it - it simply has
+        /// nowhere to send. Loudly: see where this is set.
+        ///
+        /// Note what is *not* covered by this. A config naming a device file
+        /// that does not exist is still fatal, because that is a typo rather
+        /// than an absent rig, and carrying on would light a room that is
+        /// missing the thing the show is about.
+        std::string offline;
+
+        bool isLive() const { return output != nullptr; }
+
+        /// Where this device's frames go, for a status line or a UI.
+        std::string describeOutput() const
+        {
+            return output ? output->describe() : ("offline: " + offline);
+        }
+
         const std::string& name() const { return config->name; }
     };
 
@@ -1210,7 +1234,7 @@ namespace
         std::string out;
         for (const DeviceRuntime& device : show.devices)
         {
-            out += (out.empty() ? "" : ", ") + device.name() + ":" + device.output->describe();
+            out += (out.empty() ? "" : ", ") + device.name() + ":" + device.describeOutput();
         }
         return out.empty() ? "none" : out;
     }
@@ -1226,6 +1250,10 @@ namespace
         std::vector<RelicUsbOutput*> links;
         for (DeviceRuntime& device : show.devices)
         {
+            if (!device.isLive())
+            {
+                continue;
+            }
             if (RelicUsbOutput* relic = device.output->asRelicLink())
             {
                 links.push_back(relic);
@@ -2280,29 +2308,26 @@ int main(int argc, char** argv)
                                 && config.output.type != "null";
             if (port.empty() && isRelic)
             {
-                logLine("error: " + where + "port is \"auto\" but no relic answered on any port");
-                emit("ERR " + config.name + ": no relic found");
-                return 1;
+                device.offline = "no relic answered on any port";
             }
-            if (port.empty() && needsWire)
+            else if (port.empty() && needsWire)
             {
-                logLine("error: " + where + "port is \"auto\" but no serial port was found");
-                emit("ERR " + config.name + ": no serial port found");
-                return 1;
+                device.offline = "no serial port found";
             }
-            if (!port.empty())
+            else if (!port.empty())
             {
                 logLine(where + "auto-detected port " + port);
             }
         }
 
-        device.output = makeDmxOutput(config.output.type, port, config.output.baud,
-                                      config.output.consoleChannels, error);
-        if (!device.output)
+        if (device.offline.empty())
         {
-            logLine("output error: " + where + error);
-            emit("ERR output " + config.name + ": " + error);
-            return 1;
+            device.output = makeDmxOutput(config.output.type, port, config.output.baud,
+                                          config.output.consoleChannels, error);
+            if (!device.output)
+            {
+                device.offline = error;
+            }
         }
 
         // ---- send only the channels this device actually uses ------------
@@ -2312,23 +2337,49 @@ int main(int argc, char** argv)
         //
         // The same number sizes the frame buffer, which on a pixel rig is
         // longer than a universe: the obelisk's 344 nodes are 1032 channels.
+        //
+        // Sized whether or not there is a wire: an offline device still renders
+        // into its buffer, which is what keeps it in the frame stream and on
+        // the viewer's screen.
         {
             const int highest = config.fixtures.highestChannel();
             device.universe.resize(highest);
-            device.output->setUniverseLength(highest);
+            if (device.output)
+            {
+                device.output->setUniverseLength(highest);
+            }
         }
 
-        if (!device.output->open(error))
+        if (device.output && !device.output->open(error))
         {
-            logLine("output error: " + where + error);
-            emit("ERR output " + config.name + ": " + error);
-            return 1;
+            device.output.reset();
+            device.offline = error;
         }
-        logLine(where + "output: " + device.output->describe());
 
         // One HSV node per fixture. This is the same framebuffer the
         // microcontroller build hands to the LEDs; here it feeds the patch.
+        // Built for every device, wired or not, for the same reason the buffer
+        // above is sized: an offline device still renders.
         device.strip.reset(new eio::HSVStrip(static_cast<uint16_t>(device.fixtureCount), 0));
+
+        if (!device.offline.empty())
+        {
+            // An error, and not a fatal one. It is an error because a device
+            // silently missing from a show is how you find out at the venue;
+            // it is not fatal because the whole rig refusing to start over one
+            // absent cable is the same failure the MIDI open below declines to
+            // make - and because building a look with nothing plugged in is a
+            // thing this program is *for*.
+            //
+            // OFFLINE rather than ERR: on this protocol ERR is how a command is
+            // refused, and a UI reading one as the other either waits forever
+            // for a reply or gives up on a show that is running fine.
+            logLine("error: " + where + device.offline + "; this device is offline");
+            emit("OFFLINE " + config.name + ": " + device.offline);
+            continue;
+        }
+
+        logLine(where + "output: " + device.output->describe());
 
         // ---- do not outrun the wire --------------------------------------
         // Asking for more frames than the link can carry does not make the rig
@@ -2434,7 +2485,7 @@ int main(int argc, char** argv)
              << " " << device.name()
              << " " << device.firstFixture
              << " " << device.fixtureCount
-             << " " << device.output->describe();
+             << " " << device.describeOutput();
         emit(line.str());
     }
 
@@ -2568,6 +2619,14 @@ int main(int argc, char** argv)
                                            show.config.master.gamma,
                                            device.universe);
 
+            // Rendered above, sent here - and only the sending needs a wire.
+            // An offline device has done its work by now: its colours are in
+            // the frame stream and on the viewer's screen.
+            if (!device.isLive())
+            {
+                continue;
+            }
+
             // Its own rate, not the loop's. A relic that draws at 30 simply
             // does not get every frame a 40fps truss does.
             if (frameSeconds < device.nextSendAt)
@@ -2598,7 +2657,7 @@ int main(int argc, char** argv)
         // serial monitor nobody has open.
         for (DeviceRuntime& device : show.devices)
         {
-            RelicUsbOutput* relic = device.output->asRelicLink();
+            RelicUsbOutput* relic = device.isLive() ? device.output->asRelicLink() : nullptr;
             if (!relic)
             {
                 continue;
@@ -2725,6 +2784,10 @@ int main(int argc, char** argv)
     std::string shutdownError;
     for (DeviceRuntime& device : show.devices)
     {
+        if (!device.isLive())
+        {
+            continue;
+        }
         device.universe.clear();
         device.config->fixtures.render(std::vector<ecore::HSV>(device.fixtureCount), 0.0f,
                                        show.config.master.gamma, device.universe);

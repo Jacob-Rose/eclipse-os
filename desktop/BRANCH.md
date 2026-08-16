@@ -86,7 +86,7 @@ On Linux the same thing with `./tools/setup-toolchain.sh` and `./build.sh`.
 
 ## Your rig
 
-`config/uking_par36_x10.json` is the ten U'King Par 36 in 8-channel mode, and
+`config/uking_par36_x10.json` is the ten U'King Par 36 in 7-channel mode, and
 it is one entry:
 
 ```json
@@ -106,6 +106,37 @@ Set the addresses on the fixtures to match:
 | par_5 | 29 | | par_10 | 64 |
 
 Highest channel used is 70, so there is room for 442 more on the universe.
+
+### the UV par, on the same cable
+
+`devices/uking_par36_x10.json` — the device the *show* uses — adds a U'King
+ZQ01087 36W UV par at **71**, so that wire runs 1–77 and 435 channels are free.
+Every UV unit in the room sits on that one address: they cannot be told apart on
+DMX and are not trying to be.
+
+71 and not 22. 22 is par_4's address, and a UV par sharing it would take par_4's
+dimmer as its own. Address matters more than usual here because a device in this
+codebase is one wire is one buffer — the UV is a fixture *inside* the truss
+device rather than a device of its own, because two devices would mean two opens
+of the same COM port.
+
+Its chart, off QLC+'s own definition (`Fixtures/UKing/UKing-36W-UV-PAR.qxf`), is
+the par 36's chart with the colours swapped for UV banks:
+
+```
+1 dimmer   2 UV bank 1   3 UV bank 2   4 UV bank 3   5 strobe   6 mode   7 speed
+```
+
+Which is why it needed no code: the patch layer already describes that shape.
+The renderer writes r, g and b into the three banks, the fixture adds them, and
+the UV comes up with how bright and how *pale* the look is — a saturated colour
+drives it at about a third. It samples the middle of the truss (`position`
+`[0.5, 0]`) rather than the end, which is where an eleventh fixture with no
+position of its own would otherwise land.
+
+`config/uking_par36_x10.json`, the bench rig, still patches only the pars. On
+the same physical cable that means the UV holds whatever it was last sent, so it
+can sit on through a bench session — patch it there too if that bites.
 
 The `uking_par36` profile encodes the chart you gave me, in 7-channel mode:
 
@@ -146,7 +177,8 @@ desktop/
   src/             implementations + main.cpp (the show runner)
   devices/         one file per physical thing: the obelisk, the ten pars
   config/          environments - rooms with devices in them, and the show
-  python/          the wrapper package, and the viewer
+  scenes/          Synesthesia scenes that take their colour from the rig
+  python/          the wrapper package, the viewer, and the OSC sender
   python/tests/    unittest suite, runnable with nothing installed
   tools/           toolchain setup, one script per platform
   readme.md        the real docs - config schema, protocol, patterns, MIDI
@@ -734,6 +766,140 @@ The split between the exe and python is deliberate: the exe owns frame timing
 and the wire (a DMX rig wants a steady refresh, which is not something to hand
 to a garbage collector), python owns configuration and decisions.
 
+### a device with no wire does not stop the show
+
+An environment names every device in the room. A bench rarely has all of them
+plugged in, and half of what this program is for is building a look before the
+truss exists — so a device whose widget is missing no longer refuses to start.
+It stays in the show and keeps rendering: it is in the frame stream, the viewer
+draws it, the pattern spans it. It simply has nowhere to send.
+
+Loudly, in three places, because a device silently missing from a show is how
+you find out at the venue: the log says so, the panel's own title bar says so
+for as long as the window is open, and `main.cpp` emits
+
+```
+OFFLINE <device>: <reason>
+```
+
+`OFFLINE` and not `ERR` on purpose. On this protocol `ERR` is how a *command* is
+refused, and `ShowController.start` reads a pre-READY `ERR` as a show that will
+not run — which this is not. A UI reading one as the other either waits forever
+for a reply or gives up on a show that is running fine.
+
+What is still fatal: a config naming a device *file* that does not exist. That
+is a typo, not an absent rig, and carrying on would light a room missing the
+thing the show is about.
+
+The startup path had a related bug worth naming. A refusal to start is written
+and exited on immediately, so `poll()` routinely wins the race against the
+reader threads and the caller got `exited immediately with code 1` — the exit
+code is 1 for everything — in place of the reason, which is the only part that
+helps. `start()` now drains the readers before concluding anything.
+
+### the rig's colour, on the screen behind it
+
+```sh
+cd python
+python -m eclipse_dmx osc --test                       # is anything listening
+python -m eclipse_dmx osc ../config/mythos26.json --device synesthesia
+```
+
+The second client of the frame stream. It reads one fixture's colour and sends
+it as OSC to a colour control in a visualiser — Synesthesia first — so the
+visuals behind the truss are tinted by the same render that is lighting it, out
+of one look, with neither side knowing about the other.
+
+**One fixture, not the rig's average.** The mean of a palette sweep across a
+truss is grey every time, and a primary colour that is always grey is worse than
+no feature. `devices/synesthesia.json` is a probe: one fixture, no wire, placed
+by the environment, whose only destination is the `F` line on stdout.
+
+**It is python and not C++** because the whole feature is "read a colour that is
+already arriving, and put it in a UDP packet". `--emit-frames` already streams
+it; `ShowController` already parses it. No build, no new transport in the show
+path. The cost is one process hop of latency, on a colour wash, which nobody can
+see. When it needs to outlive the wrapper it becomes an `OscOutput` in the
+binary and the packet builder moves with it unchanged — OSC 1.0 is an address, a
+type tag string, and big-endian floats, each block padded to four bytes, which
+is thirty lines with no dependency.
+
+**What it cannot tell you is whether any of it arrived**, and the command says
+so rather than reporting "88 sent, 0 dropped" and stopping. UDP is
+unacknowledged; a closed port is supposed to answer with ICMP unreachable, and
+on Windows loopback that is simply not delivered — so a whole set aimed at a
+visualiser that was never started reports zero errors. Hence `--test`, which
+sweeps a hue with no show and no hardware: it separates "the app is not
+listening" from "the show is not producing a colour", and those look identical
+from the desk.
+
+The gamma is undone before sending. `FixtureMap::render` bakes `master.gamma`
+into every channel because an LED is linear in duty cycle and an eye is not; a
+shader is downstream of a display that corrects again, and correcting twice
+reads as washed out. Read off the config, so a show with gamma off does not get
+it undone.
+
+**The scenes are in `scenes/`**, and they are part of the feature rather than
+decoration next to it — the control a scene exposes *is* the sender's target:
+
+- `eclipse_link_test` — a test card. Deliberately not audio reactive: everything
+  on it is the incoming colour or a clock, so anything moving is evidence about
+  the link. A card that moves with the music cannot tell you whether it is also
+  moving with your sender.
+- `eclipse_chroma_key` — the look. The media in black and white except where it
+  already matches the rig's colour, within a limit. Chroma-distance matching by
+  default, so a colour in shadow still counts; hue-only for when a wash comes
+  back off a wall paler than it left.
+
+The addressing is the part that bites. `/controls/global/color/1` is
+**positional** — the first colour control in the order a scene declares them —
+so it points somewhere different in every scene and does not survive a scene
+change. Every scene here names its key colour `rig_color` and declares it first,
+so the stable form `--control /controls/scene/rigcolor` drives any of them.
+
+### four things about Synesthesia that cost an evening
+
+All four present as the same two symptoms — a black screen, or a scene that sits
+at its defaults — and none of them reports anything, anywhere.
+
+**A scene without `GPU` in its `scene.json` loads and renders black.** 33 of the
+36 scenes on this machine declare it; the three that did not were ours. Every
+scene the app ships, every marketplace scene and every scene the app's own
+editor writes has it. `0` is the template's value and the right tier for all of
+these. There is a test for it now, because nothing else catches it: the tile
+appears in the browser, the shader is valid, the screen is black.
+
+**OSC input ships switched off, and the port is 6000, not 8000.** Off means the
+packets are discarded by the OS with no error at either end, which is
+indistinguishable from a wrong port, a wrong address, or a scene with no colour
+control. It is also a Pro feature. Both facts are readable without opening the
+app — `OSC_INPUT` and `OSC_INPUT_PORT` in its `preferences.json` — and the
+decisive check is whether anything holds UDP 6000 at all:
+
+```powershell
+Get-NetUDPEndpoint -LocalPort 6000
+```
+
+**There are two media slots and they answer to different calls.**
+`_isMediaActive()` covers video and webcams; a still goes to a different slot
+and needs `_exists(syn_UserImage)` / `_loadUserImage()`. Worse, the flags and the
+samplers disagree: `eclipse_media_probe` samples both slots unconditionally and
+showed footage that every flag denied existed. So `eclipse_chroma_key` asks all
+three signals and offers a dropdown to overrule them. `PixelPopArt` gates on
+`syn_MediaType >= 0.5` and has no `MEDIA` key at all, so that key is not what
+enables media either.
+
+**`syn_FadeInOut` is a legitimate black screen.** Multiplying the output by the
+VJ's master fade is what the docs suggest, and it means a fader at zero or a
+deck that is not on air blacks the scene with nothing wrong. It was the only
+one of our four scenes to do it, so the symptom was "this one scene is black and
+the rest are fine". It is a toggle now, off by default.
+
+The scenes are deliberately a ladder — `min` has no passes and no textures,
+`link_test` adds a feedback buffer and a second pass, `chroma_key` adds media —
+so a scene that fails says which addition broke it. That is how three of the
+four above were found.
+
 ---
 
 ## Commits, in order
@@ -962,6 +1128,29 @@ And, for the per-look knobs:
   rebuilds them on a cue change, takes a value the slider cannot land on, and
   puts the real value back when the box is given nonsense
 
+And, for the OSC link out to a visualiser:
+
+- the packet is checked byte for byte — address and tag blocks null-terminated
+  and padded to four, floats big-endian, every block four-byte aligned across a
+  range of address lengths. OSC is unacknowledged, so a malformed packet is not
+  rejected, it is *ignored*: these tests are the only place the format gets to
+  be wrong out loud
+- gamma is undone rather than applied again: 128 sends 0.731, not 0.22
+- `--separate` sends three messages on `/r`, `/g` and `/b`, packed sends one
+- **caught on the wire**, against a UDP receiver on loopback rather than against
+  the app: `osc --test` puts 148 well-formed messages on the socket in 5s, and
+  `osc ../config/synesthesia_test.json --device synesthesia` puts 179 in 6s
+  whose values track the palette wave the show is rendering
+- a fixture index past the end of the frame says so once, out loud, instead of
+  silently sending nothing and reporting "no frames arrived"
+- the report prints on Ctrl-C, which is how a set actually ends
+- an address that does not resolve is one sentence, not a traceback
+- `eclipse_chroma_key`'s shader compiles clean under a real GLSL ES 3.00
+  compiler with the Synesthesia helpers stubbed, and renders as designed against
+  colour bars: in chroma mode the bar matching the key keeps its colour the
+  whole length of its brightness ramp, every other bar goes monochrome, and with
+  no media the hue-wheel fallback keys exactly one wedge
+
 On the real rig, through the widget on COM3:
 
 - `solid` holds a steady, correct colour — frames arriving whole and aligned
@@ -979,7 +1168,7 @@ There is now a suite for all of this, which there was not before:
 
 ```sh
 cd desktop
-python -m unittest discover -s python/tests -v      # 145 tests
+python -m unittest discover -s python/tests -v      # 161 tests
 ```
 
 It needs nothing installed. Anything requiring the executable or a display

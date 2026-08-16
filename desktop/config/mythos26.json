@@ -124,6 +124,12 @@
       // The truss, clear of the sculpture. mythos26's own space is flat in x,
       // so without an offset the pars would sit on top of the obelisk; at x 10
       // they are past its 0..7, spanning the same y so the beat hits both.
+      //
+      // The UV par is in here too, at the tail of the same DMX line - see the
+      // device file. It is not a device of its own because it is not a wire of
+      // its own, and it takes this entry's offset and brightness with the rest
+      // of the truss. It samples the middle of the run, so it comes up with the
+      // look rather than sitting on as a flat wash.
       "device": "uking_par36_x10",
       "name": "pars",
       "offset": [10, 0],
@@ -136,6 +142,27 @@
       // goes here rather than in the device file: it is a property of this
       // room, not of the lights.
       "brightness": 1.0
+    },
+    {
+      // The colour this show sends to the screen behind it. Not a light: one
+      // fixture with no wire, whose frames exist only to be read back off the
+      // emit stream by
+      //
+      //   python -m eclipse_dmx osc config/mythos26.json --device synesthesia
+      //
+      // It costs a fixture in the frame stream and a small panel in the viewer,
+      // and nothing on any cable. See devices/synesthesia.json and scenes/.
+      "device": "synesthesia",
+
+      // The middle of the truss - the pars span x 10..11 - because that is the
+      // colour the room reads as the rig's. `fit: [0, 0]` collapses the device
+      // to a point, so this offset is the whole placement. Move it to 0..7 to
+      // take the colour off the obelisk instead.
+      "offset": [10.5, 0],
+      "fit": [0, 0],
+
+      // One dot. It only needs to be big enough to see it moving.
+      "view_scale": [0.3, 0.3]
     }
   ]
 }

@@ -13,6 +13,7 @@ from typing import List, Optional
 from .binary import BinaryNotFoundError, find_executable
 from .config import BUILTIN_PALETTES, BUILTIN_PROFILES, PATTERN_NAMES, Config, ConfigError
 from .controller import ShowController, ShowError
+from .osc import DEFAULT_ADDRESS, DEFAULT_CONTROL
 from .ports import list_midi_ports, list_ports
 
 
@@ -212,6 +213,193 @@ def _cmd_run(args: argparse.Namespace) -> int:
         return 0 if code is None else code
 
 
+def _cmd_osc(args: argparse.Namespace) -> int:
+    """Runs a show and sends one fixture's colour out as OSC.
+
+    The bridge to a visualiser — Synesthesia, or anything else with an OSC
+    colour control. See eclipse_dmx/osc.py for why this reads the frame stream
+    rather than living in the executable.
+    """
+    from .osc import SynesthesiaLink
+
+    if not args.test and not args.config:
+        print("error: osc needs a config, or --test to send without a show",
+              file=sys.stderr)
+        return 1
+
+    # The frame carries master.gamma already applied, for LEDs that need it.
+    # A screen does not; see SynesthesiaLink.gamma. Read from the show rather
+    # than assumed, so a config that turns gamma off does not get it undone.
+    ungamma = args.ungamma
+    if ungamma is None:
+        ungamma = Config.load(args.config).master.gamma if args.config else 0.0
+
+    try:
+        link = SynesthesiaLink(
+            args.address,
+            args.control,
+            separate=args.separate,
+            gamma=0.0 if args.no_ungamma else ungamma,
+        )
+    except (OSError, ValueError) as error:
+        # ValueError is a host:port that is not one; OSError is a name that
+        # does not resolve or a route that does not exist. Between them they
+        # are the only send-side failure that gets reported at all — see the
+        # note at the end of osc.py — so they are worth a sentence each rather
+        # than a traceback.
+        print(f"error: cannot send to '{args.address}': {error}", file=sys.stderr)
+        return 1
+
+    with link:
+        print(f"sending to {link.describe()}", file=sys.stderr)
+
+        if args.test:
+            return _osc_test(link, args)
+
+        # Which fixture is the rig's colour. An index into the flat run of
+        # fixtures across every device, which is exactly what a frame is; or
+        # the first fixture of a named device, resolved once the executable has
+        # announced its devices.
+        chosen = [args.fixture]
+        announced = [False]
+        complained = [False]
+
+        def frame(colors) -> None:
+            if not announced[0]:
+                announced[0] = True
+                if args.device:
+                    span = next((d for d in show.devices if d.name == args.device), None)
+                    if span is None:
+                        names = ", ".join(d.name for d in show.devices) or "none"
+                        print(f"warning: no device '{args.device}' (have: {names}),"
+                              f" sampling fixture {chosen[0]}", file=sys.stderr)
+                    else:
+                        chosen[0] = span.first
+                index = chosen[0]
+                name = show.fixture_names[index] if index < len(show.fixture_names) else "?"
+                print(f"sampling fixture {index} ('{name}') of {len(colors)}",
+                      file=sys.stderr)
+
+            index = chosen[0]
+            if index < len(colors):
+                link.send_color(colors[index])
+            elif not complained[0]:
+                # Said once, and out loud, while the show is still running.
+                # Otherwise the only sign is a count of zero at the end, which
+                # is what a show producing no frames at all also looks like.
+                complained[0] = True
+                print(f"warning: fixture {index} is past the end of a "
+                      f"{len(colors)}-fixture frame; nothing is being sent",
+                      file=sys.stderr)
+
+        # autostart=False so `show` is bound before any frame can arrive: the
+        # callback above reads it, and the reader thread starts inside start().
+        show = ShowController(
+            args.config,
+            executable=args.executable,
+            dry_run=args.dry_run,
+            midi=args.midi,
+            bpm=args.bpm,
+            on_frame=frame,
+            emit_rate=args.rate,
+            on_log=(lambda line: print(line, file=sys.stderr)) if args.verbose else None,
+            autostart=False,
+        )
+        show.start()
+
+        # The report is in a finally because without --seconds this runs until
+        # Ctrl-C, which is the normal way to use it — and a diagnostic that
+        # only prints on the exit nobody takes is not a diagnostic. main()
+        # catches the KeyboardInterrupt after this has had its say.
+        try:
+            with show:
+                for warning in show.warnings:
+                    print(f"warning: {warning}", file=sys.stderr)
+                for name, why in show.offline_devices:
+                    print(f"warning: device '{name}' is offline: {why}", file=sys.stderr)
+
+                # The cue matters here in a way it does not for `run`: what is
+                # being sent is a *colour*, and a monochrome look sends grey.
+                # mythos26 opens on beat_pulse, which is white on every hit for
+                # good reasons of its own, and a scene keyed on grey has nothing
+                # to key. So the same overrides `run` has, for the same reason
+                # it has them - to open on the look you meant.
+                if args.pattern:
+                    show.set_pattern(args.pattern)
+                if args.state:
+                    show.set_state(args.state)
+
+                print(f"running: {show.status()}", file=sys.stderr)
+                code = show.wait(args.seconds)
+        finally:
+            _osc_report(link)
+
+        return 0 if code is None else code
+
+
+def _osc_test(link, args: argparse.Namespace) -> int:
+    """Sweeps a hue at the control, with no show and no hardware involved.
+
+    The first thing to run, and the one that answers the only question worth
+    de-risking: is the app listening, on this port, at this address, in this
+    message form. Everything downstream assumes the answer.
+    """
+    import colorsys
+    import time
+
+    seconds = args.seconds if args.seconds else 10.0
+    period = 1.0 / max(args.rate, 1.0)
+    deadline = time.monotonic() + seconds
+    print(f"sweeping a hue for {seconds:.0f}s - the control should move",
+          file=sys.stderr)
+
+    try:
+        while time.monotonic() < deadline:
+            hue = (time.monotonic() * 0.25) % 1.0
+            rgb = colorsys.hsv_to_rgb(hue, 1.0, 1.0)
+            link.send_color([int(channel * 255) for channel in rgb])
+            time.sleep(period)
+    finally:
+        _osc_report(link)
+
+    return 0
+
+
+def _osc_report(link) -> None:
+    """What we can and cannot say about whether that worked.
+
+    Carefully worded, because the honest answer is "we do not know". UDP is
+    unacknowledged, and a closed port on loopback does not even come back as an
+    error — so a clean run against nothing at all looks exactly like a clean run
+    against a listening visualiser. Saying "88 sent, 0 dropped" and stopping
+    would read as confirmation of the one thing this cannot confirm.
+    """
+    print(f"\n{link.sent} messages sent to {link.host}:{link.port}"
+          + (f", {link.dropped} refused" if link.dropped else ""), file=sys.stderr)
+
+    if link.dropped:
+        print(f"  last error: {link.last_error}", file=sys.stderr)
+    if not link.sent:
+        print("  nothing was sent - either no frame arrived, or the fixture "
+              "being sampled is not in it.", file=sys.stderr)
+        return
+
+    print(
+        "\n  UDP is unacknowledged: sending is not evidence anything received it.\n"
+        "  If the control did not move, in the order worth checking:\n"
+        "    - is OSC *input* switched on in Synesthesia's settings? It ships\n"
+        f"      off, and off looks exactly like every other failure here.\n"
+        f"    - does that panel say port {link.port}? Both ends have to agree,\n"
+        "      and neither will complain if they do not.\n"
+        "    - OSC input is a Synesthesia Pro feature; on other licences the\n"
+        "      fallback is MIDI, which this does not speak.\n"
+        "    - does the running scene actually have a colour control? The\n"
+        "      default address is positional - the *first* one, if there is one.\n"
+        "    - if it has one and it still sits still, try --separate.",
+        file=sys.stderr,
+    )
+
+
 def _cmd_view(args: argparse.Namespace) -> int:
     """Opens the viewer. Imported here so the rest of the CLI works headless."""
     try:
@@ -224,6 +412,24 @@ def _cmd_view(args: argparse.Namespace) -> int:
         )
         return 1
 
+    # The window and the visualiser off one show, rather than two copies of it
+    # running side by side with their own beat clocks. See ViewerApp._send_osc.
+    link = None
+    if args.osc:
+        from .osc import SynesthesiaLink
+
+        try:
+            link = SynesthesiaLink(
+                args.osc,
+                args.osc_control,
+                gamma=Config.load(args.config).master.gamma,
+            )
+        except (OSError, ValueError) as error:
+            print(f"error: cannot send to '{args.osc}': {error}", file=sys.stderr)
+            return 1
+
+        print(f"sending to {link.describe()}", file=sys.stderr)
+
     return view(
         args.config,
         executable=args.executable,
@@ -233,6 +439,9 @@ def _cmd_view(args: argparse.Namespace) -> int:
         emit_rate=args.emit_rate,
         midi=args.midi,
         bpm=args.bpm,
+        osc=link,
+        osc_device=args.osc_device,
+        osc_fixture=args.osc_fixture,
     )
 
 
@@ -343,6 +552,46 @@ def build_parser() -> argparse.ArgumentParser:
     _add_tempo_args(run)
     run.set_defaults(func=_cmd_run)
 
+    osc = subparsers.add_parser(
+        "osc",
+        help="run a show and send one fixture's colour out as OSC, for a visualiser",
+        description="Sends the rig's colour to an OSC colour control - Synesthesia's, "
+                    "by default. Start with --test, which needs no config and no "
+                    "hardware and proves the app is listening.",
+    )
+    osc.add_argument("config", nargs="?", help="the show to run (not needed with --test)")
+    osc.add_argument("--address", default=DEFAULT_ADDRESS,
+                     help=f"where the visualiser listens (default {DEFAULT_ADDRESS})")
+    osc.add_argument("--control", default=DEFAULT_CONTROL,
+                     help=f"OSC address of the colour control (default {DEFAULT_CONTROL}); "
+                          f"/controls/scene/<name> targets one scene's control by name")
+    osc.add_argument("--fixture", type=int, default=0, metavar="N",
+                     help="which fixture is the rig's colour, indexed across every "
+                          "device in patch order (default 0)")
+    osc.add_argument("--device", metavar="NAME",
+                     help="sample that device's first fixture instead of --fixture")
+    osc.add_argument("--pattern", choices=PATTERN_NAMES, help="override the config's pattern")
+    osc.add_argument("--state", help="for a state machine pattern, the look to open on")
+    osc.add_argument("--separate", action="store_true",
+                     help="send r, g and b as three messages instead of one with "
+                          "three floats - the fallback if the control does not move")
+    osc.add_argument("--ungamma", type=float, metavar="G",
+                     help="undo this gamma before sending (default: the config's "
+                          "master.gamma, because a screen corrects again)")
+    osc.add_argument("--no-ungamma", action="store_true",
+                     help="send the frame's bytes as they are")
+    osc.add_argument("--rate", type=float, default=30.0,
+                     help="messages a second (default 30)")
+    osc.add_argument("--seconds", type=float,
+                     help="stop after this long (default: until interrupted; 10 with --test)")
+    osc.add_argument("--test", action="store_true",
+                     help="sweep a hue with no show running, to prove the link")
+    osc.add_argument("--dry-run", action="store_true",
+                     help="render without driving hardware; the OSC still goes out")
+    osc.add_argument("--verbose", "-v", action="store_true", help="echo the executable's logs")
+    _add_tempo_args(osc)
+    osc.set_defaults(func=_cmd_osc)
+
     viewer = subparsers.add_parser(
         "view", help="watch the rig in a window, laid out from the config"
     )
@@ -353,6 +602,15 @@ def build_parser() -> argparse.ArgumentParser:
                         help="also drive the real rig; without this nothing is put on the wire")
     viewer.add_argument("--emit-rate", type=float, default=30.0,
                         help="frames per second to draw (default 30)")
+    viewer.add_argument("--osc", nargs="?", const=DEFAULT_ADDRESS, metavar="HOST:PORT",
+                        help="also send one fixture's colour out as OSC, for a "
+                             f"visualiser (default {DEFAULT_ADDRESS})")
+    viewer.add_argument("--osc-device", metavar="NAME",
+                        help="sample that device's first fixture (default: fixture 0)")
+    viewer.add_argument("--osc-fixture", type=int, default=0, metavar="N",
+                        help="which fixture to send, indexed across every device")
+    viewer.add_argument("--osc-control", default=DEFAULT_CONTROL,
+                        help=f"OSC address of the colour control (default {DEFAULT_CONTROL})")
     _add_tempo_args(viewer)
     viewer.set_defaults(func=_cmd_view)
 

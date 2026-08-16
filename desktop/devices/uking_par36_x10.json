@@ -1,9 +1,12 @@
 {
-  // Ten U'King Par 36 on one DMX line, 7-channel mode. A device definition.
+  // Ten U'King Par 36 and one U'King UV par on one DMX line, 7-channel mode.
+  // A device definition.
   //
-  // The whole rig is one entry: the uking_par36 profile knows the channel
-  // layout, "count" patches ten of them one footprint apart, and the parked
-  // strobe/mode/colour channels come along for free.
+  // One device is one wire is one buffer, which is why the UV lives here rather
+  // than in a device file of its own: it is daisy-chained onto the same FTDI
+  // cable as the truss, and two devices would mean two processes opening the
+  // same COM port. Channels are only claimed *within* a device, so this file is
+  // the whole of what that cable carries.
   //
   // Set each fixture's own address on its display to match:
   //   par_1  ->   1      par_6  ->  36
@@ -11,9 +14,13 @@
   //   par_3  ->  15      par_8  ->  50
   //   par_4  ->  22      par_9  ->  57
   //   par_5  ->  29      par_10 ->  64
+  //   uv     ->  71      (every UV unit, all on the one address)
   //
-  // So par_1 occupies 1-7, par_2 occupies 8-14, and so on up to 70. That leaves
-  // 442 channels free on the universe.
+  // So par_1 occupies 1-7, par_2 occupies 8-14, and so on up to 70, with the UV
+  // at 71-77. That leaves 435 channels free on the universe.
+  //
+  // 71 rather than 22: 22 is par_4's address, and a UV par sharing it would
+  // take par_4's dimmer as its own and flash on every colour change.
   //
   // Ten identical pars are indistinguishable from a config file, so walk the
   // rig once with:
@@ -37,7 +44,7 @@
     "port": "auto",
 
     // 24, to sit with the obelisk rather than above it. The wire could carry
-    // far more - 70 channels at 250k is a frame every 3ms - but the show loop
+    // far more - 77 channels at 250k is a frame every 3ms - but the show loop
     // renders at the *fastest* device's rate and each device sends when it is
     // due, so a truss at 40 beside a sculpture at 24 means the sculpture takes
     // an uneven 3 slots out of every 5. Even spacing is worth more to a look
@@ -46,12 +53,74 @@
     "console_channels": 24
   },
 
+  // The UV par's model, declared here rather than shipped as a built-in: it is
+  // one rig's light, and a profiles block needs no rebuild of the executable to
+  // land. A config's own profiles shadow the built-ins, so the name is free.
+  "profiles": {
+
+    // U'King ZQ01087 36W UV par, 7-channel mode. Transcribed from QLC+'s own
+    // definition for it (Fixtures/UKing/UKing-36W-UV-PAR.qxf), which is the
+    // same chart the manual prints:
+    //
+    //   1 master dimmer      2 UV bank 1    3 UV bank 2    4 UV bank 3
+    //   5 strobe             6 presets / sound active     7 effect speed
+    //
+    // Layout-identical to uking_par36 - dimmer, three intensity channels, three
+    // channels of mode - which is the whole reason this fixture needed no code:
+    // the patch layer already describes exactly this shape.
+    //
+    // But channels 2-4 are three banks of UV LEDs, not red, green and blue.
+    // The renderer writes the look's r, g and b into them, so what the fixture
+    // actually does is add the three together: the UV comes up with how *pale*
+    // and how bright the look is at its point, and a fully saturated colour
+    // drives it at about a third. Hue is meaningless here - there is only ever
+    // one colour coming out of it - so this is the right reading rather than a
+    // compromise, and it is worth knowing when the UV sits low through a look
+    // that is all deep blues.
+    //
+    // Parking 5-7 is the part that decides whether the fixture obeys us at all.
+    // 6 is the one that matters: the manual's 0-10 band is "Manual Control
+    // (Ch1-5)", and anything above 11 hands the light to its own colour macros
+    // or, past 211, to its microphone. 5 at 0 is no strobe; 7 is the speed of
+    // effects we are not running.
+    "uking_uv_par36": {
+      "footprint": 7,
+      "dimmer": 1,
+      "red": 2,
+      "green": 3,
+      "blue": 4,
+      "park": { "5": 0, "6": 0, "7": 0 }
+    }
+  },
+
   "fixtures": [
     {
       "profile": "uking_par36",
       "name": "par",
       "address": 1,
       "count": 10
+    },
+    {
+      // Every UV unit in the room, on one address, so DMX sees one light and
+      // this patch has one entry. They cannot be told apart on the wire and
+      // they are not trying to be: a blacklight is a wash on the room, not a
+      // point in a sweep.
+      //
+      // Hence the explicit position. Without it an eleventh fixture with no
+      // position of its own falls back to "last along the rig", which would put
+      // the UV at the far end of the truss and give it the tail of every sweep.
+      // 0.5 samples the middle instead - the level the look is showing at the
+      // centre of the run, which is the closest thing a single number has to
+      // "the room". Move it to follow a different part of the look.
+      //
+      // A trim goes here as "brightness" if the UV overpowers the truss; 72W of
+      // blacklight is not subtle. It belongs on the fixture rather than in the
+      // environment because the environment's brightness is per *device*, and
+      // this device is mostly pars.
+      "profile": "uking_uv_par36",
+      "name": "uv",
+      "address": 71,
+      "position": [0.5, 0]
     }
   ]
 }

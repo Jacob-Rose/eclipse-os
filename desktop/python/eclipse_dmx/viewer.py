@@ -222,6 +222,9 @@ class DevicePanel:
         )
         self.title.pack(side="top", fill="x")
 
+        #: Why this device has no wire, or "" when it has one.
+        self.offline = ""
+
         self.canvas = tk.Canvas(self.frame, bg="#%02x%02x%02x" % BACKGROUND,
                                 highlightthickness=0)
         self.canvas.pack(side="top", fill="both", expand=True)
@@ -246,6 +249,21 @@ class DevicePanel:
         self.grip.bind("<ButtonRelease-1>", self._end_drag)
 
         self.canvas.bind("<Configure>", lambda event: self.rebuild())
+
+    def set_offline(self, reason: str) -> None:
+        """Marks this device as having no wire, in its own title bar.
+
+        The panel keeps painting. That is the point of it: the look *is* being
+        rendered for this device, and seeing it run is most of why you would
+        open a viewer with the hardware unplugged. The title says the frames are
+        not going anywhere, so the two are not confused for each other.
+        """
+        self.offline = reason
+        if reason:
+            self.title.configure(text=f"  {self.name}  ({len(self.placements)})  offline - {reason}",
+                                 fg=TEXT_WARN)
+        else:
+            self.title.configure(text=f"  {self.name}  ({len(self.placements)})", fg=TEXT_DIM)
 
     # -- geometry ----------------------------------------------------------
 
@@ -501,6 +519,9 @@ class ViewerApp:
         emit_rate: float = 30.0,
         midi: Optional[str] = None,
         bpm: Optional[float] = None,
+        osc=None,
+        osc_device: Optional[str] = None,
+        osc_fixture: int = 0,
         width: int = 1000,
         # Room for four rows of cue buttons under the canvas. The knobs sit
         # beside them rather than below, so this does not grow with them.
@@ -564,6 +585,22 @@ class ViewerApp:
 
         #: last (states, current) the buttons were drawn for
         self._button_signature: Tuple[Tuple[str, ...], str] = ((), "")
+
+        # -- the colour, out to a visualiser -------------------------------
+        #
+        # The same frames the canvas is painted from, put in a UDP packet. One
+        # process and one render for both, which is the point of it being here
+        # rather than beside it: `osc` and `view` as two commands means two
+        # shows, each with its own beat clock, drifting apart from the moment
+        # they start - and the screen behind a rig showing the colour some
+        # *other* copy of the rig is at is worse than showing none.
+        #
+        # Optional and fire-and-forget: no link, no cost, and a link that
+        # cannot send never reaches the window. See eclipse_dmx/osc.py.
+        self._osc = osc
+        self._osc_device = osc_device
+        self._osc_fixture = osc_fixture
+        self._osc_resolved = False
 
         self.show = ShowController(
             self.config_path,
@@ -1082,6 +1119,10 @@ class ViewerApp:
         # config is what knows where they physically are. The DEVICE lines say
         # which slice of a frame is whose; the config says what that slice looks
         # like.
+        # Which of them came up without a wire. Known only now: the config says
+        # what is in the room, and only a started show says what is plugged in.
+        offline = dict(self.show.offline_devices)
+
         for span in spans:
             device = self.config.device_named(span.name)
             if device is None and len(self.config.devices) == len(spans):
@@ -1089,9 +1130,12 @@ class ViewerApp:
             if device is None:
                 continue
 
-            self._panels.append(DevicePanel(
+            panel = DevicePanel(
                 self.surface, span.name, plan_layout(device),
-                device=device, on_touched=self._mark_panels_touched))
+                device=device, on_touched=self._mark_panels_touched)
+            if span.name in offline:
+                panel.set_offline(offline[span.name])
+            self._panels.append(panel)
 
         self._tile_panels()
 
@@ -1147,6 +1191,27 @@ class ViewerApp:
         with self._lock:
             self._latest = frame
             self._frames_seen += 1
+
+        if self._osc is not None:
+            self._send_osc(frame)
+
+    def _send_osc(self, frame: Frame) -> None:
+        """One fixture of this frame, out to the visualiser.
+
+        On the reader thread, and deliberately not handed to the tk loop first:
+        the window redraws at whatever rate it manages and the link should not
+        inherit that. Touches no widget, for the same reason.
+        """
+        if not self._osc_resolved:
+            self._osc_resolved = True
+            if self._osc_device:
+                span = next((d for d in self.show.devices
+                             if d.name == self._osc_device), None)
+                if span is not None:
+                    self._osc_fixture = span.first
+
+        if self._osc_fixture < len(frame):
+            self._osc.send_color(frame[self._osc_fixture])
 
     def _current_frame(self) -> Optional[Frame]:
         with self._lock:
@@ -1251,13 +1316,32 @@ class ViewerApp:
             source,
         ]
 
+        # Where the colour is going, said permanently. UDP gives back no
+        # evidence that anything is receiving it, so the most this can honestly
+        # claim is the address it is aimed at - which is still the thing you
+        # want on screen when the visuals are not moving.
+        if self._osc is not None:
+            parts.append(f"osc -> {self._osc.host}:{self._osc.port}")
+
         if self._blackout:
             parts.append("BLACKOUT")
         line = "   ·   ".join(parts)
+
+        # A device with no wire, said permanently rather than once at startup.
+        # It outlives _status on purpose: _status is cleared by the next control
+        # that works, and "the sculpture is not plugged in" stays true through
+        # every button press after it. Nothing else on screen distinguishes a
+        # rig that is dark from a rig that is not there - the panel paints the
+        # same colours either way, because the look really is being rendered
+        # for it - so if this line does not say so, nothing does.
+        offline = self.show.offline_devices
+        if offline:
+            line += "      " + ", ".join(f"{name} OFFLINE: {why}" for name, why in offline)
+
         if self._status:
             line += f"      {self._status}"
 
-        self.header.configure(text=line, fg=TEXT_WARN if self._status else TEXT)
+        self.header.configure(text=line, fg=TEXT_WARN if (self._status or offline) else TEXT)
 
     # -- controls ----------------------------------------------------------
 
@@ -1371,6 +1455,11 @@ class ViewerApp:
                 self.show.stop()
             except Exception:
                 pass
+            if self._osc is not None:
+                try:
+                    self._osc.close()
+                except Exception:
+                    pass
         return 0
 
 
@@ -1383,6 +1472,9 @@ def view(
     emit_rate: float = 30.0,
     midi: Optional[str] = None,
     bpm: Optional[float] = None,
+    osc=None,
+    osc_device: Optional[str] = None,
+    osc_fixture: int = 0,
 ) -> int:
     """Opens the viewer on a config and blocks until the window closes."""
     app = ViewerApp(
@@ -1394,5 +1486,8 @@ def view(
         emit_rate=emit_rate,
         midi=midi,
         bpm=bpm,
+        osc=osc,
+        osc_device=osc_device,
+        osc_fixture=osc_fixture,
     )
     return app.run()
