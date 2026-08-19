@@ -983,7 +983,11 @@ class Config:
 
     # -- loading ----------------------------------------------------------
 
-    @classmethod
+    # Plain @staticmethod, and not @classmethod stacked on one. Stacking them
+    # was allowed for two releases and removed in python 3.13, and where it is
+    # gone `cls` lands in `data` - so every config load through this wrapper
+    # died with "got multiple values for argument 'name'". Callers reach it as
+    # cls._device_from_dict(...), which a staticmethod answers to just as well.
     @staticmethod
     def _device_from_dict(data: Dict[str, Any], name: str = "rig", source: str = "") -> Device:
         """Reads one device: how its numbers are read, where its frames go, and
