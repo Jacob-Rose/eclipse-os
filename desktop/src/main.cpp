@@ -45,6 +45,9 @@
 #include "edmx/config.h"
 #include "edmx/dmx_output.h"
 #include "edmx/fixture.h"
+#if !defined(_WIN32)
+#  include "edmx/ftdi_dmx.h"
+#endif
 #include "edmx/midi_input.h"
 #include "edmx/pattern.h"
 #include "edmx/serial_port.h"
@@ -957,6 +960,51 @@ namespace
     /// USB cable and a truss on a DMX widget at once, and they agree on
     /// precisely one thing: the pattern. Frame buffers, wires, refresh rates
     /// and channel counts are all their own.
+    /// Is there an FTDI on the USB bus that an Open DMX output could drive?
+    ///
+    /// Asked because "no serial port found" stops being the right answer once
+    /// libftdi is in play: it detaches ftdi_sio to reach the chip, and while it
+    /// holds it there is no /dev/ttyUSBn to find. A widget that is plainly
+    /// attached should not be reported missing on the strength of a device node
+    /// that a driver took away on purpose.
+    bool ftdiCanSeeAWidget()
+    {
+#if defined(_WIN32)
+        return false;
+#else
+        const FtdiApi* api = FtdiApi::get();
+        if (api == nullptr)
+        {
+            return false;
+        }
+
+        void* context = api->newContext();
+        if (context == nullptr)
+        {
+            return false;
+        }
+
+        // Opening is the only honest test - a device that is there but claimed
+        // by something else is not one we can drive either.
+        const bool found = api->usbOpen(context, ftdi::kVendorFtdi, ftdi::kProductFt232) == 0;
+        if (found)
+        {
+            api->usbClose(context);
+        }
+        api->freeContext(context);
+        return found;
+#endif
+    }
+
+    /// How often a device with no wire asks for one again.
+    ///
+    /// Two seconds because the cost is one open() that fails, and the thing
+    /// being waited for is a human plugging a cable in. Fast enough that it
+    /// feels immediate, slow enough that a relic probe - which opens every
+    /// serial port on the machine and waits on each - is not running constantly
+    /// behind a show.
+    constexpr double kDeviceRetrySeconds = 2.0;
+
     struct DeviceRuntime
     {
         const Device* config{nullptr};
@@ -990,6 +1038,22 @@ namespace
         /// than an absent rig, and carrying on would light a room that is
         /// missing the thing the show is about.
         std::string offline;
+
+        /// When to try giving this device its wire again; 0 until the frame
+        /// loop has seen it offline and picked a time.
+        ///
+        /// Startup is not the only moment a widget can appear. It gets plugged
+        /// in late, it gets knocked out and put back, its device node is
+        /// recreated by udev with permissions that then get fixed - and every
+        /// one of those is a show that should light when the cable arrives
+        /// rather than one that needs restarting at the venue with the room
+        /// already full. So an offline device keeps asking.
+        double nextRetryAt{0.0};
+
+        /// What we last said about why it is offline, so the retry loop can
+        /// stay quiet while the answer is not changing. A widget that is simply
+        /// not plugged in yet would otherwise print a line a second all night.
+        std::string reportedOffline;
 
         bool isLive() const { return output != nullptr; }
 
@@ -1204,7 +1268,13 @@ namespace
         const std::vector<MidiPortInfo> ports = MidiInput::enumeratePorts();
         for (const MidiPortInfo& port : ports)
         {
+            // The ALSA sequencer address, where there is one. It is what
+            // aconnect speaks, and `midi.port` takes it verbatim - which is the
+            // only unambiguous answer when two clients pick the same name.
+            const std::string address = port.address();
+
             emit("MIDI " + std::to_string(port.index) + "\t" + port.name
+               + (address.empty() ? "" : ("\t" + address))
                + (MidiInput::isIgnored(port.name, ignore) ? "\tignored" : ""));
         }
         emit("OK " + std::to_string(ports.size()) + " midi inputs");
@@ -2275,19 +2345,29 @@ int main(int argc, char** argv)
 
     show.masterBrightness = show.config.master.brightness;
 
-    // ---- bring every device up -------------------------------------------
-    show.devices.resize(show.config.devices.size());
-
-    for (size_t i = 0; i < show.config.devices.size(); ++i)
+    // ---- giving a device its wire ----------------------------------------
+    //
+    // The part of bringing a device up that can fail for reasons that later go
+    // away: a widget not plugged in yet, a device node udev has just recreated
+    // with permissions nobody has fixed, a relic still booting. Startup calls
+    // this once per device and the frame loop calls it again for anything still
+    // offline, which is what lets a show that started with an empty USB port
+    // light the moment the cable goes in — rather than needing a restart with
+    // the room already full.
+    //
+    // Everything else about a device — its buffer, its strip, its place in the
+    // fixture run — is built once and never torn down, because an offline
+    // device still renders. Only the wire comes and goes.
+    //
+    // `announce` is off on a retry: the port it found and the rate it settled
+    // on are worth saying the first time and are noise every two seconds after.
+    const auto attachWire = [&](DeviceRuntime& device, bool announce) -> bool
     {
-        Device& config = show.config.devices[i];
-        DeviceRuntime& device = show.devices[i];
-
-        device.config = &config;
-        device.firstFixture = show.config.firstFixtureOf(i);
-        device.fixtureCount = config.fixtures.size();
-
+        const Device& config = *device.config;
         const std::string where = "[" + config.name + "] ";
+        std::string error;
+
+        device.offline.clear();
 
         // ---- resolve its port --------------------------------------------
         std::string port = config.output.port;
@@ -2306,15 +2386,23 @@ int main(int argc, char** argv)
                                 && config.output.type != "preview"
                                 && config.output.type != "none"
                                 && config.output.type != "null";
+            // An Open DMX widget does not need a tty node to be reachable, and
+            // frequently does not have one: libftdi takes the chip off
+            // ftdi_sio to talk to it, which removes /dev/ttyUSBn for as long as
+            // it holds it. Leaving the port empty lets the output find the
+            // widget by USB instead. See edmx/ftdi_dmx.h.
+            const bool findsItsOwnWidget = (config.output.type == "enttec_open")
+                                        && ftdiCanSeeAWidget();
+
             if (port.empty() && isRelic)
             {
                 device.offline = "no relic answered on any port";
             }
-            else if (port.empty() && needsWire)
+            else if (port.empty() && needsWire && !findsItsOwnWidget)
             {
                 device.offline = "no serial port found";
             }
-            else if (!port.empty())
+            else if (!port.empty() && announce)
             {
                 logLine(where + "auto-detected port " + port);
             }
@@ -2330,6 +2418,65 @@ int main(int argc, char** argv)
             }
         }
 
+        if (device.output)
+        {
+            device.output->setUniverseLength(config.fixtures.highestChannel());
+            if (!device.output->open(error))
+            {
+                device.output.reset();
+                device.offline = error;
+            }
+        }
+
+        if (!device.offline.empty())
+        {
+            return false;
+        }
+
+        // ---- do not outrun the wire --------------------------------------
+        // Asking for more frames than the link can carry does not make the rig
+        // faster. The driver queues the excess, the backlog grows without
+        // bound, and the widget ends up parsing half-written frames - which
+        // reads as a strobing, unblendable rig rather than as an error. Send at
+        // a rate the wire can deliver and every frame lands whole.
+        device.fps = config.output.fps;
+
+        const float outputCeiling = device.output->maxFrameRate();
+        if (outputCeiling > 0.0f && device.fps > outputCeiling)
+        {
+            if (announce)
+            {
+                std::ostringstream note;
+                note.setf(std::ios::fixed);
+                note.precision(1);
+                note << config.name << ": fps " << device.fps
+                     << " is more than " << device.output->describe()
+                     << " can carry; running at " << outputCeiling
+                     << ". Raise its baud for a faster refresh.";
+                logLine("warning: " + note.str());
+                emit("WARN " + note.str());
+            }
+
+            device.fps = outputCeiling;
+        }
+
+        return true;
+    };
+
+    // ---- bring every device up -------------------------------------------
+    show.devices.resize(show.config.devices.size());
+
+    for (size_t i = 0; i < show.config.devices.size(); ++i)
+    {
+        Device& config = show.config.devices[i];
+        DeviceRuntime& device = show.devices[i];
+
+        device.config = &config;
+        device.firstFixture = show.config.firstFixtureOf(i);
+        device.fixtureCount = config.fixtures.size();
+
+        const std::string where = "[" + config.name + "] ";
+
         // ---- send only the channels this device actually uses ------------
         // A receiver keeps whatever it already had for slots that do not
         // arrive, so there is nothing to gain from shipping 442 trailing zeros
@@ -2341,20 +2488,9 @@ int main(int argc, char** argv)
         // Sized whether or not there is a wire: an offline device still renders
         // into its buffer, which is what keeps it in the frame stream and on
         // the viewer's screen.
-        {
-            const int highest = config.fixtures.highestChannel();
-            device.universe.resize(highest);
-            if (device.output)
-            {
-                device.output->setUniverseLength(highest);
-            }
-        }
+        device.universe.resize(config.fixtures.highestChannel());
 
-        if (device.output && !device.output->open(error))
-        {
-            device.output.reset();
-            device.offline = error;
-        }
+        attachWire(device, /*announce=*/true);
 
         // One HSV node per fixture. This is the same framebuffer the
         // microcontroller build hands to the LEDs; here it feeds the patch.
@@ -2376,34 +2512,14 @@ int main(int argc, char** argv)
             // for a reply or gives up on a show that is running fine.
             logLine("error: " + where + device.offline + "; this device is offline");
             emit("OFFLINE " + config.name + ": " + device.offline);
+
+            // It will be asked again, by the frame loop. Not a promise that it
+            // comes back - only that nobody has to restart the show to find out.
+            device.reportedOffline = device.offline;
             continue;
         }
 
         logLine(where + "output: " + device.output->describe());
-
-        // ---- do not outrun the wire --------------------------------------
-        // Asking for more frames than the link can carry does not make the rig
-        // faster. The driver queues the excess, the backlog grows without
-        // bound, and the widget ends up parsing half-written frames - which
-        // reads as a strobing, unblendable rig rather than as an error. Send at
-        // a rate the wire can deliver and every frame lands whole.
-        device.fps = config.output.fps;
-
-        const float outputCeiling = device.output->maxFrameRate();
-        if (outputCeiling > 0.0f && device.fps > outputCeiling)
-        {
-            std::ostringstream note;
-            note.setf(std::ios::fixed);
-            note.precision(1);
-            note << config.name << ": fps " << device.fps
-                 << " is more than " << device.output->describe()
-                 << " can carry; running at " << outputCeiling
-                 << ". Raise its baud for a faster refresh.";
-            logLine("warning: " + note.str());
-            emit("WARN " + note.str());
-
-            device.fps = outputCeiling;
-        }
     }
 
     // ---- the beat --------------------------------------------------------
@@ -2598,6 +2714,48 @@ int main(int argc, char** argv)
         // different parts of the same picture rather than running it twice.
         const float master = show.blackout ? 0.0f : show.masterBrightness;
         const double frameSeconds = std::chrono::duration<double>(now.time_since_epoch()).count();
+
+        // ---- anything still without a wire -------------------------------
+        // Ask again, every kDeviceRetrySeconds. This is the widget that was not
+        // plugged in when the show started, the one that got knocked out of the
+        // USB port mid-set, and the device node that came back owned by a group
+        // this user is not in until somebody fixes it - all of which are a rig
+        // that should light when the problem goes away rather than one that
+        // sits dark because of how things were at startup.
+        for (DeviceRuntime& device : show.devices)
+        {
+            if (device.isLive())
+            {
+                continue;
+            }
+
+            if (device.nextRetryAt <= 0.0)
+            {
+                device.nextRetryAt = frameSeconds + kDeviceRetrySeconds;
+                continue;
+            }
+            if (frameSeconds < device.nextRetryAt)
+            {
+                continue;
+            }
+            device.nextRetryAt = frameSeconds + kDeviceRetrySeconds;
+
+            if (attachWire(device, /*announce=*/false))
+            {
+                logLine("[" + device.name() + "] output: " + device.output->describe());
+                emit("ONLINE " + device.name() + ": " + device.output->describe());
+                device.reportedOffline.clear();
+            }
+            else if (device.offline != device.reportedOffline)
+            {
+                // Only when the answer changes. A widget that is simply not
+                // there yet would otherwise print the same line all night, and
+                // a log that repeats itself is one nobody reads.
+                device.reportedOffline = device.offline;
+                logLine("[" + device.name() + "] still offline: " + device.offline);
+                emit("OFFLINE " + device.name() + ": " + device.offline);
+            }
+        }
 
         bool outputFailed = false;
         for (DeviceRuntime& device : show.devices)

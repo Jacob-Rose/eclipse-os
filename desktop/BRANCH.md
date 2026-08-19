@@ -194,7 +194,7 @@ desktop/
 | `edmx::GeneratorPattern` | runs any relic `GeneratorHSV` on a DMX rig |
 | `edmx::StateMachinePattern` | runs a whole `esm` machine, with its cross-fades |
 | `edmx::BeatClock` | where the beat is, and how fast |
-| `edmx::MidiInput` | tempo in, off winmm or an ALSA rawmidi device |
+| `edmx::MidiInput` | tempo in, off winmm, the ALSA sequencer, or a rawmidi device |
 | `edmx::Device` | one physical thing: geometry, addressing, its own output |
 | `edmx::Config` | an environment: the devices in a room, and the show on them |
 | `edmx::FixtureMap` | HSV → RGB → channels, gamma, dimmer, parked channels |
@@ -333,6 +333,79 @@ intervals. Both are the defaults; see the table in `include/edmx/midi_input.h`.
 
 This part is now **confirmed against a real Mixxx** over loopMIDI, which it was
 not when the note map was first written.
+
+### the DMX widget on Linux goes through libftdi
+
+Found by driving a real truss, and the reason the Linux DMX path had never
+actually lit anything: **no Linux API says when a frame has left the FTDI.**
+
+`tcdrain()` returns when the kernel has handed the bytes to USB, not when the
+chip has clocked them onto the wire, and 513 bytes at 250000 8N2 is 22.6ms of
+transmission. The next break therefore lands *inside* the previous frame, which
+a receiver reads as a packet starting mid-packet and throws away. Every frame is
+wrong, permanently, and nothing reports an error — the port opens, the measured
+line rate is 249400, the framing reads back 8N2, `TIOCSBRK` succeeds, frames go
+out at 40fps and the widget's LED blinks. The rig is dark apart from the rare
+frame that happens to align.
+
+So `EnttecOpenOutput` now computes the wait from the frame's own length
+(`bytes x 11 / 250000`) and spins it out before the break, and talks to the chip
+through **libftdi** rather than the tty — a guard delay alone was not enough on
+the serial path at any frame rate tried. libftdi is `dlopen`'d exactly as
+libasound is, so nothing new is required to build. See
+`include/edmx/ftdi_dmx.h`, and the measurement table in readme.md under
+[the widget that would not light].
+
+It also ends the permission problem: `/dev/ttyUSB0` is group `uucp` and udev
+recreates it on every replug, whereas `69-libftdi.rules` tags the USB node
+`uaccess` and the logged-in user gets an ACL for free.
+
+Verified on the truss: ten U'King par 36 lit from `eclipse-dmx` itself, then the
+whole `mythos26` show beat-driven at 128bpm.
+
+### the same thing on Linux, without a cable to install
+
+Mixxx on Linux is not on the other end of a device node, and that is the whole
+of the problem. Linux has two MIDI worlds: **rawmidi** device nodes, which is
+where a USB controller lives and what `MidiInput` used to read, and the **ALSA
+sequencer**, a patchbay where applications publish ports. Mixxx owns no
+hardware, so it has no device node — it is on the sequencer, and a rig that only
+reads `/dev/snd/midiC*` sees every controller in the room and not the one
+program playing the music. `--list-midi` on a Linux laptop with Mixxx running
+printed `OK 0 midi inputs`.
+
+The asymmetry that decides the design: Mixxx does not *publish* a port for
+something else to read, it goes looking for one to **write into**. So the port
+that has to exist is ours. `MidiInput::open` now publishes `eclipse-dmx IN` on
+the sequencer, and Mixxx is pointed straight at it — no loopMIDI equivalent to
+install, because on this platform the rig *is* the cable. It still subscribes to
+a named source when `midi.port` names one, and still opens a device node when
+given a path.
+
+Three things fall out of it:
+
+- **`auto` no longer has to refuse.** Its refusal exists because opening the
+  wrong input looks exactly like opening none. On the sequencer there is a third
+  option that cannot be wrong — publish and wait — so that is what it does, and
+  `auto` is now the right value for `midi.port` on both platforms.
+  `config/mythos26.json` says `auto` instead of `Mixxx` for exactly that reason.
+- **A lone application is never taken as "the only port there is".** That rule
+  is sound for device nodes and nonsense on a sequencer, where every running
+  program is a port and "the only one" is an accident of what is open.
+- **libasound is `dlopen`d, not linked.** Reaching the sequencer needs it;
+  linking it would mean this refuses to build without the dev package and
+  refuses to start without the runtime, on machines whose job is pushing DMX.
+  Loaded by hand, a machine without it builds, runs, and falls back to device
+  nodes. That is `src/alsa_seq.cpp`, and it costs one table of function
+  pointers. Sequencer events are decoded back into MIDI bytes rather than read
+  as structs, so the note handling downstream is the same code on every
+  platform and `--midi-selftest` still covers the path Linux runs on.
+
+Verified end to end on this machine: `eclipse-dmx IN` published and visible to
+`aplaymidi -l`, a synthesised MIDI-for-light stream played into it, 16 beats
+counted and 120bpm read off note 52. Both directions of `aconnect`, subscription
+by name and by `client:port` address, and close/reopen without hanging the
+reader thread.
 
 `config/mythos26.json` is the show with all of that named
 outright, and `readme.md` has the loopMIDI/Mixxx setup. `config/mythos26.json`

@@ -174,10 +174,30 @@ namespace edmx
         void setUniverseLength(int channels) override;
 
     private:
+        /// Shapes a frame by hand and hands it to whichever transport is open.
+        bool sendVia(std::string& outError);
+
         std::string port;
         int universeLength{DMX_CHANNEL_COUNT};
-        SerialPort serial;
         std::vector<uint8_t> packet;
+
+        /// The fallback, and on Windows the only one.
+        SerialPort serial;
+
+#if !defined(_WIN32)
+        /// libftdi's context, when we got one. See edmx/ftdi_dmx.h for why this
+        /// is preferred over the serial port rather than the other way around:
+        /// the tty layer cannot say when a frame has left the chip, so the
+        /// break lands inside the previous frame and the rig stays dark while
+        /// every diagnostic reports success.
+        void* ftdi{nullptr};
+
+        /// When the last frame was handed over, and how long it needs to clock
+        /// out. The next break must not be asserted before then — that is the
+        /// entire bug this class was rewritten for.
+        double lastWriteAt{0.0};
+        double frameSeconds{0.0};
+#endif
     };
 
 

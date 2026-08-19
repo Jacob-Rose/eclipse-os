@@ -10,6 +10,35 @@
 #include <cstdio>
 #include <thread>
 
+#include "edmx/beat_clock.h"   // nowSeconds
+
+#if !defined(_WIN32)
+#  include "edmx/ftdi_dmx.h"
+#endif
+
+namespace
+{
+    /// A busy wait, for the sub-millisecond holds a DMX frame is made of.
+    ///
+    /// Sleeping is not an option at this scale: the shortest sleep any general
+    /// purpose scheduler will honour is longer than the break we are trying to
+    /// time, and coming back late means coming back mid-frame.
+    void spinMicroseconds(int microseconds)
+    {
+        if (microseconds <= 0)
+        {
+            return;
+        }
+
+        const auto target = std::chrono::steady_clock::now()
+                          + std::chrono::microseconds(microseconds);
+        while (std::chrono::steady_clock::now() < target)
+        {
+            // nothing: the wait *is* the work
+        }
+    }
+}
+
 using namespace edmx;
 
 namespace
@@ -136,24 +165,98 @@ void EnttecOpenOutput::setUniverseLength(int channels)
 
 bool EnttecOpenOutput::open(std::string& outError)
 {
+    // How long this frame occupies the wire, which is what the break must wait
+    // for. 11 bits a byte at 250000: start bit, eight data, two stop.
+    frameSeconds = (static_cast<double>(packet.size()) * 11.0) / 250000.0;
+
+#if !defined(_WIN32)
+    // libftdi first. Not a preference - the tty path does not work on these
+    // widgets, for the reason set out at length in edmx/ftdi_dmx.h.
+    if (const FtdiApi* api = FtdiApi::get())
+    {
+        void* context = api->newContext();
+        if (context != nullptr)
+        {
+            // By serial number when we can work one out, so two widgets on one
+            // machine stay distinguishable; otherwise the first FTDI attached.
+            const std::string serialNumber = ftdi::serialForTtyPath(port);
+            const int opened = serialNumber.empty()
+                ? api->usbOpen(context, ftdi::kVendorFtdi, ftdi::kProductFt232)
+                : api->usbOpenDesc(context, ftdi::kVendorFtdi, ftdi::kProductFt232,
+                                   nullptr, serialNumber.c_str());
+
+            if (opened == 0)
+            {
+                // The order QLC+ uses, which is the order that works: reset,
+                // framing, rate, no flow control, RTS down, buffers empty.
+                api->usbReset(context);
+                api->setLineProperty(context, ftdi::kBits8, ftdi::kStopBits2, ftdi::kParityNone);
+                api->setBaudRate(context, 250000);
+                api->setFlowControl(context, ftdi::kNoFlowControl);
+                api->setRts(context, 0);
+                if (api->purgeBuffers != nullptr)
+                {
+                    api->purgeBuffers(context);
+                }
+
+                ftdi = context;
+                lastWriteAt = 0.0;
+                return true;
+            }
+
+            outError = std::string("libftdi could not open the widget: ") + api->errorString(context);
+            api->freeContext(context);
+
+            // Fall through to the serial port. It is very unlikely to drive
+            // the rig, but "no output at all" is not an improvement on it, and
+            // the error above is kept if that fails too.
+        }
+    }
+#endif
+
     // The Open widget has no protocol layer: we drive the line at DMX's own
     // 250k 8N2 and shape the frame by hand.
-    return serial.open(port, 250000, outError, 2);
+    std::string serialError;
+    if (serial.open(port, 250000, serialError, 2))
+    {
+        outError.clear();
+        return true;
+    }
+
+    outError = outError.empty() ? serialError : (outError + "; and " + serialError);
+    return false;
 }
 
 void EnttecOpenOutput::close()
 {
+#if !defined(_WIN32)
+    if (ftdi != nullptr)
+    {
+        if (const FtdiApi* api = FtdiApi::get())
+        {
+            api->usbClose(ftdi);
+            api->freeContext(ftdi);
+        }
+        ftdi = nullptr;
+    }
+#endif
     serial.close();
 }
 
 bool EnttecOpenOutput::isOpen() const
 {
+#if !defined(_WIN32)
+    if (ftdi != nullptr)
+    {
+        return true;
+    }
+#endif
     return serial.isOpen();
 }
 
 bool EnttecOpenOutput::sendFrame(const DmxUniverse& universe, std::string& outError)
 {
-    if (!serial.isOpen())
+    if (!isOpen())
     {
         outError = "enttec open output is not open";
         return false;
@@ -165,6 +268,69 @@ bool EnttecOpenOutput::sendFrame(const DmxUniverse& universe, std::string& outEr
     // scheduler off for the whole of it rather than just the break.
     TimeCriticalSection timeCritical;
 
+    std::copy(universe.data(), universe.data() + universeLength, packet.begin() + 1);
+    return sendVia(outError);
+}
+
+bool EnttecOpenOutput::sendVia(std::string& outError)
+{
+#if !defined(_WIN32)
+    if (ftdi != nullptr)
+    {
+        const FtdiApi* api = FtdiApi::get();
+
+        // ---- wait for the last frame to actually be on the wire -----------
+        //
+        // The bug this whole class exists in its current shape for. Handing
+        // bytes to USB is not the same as clocking them out of the chip: a
+        // 513-byte frame is 22.6ms of transmission and the write call returns
+        // in a fraction of that. Assert the break before it finishes and it
+        // lands *inside* the previous frame, which every receiver discards -
+        // so the rig is dark while the port, the baud, the framing and the
+        // break all check out. Measured on a real truss: without this wait,
+        // nothing lights; with it, everything does.
+        if (lastWriteAt > 0.0)
+        {
+            const double readyAt = lastWriteAt + frameSeconds;
+            while (nowSeconds() < readyAt)
+            {
+                // Busy, deliberately. The whole wait is a couple of
+                // milliseconds and sleeping through it hands the scheduler an
+                // invitation to come back late, mid-frame, which is the thing
+                // being avoided.
+            }
+        }
+
+        // DMX512: >=92us break, >=12us mark-after-break. These are the numbers
+        // QLC+ uses and they are known good against this hardware.
+        if (api->setLineProperty2(ftdi, ftdi::kBits8, ftdi::kStopBits2,
+                                  ftdi::kParityNone, ftdi::kBreakOn) < 0)
+        {
+            outError = std::string("ftdi break on: ") + api->errorString(ftdi);
+            return false;
+        }
+        spinMicroseconds(110);
+
+        if (api->setLineProperty2(ftdi, ftdi::kBits8, ftdi::kStopBits2,
+                                  ftdi::kParityNone, ftdi::kBreakOff) < 0)
+        {
+            outError = std::string("ftdi break off: ") + api->errorString(ftdi);
+            return false;
+        }
+        spinMicroseconds(16);
+
+        const int written = api->writeData(ftdi, packet.data(), static_cast<int>(packet.size()));
+        if (written < 0)
+        {
+            outError = std::string("ftdi write: ") + api->errorString(ftdi);
+            return false;
+        }
+
+        lastWriteAt = nowSeconds();
+        return true;
+    }
+#endif
+
     // DMX512 frame: >=92us break, >=12us mark-after-break, then start code and
     // channel data. We ask for comfortably more than the minimum because host
     // scheduling jitter cuts the other way far more often than it pads.
@@ -172,14 +338,27 @@ bool EnttecOpenOutput::sendFrame(const DmxUniverse& universe, std::string& outEr
     {
         return false;
     }
-
-    std::copy(universe.data(), universe.data() + universeLength, packet.begin() + 1);
     return serial.write(packet.data(), packet.size(), outError);
 }
 
 std::string EnttecOpenOutput::describe() const
 {
-    return "enttec_open on " + port + " @ 250000 baud (host-timed), "
+    // Name the transport, because which one is in use is the difference
+    // between a rig that lights and a rig that does not, and it is not
+    // something an operator should have to infer.
+    std::string where = port;
+#if !defined(_WIN32)
+    if (ftdi != nullptr)
+    {
+        where = port.empty() ? "usb (libftdi)" : (port + " via usb (libftdi)");
+    }
+#endif
+    if (where.empty())
+    {
+        where = "-";
+    }
+
+    return "enttec_open on " + where + " @ 250000 baud (host-timed), "
          + std::to_string(universeLength) + " channels";
 }
 
@@ -542,7 +721,14 @@ std::unique_ptr<DmxOutput> edmx::makeDmxOutput(const std::string& type,
     }
     if (type == "enttec_open")
     {
-        if (port.empty())
+        // An empty port is fine when libftdi is available: the widget is found
+        // on the USB bus rather than by device node, and while libftdi holds
+        // the chip there is no device node to find. See edmx/ftdi_dmx.h.
+        bool byUsb = false;
+#if !defined(_WIN32)
+        byUsb = (FtdiApi::get() != nullptr);
+#endif
+        if (port.empty() && !byUsb)
         {
             outError = "no serial port for enttec_open (set device.port, or plug the widget in for \"auto\")";
             return nullptr;

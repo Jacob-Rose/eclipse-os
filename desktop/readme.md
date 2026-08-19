@@ -786,6 +786,11 @@ eclipse-dmx --config config/mythos26.json --dry-run --bpm 128 --frames 80
 
 `config/mythos26.json` is this, configured. Three steps.
 
+On **Linux the order matters**: start eclipse-dmx first, then Mixxx, and the
+port to pick in step 1 is `eclipse-dmx IN`. The rig publishes it. See
+[from Mixxx, on Linux](#from-mixxx-on-linux) below, which is a shorter story
+than this one.
+
 **1. Load the mapping.** Mixxx → **Preferences → Controllers** → click its MIDI
 output → set *Load Mapping* to **MIDI for light** → **Apply**. The port must
 show as enabled; the mapping is output-only, so nothing will appear to happen
@@ -802,17 +807,20 @@ setting, default 1.
 
 ```sh
 eclipse-dmx --list-midi                     # confirm Mixxx's port is visible
-eclipse-dmx --config config/mythos26.json
+eclipse-dmx --config config/mythos26.json   # on Linux, this one goes first
 ```
 
-The config names `"Mixxx"` and reads it directly. `--list-midi` on this machine
-shows:
+The config says `"auto"`, which on Windows prefers a port named for DJ software
+or a virtual cable. `--list-midi` on the show laptop shows:
 
 ```
 MIDI 0  Traktor Kontrol S2 MK3      the controller, on midi.ignore
 MIDI 1  eclipse-os OUT              a spare cable, nothing sends on it
 MIDI 2  Mixxx OUT                   this
 ```
+
+Name whichever of those you mean in `midi.port` if `auto` picks wrong — naming
+one always wins.
 
 **If Mixxx's own port is not in that list**, it needs a virtual cable in the
 middle, and then you name *that* in `midi.port` instead. On Windows that is
@@ -823,6 +831,98 @@ macOS has one built in: Audio MIDI Setup → Window → Show MIDI Studio → IAC
 Driver → tick *Device is online*.
 
 [loopmidi]: https://www.tobias-erichsen.de/software/loopmidi.html
+
+##### from Mixxx, on Linux
+
+There is no virtual cable to install here, because **this rig is one**.
+
+Mixxx on Linux does not publish a MIDI port for something else to read. It goes
+looking for one to write into — so the port that has to exist is *ours*, and
+eclipse-dmx publishes it on the ALSA sequencer the moment MIDI is enabled:
+
+```
+$ ./build/eclipse-dmx --config config/mythos26.json
+MIDI-OPEN eclipse-dmx IN (128:0), listening
+```
+
+```
+$ aplaymidi -l
+ Port    Client name                      Port name
+ 14:0    Midi Through                     Midi Through Port-0
+128:0    eclipse-dmx                      eclipse-dmx IN
+```
+
+Which means the whole setup is:
+
+1. **Start eclipse-dmx.** Before Mixxx, always. Mixxx looks for MIDI devices
+   once, at startup, and a port that appears afterwards is a port it will not
+   offer you until it is restarted. This is the same rule as loopMIDI on
+   Windows and it is the same one people trip over.
+2. **Mixxx → Preferences → Controllers → `eclipse-dmx IN`.** Load *MIDI for
+   light* against it, set the Settings tab as above, Apply.
+3. **Play something**, and type `midi status` at the running show:
+
+```
+MIDI-STATUS port="eclipse-dmx IN (128:0), listening" ... ticks=0 beats=16
+            bpm=120.0 src=midi_note
+```
+
+`beats` climbing is the confirmation, and `src=midi_note` says it is the
+mapping's note 50 doing it rather than an interval we guessed. `port=` naming
+*us* rather than a source is not a fault on this platform — it is the normal
+state, and it stays that way after Mixxx connects.
+
+###### rewiring it without restarting anything
+
+The sequencer is a patchbay, so a connection is a thing you can make from
+outside either program:
+
+```sh
+aconnect -l                       # every client and what is wired to what
+aconnect "Mixxx" "eclipse-dmx"    # wire one to the other, live
+aconnect -d "Mixxx" "eclipse-dmx" # and unwire it
+```
+
+This is the fix when Mixxx was started first and cannot see us: it will have
+opened *some* output already, and `aconnect` can move it without a restart.
+
+###### going the other way, to a port that is already there
+
+`midi.port` can still name a source, and on the sequencer it may be a name, a
+fragment of one, or the `client:port` address `aconnect` prints:
+
+```json
+"port": "128:0"
+```
+
+We subscribe to it, and our own port stays published alongside — so both routes
+work at once and neither has to be torn down for the other. `"listen"` is the
+explicit form of publish-and-wait, for a config that should never reach out.
+
+```
+$ ./build/eclipse-dmx --list-midi
+MIDI 0	Midi Through Port-0	14:0
+OK 1 midi inputs
+```
+
+The third column is the sequencer address. **Only ports that can actually be
+subscribed to are listed** — the PipeWire bridge's inputs look like MIDI ports
+and are not sources, so they are left out rather than offered as something to
+try and fail at in the dark.
+
+A device node is still a device node: `midi.port` starting with `/` opens it as
+raw MIDI, sequencer or no. That is also the one thing `--list-midi` stops
+showing once the sequencer answers, since every device is on both and listing
+each twice helps nobody.
+
+###### what this needs installed
+
+`libasound.so.2`, which is on any machine that has ever played a sound. It is
+**not linked** — the binary loads it by hand and shrugs if it is missing, in
+which case Linux behaves as it did before: rawmidi device nodes only, and no
+Mixxx. So `./build.sh` needs no ALSA dev package and the executable starts on a
+machine with no sound stack at all. The rest of that argument is in
+`src/alsa_seq.cpp`.
 
 ##### what it sends
 
@@ -905,6 +1005,12 @@ An explicitly named port always wins over `ignore` — naming it means you meant
 it. `auto` also ignores hardware brand names in its own preference list, for the
 same reason.
 
+On Linux the same problem mostly solves itself, because `listen` is not a
+stream we went and opened — it is a port other things connect *to*. A controller
+sitting there sending pad hits is not connected to it and never will be unless
+somebody wires it up on purpose. `ignore` still applies to what `auto` would
+subscribe to.
+
 ##### the full block
 
 ```json
@@ -926,10 +1032,22 @@ same reason.
 ```
 
 Naming a `port` counts as enabling MIDI, so `"midi": {"port": "loopMIDI"}` on
-its own works. `"auto"` prefers a port whose name looks like DJ software or a
-virtual cable and otherwise takes the only port there is; it will not guess
-between several unrecognised devices, because opening the wrong input looks
-exactly like opening none.
+its own works. What `port` takes:
+
+| value | what it does |
+| --- | --- |
+| `"auto"` | prefers a name that looks like DJ software or a virtual cable; otherwise the only *device* there is |
+| `"Mixxx"` | a full port name, or any case-insensitive fragment of one |
+| `"2"` | the index `--list-midi` printed |
+| `"128:0"` | an ALSA sequencer address, as `aconnect` prints it (Linux) |
+| `"/dev/snd/midiC1D0"` | a device node, opened as raw MIDI (Linux) |
+| `"listen"` | publish `eclipse-dmx IN` and wait to be connected to (Linux) |
+
+`"auto"` will not guess between several unrecognised devices, because opening
+the wrong input looks exactly like opening none — and on the ALSA sequencer it
+will not take a lone application for a tempo source either, because there every
+running program is a port. What it does instead is `"listen"`, which is the one
+fallback that cannot be wrong.
 
 #### from anything else
 
@@ -1116,15 +1234,36 @@ PRO Mk2 works on port 1.
 
 **Enttec Open DMX USB** (`"type": "enttec_open"`) covers the bare FTDI cables,
 which is most of what "USB to DMX" means when it is cheap. There is no firmware:
-the host generates the DMX break and clocks the frame out itself. On Linux it
-needs the FTDI VCP driver and 250000 baud, which is available there but not on
-macOS.
+the host generates the DMX break and clocks the frame out itself.
+
+On **Linux this goes through libftdi rather than the serial port**, and that is
+not a preference — the tty path does not work on these widgets. See
+[the widget that would not light](#the-widget-that-would-not-light) below, which
+is worth reading before debugging one, and `include/edmx/ftdi_dmx.h` for the
+mechanism. It is `dlopen`'d, so a machine without libftdi still builds and runs
+and falls back to the serial port.
+
+A happy side effect: **there is no permissions problem on this path.**
+`/dev/ttyUSB0` belongs to group `uucp` or `dialout`, which your user is usually
+not in, and udev recreates the node on every replug so any `chown` is undone.
+libftdi talks to the USB device node instead, which `69-libftdi.rules` already
+tags `uaccess` — the logged-in user gets an ACL automatically, on every replug,
+with no group and no sudo. If you are on the serial fallback and hit
+`Permission denied`, eclipse-dmx now prints the group, whether you are in it,
+and the exact command.
 
 Three things make or break this path, all learned the hard way:
 
-- **Flush before the break.** The break must not be asserted while the previous
-  frame is still draining, or that frame is truncated and the break lands where
-  no receiver expects it. `FlushFileBuffers` on Windows, `tcdrain` on posix.
+- **Wait for the frame to be *on the wire* before the break.** Not "flush" —
+  wait. The break must not be asserted while the previous frame is still going
+  out, or that frame is truncated and the break lands where no receiver expects
+  it. `FlushFileBuffers` does this on Windows. **On Linux nothing does**:
+  `tcdrain()` returns when the kernel has handed the bytes to USB, and
+  `ftdi_write_data()` when USB has accepted them, while the chip still has
+  22.6ms of a 513-byte frame left to clock out at 250000. So the wait is
+  computed from the frame's own length and enforced by hand — that is
+  `EnttecOpenOutput::sendVia`, and it is the difference between a dark rig and
+  a lit one.
 - **Do not `sleep` for the break.** It is 92us, and a Windows sleep rounds up to
   the scheduler tick — 1ms at best, often 15. The problem is not that this is
   long but that it *varies*, and a receiver that cannot find a consistent break
@@ -1162,6 +1301,50 @@ than one steady colour means the frames are not arriving intact.
 If QLC+ is installed, its Inputs/Outputs panel names the device it found, and
 its `Fixtures/` folder holds `.qxf` definitions that are a far better source for
 a channel map than most listings online.
+
+### the widget that would not light
+
+Worth writing down, because everything about the failure said the software was
+fine and it was not.
+
+An Open DMX widget on Linux, through the serial port: the port opens, the
+measured line rate is **249400** against DMX's 250000, the framing reads back as
+8N2, `TIOCSBRK` returns success in 0.128ms, `--list-ports` finds the device,
+frames go out at a steady 40fps, and the widget's own activity LED blinks. Every
+diagnostic available says it is working. The fixtures stay dark, except for a
+single flash every few minutes.
+
+The cause is that **no Linux API tells you when a frame has left the chip.**
+`tcdrain()` returns once the kernel has handed the bytes to USB. A 513-byte
+frame is 22.6ms of actual transmission at 250000. Assert the next break before
+that finishes — which any reasonable-looking frame rate does — and the break
+lands *inside* the previous frame. A receiver reads that as a packet starting
+mid-packet and discards it. Every frame is quietly wrong, forever, and the one
+that occasionally aligns is the flash.
+
+Two things follow, and both are now in the code:
+
+- The wait is **computed, not asked for**: `bytes x 11 / 250000` seconds from
+  the moment of the write, spun out rather than slept, before the next break.
+- It goes through **libftdi**, not the tty. A guard delay alone was not enough
+  on the serial path at any frame rate tried — 5ms, 20ms, 45ms periods, all
+  dark — while libftdi with the same guard lights the rig.
+
+The measurements that got there, in case another widget ever does this:
+
+| transport | frame | pacing | result |
+| --- | --- | --- | --- |
+| kernel tty | 71B @ 24fps | — | dark |
+| kernel tty | 513B @ 40fps | none | dark |
+| kernel tty | 513B @ 22fps | 20ms after `tcdrain` | dark |
+| libftdi | 513B @ 43fps | none | dark |
+| libftdi | 513B @ 30fps | full frame time | **lights** |
+
+The tool that settles "is it even reaching the fixture" is a raw blast of every
+channel — but **not at 255**. A 7-channel par has strobe and function channels,
+and 255 on those means "strobe" and "ignore DMX and run your own program", so
+an all-255 test can look exactly like a dead wire. Send a dimmer and one colour
+at full with the rest at zero.
 
 **console** (`"type": "console"`, or `--dry-run`) prints frames instead of
 sending them.

@@ -196,6 +196,22 @@ if(WIN32)
     target_link_libraries(edmx PUBLIC advapi32)
     # midiIn* for tempo in. winmm is part of Windows; nothing to install.
     target_link_libraries(edmx PUBLIC winmm)
+else()
+    # The ALSA sequencer, which is where DJ software on Linux publishes its
+    # MIDI - Mixxx owns no hardware, so it has no device node to read.
+    #
+    # Note what is *not* here: -lasound. Reaching the sequencer needs libasound,
+    # but linking it would mean this binary refuses to build without the dev
+    # package and refuses to start without the runtime, on machines whose only
+    # job is pushing DMX. It is dlopen'd instead, so a machine without it still
+    # builds, still runs, and still reads a device node. Hence dl and not asound.
+    # And libftdi, for the DMX widget, dlopen'd for the same reasons and with
+    # the same fallback. See include/edmx/ftdi_dmx.h: the kernel tty layer
+    # cannot say when a frame has left the chip, so the break lands inside the
+    # previous frame and an Open DMX rig stays dark while every diagnostic
+    # reports success. Driving the chip directly is what QLC+ and OLA do.
+    target_sources(edmx PRIVATE src/alsa_seq.cpp src/ftdi_dmx.cpp)
+    target_link_libraries(edmx PUBLIC ${CMAKE_DL_LIBS})
 endif()
 
 if(MINGW)

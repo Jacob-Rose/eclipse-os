@@ -54,18 +54,51 @@
 /// downbeat where you say it is. A beat *note* has no such problem — it is the
 /// downbeat.
 ///
-/// Windows uses winmm, which hands over messages already framed. Linux reads
-/// the raw byte stream from an ALSA rawmidi device, which does not, so there is
-/// a small parser here for running status and interleaved realtime bytes.
+/// ### the three ways in
+///
+/// Windows uses winmm, which hands over messages already framed.
+///
+/// Linux has two, because Linux has two MIDI worlds. **ALSA rawmidi** is a
+/// device node — `/dev/snd/midiC1D0` — and reading it gives the raw byte
+/// stream, which is why there is a small parser here for running status and
+/// interleaved realtime bytes. **The ALSA sequencer** is the patchbay where
+/// *applications* publish ports, and it is where Mixxx lives: it owns no
+/// hardware, so it has no device node to read. Software talks to software
+/// there, or not at all.
+///
+/// So on Linux this publishes a sequencer port of its own — `eclipse-dmx IN` —
+/// and Mixxx is pointed straight at it. There is no virtual cable to install,
+/// because on this platform *we are the cable*. See edmx/alsa_seq.h for how
+/// libasound gets loaded without becoming a build dependency, and the readme
+/// for the two-minute version of the setup.
 ///
 
 namespace edmx
 {
+    /// Which world a port belongs to. They are opened in completely different
+    /// ways, so a resolved port has to carry its own.
+    enum class MidiBackend
+    {
+        /// winmm on Windows; an ALSA rawmidi device node on Linux.
+        Native,
+        /// An ALSA sequencer port, addressed as client:port and *subscribed*
+        /// to rather than opened.
+        AlsaSeq,
+    };
 
     struct MidiPortInfo
     {
         int index{0};     ///< what to pass to open(), as a string
         std::string name; ///< the device name the OS reports
+        MidiBackend backend{MidiBackend::Native};
+
+        /// AlsaSeq only: the address to subscribe from, as `client:port`. Also
+        /// accepted verbatim in `midi.port`, for when two ports share a name.
+        int client{-1};
+        int port{-1};
+
+        /// `"24:0"`, or empty for anything not on the sequencer.
+        std::string address() const;
     };
 
     /// One channel message, as the monitor reports it.
@@ -95,12 +128,19 @@ namespace edmx
         static bool isIgnored(const std::string& name, const std::vector<std::string>& ignore);
 
         /// Resolves a port spec to a device. `spec` is an index ("0"), a full
-        /// name, a case-insensitive fragment of one ("mixxx"), or "auto".
+        /// name, a case-insensitive fragment of one ("mixxx"), a sequencer
+        /// address ("128:0", Linux), or "auto".
         ///
         /// "auto" prefers a port whose name looks like DJ software or a virtual
-        /// cable, and otherwise takes the only port there is. It deliberately
-        /// refuses to guess between several unrecognised devices: opening the
-        /// wrong one gives a rig that ignores the music for no visible reason.
+        /// cable, and otherwise takes the only *device* there is. It
+        /// deliberately refuses to guess between several unrecognised ones:
+        /// opening the wrong input gives a rig that ignores the music for no
+        /// visible reason.
+        ///
+        /// Sequencer ports are never taken as "the only one", because there
+        /// every application on the machine is a port and the only one is an
+        /// accident of what is running. Nor does the refusal end things there —
+        /// see `open()`, which listens instead.
         ///
         /// `ignore` holds name fragments "auto" must never choose. This is for
         /// the DJ controller sitting on the same machine: it is a MIDI input,
@@ -113,11 +153,29 @@ namespace edmx
 
         /// Opens a port and starts feeding `clock`. Safe to call on an already
         /// open input; the previous port is closed first.
+        ///
+        /// On Linux, anything that resolves to the sequencer publishes
+        /// `eclipse-dmx IN` first and then subscribes it to the source. Two
+        /// consequences worth knowing:
+        ///
+        ///   - `spec` of **"listen"** publishes the port and connects it to
+        ///     nothing. Mixxx does the connecting, by picking `eclipse-dmx IN`
+        ///     as its controller output.
+        ///   - **"auto"** falls back to that rather than failing. A port
+        ///     nobody is sending to is harmless; guessing at a source and
+        ///     opening the wrong one is not, which is the whole reason "auto"
+        ///     refuses to guess elsewhere.
+        ///
+        /// Naming a source still connects to it, and a rawmidi device node
+        /// ("/dev/snd/midiC1D0") is always opened as one, sequencer or no.
         bool open(const std::string& spec, const std::vector<std::string>& ignore,
                   BeatClock* clock, std::string& outError);
         void close();
 
         bool isOpen() const { return opened.load(); }
+
+        /// The source, for status output — or a note that we are published and
+        /// waiting, when nothing is connected yet.
         const std::string& getPortName() const { return portName; }
 
         /// Where beats go. open() sets this; the self-test sets it directly so
@@ -186,6 +244,20 @@ namespace edmx
     private:
         void onBeat(double when, bool fromNote);
 
+#if !defined(_WIN32)
+        /// A device node, read as a byte stream.
+        bool openRawMidi(const MidiPortInfo& port, BeatClock* clock, std::string& outError);
+
+        /// Publishes `eclipse-dmx IN` on the sequencer, and subscribes it to
+        /// `source` when there is one. Null means publish and wait.
+        bool openAlsaSeq(const MidiPortInfo* source, BeatClock* clock,
+                         std::string& outError);
+
+        /// The sequencer's reader thread: poll, decode back to bytes, feed
+        /// handleBytes().
+        void readAlsaSeq();
+#endif
+
         BeatClock* clock{nullptr};
         AudioLevel* audioLevel{nullptr};
         std::string portName;
@@ -253,7 +325,23 @@ namespace edmx
         /// HMIDIIN, kept as void* so windows.h stays out of this header.
         void* handle{nullptr};
 #else
+        /// The rawmidi device node, when that is what we are on.
         int fd{-1};
+
+        // -- the ALSA sequencer, when that is what we are on ------------------
+        //
+        // snd_seq_t and snd_midi_event_t, both opaque in alsa's headers too.
+        void* seq{nullptr};
+        void* seqParser{nullptr};
+        int seqPort{-1};
+
+        /// Read end, write end. The reader parks in poll() until a message
+        /// arrives, and close() has to be able to get it back — a byte down
+        /// this pipe is what does it. Closing the descriptor works for a
+        /// rawmidi read; a sequencer handle has several descriptors and closing
+        /// them under alsa is not something it expects.
+        int wake[2]{-1, -1};
+
         std::thread reader;
         std::atomic<bool> running{false};
 #endif

@@ -31,7 +31,9 @@
   // Setup, once:
   //
   //   1. Mixxx: Preferences > Controllers > pick its MIDI output, load the
-  //      "MIDI for light" mapping, Apply.
+  //      "MIDI for light" mapping, Apply. On Linux the output to pick is
+  //      "eclipse-dmx IN", which is this program - start it first, because
+  //      Mixxx only looks for MIDI devices once, at startup.
   //   2. In that mapping's Settings tab, leave "Enable VU mono average" on -
   //      that is note 68, the two-second average, and it is what vu_pulse's red
   //      backdrop reads. Tick "Enable VU mono current" too if you want note 64
@@ -69,13 +71,26 @@
   "midi": {
     "enabled": true,
 
-    // Mixxx's own output, by name, matched case-insensitively on a fragment.
+    // Where the beat comes in, and the one line in this block that is not the
+    // same on every machine.
     //
-    // Straight off Mixxx rather than through a loopMIDI cable: one less hop and
-    // one less thing to be wrong about at load-in. `--list-midi` prints what
-    // this machine can see; if Mixxx on your show laptop is writing to a plain
-    // "loopMIDI Port" instead, name that here.
-    "port": "Mixxx",
+    // "auto" is here rather than a name because the answer differs by platform
+    // and this is one config for one show:
+    //
+    //   Windows   a port whose name looks like DJ software or a virtual cable -
+    //             "Mixxx" straight off Mixxx if it publishes one, else the
+    //             loopMIDI port sitting between them. Name it here instead if
+    //             yours is called something else; `--list-midi` prints what
+    //             this machine can see.
+    //   Linux     nothing to find, because Mixxx does not publish a port on the
+    //             ALSA sequencer - it *connects* to one. So this publishes
+    //             "eclipse-dmx IN" and waits, and Mixxx is pointed at it. See
+    //             "from Mixxx, on Linux" in readme.md.
+    //
+    // What "auto" will not do on either is guess between unrecognised ports, or
+    // take a lone application on the sequencer for a tempo source. A controller
+    // is a MIDI input too, and every pad on it sends notes.
+    "port": "auto",
 
     // Never open these, whatever "port" resolution would otherwise do.
     //

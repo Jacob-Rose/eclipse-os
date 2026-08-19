@@ -16,10 +16,14 @@
     #include <dirent.h>
     #include <errno.h>
     #include <fcntl.h>
+    #include <grp.h>
+    #include <pwd.h>
     #include <string.h>
     #include <sys/ioctl.h>
+    #include <sys/stat.h>
     #include <termios.h>
     #include <unistd.h>
+    #include <vector>
 #endif
 
 using namespace edmx;
@@ -372,8 +376,68 @@ std::vector<SerialPortInfo> SerialPort::enumeratePorts()
 
 namespace
 {
-    /// Maps a baud rate to its termios constant. DMX's native 250000 only
-    /// exists on Linux; elsewhere the caller has to fall back.
+    /// Turns "Permission denied" into the thing you actually have to do.
+    ///
+    /// This is the single most common way a Linux rig fails to light, it has
+    /// nothing to do with the widget or the cable, and `errno 13` on its own
+    /// sends people looking at both. The node is almost always owned by a group
+    /// - `uucp` or `dialout` depending on the distro - that the user is simply
+    /// not in, so say which group, say whether they are in it, and say the
+    /// command.
+    ///
+    /// Worth the lookup at the exact moment a show has just failed to come up:
+    /// nobody debugging this at a venue should have to know what udev did.
+    std::string describeAccessDenial(const std::string& path)
+    {
+        struct stat node;
+        if (::stat(path.c_str(), &node) != 0)
+        {
+            return std::string();
+        }
+
+        std::string owner = std::to_string(node.st_gid);
+        if (const group* entry = ::getgrgid(node.st_gid))
+        {
+            owner = entry->gr_name;
+        }
+
+        // Do we hold that group already? If so the problem is something else -
+        // a stale login whose groups predate the usermod is the usual answer,
+        // and "log out and back in" is a different instruction from "run this".
+        bool member = false;
+        const int count = ::getgroups(0, nullptr);
+        if (count > 0)
+        {
+            std::vector<gid_t> held(static_cast<size_t>(count));
+            if (::getgroups(count, held.data()) == count)
+            {
+                member = std::find(held.begin(), held.end(), node.st_gid) != held.end();
+            }
+        }
+
+        if (member)
+        {
+            return ". This user is already in group '" + owner + "', so the shell running"
+                   " eclipse-dmx has a login older than that change - log out and back in";
+        }
+
+        std::string user = "$USER";
+        if (const passwd* who = ::getpwuid(::getuid()))
+        {
+            user = who->pw_name;
+        }
+
+        return ". " + path + " belongs to group '" + owner + "' and " + user + " is not in it."
+               " Permanently: sudo usermod -aG " + owner + " " + user + ", then log out and back"
+               " in. Right now, until the widget is unplugged: sudo chown " + user + " " + path;
+    }
+
+    /// Maps a baud rate to its termios constant.
+    ///
+    /// **DMX's 250000 is not in here**, on any platform, and that is not an
+    /// oversight: the table goes 230400 then jumps straight to 460800, so the
+    /// one rate this program most needs is the one with no constant to name it
+    /// by. See setCustomBaud() for how it actually gets set.
     bool baudToSpeed(int baud, speed_t& outSpeed)
     {
         switch (baud)
@@ -384,9 +448,6 @@ namespace
             case 57600:  outSpeed = B57600;  return true;
             case 115200: outSpeed = B115200; return true;
             case 230400: outSpeed = B230400; return true;
-#ifdef B250000
-            case 250000: outSpeed = B250000; return true;
-#endif
 #ifdef B460800
             case 460800: outSpeed = B460800; return true;
 #endif
@@ -396,6 +457,102 @@ namespace
             default: return false;
         }
     }
+
+#if defined(__linux__)
+
+    constexpr bool kCustomBaudSupported = true;
+
+    /// The kernel's `struct termios2`, declared here rather than included.
+    ///
+    /// `<asm/termbits.h>` is where it lives, and it brings its own `struct
+    /// termios` with it — which collides head-on with the `<termios.h>` the
+    /// rest of this file is built on. Two definitions of the same name, one
+    /// translation unit. So it is written out instead. This is kernel ABI and
+    /// does not move.
+    ///
+    /// Note `c_cc[19]`, where glibc's termios has 32. That difference is
+    /// exactly the kind of thing that makes including both a bad idea, and
+    /// exactly the kind of thing that would corrupt the stack quietly if it
+    /// were got wrong here.
+    struct Termios2
+    {
+        unsigned int  c_iflag;
+        unsigned int  c_oflag;
+        unsigned int  c_cflag;
+        unsigned int  c_lflag;
+        unsigned char c_line;
+        unsigned char c_cc[19];
+        unsigned int  c_ispeed;
+        unsigned int  c_ospeed;
+    };
+
+    /// Sets a baud rate that has no constant, by handing the kernel the number.
+    ///
+    /// This is the whole reason DMX works on Linux at all. `BOTHER` in the
+    /// speed field means "the rate is in c_ospeed", and TCSETS2 is the ioctl
+    /// that carries it. Called *after* tcsetattr, and it reads the current
+    /// state back first, so everything already configured survives — this
+    /// changes the speed and nothing else.
+    ///
+    /// The FTDI in an open widget divides a 3MHz clock, so 250000 is exact
+    /// rather than approximated. Nothing here has to care, but it is the reason
+    /// the wire is reliable at a rate the table never listed.
+    bool setCustomBaud(int fd, int baud, std::string& outError)
+    {
+        // Built from _IOR/_IOW rather than the constants they expand to, so the
+        // encoding is right for whatever this is compiled for.
+        const unsigned long kGetTermios2 = _IOR('T', 0x2A, Termios2);
+        const unsigned long kSetTermios2 = _IOW('T', 0x2B, Termios2);
+
+        constexpr unsigned int kBOther = 0010000; ///< "the rate is a number"
+        constexpr unsigned int kCBaud  = 0010017; ///< the speed field, incl. CBAUDEX
+
+        Termios2 tty{};
+        if (::ioctl(fd, kGetTermios2, &tty) != 0)
+        {
+            outError = "baud " + std::to_string(baud) + " has no constant and TCGETS2 failed: "
+                     + lastPosixError();
+            return false;
+        }
+
+        tty.c_cflag &= ~kCBaud;
+        tty.c_cflag |= kBOther;
+        tty.c_ispeed = static_cast<unsigned int>(baud);
+        tty.c_ospeed = static_cast<unsigned int>(baud);
+
+        if (::ioctl(fd, kSetTermios2, &tty) != 0)
+        {
+            outError = "could not set baud " + std::to_string(baud) + ": " + lastPosixError()
+                     + " (the driver may not do arbitrary rates)";
+            return false;
+        }
+
+        // Read it back, because the ioctl succeeding is not the same as the
+        // rate landing. A driver is free to accept BOTHER and then clamp to
+        // whatever its divisor can reach, and a DMX line running at the wrong
+        // speed does not report an error — it just sits there dark while
+        // everything upstream says it is working. Which is exactly the failure
+        // that is impossible to diagnose from the other end of the room.
+        Termios2 landed{};
+        if (::ioctl(fd, kGetTermios2, &landed) == 0
+            && landed.c_ospeed != static_cast<unsigned int>(baud))
+        {
+            outError = "asked for baud " + std::to_string(baud) + " and the driver settled on "
+                     + std::to_string(landed.c_ospeed);
+            return false;
+        }
+        return true;
+    }
+
+#else
+
+    // macOS has its own answer to this (IOSSIOSPEED); nothing here needs it
+    // yet, so an unlisted rate is still refused there.
+    constexpr bool kCustomBaudSupported = false;
+
+    bool setCustomBaud(int, int, std::string&) { return false; }
+
+#endif
 }
 
 bool SerialPort::isOpen() const
@@ -410,7 +567,12 @@ bool SerialPort::open(const std::string& path, int baud, std::string& outError, 
     const int opened = ::open(path.c_str(), O_RDWR | O_NOCTTY | O_NONBLOCK);
     if (opened < 0)
     {
+        const int why = errno;
         outError = "could not open " + path + ": " + lastPosixError();
+        if (why == EACCES)
+        {
+            outError += describeAccessDenial(path);
+        }
         return false;
     }
 
@@ -450,22 +612,36 @@ bool SerialPort::open(const std::string& path, int baud, std::string& outError, 
     tty.c_cc[VTIME] = 0;
 
     speed_t speed = B115200;
-    if (!baudToSpeed(baud, speed))
+    const bool standardBaud = baudToSpeed(baud, speed);
+
+    if (standardBaud)
+    {
+        if (::cfsetispeed(&tty, speed) != 0 || ::cfsetospeed(&tty, speed) != 0)
+        {
+            outError = "could not set baud " + std::to_string(baud) + " on " + path + ": " + lastPosixError();
+            ::close(opened);
+            return false;
+        }
+    }
+    else if (!kCustomBaudSupported)
     {
         outError = "baud rate " + std::to_string(baud) + " is not available on this platform";
         ::close(opened);
         return false;
     }
-    if (::cfsetispeed(&tty, speed) != 0 || ::cfsetospeed(&tty, speed) != 0)
-    {
-        outError = "could not set baud " + std::to_string(baud) + " on " + path + ": " + lastPosixError();
-        ::close(opened);
-        return false;
-    }
+    // Otherwise the rate goes in below, after the flags have landed. It cannot
+    // go in here: there is no constant to put in the struct.
 
     if (::tcsetattr(opened, TCSANOW, &tty) != 0)
     {
         outError = "tcsetattr failed on " + path + ": " + lastPosixError();
+        ::close(opened);
+        return false;
+    }
+
+    if (!standardBaud && !setCustomBaud(opened, baud, outError))
+    {
+        outError += " (on " + path + ")";
         ::close(opened);
         return false;
     }

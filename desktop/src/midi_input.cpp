@@ -19,7 +19,10 @@
 #  include <cerrno>
 #  include <dirent.h>
 #  include <fcntl.h>
+#  include <poll.h>
 #  include <unistd.h>
+
+#  include "edmx/alsa_seq.h"
 #endif
 
 using namespace edmx;
@@ -67,6 +70,166 @@ namespace
         };
         return hints;
     }
+
+#if !defined(_WIN32)
+
+    /// What this rig calls itself on the ALSA sequencer. Mixxx lists ports by
+    /// these two names, so they are what an operator picks out of a menu at
+    /// load-in: keep them recognisable and keep them stable.
+    const char* kSeqClientName = "eclipse-dmx";
+    const char* kSeqPortName   = "eclipse-dmx IN";
+
+    /// Big enough for any channel message with room to spare. Sysex is the only
+    /// thing that would want more, and nothing here reads sysex.
+    constexpr size_t kSeqDecodeBytes = 64;
+
+    /// A sequencer port worth offering as a tempo source.
+    ///
+    /// `SUBS_READ` is the whole test: it means "another client may subscribe to
+    /// what this port sends". A port that is readable but not subscribable —
+    /// the PipeWire bridge's inputs, for one — cannot be a source no matter how
+    /// promising its name, and listing it would only be a thing to try and fail
+    /// at in the dark.
+    bool isUsableSeqSource(unsigned int caps)
+    {
+        const unsigned int wanted = alsaseq::kCapRead | alsaseq::kCapSubsRead;
+        return (caps & wanted) == wanted && (caps & alsaseq::kCapNoExport) == 0;
+    }
+
+    /// `Mixxx:Out`, or just `Midi Through Port-0` where the port name already
+    /// says which client it belongs to. Doubling the name up reads as a stutter
+    /// and makes `midi.port` fragments harder to write, not easier.
+    std::string seqPortLabel(const std::string& clientName, const std::string& portName)
+    {
+        if (clientName.empty())
+        {
+            return portName;
+        }
+        if (portName.rfind(clientName, 0) == 0)
+        {
+            return portName;
+        }
+        return clientName + ":" + portName;
+    }
+
+    /// Every subscribable source the sequencer knows about. False means there
+    /// is no sequencer here at all — no libasound, or nothing listening — which
+    /// is a different thing from there being one with nothing on it.
+    bool enumerateSeqPorts(std::vector<MidiPortInfo>& ports)
+    {
+        const AlsaSeq* alsa = AlsaSeq::get();
+        if (alsa == nullptr)
+        {
+            return false;
+        }
+
+        void* seq = nullptr;
+        if (alsa->open(&seq, "default", alsaseq::kOpenInput, 0) < 0 || seq == nullptr)
+        {
+            return false;
+        }
+        alsa->setClientName(seq, kSeqClientName);
+
+        // We are a client the moment we opened, so we would otherwise be in our
+        // own list.
+        const int self = alsa->clientId(seq);
+
+        void* clientInfo = nullptr;
+        void* portInfo = nullptr;
+        if (alsa->clientInfoMalloc(&clientInfo) >= 0 && alsa->portInfoMalloc(&portInfo) >= 0)
+        {
+            alsa->clientInfoSetClient(clientInfo, -1); // -1 starts the walk
+            while (alsa->queryNextClient(seq, clientInfo) >= 0)
+            {
+                const int client = alsa->clientInfoGetClient(clientInfo);
+                if (client == self || client == alsaseq::kClientSystem)
+                {
+                    continue;
+                }
+
+                const char* rawClientName = alsa->clientInfoGetName(clientInfo);
+                const std::string clientName = (rawClientName != nullptr) ? rawClientName : "";
+
+                // Our own published port, from a *running* instance - a
+                // different client id than the one this enumeration just
+                // opened, so skipping `self` does not cover it. It is readable
+                // now (see openAlsaSeq for why) and would otherwise be offered
+                // as a tempo source, which it can never be: it is the thing
+                // Mixxx sends *to*.
+                if (clientName == kSeqClientName)
+                {
+                    continue;
+                }
+
+                alsa->portInfoSetClient(portInfo, client);
+                alsa->portInfoSetPort(portInfo, -1);
+                while (alsa->queryNextPort(seq, portInfo) >= 0)
+                {
+                    if (!isUsableSeqSource(alsa->portInfoGetCapability(portInfo)))
+                    {
+                        continue;
+                    }
+
+                    const char* rawPortName = alsa->portInfoGetName(portInfo);
+
+                    MidiPortInfo info;
+                    info.index   = static_cast<int>(ports.size());
+                    info.backend = MidiBackend::AlsaSeq;
+                    info.client  = client;
+                    info.port    = alsa->portInfoGetPort(portInfo);
+                    info.name    = seqPortLabel(clientName,
+                                                (rawPortName != nullptr) ? rawPortName : "");
+                    ports.push_back(info);
+                }
+            }
+        }
+
+        if (portInfo != nullptr)
+        {
+            alsa->portInfoFree(portInfo);
+        }
+        if (clientInfo != nullptr)
+        {
+            alsa->clientInfoFree(clientInfo);
+        }
+        alsa->close(seq);
+        return true;
+    }
+
+    /// `"128:0"` split into its two numbers. This is how aconnect and every
+    /// piece of ALSA documentation names a port, so it is worth accepting in
+    /// `midi.port` verbatim — and it is the only way to be unambiguous when two
+    /// clients have picked the same name.
+    bool parseSeqAddress(const std::string& text, int& outClient, int& outPort)
+    {
+        const size_t colon = text.find(':');
+        if (colon == std::string::npos)
+        {
+            return false;
+        }
+
+        const std::string client = text.substr(0, colon);
+        const std::string port   = text.substr(colon + 1);
+        if (!isAllDigits(client) || !isAllDigits(port))
+        {
+            return false;
+        }
+
+        outClient = std::stoi(client);
+        outPort   = std::stoi(port);
+        return true;
+    }
+
+#endif
+}
+
+std::string MidiPortInfo::address() const
+{
+    if (backend != MidiBackend::AlsaSeq)
+    {
+        return std::string();
+    }
+    return std::to_string(client) + ":" + std::to_string(port);
 }
 
 // ============================================================================
@@ -103,6 +266,17 @@ std::vector<MidiPortInfo> MidiInput::enumeratePorts()
 std::vector<MidiPortInfo> MidiInput::enumeratePorts()
 {
     std::vector<MidiPortInfo> ports;
+
+    // The sequencer first, and *instead* where it has anything: every rawmidi
+    // device also shows up there, so listing both would show every controller
+    // twice under two different names and two different indices.
+    //
+    // A sequencer with no sources on it is a different matter — an unusual
+    // machine, but a real one — and there the device nodes are all there is.
+    if (enumerateSeqPorts(ports) && !ports.empty())
+    {
+        return ports;
+    }
 
     // ALSA rawmidi devices, read straight off the device tree. Going through
     // libasound would give nicer names, but it would also make a lighting
@@ -174,6 +348,10 @@ bool MidiInput::resolvePort(const std::string& spec, const std::vector<std::stri
         for (const MidiPortInfo& port : ports)
         {
             list += (list.empty() ? "" : ", ") + std::to_string(port.index) + ":" + port.name;
+            if (!port.address().empty())
+            {
+                list += " [" + port.address() + "]";
+            }
             if (isIgnored(port.name, ignore))
             {
                 list += " (ignored)";
@@ -215,7 +393,15 @@ bool MidiInput::resolvePort(const std::string& spec, const std::vector<std::stri
             }
         }
 
-        if (allowed.size() == 1)
+        // The only port there is, on the assumption that a machine with one
+        // MIDI socket and a rig plugged into it means that socket.
+        //
+        // Not on the sequencer, though. There the assumption does not hold —
+        // every application on the machine is a port, so "the only one" is an
+        // accident of what happens to be running — and it does not need to,
+        // because open() has somewhere better to fall back to: our own
+        // published port, which no controller can send a stray pad hit down.
+        if (allowed.size() == 1 && allowed.front().backend == MidiBackend::Native)
         {
             outPort = allowed.front();
             return true;
@@ -242,6 +428,26 @@ bool MidiInput::resolvePort(const std::string& spec, const std::vector<std::stri
         outError = "no MIDI input at index " + spec + " (" + listPorts() + ")";
         return false;
     }
+
+#if !defined(_WIN32)
+    // A sequencer address, `client:port`, as aconnect prints it.
+    int wantedClient = -1;
+    int wantedPort = -1;
+    if (parseSeqAddress(spec, wantedClient, wantedPort))
+    {
+        for (const MidiPortInfo& port : ports)
+        {
+            if (port.backend == MidiBackend::AlsaSeq
+                && port.client == wantedClient && port.port == wantedPort)
+            {
+                outPort = port;
+                return true;
+            }
+        }
+        outError = "no MIDI input at sequencer address " + spec + " (" + listPorts() + ")";
+        return false;
+    }
+#endif
 
     const std::string needle = toLower(spec);
 
@@ -713,12 +919,59 @@ bool MidiInput::open(const std::string& spec, const std::vector<std::string>& ig
 {
     close();
 
-    MidiPortInfo port;
-    if (!resolvePort(spec, ignore, port, outError))
+    // A path is a device node, always, and skips resolution entirely. This is
+    // the escape hatch for a config that names one: without it, a machine whose
+    // sequencer is answering for everything would have no way left to say "no,
+    // that one, the actual socket".
+    if (!spec.empty() && spec[0] == '/')
     {
+        MidiPortInfo port;
+        port.name = spec;
+        return openRawMidi(port, inClock, outError);
+    }
+
+    const bool haveSeq = (AlsaSeq::get() != nullptr);
+    const std::string wanted = toLower(spec);
+
+    // Publish and wait. Nothing to resolve, because the source does the
+    // connecting: this is Mixxx picking `eclipse-dmx IN` out of its controller
+    // list, which is the shortest path there is on this platform.
+    if (haveSeq && wanted == "listen")
+    {
+        return openAlsaSeq(nullptr, inClock, outError);
+    }
+
+    MidiPortInfo port;
+    std::string resolveError;
+    if (!resolvePort(spec, ignore, port, resolveError))
+    {
+        // "auto" with nothing recognisable on it is not a failure on the
+        // sequencer. Elsewhere refusing is right, because the only alternative
+        // is guessing at a source and opening the wrong one — which looks
+        // exactly like opening none. Here there is a third option and it beats
+        // both: publish the port and let the source come to us. Nothing can be
+        // wrong about a port nobody is sending to yet.
+        //
+        // A *named* port that is not there is still an error, on every backend.
+        // Naming one means you meant it, and quietly listening instead would
+        // turn a typo into a rig that never pulses for no stated reason.
+        if (haveSeq && (spec.empty() || wanted == "auto"))
+        {
+            return openAlsaSeq(nullptr, inClock, outError);
+        }
+        outError = resolveError;
         return false;
     }
 
+    if (port.backend == MidiBackend::AlsaSeq)
+    {
+        return openAlsaSeq(&port, inClock, outError);
+    }
+    return openRawMidi(port, inClock, outError);
+}
+
+bool MidiInput::openRawMidi(const MidiPortInfo& port, BeatClock* inClock, std::string& outError)
+{
     const int opened_fd = ::open(port.name.c_str(), O_RDONLY);
     if (opened_fd < 0)
     {
@@ -758,9 +1011,194 @@ bool MidiInput::open(const std::string& spec, const std::vector<std::string>& ig
     return true;
 }
 
+bool MidiInput::openAlsaSeq(const MidiPortInfo* source, BeatClock* inClock,
+                            std::string& outError)
+{
+    const AlsaSeq* alsa = AlsaSeq::get();
+    if (alsa == nullptr)
+    {
+        outError = "no ALSA sequencer on this machine (libasound.so.2 did not load)";
+        return false;
+    }
+
+    void* handle = nullptr;
+    if (alsa->open(&handle, "default", alsaseq::kOpenInput, 0) < 0 || handle == nullptr)
+    {
+        outError = "could not open the ALSA sequencer";
+        return false;
+    }
+    alsa->setClientName(handle, kSeqClientName);
+
+    // Writable and subscribable, which is what makes this a *destination*: any
+    // other client may now send to it. That is the whole trick on Linux — there
+    // is no virtual cable to install, because this is one.
+    //
+    // Readable too, and that is not decoration. DJ software builds its
+    // controller list by pairing an input with an output of the same name — a
+    // controller is a thing you both send to and hear from — so a port that is
+    // only writable is an output with no counterpart and Mixxx does not offer
+    // it at all. Every virtual cable this replaces is bidirectional for the
+    // same reason: loopMIDI's ports are, and so is a macOS IAC bus. Nothing is
+    // ever sent out of it; it exists so the port looks like what it is standing
+    // in for.
+    const int publishedPort = alsa->createSimplePort(
+        handle, kSeqPortName,
+        alsaseq::kCapWrite | alsaseq::kCapSubsWrite
+            | alsaseq::kCapRead | alsaseq::kCapSubsRead,
+        alsaseq::kTypeMidiGeneric | alsaseq::kTypeApplication);
+    if (publishedPort < 0)
+    {
+        alsa->close(handle);
+        outError = std::string("could not publish '") + kSeqPortName + "' on the ALSA sequencer";
+        return false;
+    }
+
+    const std::string self = std::to_string(alsa->clientId(handle)) + ":"
+                           + std::to_string(publishedPort);
+
+    if (source != nullptr
+        && alsa->connectFrom(handle, publishedPort, source->client, source->port) < 0)
+    {
+        alsa->deleteSimplePort(handle, publishedPort);
+        alsa->close(handle);
+        outError = "could not subscribe to '" + source->name + "' (" + source->address() + ")";
+        return false;
+    }
+
+    // The sequencer hands over parsed events; this turns them back into the
+    // bytes they arrived as, so everything downstream is the same code on every
+    // platform. Running status off, so each event decodes to one complete
+    // message rather than depending on what came before it.
+    void* parser = nullptr;
+    if (alsa->midiEventNew(kSeqDecodeBytes, &parser) < 0 || parser == nullptr)
+    {
+        alsa->deleteSimplePort(handle, publishedPort);
+        alsa->close(handle);
+        outError = "could not create the ALSA MIDI event parser";
+        return false;
+    }
+    alsa->midiEventNoStatus(parser, 1);
+
+    if (::pipe(wake) != 0)
+    {
+        alsa->midiEventFree(parser);
+        alsa->deleteSimplePort(handle, publishedPort);
+        alsa->close(handle);
+        wake[0] = -1;
+        wake[1] = -1;
+        outError = std::string("could not create the MIDI wake pipe: ") + std::strerror(errno);
+        return false;
+    }
+
+    // The reader waits in poll(), not in the sequencer, so a read that never
+    // comes is still a thread we can get back at shutdown.
+    alsa->nonblock(handle, 1);
+
+    clock = inClock;
+    seq = handle;
+    seqPort = publishedPort;
+    seqParser = parser;
+    // Named for the source when there is one, and for our own published port
+    // when there is not - "listening" being a state that stays true once
+    // something does connect, which "waiting" would not.
+    portName = (source != nullptr)
+        ? source->name
+        : (std::string(kSeqPortName) + " (" + self + "), listening");
+    opened.store(true);
+    running.store(true);
+
+    reader = std::thread([this]() { readAlsaSeq(); });
+    return true;
+}
+
+void MidiInput::readAlsaSeq()
+{
+    const AlsaSeq* alsa = AlsaSeq::get();
+
+    // The sequencer's descriptors plus our wake pipe on the end. Fetched once:
+    // a sequencer connection's descriptors are fixed for its lifetime.
+    const int seqCount = alsa->pollDescriptorsCount(seq, POLLIN);
+    if (seqCount <= 0)
+    {
+        return;
+    }
+
+    std::vector<pollfd> fds(static_cast<size_t>(seqCount) + 1);
+    alsa->pollDescriptors(seq, fds.data(), static_cast<unsigned int>(seqCount), POLLIN);
+    fds[static_cast<size_t>(seqCount)].fd     = wake[0];
+    fds[static_cast<size_t>(seqCount)].events = POLLIN;
+
+    unsigned char bytes[kSeqDecodeBytes];
+
+    while (running.load())
+    {
+        const int ready = ::poll(fds.data(), static_cast<nfds_t>(fds.size()), -1);
+        if (ready < 0)
+        {
+            if (errno == EINTR)
+            {
+                continue;
+            }
+            break;
+        }
+
+        // close() writing a byte down the pipe is what gets us out of here.
+        if ((fds[static_cast<size_t>(seqCount)].revents & POLLIN) != 0)
+        {
+            break;
+        }
+
+        bool broken = false;
+        for (int index = 0; index < seqCount && !broken; ++index)
+        {
+            broken = (fds[static_cast<size_t>(index)].revents & (POLLERR | POLLNVAL)) != 0;
+        }
+        if (broken)
+        {
+            break; // the sequencer went away under us
+        }
+
+        while (true)
+        {
+            void* event = nullptr;
+            const int got = alsa->eventInput(seq, &event);
+            if (got == -EAGAIN)
+            {
+                break; // that was the last one queued
+            }
+            if (got == -ENOSPC)
+            {
+                // The input buffer overran and events were lost. Nothing to be
+                // done about the ones that are gone; the next poll picks up
+                // whatever is still there.
+                break;
+            }
+            if (got < 0 || event == nullptr)
+            {
+                broken = (got < 0 && got != -EINTR);
+                break;
+            }
+
+            const long length = alsa->midiEventDecode(seqParser, bytes,
+                                                      static_cast<long>(sizeof(bytes)), event);
+            if (length > 0)
+            {
+                handleBytes(bytes, static_cast<size_t>(length), nowSeconds());
+            }
+            // A negative length is an event with no wire form - a port
+            // subscription notice, say. Not ours, and not a problem.
+        }
+
+        if (broken)
+        {
+            break;
+        }
+    }
+}
+
 void MidiInput::close()
 {
-    if (fd < 0)
+    if (fd < 0 && seq == nullptr)
     {
         opened.store(false);
         return;
@@ -769,14 +1207,56 @@ void MidiInput::close()
     running.store(false);
     opened.store(false);
 
-    // Closing the descriptor is what breaks the blocking read.
-    const int closing = fd;
-    fd = -1;
-    ::close(closing);
+    if (seq != nullptr)
+    {
+        // One byte, and the reader is out of poll(). Closing descriptors out
+        // from under alsa would work too and is not something it is promised.
+        if (wake[1] >= 0)
+        {
+            const unsigned char byte = 0;
+            const ssize_t wrote = ::write(wake[1], &byte, 1);
+            (void)wrote;
+        }
+    }
+    else
+    {
+        // Closing the descriptor is what breaks the blocking read.
+        const int closing = fd;
+        fd = -1;
+        ::close(closing);
+    }
 
     if (reader.joinable())
     {
         reader.join();
+    }
+
+    if (seq != nullptr)
+    {
+        if (const AlsaSeq* alsa = AlsaSeq::get())
+        {
+            if (seqParser != nullptr)
+            {
+                alsa->midiEventFree(seqParser);
+            }
+            if (seqPort >= 0)
+            {
+                alsa->deleteSimplePort(seq, seqPort);
+            }
+            alsa->close(seq);
+        }
+        seq = nullptr;
+        seqParser = nullptr;
+        seqPort = -1;
+    }
+
+    for (int& end : wake)
+    {
+        if (end >= 0)
+        {
+            ::close(end);
+            end = -1;
+        }
     }
 
     clock = nullptr;
