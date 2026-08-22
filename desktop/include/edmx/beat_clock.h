@@ -102,10 +102,24 @@ namespace edmx
         /// Beat number plus phase, as one continuous value: 12.25 is a quarter
         /// of the way through beat 12. Patterns trigger on the integer part
         /// changing and animate off the fraction.
+        ///
+        /// **The integer part is an ordinal, not a count.** It moves forward on
+        /// every beat and never backwards, which is what a pattern watching for
+        /// a change needs — but it can move by more than one, because a tempo
+        /// message re-anchors it to wherever free-run had predicted and
+        /// markBeat then steps past that. Anything that cares *which* beat it
+        /// is on — every second one, say — has to count the changes itself.
+        /// See Pattern_Mythos_BeatPulse::tick.
         double beatPosition(double now) const;
 
         /// Seconds since the beat we are in started.
         float timeSinceBeat(double now) const;
+
+        /// How long one beat lasts. The tempo, said the way anything dividing
+        /// or multiplying the beat actually needs it — 60/bpm computed from a
+        /// float bpm that was itself computed from this is a round trip that
+        /// costs precision for nothing.
+        double beatSeconds() const;
 
         BeatSource getSource() const;
 

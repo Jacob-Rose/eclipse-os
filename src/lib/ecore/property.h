@@ -10,19 +10,24 @@
 #include <vector>
 
 #include "core.h"
+#include "hsv.h"
 
 namespace ecore
 {
-    /* @brief One tunable value on a pattern: a float with a range, or a bool.
+    /* @brief One tunable value on a pattern: a float with a range, a bool, or a
+    * colour.
     *
     * A Property points *at* the member it names rather than holding a copy, so
     * a pattern keeps reading its own field the way it always did and nothing
     * has to be plumbed through a setter. The pattern is the owner; a Property
     * is a view onto it, and must not outlive the object it was built from.
     *
-    * Floats and bools only, on purpose. This is for turning knobs on a look
-    * while it runs - an attack time, a gain, a flag - and every one of those is
-    * one of the two. Anything richer is a config field, not a knob.
+    * Three types, and no more. A knob is something you turn while the show is
+    * running - an attack time, a gain, a flag - and a float or a bool covers
+    * almost all of it. A colour is here because the alternative was three
+    * sliders spelling one out in hue, saturation and value, and nobody picks a
+    * colour that way; it is one value to the desk and one swatch in a UI.
+    * Anything richer than these is a config field, not a knob.
     */
     struct Property
     {
@@ -30,6 +35,7 @@ namespace ecore
         {
             Float,
             Bool,
+            Color,
         };
 
         std::string name;
@@ -37,6 +43,7 @@ namespace ecore
 
         float* floatValue{nullptr};
         bool* boolValue{nullptr};
+        HSV* colorValue{nullptr};
 
         /// The range a slider spans. Meaningless for a bool.
         float minValue{0.0f};
@@ -52,11 +59,21 @@ namespace ecore
         std::function<void()> onChanged;
 
         /// Bools read back as 0 or 1, so a UI can treat every property as a number.
+        /// A colour reads back as zero; ask getColor() for it.
         float get() const;
 
         /// Clamped to the range for a float, and anything non-zero is true for
-        /// a bool. Fires onChanged.
+        /// a bool. Fires onChanged. Does nothing to a colour, which cannot be
+        /// said as one number.
         void set(float value);
+
+        /// The colour, or black for a property that is not one.
+        HSV getColor() const;
+
+        /// Sets a colour property and fires onChanged. Does nothing to the
+        /// other two: a knob is one type, and half-writing it is worse than
+        /// refusing.
+        void setColor(const HSV& color);
     };
 
 
@@ -74,6 +91,7 @@ namespace ecore
     *         bag.add("gain", gain, 0.0f, 2.0f);
     *         bag.add("smoothing", smoothing, 0.0f, 1.0f);
     *         bag.add("inverted", bInverted);
+    *         bag.add("color", tint);
     *     }
     */
     class PropertyBag
@@ -83,6 +101,8 @@ namespace ecore
                  std::function<void()> onChanged = {});
 
         void add(const char* name, bool& value, std::function<void()> onChanged = {});
+
+        void add(const char* name, HSV& value, std::function<void()> onChanged = {});
 
         void clear() { properties.clear(); }
         bool isEmpty() const { return properties.empty(); }
@@ -94,6 +114,11 @@ namespace ecore
 
         /// Sets by name. False if there is no property called that.
         bool set(const std::string& name, float value);
+
+        /// The same for a colour. False if there is no property called that,
+        /// *or* if the one there is is not a colour - a swatch dropped onto an
+        /// attack time is a mistake, not a conversion.
+        bool setColor(const std::string& name, const HSV& color);
 
     private:
         std::vector<Property> properties;

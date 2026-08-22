@@ -249,26 +249,41 @@ Seven states, of which four are written:
 | state | what it does |
 | --- | --- |
 | `beat_pulse` | the whole rig swells white on the beat, on an automation curve |
-| `vu_pulse` | the same flash on every *second* beat, over a red backdrop that follows the track's loudness |
+| `vu_pulse` | the same flash over a backdrop that follows the track's loudness — both colours pickable, red under white to open on |
 | `tv_static_mono` | every fixture a new grey, every frame |
 | `tv_static` | every fixture a new colour, every frame |
 | `slot_5`–`slot_7` | placeholders |
 
-Both beat looks fire on every beat. What tells them apart is the envelope, and
-it is stated in the cue list beside the name — `beat_pulse` opens at 0.15/0.60,
+Both beat looks open on the beat. What tells them apart is the envelope, and it
+is stated in the cue list beside the name — `beat_pulse` opens at 0.15/0.60,
 `vu_pulse` shorter and sharper at 0.10/0.45 because it sits over a lit wash.
 Attack and decay are what a beat look *is*, so they belong there rather than in
 a constructor; they stay live knobs at the desk once it is running.
 
+**Half time and double time are a `rate` knob** beside them, in hits per beat:
+0.5, 1 or 2, snapped, because a slider will otherwise hand over 1.37 and 1.37
+hits a beat is a rig drifting against the track. It divides the beat *count*,
+never the tempo — the point of half time is the same hit half as often, and
+stretching the envelope with the rate would soften it instead. So double time
+keeps the 750ms envelope it had inside a 250ms gap and the rig hovers rather
+than pulses; that is correct, and `decay` is the next knob along.
+
 **There used to be a divider** — `beat div 1|2|4`, and on 1 / on 2 / on 4 in the
-viewer. Removed. It divided correctly (8, 4 and 2 pulses in four seconds at
-128bpm, measured) and still felt wrong on a rig, because the clock counts beats
-and has no idea which of them is the one: "on 4" fired at the right *rate* on an
-arbitrary beat of the bar. Firing at the right rate in the wrong place is worse
-than not offering it, and a tap to re-seat it is not something anyone can use
-mid-set. `beat div` is now rejected outright rather than ignored, because
-without that the word falls through to the tap and an old cue file would shove
-the downbeat instead.
+viewer. Removed, and half time is not it coming back. The divider offered 4, and
+the clock counts beats with no idea which of them is the one: "on 4" fired at
+the right *rate* on an arbitrary beat of the bar, and a tap to re-seat it is not
+something anyone can use mid-set. A **pair** has a gesture that works — setting
+the rate, or entering the cue, seats the count on the beat you did that on, so
+you hit the knob on the beat you want the hit and hit it again if it lands
+wrong. On the beat and double time cannot land wrong at all; they fall on the
+same instants whatever beat they are counted from. Once a bar still has no
+answer, and is still not offered.
+
+It is also per look rather than global, which the divider was not. One look in
+half time is a decision; every look in half time at once was a mode. `beat div`
+is rejected outright rather than ignored, because without that the word falls
+through to the tap and an old cue file would shove the downbeat instead — the
+error now points at `param rate 0.5`.
 
 The static looks hash `(frame, fixture index)` rather than keeping a random
 generator, which lets `render()` stay const and stateless and makes any given
@@ -321,8 +336,27 @@ name rather than by note number:
 | `Average` | 68 | ~2s average — what `vu_pulse` uses |
 | `Meter` | 69 | a meter bar, quantised |
 
-The two layers composite by *desaturating*, not adding: at full flash the red has
-become white. Adding white to red gives pink.
+**Both colours are knobs** — `base_color` for the wash, `color` for the flash,
+which is the name `beat_pulse` gives its own because the flash *is* a
+`beat_pulse`. Each colour's own value is a ceiling on its layer, so a dark pick
+is a dark layer rather than a no-op.
+
+The composite is the interesting part, and it took three goes. Adding the flash
+to the wash gives pink for white over red, so that went early and the look
+desaturated instead: pull the saturation out of the wash and a white flash
+arrives at exactly white. Making the flash colour pickable broke that, because
+"desaturate toward the flash" had to become an interpolation, and interpolating
+the *hue* walks the rim of the wheel — blue over red came out **green** on the
+way, which is what it looked like on the rig.
+
+What it does now is blend the two layers as **chroma vectors**: hue as an angle,
+saturation as a radius, interpolated straight through the middle of the wheel.
+Hues far apart lose saturation between them and pass near white — red to blue
+goes red, pale magenta, blue — which is what a flash washing a colour out looks
+like. And white has no chroma at all, so the vector shrinks to the origin, the
+hue never moves, and the original desaturation falls out of the same arithmetic
+rather than being special-cased. Mixed once a frame in `tick()`, because the rig
+is one colour and `render()` runs per fixture.
 
 **Mixxx sends notes, not beat clock**, which is the thing worth knowing before
 touching any of this. Its MIDI-for-light mapping puts the beat on note 50, the
@@ -463,7 +497,12 @@ reading its own field and nothing is plumbed through. The optional callback is
 for a value something else is derived from, which is the envelope's case exactly:
 it keeps a built curve, not the two numbers behind it.
 
-Floats and bools only. A knob is one or the other; anything richer is config.
+Floats, bools and colours. The first two are what a knob usually is; a colour is
+the one thing that is not and still has to be turned at a desk, because the
+alternative was three sliders spelling one out in hue, saturation and value and
+nobody picks a colour that way. It registers the same one line — `bag.add(
+"color", pulseColor)` — travels as `#rrggbb`, and gets a swatch in the viewer
+that opens the system picker. Anything richer than the three is config.
 
 Three decisions in it are worth keeping:
 
@@ -1407,8 +1446,9 @@ listing online.
   where that starts.
 - **Bars** — the clock counts beats, not bars, because nothing upstream reliably
   says where a bar begins. This is why the beat divider was removed rather than
-  fixed: anything firing less often than every beat has to know *which* beat,
-  and nothing here does.
+  fixed: anything firing less often than every beat has to pick *which* beat,
+  and nothing here knows. Half time survives it only because a pair can be
+  re-seated by hand in one gesture; once a bar cannot, and is not offered.
 - **Stereo VU** — only the mono signals are read. The mapping sends left and
   right separately, which a rig split into two halves could use.
 - **The viewer draws discs, not beams.** Fixtures with a real position in space

@@ -558,7 +558,7 @@ Seven states, in the order the buttons show them:
 | state | what it does |
 | --- | --- |
 | `beat_pulse` | the whole rig swells white on each beat |
-| `vu_pulse` | the same flash on every *second* beat, over a red layer that follows the VU meter |
+| `vu_pulse` | the same flash, over a red layer that follows the VU meter |
 | `tv_static_mono` | every fixture a new grey, every frame |
 | `tv_static` | every fixture a new colour, every frame |
 | `slot_5` … `slot_7` | placeholders — a dim tinted breath, waiting for a look |
@@ -571,15 +571,15 @@ rename it in three places — there, `MYTHOS26_STATES` in
 `python/eclipse_dmx/config.py`, and the button table in
 `python/eclipse_dmx/viewer.py`.
 
-##### the shape of a hit
+##### the shape of a hit, and how often
 
-Both beat looks fire on every beat. What makes them different is the envelope,
-and that is stated in the cue list beside the name:
+Both beat looks open on the beat. What makes them different is the envelope,
+and that — with the rate — is stated in the cue list beside the name:
 
 ```cpp
-//                                          attack  decay
-beatLook<Pattern_Mythos_BeatPulse>("beat_pulse", 0.15f, 0.60f),
-beatLook<Pattern_Mythos_VuPulse>  ("vu_pulse",   0.10f, 0.45f),
+//                                          attack  decay  rate
+beatLook<Pattern_Mythos_BeatPulse>("beat_pulse", 0.15f, 0.60f, 1.0f),
+beatLook<Pattern_Mythos_VuPulse>  ("vu_pulse",   0.10f, 0.45f, 1.0f),
 ```
 
 Attack and decay are what a beat look *is* — a crack and a trail, or a swell and
@@ -587,29 +587,84 @@ a long fall — so they belong where the cue list is rather than buried in a
 constructor. They stay live knobs once it is running; these are what it opens
 on. `vu_pulse` opens shorter and sharper because it sits over a lit wash.
 
-**There used to be a divider here** — `beat div 1 | 2 | 4`, and **on 1 / on 2 /
-on 4** in the viewer. It is gone. It divided the beat count correctly and still
-felt wrong on a rig, because the clock counts beats and has no idea which of
-them is the one: "on 4" fired at the right *rate* on an arbitrary beat of the
-bar. Firing at the right rate in the wrong place is worse than not offering it,
-and a `beat` tap to re-seat it was never a fix anyone could use mid-set.
+`intensity` is how hard the hit lands, and it scales the envelope rather than
+the whole look: at a lifted `floor` it brings the flash down toward the level
+between hits instead of dimming the rig, so 0 means *no flash*, not no light.
+On `vu_pulse` it is the knob that buys the wash room underneath.
 
-Which beat of the pair or the bar it lands on is whichever one was current when
-the count started — the clock counts beats, not bars, because nothing upstream
-reliably says where a bar begins. A tap (`beat`, or `t` in the viewer) re-seats
-it, which is how you move it onto the one.
+##### half time and double time
+
+`rate` is hits per beat, and it takes three values:
+
+| `rate` | |
+| --- | --- |
+| `0.5` | half time — one hit every second beat |
+| `1` | on the beat |
+| `2` | double time — on the beat and between them |
+
+Anything else snaps to the nearest of those. A slider will hand over 1.37 on
+its way past; 1.37 hits a beat is a rig drifting against the track, not a look.
+
+It divides the beat **count**, never the tempo. The point of half time is the
+same hit half as often, and stretching the envelope with the rate would soften
+it instead — so double time keeps the envelope it had, which on the default
+shape means a 750ms fall inside a 250ms gap: the rig hovers rather than pulses.
+That is the look behaving correctly, and `decay` is right there next to it.
+Half time is the other way round — the fall finally has room, and you see the
+envelope's real shape, often for the first time.
+
+**There used to be a divider here** — `beat div 1 | 2 | 4`, and **on 1 / on 2 /
+on 4** in the viewer. It is not coming back, and half time is not it. The
+divider offered 4, and the clock counts beats with no idea which of them is the
+one, so "on 4" fired at the right *rate* on an arbitrary beat of the bar with
+no fix anyone could use mid-set. A **pair** has one: setting the rate, or
+entering the cue, seats it on the beat you did that on. So half time lands
+where you put it — hit the knob, or the cue button, on the beat you want the
+hit — and if it seats wrong, hit it again. Hunting for the top of a bar four
+beats wide was never that gesture.
+
+On the beat and double time cannot be seated wrong: they land on the same
+instants whatever whole beat they are counted from. Only half time has a choice
+to make.
 
 ##### `vu_pulse`
 
-Two layers doing different jobs. Underneath, a red wash that follows Mixxx's VU
+Two layers doing different jobs. Underneath, a wash that follows Mixxx's VU
 meter, so the rig has a floor that breathes with the music instead of going
-black between hits. On top, the same white envelope as `beat_pulse`, on every
-second beat — with a lit wash underneath, hitting every beat is too much light
-and the hits stop reading as hits.
+black between hits. On top, the same envelope as `beat_pulse`. If a lit wash
+plus a hit on every beat is too much light for the track, this is the look to
+put in half time.
 
-They composite by *desaturating*, not adding: at full flash the red has become
-white, which is what a white flash over red looks like. Adding white to red
-would give you pink.
+**Both colours are knobs.** `base_color` is the wash and `color` is the flash —
+the same name `beat_pulse` gives its own, because the flash is `beat_pulse`.
+Everything the wash owns carries the `base_` prefix and everything the flash
+owns does not, which is how the pane reads at a glance. Red under white is what
+the look opens on, not what it is; the swatches are in the knob pane and the
+picker is the system's.
+
+Each colour's own brightness is a ceiling on its layer, so a dark red picked
+out of the wheel is a dark wash — the meter scales it rather than replacing it.
+
+They composite by blending **chroma vectors** — hue as an angle, saturation as
+a radius, interpolated through the middle of the colour wheel rather than
+around its rim. Two obvious versions are wrong and both were tried here:
+
+- *Adding* the flash to the wash gives you pink for white over red.
+- *Lerping the hue* walks the rim, so blue over red goes through **green** —
+  a colour nobody put in the look.
+
+Through the middle has neither problem. Two hues far apart lose saturation on
+the way between them and pass close to white, which is what a flash washing a
+colour out actually looks like: red to blue goes red, pale magenta, blue.
+
+And it is not a replacement for the desaturation this look always did — it *is*
+that. White has no chroma at all, so the vector shrinks straight to the origin,
+the hue never moves, and the wash arrives at exactly white. That case falls out
+of the same arithmetic rather than being special-cased.
+
+The mix is computed once per frame in `tick()`, not per fixture in `render()`:
+the whole rig is one colour here, and `render()` runs 356 times a frame on
+mythos26.
 
 **The wash follows the loudness of the track, not the waveform.** That
 distinction is the whole difficulty, and getting it wrong twice is what these
@@ -723,13 +778,22 @@ built curve, not the two numbers behind it — pass a callback:
 bag.add("attack", attackSeconds, 0.0f, 1.0f, [this] { setEnvelope(attackSeconds, decaySeconds); });
 ```
 
-Floats and bools only. This is for knobs, and a knob is one or the other;
-anything richer belongs in the config.
+Floats, bools and colours. A colour is here because the alternative was three
+sliders spelling one out in hue, saturation and value, and nobody picks a
+colour that way — it registers the same one-liner and travels as `#rrggbb`:
+
+```cpp
+bag.add("color", pulseColor);
+```
+
+Anything richer than those three belongs in the config.
 
 The viewer puts the running look's knobs in the right-hand pane — a slider and
-a box for a float, a checkbox for a bool. The slider is for finding a value and
-the box is for saying one, because a 0..3 slider a hundred pixels wide cannot
-express 0.15.
+a box for a float, a checkbox for a bool, a swatch for a colour. The slider is
+for finding a value and the box is for saying one, because a 0..3 slider a
+hundred pixels wide cannot express 0.15. Clicking the swatch opens the system
+colour picker, on the colour the look is showing, with the show still running
+behind it.
 
 **The set belongs to the look, not to the pattern.** On a state machine, a cue
 change replaces it wholesale, and the executable re-announces it every time, so
@@ -739,21 +803,30 @@ Over the protocol:
 
 ```
 params                      what the running look offers
-param <name> <value>        turn one; on/off work for a bool
+param <name> <value>        turn one; on/off work for a bool,
+                            #rrggbb for a colour
 params dump                 the current set as one line of JSON
 ```
 
+Each knob is announced with its type — `PARAM attack f 0.15 0 1`, `PARAM hold b
+1 0 1`, `PARAM color c #ffffff 0 1` — so one parser reads all three and only
+branches on the widget it builds. What a value *is* depends on the knob it is
+sent to: `#ff2200` is a colour on a colour and an error on an attack time,
+rather than a number that happened to parse.
+
 Values outside a knob's range are clamped rather than refused — the range is
 what a slider spans, and a number typed slightly past it is a request for the
-end of the slider. What it landed on is echoed back on a `PARAM` line *before*
-the `OK`, so a client that waits for the reply and then reads has the new value
-and not the old one.
+end of the slider. Some knobs snap instead: a beat look's `rate` takes the
+nearest of half time, on the beat and double time. Either way, what it landed
+on is echoed back on a `PARAM` line *before* the `OK`, so a client that waits
+for the reply and then reads has the new value and not the old one.
 
 Tuning is **live only**. Nothing is written to a config file behind you:
 `params dump` is how a session that found something is kept.
 
 ```python
 show.set_param("decay", 0.9)
+show.set_param("color", "#0040ff")
 show.get_param("decay")        # Param(decay=0.9, 0.01..3)
 show.params                    # the whole set, replaced on every cue change
 print(show.dump_params())      # {"attack": 0.15, "decay": 0.9, ...}
@@ -1596,8 +1669,10 @@ obelisk draw faster than its `show()` allows.
   to patterns, no faders. `MidiInput::handleMessage` is where that would start.
 - **Bars.** The clock counts beats, not bars, because nothing upstream reliably
   says where a bar begins. This is why the beat divider was removed rather than
-  fixed: anything that fires less often than every beat needs to know *which*
-  beat, and nothing here does.
+  fixed: anything that fires less often than every beat has to pick *which*
+  beat, and nothing here knows. Half time survives it only because a pair can
+  be re-seated by hand in one gesture — see [half time and double
+  time](#half-time-and-double-time). Once a bar cannot.
 - **Stereo VU.** Only the mono meters are read. The mapping sends left and
   right separately, which a rig split into two halves could use.
 

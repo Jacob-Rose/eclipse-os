@@ -56,9 +56,11 @@ namespace edmx
     /// three keys on `envelope.curve`, and any other shape is the same three
     /// calls with different numbers.
     ///
-    /// It is retriggered by the beat *number* changing rather than by a callback
-    /// from the MIDI thread: the clock predicts between beats, so polling it
-    /// once a frame is both simpler and immune to a beat that lands mid-render.
+    /// It is retriggered by polling the clock once a frame rather than by a
+    /// callback from the MIDI thread: the clock predicts between beats, so
+    /// polling is both simpler and immune to a beat that lands mid-render. What
+    /// it watches for is the clock's beat number *changing*, not what it
+    /// changed to — see the note on counting in tick().
     class Pattern_Mythos_BeatPulse : public eanim::GeneratorHSV
     {
     public:
@@ -70,8 +72,9 @@ namespace edmx
         virtual void render(eio::HSVStripNode* node, ecore::HSV& inOutColor) const override;
         virtual void reflect(ecore::PropertyBag& bag) override;
 
-        /// White for now. The whole look is one colour and one envelope, so
-        /// this is the knob that changes it.
+        /// White to open on. The whole look is one colour and one envelope, so
+        /// this is the knob that changes it — a `color` property, which means a
+        /// swatch at the desk rather than three sliders spelling out an HSV.
         ecore::HSV pulseColor{0.0f, 0.0f, 1.0f};
 
         /// The envelope, and the timeline the beat plays it on.
@@ -92,6 +95,46 @@ namespace edmx
         float getAttackSeconds() const { return attackSeconds; }
         float getDecaySeconds() const { return decaySeconds; }
 
+        /// The three rates. Named rather than left as loose numbers because
+        /// 1.37 hits per beat is not a thing anyone wants and a slider will
+        /// otherwise hand you one.
+        static constexpr float kHalfTime{0.5f};
+        static constexpr float kOnBeat{1.0f};
+        static constexpr float kDoubleTime{2.0f};
+
+        /// Hits per beat: 0.5 half time, 1 on the beat, 2 double time.
+        ///
+        /// Snapped to one of those three, because the useful values are the
+        /// musical ones and everything between them is a rig drifting against
+        /// the track. Set it through setPulseRate(), which is also what re-seats
+        /// half time — see below.
+        ///
+        /// It divides the beat *count*, never the tempo: the point of half time
+        /// is the same hit, half as often, and stretching the envelope with the
+        /// rate would soften it instead. So double time keeps the envelope it
+        /// had, which at the default shape means the fall no longer finishes
+        /// between hits and the rig hovers rather than pulses; shorten `decay`
+        /// if that is not the look. Half time gives the fall room it did not
+        /// have and shows the envelope's real shape, often for the first time.
+        float getPulseRate() const { return pulseRate; }
+
+        /// Sets the rate and re-seats half time on the nearest beat.
+        ///
+        /// The re-seat is the whole reason a divider was taken out of here once
+        /// and half time is back. The clock counts beats and has no idea which
+        /// of them is the one, so anything slower than the beat has to land on
+        /// an arbitrary member of the group — that is what sank `beat div 4`,
+        /// which fired at the right rate in the wrong place with no usable way
+        /// to move it. Two beats is the one case where there is a usable way:
+        /// the pair re-seats from wherever you set it, so hitting half time (or
+        /// hitting the cue) on the beat you want puts it there. That is a
+        /// gesture someone can make mid-set; hunting for the top of a bar four
+        /// beats wide was not.
+        ///
+        /// Only half time can tell: on the beat and double time land on the
+        /// same instants whatever beat they are counted from.
+        void setPulseRate(float pulsesPerBeat);
+
         /// RestartHold when set, Restart when not — the `hold` knob.
         ///
         /// Kept as a bool of its own rather than reflected off retriggerMode
@@ -100,6 +143,19 @@ namespace edmx
         /// a beat. Set it through setHoldOnRetrigger() so the mode follows.
         bool bHoldOnRetrigger{true};
         void setHoldOnRetrigger(bool bHold);
+
+        /// How hard the hit lands, 0..1. Full by default.
+        ///
+        /// Scales the envelope, not the whole output: at a lifted `floor` this
+        /// brings the hit down toward the level between hits rather than
+        /// dimming the rig, so 0 is "no flash" and not "no light".
+        ///
+        /// It is a knob of its own rather than the flash colour's brightness —
+        /// which would do the same arithmetic — because the two are wanted at
+        /// different moments. The colour is a look; this is how much of the
+        /// track the look is taking, and on vu_pulse it is what buys the wash
+        /// room under the flash. Changing it should not mean opening a picker.
+        float intensity{1.0f};
 
         /// Level held between pulses, 0..1. Zero is a hard blackout between
         /// beats; lift it if the rig needs to stay visible.
@@ -116,6 +172,12 @@ namespace edmx
         float envelopePeak(float from, float to) const { return envelope.curve.peak(from, to); }
 
     private:
+        /// Whether the beat we have just arrived at is one this rate hits on.
+        bool isHitBeat() const;
+
+        /// Puts half time's pairs on the nearest beat. See setPulseRate().
+        void seatHalfTime();
+
         BeatClock* clock{nullptr};
 
         /// What setEnvelope() was last given. Kept only so the numbers can be
@@ -123,8 +185,24 @@ namespace edmx
         float attackSeconds{0.15f};
         float decaySeconds{0.600f};
 
-        /// Pulse we last fired on. Starts unset so the first tick pulses rather
-        /// than waiting up to a whole beat to show anything.
+        float pulseRate{kOnBeat};
+
+        /// Beats this look has seen, and the one half time counts its pairs
+        /// from.
+        ///
+        /// Counted here rather than taken from the clock's beat number, which
+        /// is guaranteed to move forward on a beat but *not* to move by one —
+        /// see tick(). Every second beat has to be every second beat that
+        /// actually happened, or it picks a different member of the pair every
+        /// time the number jumps.
+        long long beatsSeen{0};
+        long long seatBeat{0};
+
+        /// Double time's mid-beat hit, once per beat. Cleared by the beat.
+        bool offbeatFired{false};
+
+        /// Beat we last saw. Starts unset so the first tick hits rather than
+        /// waiting up to a whole beat to show anything.
         long long lastBeat{0};
         bool started{false};
 
@@ -134,16 +212,24 @@ namespace edmx
 
     /// The beat in white over the loudness in red.
     ///
-    /// Two layers doing different jobs. The red one is continuous and follows
+    /// Two layers doing different jobs. The lower one is continuous and follows
     /// the VU meter, so the rig has a floor that breathes with the music
-    /// instead of going black between hits. The white one is the same envelope
-    /// as beat_pulse on top of it, defaulting to every second beat — on a busy
-    /// track, hitting every beat and being lit underneath at the same time is
-    /// too much light and the hits stop reading as hits.
+    /// instead of going black between hits. The upper one is the same envelope
+    /// as beat_pulse on top of it.
     ///
-    /// They are composited by desaturating rather than adding: at full flash
-    /// the red has become white, which is what "a white flash over red" looks
-    /// like, where adding white to red would give you pink.
+    /// Both colours are knobs — `base_color` for the wash and `color` for the
+    /// flash, the same name beat_pulse gives its own — so red under white is
+    /// what it opens on rather than what it is. The `base_` prefix is how the
+    /// pair reads: everything the wash owns carries it, and everything the
+    /// flash owns is named the way beat_pulse names it.
+    ///
+    /// They are composited by blending *chroma vectors* — through the middle of
+    /// the colour wheel rather than around its rim. For the white flash this
+    /// opens on that is exactly the desaturation it has always done: at full
+    /// flash the red has become white, where adding white to red would have
+    /// given you pink. For a flash with a colour of its own it is what stops
+    /// blue over red going through green on the way. See mixLayers(), which is
+    /// where both of those failures are written down.
     class Pattern_Mythos_VuPulse : public eanim::GeneratorHSV
     {
     public:
@@ -155,10 +241,14 @@ namespace edmx
         virtual void render(eio::HSVStripNode* node, ecore::HSV& inOutColor) const override;
         virtual void reflect(ecore::PropertyBag& bag) override;
 
-        /// The flash. Same shape as beat_pulse, on twos by default.
+        /// The flash. Same shape, colour and rate knobs as beat_pulse.
         Pattern_Mythos_BeatPulse pulse;
 
         /// The layer underneath: a backdrop that follows how loud the track is.
+        ///
+        /// Red to open on, and a `base_color` swatch at the desk. Its own value
+        /// is a ceiling on the wash, so picking a dark colour gives a dark
+        /// wash — the meter scales it rather than replacing it.
         ecore::HSV baseColor{0.0f, 1.0f, 1.0f}; ///< red
 
         /// Which loudness signal drives it. The two-second average, because a
@@ -190,19 +280,35 @@ namespace edmx
         /// instantaneous level instead.
         float baseSmoothing{0.25f};
 
-        /// The flash's envelope, forwarded, so a cue list can shape a vu_pulse
-        /// the same way it shapes a beat_pulse. See beatLook in mythos26.cpp.
+        /// The flash's envelope and rate, forwarded, so a cue list can shape a
+        /// vu_pulse the same way it shapes a beat_pulse. See beatLook in
+        /// mythos26.cpp.
         void setEnvelope(float attackSeconds, float decaySeconds)
         {
             pulse.setEnvelope(attackSeconds, decaySeconds);
         }
 
+        void setPulseRate(float pulsesPerBeat) { pulse.setPulseRate(pulsesPerBeat); }
+
         /// The wash level right now, for tests.
         float getBaseLevel() const { return baseLevel; }
 
+        /// The colour the two layers came to this frame, for tests.
+        const ecore::HSV& getMixColor() const { return mixColor; }
+
     private:
+        /// Puts the wash and the flash together into one colour and one level.
+        ///
+        /// Done once a frame in tick() rather than per fixture in render(),
+        /// because the whole rig is one colour here and render() is called for
+        /// every one of them.
+        void mixLayers();
+
         AudioLevel* meter{nullptr};
         float baseLevel{0.0f};
+
+        ecore::HSV mixColor{0.0f, 1.0f, 1.0f};
+        float mixLevel{0.0f};
     };
 
 

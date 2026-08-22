@@ -1218,6 +1218,39 @@ namespace
         emit("STATE " + machine->currentStateName());
     }
 
+    /// A colour as `#rrggbb`, the way every other colour on this wire is
+    /// written — the config file reads them, the F frames emit them, and a
+    /// param is not the place to invent a fourth spelling.
+    std::string colorToHex(const ecore::HSV& color)
+    {
+        const Rgb8 rgb = hsvToRgb8(color);
+        char text[8];
+        std::snprintf(text, sizeof(text), "#%02x%02x%02x", rgb.r, rgb.g, rgb.b);
+        return std::string(text);
+    }
+
+    /// One `PARAM name <type> <value> <min> <max>` line.
+    ///
+    /// One function rather than one at each site, because a param is emitted
+    /// from two of them — the whole set on a cue change, and the echo after a
+    /// `param` — and a format that drifts between them is a client that works
+    /// until it doesn't.
+    std::string paramLine(const ecore::Property& property)
+    {
+        std::ostringstream out;
+        out << "PARAM " << property.name << " ";
+
+        switch (property.type)
+        {
+            case ecore::Property::Type::Bool:  out << "b " << property.get(); break;
+            case ecore::Property::Type::Color: out << "c " << colorToHex(property.getColor()); break;
+            case ecore::Property::Type::Float: out << "f " << property.get(); break;
+        }
+
+        out << " " << property.minValue << " " << property.maxValue;
+        return out.str();
+    }
+
     /// The tunable knobs of whatever is showing, for a UI to build controls from.
     ///
     /// Emitted whenever the pattern or the state changes, because on a state
@@ -1228,8 +1261,10 @@ namespace
     ///   PARAMS mythos26 beat_pulse
     ///   PARAM attack f 0.2 0 1
     ///   PARAM hold b 1 0 1
+    ///   PARAM color c #ffffff 0 1
     ///
-    /// Bools carry a range too, pointless as it is, so one parser reads both.
+    /// Bools and colours carry a range too, pointless as it is, so one parser
+    /// reads all three and only branches on the widget it builds.
     void emitParams(ShowState& show)
     {
         StateMachinePattern* machine = show.pattern ? show.pattern->asStateMachine() : nullptr;
@@ -1249,13 +1284,7 @@ namespace
 
         for (const ecore::Property& property : bag.all())
         {
-            std::ostringstream out;
-            out << "PARAM " << property.name
-                << " " << (property.type == ecore::Property::Type::Bool ? "b" : "f")
-                << " " << property.get()
-                << " " << property.minValue
-                << " " << property.maxValue;
-            emit(out.str());
+            emit(paramLine(property));
         }
     }
 
@@ -1654,6 +1683,12 @@ namespace
                     {
                         out << (property.get() != 0.0f ? "true" : "false");
                     }
+                    else if (property.type == ecore::Property::Type::Color)
+                    {
+                        // Quoted, as a config file writes a colour - the point
+                        // of a dump is that it can be pasted back.
+                        out << "\"" << colorToHex(property.getColor()) << "\"";
+                    }
                     else
                     {
                         out << property.get();
@@ -1685,24 +1720,14 @@ namespace
                 return;
             }
 
-            float value = 0.0f;
-            if (!parseFloatArg(words[2], value))
-            {
-                // A bool reads better as on/off at a desk than as 1/0, and the
-                // two spellings cost one comparison each.
-                if (words[2] == "on" || words[2] == "true")        value = 1.0f;
-                else if (words[2] == "off" || words[2] == "false") value = 0.0f;
-                else
-                {
-                    emit("ERR '" + words[2] + "' is not a number");
-                    return;
-                }
-            }
-
             ecore::PropertyBag bag;
             show.pattern->reflect(bag);
 
-            if (!bag.set(words[1], value))
+            // Look the knob up before reading the value, because what the value
+            // *is* depends on the knob: `#ff2200` is a colour and a mis-parse
+            // depending on which one you sent it to.
+            const ecore::Property* target = bag.find(words[1]);
+            if (target == nullptr)
             {
                 std::string known;
                 for (const ecore::Property& property : bag.all())
@@ -1714,21 +1739,41 @@ namespace
                 return;
             }
 
-            // Say what it actually landed on, *before* the OK. A value outside
-            // the range is clamped, and a client that waits on the OK and then
-            // reads the value would otherwise race the line telling it so - it
-            // would see the old number about as often as the new one.
-            const ecore::Property* applied = bag.find(words[1]);
-            if (applied)
+            if (target->type == ecore::Property::Type::Color)
             {
-                std::ostringstream out;
-                out << "PARAM " << applied->name
-                    << " " << (applied->type == ecore::Property::Type::Bool ? "b" : "f")
-                    << " " << applied->get()
-                    << " " << applied->minValue
-                    << " " << applied->maxValue;
-                emit(out.str());
+                ecore::HSV parsed;
+                if (!parseColorString(words[2], parsed))
+                {
+                    emit("ERR param " + words[1] + ": '" + words[2] + "' is not a colour"
+                       + " (want '#rrggbb')");
+                    return;
+                }
+                bag.setColor(words[1], parsed);
             }
+            else
+            {
+                float value = 0.0f;
+                if (!parseFloatArg(words[2], value))
+                {
+                    // A bool reads better as on/off at a desk than as 1/0, and
+                    // the two spellings cost one comparison each.
+                    if (words[2] == "on" || words[2] == "true")        value = 1.0f;
+                    else if (words[2] == "off" || words[2] == "false") value = 0.0f;
+                    else
+                    {
+                        emit("ERR '" + words[2] + "' is not a number");
+                        return;
+                    }
+                }
+                bag.set(words[1], value);
+            }
+
+            // Say what it actually landed on, *before* the OK. A value outside
+            // the range is clamped, a rate snaps to the nearest musical one, and
+            // a client that waits on the OK and then reads the value would
+            // otherwise race the line telling it so - it would see the old
+            // number about as often as the new one.
+            emit(paramLine(*target));
 
             emit("OK param " + words[1] + " " + words[2]);
             return;
@@ -1801,17 +1846,21 @@ namespace
             // It divided the beat count correctly and still felt wrong on a
             // rig, because the clock counts beats and has no idea which of them
             // is the one - so "on 4" fired at the right rate on an arbitrary
-            // beat of the bar. What shapes a hit now is its envelope, which is
-            // per look and live.
+            // beat of the bar. What a look does with the beat is a knob on the
+            // look now: `rate` for how often, attack and decay for the shape.
+            // Nothing global divides the clock, which is the part that was
+            // wrong - one look in half time is a decision, every look in half
+            // time at once was a mode.
             //
             // Said outright because the alternative is worse: without this the
             // word falls through to the tap below, and an old cue file asking
             // for `beat div 4` would silently shove the downbeat instead.
             if (words.size() >= 2 && (words[1] == "div" || words[1] == "divide"))
             {
-                emit("ERR beat div is gone - a beat look's shape is its attack"
-                     " and decay now, per look: `params` to see them, `param"
-                     " attack <n>` to change one");
+                emit("ERR beat div is gone - it is a knob on the look now:"
+                     " `param rate 0.5` for half time, 2 for double time, and"
+                     " `param attack|decay <n>` for the shape (`params` to see"
+                     " them). there is no once-a-bar; the clock counts beats");
                 return;
             }
 

@@ -36,6 +36,19 @@ void Pattern_Mythos_BeatPulse::setEnvelope(float inAttackSeconds, float inDecayS
     envelope.curve.addKey(attackSeconds + decaySeconds, 0.0f);
 }
 
+bool Pattern_Mythos_BeatPulse::isHitBeat() const
+{
+    if (pulseRate > kHalfTime)
+    {
+        return true; // on the beat, and double time's on-beat half
+    }
+
+    // Every second beat since the seat. Counted both ways round the seat
+    // because beatsSeen can sit either side of it - see seatHalfTime().
+    const long long since = beatsSeen - seatBeat;
+    return ((since % 2) == 0);
+}
+
 void Pattern_Mythos_BeatPulse::setHoldOnRetrigger(bool bHold)
 {
     bHoldOnRetrigger = bHold;
@@ -43,12 +56,47 @@ void Pattern_Mythos_BeatPulse::setHoldOnRetrigger(bool bHold)
                                    : eanim::RetriggerMode::Restart;
 }
 
+void Pattern_Mythos_BeatPulse::setPulseRate(float pulsesPerBeat)
+{
+    // Snap to the nearest of the three rather than clamping to the range. A
+    // slider spans 0.5..2 and will hand over 1.37 on the way past; the musical
+    // answer to that is one of the ends or the middle, never 1.37.
+    pulseRate = kOnBeat;
+    if (pulsesPerBeat < 0.75f)      pulseRate = kHalfTime;
+    else if (pulsesPerBeat > 1.5f)  pulseRate = kDoubleTime;
+
+    seatHalfTime();
+}
+
+void Pattern_Mythos_BeatPulse::seatHalfTime()
+{
+    // Seat on the *nearest* beat, not the beat in progress.
+    //
+    // Someone reaching for half time does it around a beat, and which side of
+    // it they land on says what they meant. Early in a beat is a reaction to
+    // the one they just heard: that beat is the hit, and they have just seen it
+    // hit, so the next is two away. Late in a beat is aiming at the one coming:
+    // seat there and it hits on the very next beat. Rounding to the current
+    // beat either way would make half the presses feel a beat out.
+    const double position = clock->beatPosition(nowSeconds());
+    const double phase = position - std::floor(position);
+
+    seatBeat = beatsSeen + ((phase >= 0.5) ? 1 : 0);
+}
+
 void Pattern_Mythos_BeatPulse::reflect(ecore::PropertyBag& bag)
 {
     bag.add("attack", attackSeconds, 0.0f, 1.0f, [this] { setEnvelope(attackSeconds, decaySeconds); });
     bag.add("decay", decaySeconds, 0.01f, 3.0f, [this] { setEnvelope(attackSeconds, decaySeconds); });
+    bag.add("intensity", intensity, 0.0f, 1.0f);
     bag.add("floor", floorLevel, 0.0f, 1.0f);
     bag.add("hold", bHoldOnRetrigger, [this] { setHoldOnRetrigger(bHoldOnRetrigger); });
+
+    // Snapped and re-seated on the way in, so the slider lands on the three
+    // rates and setting the one it is already on moves half time onto this beat.
+    bag.add("rate", pulseRate, kHalfTime, kDoubleTime, [this] { setPulseRate(pulseRate); });
+
+    bag.add("color", pulseColor);
 }
 
 void Pattern_Mythos_BeatPulse::init()
@@ -56,24 +104,77 @@ void Pattern_Mythos_BeatPulse::init()
     started = false;
     level = 0.0f;
     envelope.reset();
+
+    beatsSeen = 0;
+    seatBeat = 0;
+    offbeatFired = false;
 }
 
 void Pattern_Mythos_BeatPulse::tick(float deltaTime)
 {
     const double now = nowSeconds();
 
-    const long long beat = static_cast<long long>(std::floor(clock->beatPosition(now)));
+    const double position = clock->beatPosition(now);
+    const long long beat = static_cast<long long>(std::floor(position));
+    const double phase = position - std::floor(position);
 
-    if (!started || beat != lastBeat)
+    // Where in this frame, if anywhere, a hit lands - and how long ago, so the
+    // impulse can be fired at where it actually happened rather than at this
+    // frame's boundary. At 40fps a frame is 25ms and a beat lands anywhere
+    // inside one, so triggering at the boundary would quantise every hit to the
+    // frame grid and put a visible swing on the rig.
+    bool hit = false;
+    float sinceHit = 0.0f;
+
+    if (!started)
     {
+        // The first tick hits, rather than waiting up to a beat to show
+        // anything - and it is also the seat, so the beat it lands in is a
+        // half-time beat and the pairs run from here.
         started = true;
         lastBeat = beat;
+        beatsSeen = 0;
+        seatBeat = 0;
+        offbeatFired = (phase >= 0.5);
 
-        // Fire the impulse at where the beat actually landed, not at this
-        // frame's boundary. At 40fps a frame is 25ms and a beat lands anywhere
-        // inside one, so triggering at the boundary would quantise every pulse
-        // to the frame grid and put a visible swing on the rig.
-        envelope.triggerAt(static_cast<float>(clock->timeSinceBeat(now)));
+        hit = true;
+        sinceHit = clock->timeSinceBeat(now);
+    }
+    else if (beat != lastBeat)
+    {
+        lastBeat = beat;
+
+        // One beat, whatever the *number* did.
+        //
+        // This is counted rather than read off the clock, and that is the whole
+        // difference between half time alternating and half time flickering
+        // between the two beats of the pair. BeatClock guarantees its number
+        // moves forward on a beat, not that it moves by one: a tempo message
+        // re-anchors it to wherever free-run had predicted, and markBeat then
+        // steps past that, so a beat arriving a millisecond off can advance it
+        // by two. Deriving "every second beat" from that number picks a
+        // different member of the pair every time it happens - which reads on a
+        // rig as random skipping, because that is what it is.
+        ++beatsSeen;
+        offbeatFired = false;
+
+        hit = isHitBeat();
+        sinceHit = clock->timeSinceBeat(now);
+    }
+    else if (pulseRate >= kDoubleTime && !offbeatFired && phase >= 0.5)
+    {
+        // Double time's other hit, off the phase inside the beat rather than
+        // off any counting at all, so it cannot drift from the beat it belongs
+        // to. One per beat: the flag is cleared by the beat above.
+        offbeatFired = true;
+
+        hit = true;
+        sinceHit = static_cast<float>((phase - 0.5) * clock->beatSeconds());
+    }
+
+    if (hit)
+    {
+        envelope.triggerAt(sinceHit);
     }
 
     // The trigger reads the curve's peak across the frame rather than its value
@@ -81,8 +182,13 @@ void Pattern_Mythos_BeatPulse::tick(float deltaTime)
     // eanim::AutomationCurve::peak.
     envelope.tick(deltaTime);
 
+    // Intensity scales the envelope on its way into the level, so it takes the
+    // hit down toward the floor rather than taking the whole look down: at 0
+    // there is no flash, and whatever the floor is holding up is still there.
     const float floorValue = std::clamp(floorLevel, 0.0f, 1.0f);
-    level = floorValue + ((1.0f - floorValue) * std::clamp(envelope.getValue(), 0.0f, 1.0f));
+    const float hitLevel = std::clamp(envelope.getValue(), 0.0f, 1.0f)
+                         * std::clamp(intensity, 0.0f, 1.0f);
+    level = floorValue + ((1.0f - floorValue) * hitLevel);
 }
 
 void Pattern_Mythos_BeatPulse::render(eio::HSVStripNode* node, ecore::HSV& inOutColor) const
@@ -108,9 +214,11 @@ Pattern_Mythos_VuPulse::Pattern_Mythos_VuPulse()
 void Pattern_Mythos_VuPulse::reflect(ecore::PropertyBag& bag)
 {
     // The flash's own knobs first, under the names beat_pulse gives them, so
-    // the same look tunes the same way whichever state you are in.
+    // the same look tunes the same way whichever state you are in. `color` is
+    // the flash's, and every `base_` below belongs to the wash.
     pulse.reflect(bag);
 
+    bag.add("base_color", baseColor);
     bag.add("base_gain", baseGain, 0.0f, 2.0f);
     bag.add("base_floor", baseFloor, 0.0f, 1.0f);
     bag.add("base_smoothing", baseSmoothing, 0.0f, 2.0f);
@@ -120,6 +228,7 @@ void Pattern_Mythos_VuPulse::init()
 {
     pulse.init();
     baseLevel = 0.0f;
+    mixLayers();
 }
 
 void Pattern_Mythos_VuPulse::tick(float deltaTime)
@@ -140,31 +249,94 @@ void Pattern_Mythos_VuPulse::tick(float deltaTime)
     if (baseSmoothing <= 0.0f || deltaTime <= 0.0f)
     {
         baseLevel = target;
-        return;
+    }
+    else
+    {
+        // Symmetric one-pole, framed in seconds rather than as a per-frame
+        // coefficient so the look does not change with the frame rate. Equally
+        // slow in both directions on purpose: an asymmetric filter that snaps
+        // upward keeps every transient it is supposed to be removing.
+        const float rate = 1.0f - std::exp(-deltaTime / baseSmoothing);
+        baseLevel += (target - baseLevel) * rate;
     }
 
-    // Symmetric one-pole, framed in seconds rather than as a per-frame
-    // coefficient so the look does not change with the frame rate. Equally slow
-    // in both directions on purpose: an asymmetric filter that snaps upward
-    // keeps every transient it is supposed to be removing.
-    const float rate = 1.0f - std::exp(-deltaTime / baseSmoothing);
-    baseLevel += (target - baseLevel) * rate;
+    // Both layers are now where they are for this frame, so put them together
+    // once - see mixLayers().
+    mixLayers();
+}
+
+void Pattern_Mythos_VuPulse::mixLayers()
+{
+    const float flash = std::clamp(pulse.getLevel(), 0.0f, 1.0f);
+    const ecore::HSV& flashColor = pulse.pulseColor;
+
+    // Blend the two layers as *chroma vectors* — hue as an angle, saturation as
+    // a radius — rather than as a hue and a saturation apiece.
+    //
+    // This is the whole composite, and it is worth understanding before
+    // touching it, because the obvious version is wrong in two different ways
+    // and this one is wrong in neither.
+    //
+    // Adding the flash to the wash gives pink for white over red. Lerping the
+    // hue instead walks the long way round the wheel: blue over red goes
+    // through *green*, a colour nobody put in the look. Both were tried here.
+    //
+    // Interpolating the chroma vector has neither failure, because it goes
+    // through the middle of the wheel rather than around the rim. Two hues far
+    // apart lose saturation on the way between them and pass through something
+    // near white, which is what a flash washing a colour out actually looks
+    // like — red to blue goes red, pale magenta, blue.
+    //
+    // And it *is* the desaturation this look always did, not a replacement for
+    // it: white has no chroma at all, so the vector shrinks straight to the
+    // origin, the hue never moves, and the wash fades to exactly white. That
+    // case comes out of this arithmetic unchanged rather than being special
+    // cased, which is the reason to prefer it over a branch on "is the flash
+    // achromatic".
+    const float baseAngle  = baseColor.getHueFloat() * 0.01745329252f;
+    const float flashAngle = flashColor.getHueFloat() * 0.01745329252f;
+
+    const float baseSat  = baseColor.getSatFloat();
+    const float flashSat = flashColor.getSatFloat();
+
+    const float x = (baseSat * std::cos(baseAngle))
+                  + (((flashSat * std::cos(flashAngle)) - (baseSat * std::cos(baseAngle))) * flash);
+    const float y = (baseSat * std::sin(baseAngle))
+                  + (((flashSat * std::sin(flashAngle)) - (baseSat * std::sin(baseAngle))) * flash);
+
+    const float saturation = std::min(std::sqrt((x * x) + (y * y)), 1.0f);
+
+    // Hold the wash's hue when there is no chroma left to take one from. At
+    // that saturation nothing on the rig can tell, but a hue that jumps to
+    // whatever atan2(0, 0) returns would show the moment it came back.
+    float hue = baseColor.getHueFloat();
+    if (saturation > 0.0005f)
+    {
+        hue = std::atan2(y, x) * 57.2957795131f;
+        if (hue < 0.0f)
+        {
+            hue += 360.0f;
+        }
+    }
+
+    mixColor = ecore::HSV(hue, saturation, 1.0f);
+
+    // Each layer's own value is its ceiling, so a picked colour that is dark is
+    // dark on the rig: the meter scales the wash's, the envelope the flash's.
+    mixLevel = std::max(baseLevel * baseColor.getValFloat(),
+                        flash * flashColor.getValFloat());
 }
 
 void Pattern_Mythos_VuPulse::render(eio::HSVStripNode* node, ecore::HSV& inOutColor) const
 {
     (void)node;
 
-    const float flash = pulse.getLevel();
-
-    // Desaturate toward white rather than blending to a white colour. Blending
-    // would lerp the hue as well, and a hue on its way to an achromatic colour
-    // passes through hues that are not in this look at all — a red base would
-    // go orange mid-flash. Pulling saturation out leaves the hue alone and
-    // arrives at exactly white.
-    inOutColor = baseColor;
-    inOutColor.setSaturationAlpha(baseColor.getSatFloat() * (1.0f - std::clamp(flash, 0.0f, 1.0f)));
-    inOutColor.setBrightnessAlpha(std::max(baseLevel, flash));
+    // Mixed once in tick() rather than here. The whole rig is one colour, and
+    // this runs per fixture per frame - 356 of them on mythos26 - so the two
+    // trig calls and the square root would otherwise be paid 356 times for one
+    // answer.
+    inOutColor = mixColor;
+    inOutColor.setBrightnessAlpha(mixLevel);
 }
 
 // ============================================================================
@@ -302,23 +474,25 @@ namespace
         return def;
     }
 
-    /// A look that fires on the beat, with the shape of its hit.
+    /// A look that fires on the beat, with the shape of its hit and how often.
     ///
     /// Attack and decay are what a beat look *is* - a crack and a trail, or a
     /// swell and a long fall - so they belong in the cue list beside the name
-    /// rather than buried in a constructor. Both stay live knobs once it is
-    /// running; these are what it opens on.
+    /// rather than buried in a constructor, and the rate is beside them because
+    /// a look that opens in half time is a different cue, not a mistuned one.
+    /// All three stay live knobs once it is running; these are what it opens on.
     ///
     /// The lambda is where the concrete type is known, which is what keeps the
     /// machine itself from needing to know about any of them.
     template <typename PatternT>
-    StateDef beatLook(const char* name, float attackSeconds, float decaySeconds)
+    StateDef beatLook(const char* name, float attackSeconds, float decaySeconds, float pulseRate)
     {
         StateDef def;
         def.name = name;
-        def.make = [attackSeconds, decaySeconds]() -> std::shared_ptr<eanim::GeneratorHSV> {
+        def.make = [attackSeconds, decaySeconds, pulseRate]() -> std::shared_ptr<eanim::GeneratorHSV> {
             auto pattern = std::make_shared<PatternT>();
             pattern->setEnvelope(attackSeconds, decaySeconds);
+            pattern->setPulseRate(pulseRate);
             pattern->init();
             return pattern;
         };
@@ -363,17 +537,19 @@ std::unique_ptr<StateMachinePattern> edmx::makeMythos26StateMachine()
     // changing its line here; nothing else in the runner, the protocol or the
     // UI needs to know. The remaining slot_* are placeholders.
     //
-    // The two numbers on a beatLook are its envelope: how long the hit takes to
-    // reach full, and how long it takes to fall back. They are the difference
-    // between a crack and a swell, and they are live knobs at the desk once it
-    // is running - these are what the cue opens on.
+    // The first two numbers on a beatLook are its envelope: how long the hit
+    // takes to reach full, and how long it takes to fall back. They are the
+    // difference between a crack and a swell. The third is its rate: 0.5 half
+    // time, 1 on the beat, 2 double time. All three are live knobs at the desk
+    // once it is running - these are what the cue opens on.
     //
-    // Both fire on every beat. There used to be a beat divider here, and at the
-    // desk, so a look could hit on twos or once a bar. It divided correctly and
-    // still felt wrong, because the clock counts beats and has no idea which of
-    // them is the one - so "on 4" fired at the right rate on an arbitrary beat
-    // of the bar. Firing at the right rate in the wrong place is worse than not
-    // offering it.
+    // Both open on the beat. Half time is a rate rather than a return of the
+    // beat divider that used to live here: that offered 4 as well, and the
+    // clock counts beats with no idea which of them is the one, so "on 4" fired
+    // at the right rate on an arbitrary beat of the bar with no usable way to
+    // move it. A pair has a usable way - setting the rate, or entering the cue,
+    // seats it on the beat you did that on - which is exactly what a bar's
+    // worth of beats did not.
     //
     // Renaming a state means renaming it in three places: here,
     // MYTHOS26_STATES in python/eclipse_dmx/config.py, and the button table in
@@ -382,9 +558,9 @@ std::unique_ptr<StateMachinePattern> edmx::makeMythos26StateMachine()
     // without one running.
     // ------------------------------------------------------------------
     std::vector<StateDef> states = {
-        //                                          attack  decay
-        beatLook<Pattern_Mythos_BeatPulse>("beat_pulse", 0.15f, 0.60f),
-        beatLook<Pattern_Mythos_VuPulse>  ("vu_pulse",   0.10f, 0.45f),
+        //                                          attack  decay  rate
+        beatLook<Pattern_Mythos_BeatPulse>("beat_pulse", 0.15f, 0.60f, 1.0f),
+        beatLook<Pattern_Mythos_VuPulse>  ("vu_pulse",   0.10f, 0.45f, 1.0f),
 
         staticLook("tv_static_mono", true),
         staticLook("tv_static", false),

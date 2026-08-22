@@ -153,6 +153,11 @@ float BeatClock::timeSinceBeat(double now) const
     return static_cast<float>(fraction * period.load());
 }
 
+double BeatClock::beatSeconds() const
+{
+    return period.load();
+}
+
 BeatSource BeatClock::getSource() const
 {
     return static_cast<BeatSource>(source.load());

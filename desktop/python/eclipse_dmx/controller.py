@@ -63,13 +63,18 @@ class Param:
     happens. So a UI rebuilds its controls from this rather than holding on to
     them.
 
-    `kind` is "f" or "b". A bool still carries a range, so a UI can read every
-    param the same way and only branch on the widget it builds.
+    `kind` is "f", "b" or "c". A bool and a colour still carry a range,
+    pointless as it is for both, so a UI can read every param the same way and
+    only branch on the widget it builds.
+
+    `value` is a float for the first two and a `#rrggbb` string for a colour -
+    the same spelling the config file and the frame stream use.
     """
 
     __slots__ = ("name", "kind", "value", "minimum", "maximum")
 
-    def __init__(self, name: str, kind: str, value: float, minimum: float, maximum: float):
+    def __init__(self, name: str, kind: str, value: Union[float, str],
+                 minimum: float, maximum: float):
         self.name = name
         self.kind = kind
         self.value = value
@@ -80,19 +85,30 @@ class Param:
     def is_bool(self) -> bool:
         return self.kind == "b"
 
+    @property
+    def is_color(self) -> bool:
+        return self.kind == "c"
+
     def __repr__(self) -> str:
         if self.is_bool:
             return f"Param({self.name}={bool(self.value)})"
+        if self.is_color:
+            return f"Param({self.name}={self.value})"
         return f"Param({self.name}={self.value:g}, {self.minimum:g}..{self.maximum:g})"
 
 
 def _parse_param(line: str) -> Optional[Param]:
-    """Parses one ``PARAM name f 0.2 0 1`` line. None on anything malformed."""
+    """Parses one ``PARAM name f 0.2 0 1`` line. None on anything malformed.
+
+    A colour's value is the one field that is not a number - ``PARAM color c
+    #ffffff 0 1`` - so the kind is read before the value rather than after.
+    """
     parts = line.split()
     if len(parts) < 6:
         return None
     try:
-        return Param(parts[1], parts[2], float(parts[3]), float(parts[4]), float(parts[5]))
+        value: Union[float, str] = parts[3] if parts[2] == "c" else float(parts[3])
+        return Param(parts[1], parts[2], value, float(parts[4]), float(parts[5]))
     except ValueError:
         return None
 
@@ -622,12 +638,15 @@ class ShowController:
         """
         self.command(f"input {channel} {'on' if down else 'off'}")
 
-    def set_param(self, name: str, value: Union[float, bool]) -> None:
+    def set_param(self, name: str, value: Union[float, bool, str]) -> None:
         """Turns one of the running look's knobs.
 
-        Values outside a param's range are clamped rather than refused, and the
-        executable echoes back what it landed on, so `self.params` is right
-        afterwards even when the number was not.
+        A colour goes as `"#rrggbb"`; everything else as a number.
+
+        Values outside a param's range are clamped rather than refused, and a
+        rate snaps to the nearest musical one, so what you sent and what the
+        look took are not always the same thing. The executable echoes back what
+        it landed on, which is why `self.params` is right afterwards either way.
         """
         if isinstance(value, bool):
             value = 1 if value else 0

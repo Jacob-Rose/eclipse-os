@@ -1190,26 +1190,30 @@ def _rising_edges(frames, threshold=128):
 
 
 class BeatLooks(unittest.TestCase):
-    """The looks that fire on the beat, and the envelope they open with.
+    """The looks that fire on the beat: their envelope, and their rate.
 
-    There used to be a divider here - on 1 / on 2 / on 4. It divided correctly
-    and still felt wrong on a rig, because the clock counts beats and has no
-    idea which of them is the one, so "on 4" fired at the right rate on an
-    arbitrary beat of the bar. What shapes a hit now is its envelope, which is
-    per look, stated in the cue list, and live at the desk.
+    There used to be a divider here - on 1 / on 2 / on 4. It went, because the
+    clock counts beats and has no idea which of them is the one, so "on 4"
+    fired at the right rate on an arbitrary beat of the bar with no usable way
+    to move it. Half time is back as a rate because a pair *has* a usable way:
+    setting the rate, or entering the cue, seats it on the beat you did that
+    on. Double time never had the problem - it lands on the beat and between
+    them, whichever beat it counts from.
     """
 
     @classmethod
     def setUpClass(cls):
         executable_or_skip()
 
-    def _count(self, state, seconds=4.0, bpm=120.0):
+    def _count(self, state, seconds=4.0, bpm=120.0, params=None):
         frames = []
         show = ShowController(
             SHOW, dry_run=True, midi="", bpm=bpm, on_frame=frames.append, emit_rate=40.0
         )
         try:
             show.set_state(state)
+            for name, value in (params or {}).items():
+                show.set_param(name, value)
             frames.clear()          # drop the cross-fade
             time.sleep(seconds)
         finally:
@@ -1254,6 +1258,97 @@ class BeatLooks(unittest.TestCase):
             time.sleep(0.3)
             knobs = {p.name: p.value for p in show.params}
             self.assertAlmostEqual(knobs["decay"], 1.25, places=3)
+        finally:
+            show.stop()
+
+    def test_half_time_hits_on_every_second_beat(self):
+        beats = 120.0 / 60.0 * 4.0
+        self.assertAlmostEqual(self._count("beat_pulse", params={"rate": 0.5}),
+                               beats / 2.0, delta=1.0)
+
+    def test_double_time_hits_between_the_beats_too(self):
+        """A short envelope, because a hit has to end before it can start again.
+
+        At double time a beat is 250ms and the look's own envelope is 750ms, so
+        counting edges on the default shape would count the one it never comes
+        back down from. That is the look behaving correctly - the rate divides
+        the beat, never the envelope - and it is why `decay` is right there.
+        """
+        beats = 120.0 / 60.0 * 4.0
+        count = self._count("beat_pulse",
+                            params={"attack": 0.02, "decay": 0.12, "rate": 2.0})
+        self.assertAlmostEqual(count, beats * 2.0, delta=2.0)
+
+    def test_half_time_alternates_on_a_tapped_beat(self):
+        """The regression: it hit twice in a row, then skipped, on a real rig.
+
+        Rate alone does not catch it - the count over a window stays about
+        right while the *placement* wanders - so this measures the gaps between
+        hits and wants every one of them two beats wide.
+
+        Tapped rather than free-run because that is the path that broke it. A
+        tap goes through `BeatClock::markBeat`, which guarantees the beat number
+        moves forward but not that it moves by one: a beat landing a hair off
+        the predicted one advances it by two, and half time derived from that
+        number changes which beat of the pair it is on every time that happens.
+        Python's timing jitter is the same hair, so the taps below reproduce it
+        without needing Mixxx on the other end of a cable.
+        """
+        period = 0.35
+        stamped = []
+        show = ShowController(SHOW, dry_run=True, midi="",
+                              on_frame=lambda frame: stamped.append(
+                                  (time.monotonic(), max(frame[0]) > 128)),
+                              emit_rate=40.0)
+        try:
+            show.set_state("beat_pulse")
+            show.set_param("rate", 0.5)
+            show.set_param("decay", 0.12)   # a hit that ends inside one beat
+            show.set_param("attack", 0.02)
+
+            for _ in range(16):
+                show.command("beat")
+                time.sleep(period)
+            stamped.clear()
+
+            for _ in range(16):
+                show.command("beat")
+                time.sleep(period)
+        finally:
+            show.stop()
+
+        edges = [now for index, (now, lit) in enumerate(stamped)
+                 if lit and index > 0 and not stamped[index - 1][1]]
+        self.assertGreaterEqual(len(edges), 4, "too few hits to judge the spacing")
+
+        gaps = [b - a for a, b in zip(edges, edges[1:])]
+        for gap in gaps:
+            self.assertAlmostEqual(gap, period * 2, delta=period * 0.5,
+                                   msg=f"hits {period * 2:.2f}s apart expected, got {gaps}")
+
+    def test_the_cue_list_sets_the_rate(self):
+        """Both looks open on the beat; the rate is a live knob from there."""
+        show = ShowController(SHOW, dry_run=True, midi="", on_frame=lambda f: None)
+        try:
+            for state in ("beat_pulse", "vu_pulse"):
+                show.set_state(state)
+                time.sleep(0.4)
+                knobs = {p.name: p.value for p in show.params}
+                self.assertAlmostEqual(knobs["rate"], 1.0, places=3, msg=state)
+        finally:
+            show.stop()
+
+    def test_the_rate_snaps_to_the_musical_ones(self):
+        """A slider will hand over 1.37. Nobody wants 1.37 hits a beat."""
+        show = ShowController(SHOW, dry_run=True, midi="", on_frame=lambda f: None)
+        try:
+            show.set_state("beat_pulse")
+            time.sleep(0.4)
+            for sent, landed in ((0.5, 0.5), (0.7, 0.5), (0.9, 1.0),
+                                 (1.37, 1.0), (1.6, 2.0), (2.0, 2.0)):
+                show.set_param("rate", sent)
+                self.assertAlmostEqual(show.get_param("rate").value, landed, places=3,
+                                       msg=f"sent {sent}")
         finally:
             show.stop()
 
@@ -1758,6 +1853,53 @@ class ViewerOnTheShow(unittest.TestCase):
         self.assertIn("base_gain", self.app._param_widgets)
         self.assertEqual(self.app._status, "")
 
+    def test_a_colour_knob_gets_a_swatch_of_its_own_colour(self):
+        self.settle(1.0)
+        _, swatch = self.app._param_widgets["color"]
+        self.assertIsNotNone(swatch)
+        self.assertEqual(str(swatch.cget("bg")), "#ffffff")
+
+    def test_a_picked_colour_reaches_the_look_and_the_swatch(self):
+        """The picker itself is the system's; everything either side is ours."""
+        from eclipse_dmx import viewer
+
+        self.settle(1.0)
+        picked = []
+
+        def fake_picker(*args, **kwargs):
+            picked.append(kwargs.get("color"))
+            return ((0, 64, 255), "#0040ff")
+
+        original = viewer.colorchooser.askcolor
+        viewer.colorchooser.askcolor = fake_picker
+        try:
+            self.app._pick_color("color")
+            self.settle(0.5)
+        finally:
+            viewer.colorchooser.askcolor = original
+
+        # Opened on the colour the look is actually showing, not on a default.
+        self.assertEqual(picked, ["#ffffff"])
+        self.assertEqual(self.app.show.get_param("color").value, "#0040ff")
+        self.assertEqual(str(self.app._param_widgets["color"][1].cget("bg")), "#0040ff")
+        self.assertEqual(self.app._status, "")
+
+    def test_a_cancelled_pick_changes_nothing(self):
+        from eclipse_dmx import viewer
+
+        self.settle(1.0)
+        before = self.app.show.get_param("color").value
+
+        original = viewer.colorchooser.askcolor
+        viewer.colorchooser.askcolor = lambda *args, **kwargs: (None, None)
+        try:
+            self.app._pick_color("color")
+            self.settle(0.4)
+        finally:
+            viewer.colorchooser.askcolor = original
+
+        self.assertEqual(self.app.show.get_param("color").value, before)
+
     def test_a_slider_reaches_the_look(self):
         self.settle(1.0)
         self.app._on_param_slider("floor", "0.75")
@@ -1805,12 +1947,14 @@ class LookParams(unittest.TestCase):
         try:
             time.sleep(0.6)
             names = [param.name for param in show.params]
-            self.assertEqual(names, ["attack", "decay", "floor", "hold"])
+            self.assertEqual(names, ["attack", "decay", "intensity", "floor",
+                                     "hold", "rate", "color"])
 
             attack = show.get_param("attack")
             self.assertEqual(attack.kind, "f")
             self.assertFalse(attack.is_bool)
             self.assertTrue(show.get_param("hold").is_bool)
+            self.assertTrue(show.get_param("color").is_color)
         finally:
             show.stop()
 
@@ -1931,6 +2075,156 @@ class LookParams(unittest.TestCase):
             dump = json.loads(show.dump_params())
             self.assertAlmostEqual(dump["attack"], 0.25, places=3)
             self.assertIsInstance(dump["hold"], bool)
+        finally:
+            show.stop()
+
+    def test_a_colour_knob_round_trips_as_hex(self):
+        show = self._show()
+        try:
+            time.sleep(0.6)
+            self.assertEqual(show.get_param("color").value, "#ffffff")
+
+            show.set_param("color", "#0040ff")
+            self.assertEqual(show.get_param("color").value, "#0040ff")
+        finally:
+            show.stop()
+
+    def _peak_colour(self, state, knobs):
+        """The lit frame's colour, on the rig, with those knobs set."""
+        frames = []
+        show = ShowController(SHOW, dry_run=True, midi="", bpm=128.0,
+                              on_frame=frames.append, emit_rate=40.0)
+        try:
+            show.set_state(state)
+            for name, value in knobs.items():
+                show.set_param(name, value)
+            time.sleep(0.8)         # past the cross-fade
+            frames.clear()
+            time.sleep(1.0)
+        finally:
+            show.stop()
+        self.assertTrue(frames, "no frames arrived")
+        return max(frames, key=lambda frame: max(frame[0]))[0]
+
+    def test_a_colour_knob_reaches_the_render(self):
+        red, green, blue = self._peak_colour("beat_pulse", {"color": "#00ff00"})
+        self.assertGreater(green, 200)
+        self.assertLess(red, 40)
+        self.assertLess(blue, 40)
+
+    def test_a_flash_colour_survives_the_vu_composite(self):
+        """The layer above the wash is the flash's colour, not white.
+
+        The composite desaturates rather than blends, which arrives at exactly
+        white for the white it opens on. A flash with a hue of its own has to
+        arrive at *that*, or the picker is a lie on this look.
+        """
+        red, green, blue = self._peak_colour("vu_pulse", {"color": "#00ff00"})
+        self.assertGreater(green, 200)
+        self.assertLess(red, 40)
+        self.assertLess(blue, 40)
+
+    def test_flash_intensity_takes_the_hit_down_not_the_rig(self):
+        """It scales the hit, and the floor holding the rig up is left alone."""
+        def peak(knobs):
+            frames = []
+            show = ShowController(SHOW, dry_run=True, midi="", bpm=128.0,
+                                  on_frame=frames.append, emit_rate=40.0)
+            try:
+                show.set_state("vu_pulse")
+                for name, value in knobs.items():
+                    show.set_param(name, value)
+                time.sleep(0.8)
+                frames.clear()
+                time.sleep(1.0)
+            finally:
+                show.stop()
+            self.assertTrue(frames, "no frames arrived")
+            return (max(max(frame[0]) for frame in frames),
+                    min(max(frame[0]) for frame in frames))
+
+        full, _ = peak({})
+        half, _ = peak({"intensity": 0.5})
+        none, floor_lit = peak({"intensity": 0.0, "floor": 0.6})
+
+        self.assertGreater(full, 200)
+
+        # Half the hit is dimmer, but not by half on the wire: the show's
+        # master gamma of 2.2 sits between the two, so 0.5 arrives at about
+        # 0.5^2.2. The bounds are loose because what is being tested is that
+        # the knob reaches the render, not what gamma does.
+        self.assertLess(half, full * 0.75)
+        self.assertGreater(half, full * 0.10)
+
+        # No flash left, but the floor is still lighting the rig - and flat,
+        # because there is no hit on top of it to move it.
+        self.assertGreater(floor_lit, 60)
+        self.assertLess(none - floor_lit, 20)
+
+    def test_the_composite_never_invents_a_third_colour(self):
+        """Blue over red went through *green* on the way. Nobody put green here.
+
+        The regression that took the composite from lerping hues to blending
+        chroma vectors: red to blue around the rim of the wheel passes through
+        green, and through the middle it passes through pale magenta - which is
+        what a flash washing a colour out looks like, and is also exactly the
+        desaturation this look does with the white it opens on.
+        """
+        frames = []
+        show = ShowController(SHOW, dry_run=True, midi="", bpm=128.0,
+                              on_frame=frames.append, emit_rate=40.0)
+        try:
+            show.set_state("vu_pulse")
+            show.set_param("color", "#0000ff")
+            time.sleep(1.0)     # past the cue's cross-fade, which blends its own way
+            frames.clear()
+            time.sleep(1.5)
+        finally:
+            show.stop()
+
+        self.assertTrue(frames, "no frames arrived")
+
+        # Green-dominant, and bright enough that it is a colour rather than
+        # rounding on a nearly dark fixture.
+        greenish = [colour for colour in (frame[0] for frame in frames)
+                    if colour[1] > colour[0] and colour[1] > colour[2] and colour[1] > 24]
+        self.assertFalse(greenish,
+                         f"green between a red wash and a blue flash: {greenish[:6]}")
+
+    def test_a_colour_that_is_not_one_is_rejected_without_dying(self):
+        show = self._show()
+        try:
+            time.sleep(0.6)
+            with self.assertRaises(ShowError):
+                show.set_param("color", "banana")
+            self.assertTrue(show.is_running)
+
+            # And the other way round: a number is not a colour either.
+            with self.assertRaises(ShowError):
+                show.set_param("color", 0.5)
+            self.assertTrue(show.is_running)
+        finally:
+            show.stop()
+
+    def test_a_hex_string_is_not_a_number_knob(self):
+        """`param attack #ff0000` is a mistake, not a conversion."""
+        show = self._show()
+        try:
+            time.sleep(0.6)
+            with self.assertRaises(ShowError):
+                show.set_param("attack", "#ff0000")
+            self.assertTrue(show.is_running)
+        finally:
+            show.stop()
+
+    def test_dump_keeps_a_colour_as_a_string(self):
+        """The point of a dump is that it can be pasted back into a config."""
+        show = self._show()
+        try:
+            time.sleep(0.6)
+            show.set_param("color", "#123456")
+            dump = json.loads(show.dump_params())
+            self.assertEqual(dump["color"], "#123456")
         finally:
             show.stop()
 

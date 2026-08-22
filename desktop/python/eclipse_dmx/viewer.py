@@ -26,6 +26,7 @@ import time
 import tkinter as tk
 from dataclasses import dataclass
 from pathlib import Path
+from tkinter import colorchooser
 from typing import Dict, List, Optional, Sequence, Tuple, Union
 
 from .config import RELIC_TYPES, Config
@@ -844,8 +845,10 @@ class ViewerApp:
 
         self.param_panel = tk.Frame(self.param_pane, bg=PANEL)
         self.param_panel.pack(fill="both", expand=True, padx=4, pady=2)
-        self._param_widgets: Dict[str, Tuple[tk.Variable, Optional[tk.Entry]]] = {}
-        self._param_sent: Dict[str, float] = {}
+        # The second half is whatever else the row carries: a box for a float, a
+        # swatch button for a colour, nothing for a bool.
+        self._param_widgets: Dict[str, Tuple[tk.Variable, Optional[tk.Widget]]] = {}
+        self._param_sent: Dict[str, Union[float, str]] = {}
         self._param_revision = -1
         self._param_writing = False
         self._sash_placed = False
@@ -899,7 +902,10 @@ class ViewerApp:
 
         A float gets a slider and a box. The slider is for finding a value and
         the box is for saying one - a 0..3 slider 110 pixels wide cannot express
-        0.15, and an envelope tuned to the nearest pixel is not tuned.
+        0.15, and an envelope tuned to the nearest pixel is not tuned. A bool
+        gets a checkbox, and a colour gets a swatch that opens the system
+        picker: a colour is chosen by looking at it, never by typing three
+        numbers at it.
         """
         for child in self.param_panel.winfo_children():
             child.destroy()
@@ -941,6 +947,24 @@ class ViewerApp:
             # shunting the row sideways out of the pane.
             tk.Label(cell, text=param.name, bg=PANEL, fg=TEXT_DIM, width=14,
                      anchor="w", font=("Consolas", 9)).pack(side="left")
+
+            if param.is_color:
+                # The swatch *is* the control: it shows the colour and clicking
+                # it changes the colour. A hex box beside it would be a second
+                # way to say the same thing, and one of them would always be
+                # stale by a frame.
+                variable = tk.StringVar(value=str(param.value))
+                swatch = tk.Button(
+                    cell, width=10, text="", relief="flat", borderwidth=0,
+                    highlightthickness=1, highlightbackground=BUTTON_BG,
+                    bg=str(param.value), activebackground=str(param.value),
+                    command=lambda name=param.name: self._pick_color(name),
+                )
+                swatch.pack(side="left", padx=(4, 2))
+
+                self._param_widgets[param.name] = (variable, swatch)
+                self._param_sent[param.name] = param.value
+                continue
 
             variable = tk.DoubleVar(value=param.value)
             tk.Scale(
@@ -999,12 +1023,34 @@ class ViewerApp:
 
         self._apply_param(name, target)
 
-    def _apply_param(self, name: str, value: float) -> None:
+    def _pick_color(self, name: str) -> None:
+        """Opens the system colour picker on a colour knob.
+
+        The picker is modal and the show keeps running behind it, which is the
+        right way round: you pick against the rig doing what it is doing, not
+        against a frozen window.
+        """
+        param = self.show.get_param(name)
+        current = str(param.value) if param is not None else "#ffffff"
+
+        try:
+            chosen = colorchooser.askcolor(color=current, title=name, parent=self.root)[1]
+        except tk.TclError:
+            # A colour the picker will not open on - it has been asked to start
+            # from something it cannot parse. Fall back rather than take the
+            # window down with it.
+            chosen = colorchooser.askcolor(title=name, parent=self.root)[1]
+
+        if chosen:
+            self._apply_param(name, str(chosen))
+
+    def _apply_param(self, name: str, value: Union[float, str]) -> None:
         self._param_sent[name] = value
         self._guard(lambda: self.show.set_param(name, value), f"param {name}")
 
-        # The executable clamps to the range and echoes what it landed on, so
-        # the widgets follow the look rather than the other way round.
+        # The executable clamps to the range, snaps a rate to a musical one, and
+        # echoes what it landed on - so the widgets follow the look rather than
+        # the other way round.
         self._show_param(name)
 
     def _show_param(self, name: str) -> None:
@@ -1013,13 +1059,19 @@ class ViewerApp:
         if param is None or widgets is None:
             return
 
-        variable, entry = widgets
+        variable, control = widgets
         self._param_writing = True
         try:
-            variable.set(1 if (param.is_bool and param.value) else (0 if param.is_bool else param.value))
-            if entry is not None:
-                entry.delete(0, "end")
-                entry.insert(0, f"{param.value:g}")
+            if param.is_color:
+                variable.set(str(param.value))
+                if control is not None:
+                    control.configure(bg=str(param.value), activebackground=str(param.value))
+            else:
+                variable.set(
+                    1 if (param.is_bool and param.value) else (0 if param.is_bool else param.value))
+                if control is not None:
+                    control.delete(0, "end")
+                    control.insert(0, f"{param.value:g}")
         finally:
             self._param_writing = False
         self._param_sent[name] = param.value
