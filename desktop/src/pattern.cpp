@@ -385,6 +385,13 @@ namespace
             return std::unique_ptr<Pattern>(makeJacketStateMachine().release());
         };
 
+        // Afterglow's whole LED state machine, states named by its own tags.
+        // The game drives it with `state <tag> [seconds]` and takes the frame
+        // stream back for its ring.
+        table["scanner"] = []() {
+            return std::unique_ptr<Pattern>(makeScannerStateMachine().release());
+        };
+
         // --- the show -------------------------------------------------------
         // Written for the rig rather than borrowed from a relic, and the first
         // thing here that reads the beat. See makeMythos26StateMachine.

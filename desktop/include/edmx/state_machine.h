@@ -51,12 +51,20 @@ namespace edmx
     /// `make` builds the generator. `applyInput` is optional and forwards the
     /// two momentary inputs the relic patterns expose; leave it empty for a
     /// look that does not take input.
+    ///
+    /// `makeState` is optional and wraps the made generator in a custom
+    /// State_GenericHSV subclass. The scanner's looks need this: their
+    /// State_ScannerHSV rewinds the pattern's clock on entry, which is what
+    /// makes a timed look like power_up start from its beginning each time
+    /// rather than wherever its clock had drifted to.
     struct StateDef
     {
         std::string name;
         std::function<std::shared_ptr<eanim::GeneratorHSV>()> make;
         std::function<void(eanim::GeneratorHSV*, bool inputA, bool inputB)> applyInput;
-
+        std::function<std::shared_ptr<State_GenericHSV>(
+            const char* stateName, eio::RelicIO* io,
+            std::shared_ptr<eanim::GeneratorHSV> generator)> makeState;
     };
 
 
@@ -100,6 +108,11 @@ namespace edmx
         /// state; asking for the state already showing is a no-op, not an error.
         bool setState(const std::string& stateName, std::string& outError);
 
+        /// How long the next cross-fades take, in seconds. This is how a
+        /// caller that knows its own choreography - afterglow sends its
+        /// transitionTo(state, time) pairs - gets each blend at its length.
+        void setTransitionTime(float seconds);
+
         /// The two momentary inputs the relic patterns read. On a jacket these
         /// are remote buttons; here they are whatever the UI wires them to.
         void setInput(bool inputA, bool inputB);
@@ -140,4 +153,11 @@ namespace edmx
     /// Hardcoded on purpose — see the table in state_machine.cpp, where adding
     /// a look is one line.
     std::unique_ptr<StateMachinePattern> makeJacketStateMachine();
+
+    /// The scanner's looks - afterglow's LED states - as a state machine.
+    ///
+    /// State names are the exact tags afterglow's python game transitions
+    /// between, so the game can mirror itself here with `state <tag> [seconds]`
+    /// and let this end render its pixels.
+    std::unique_ptr<StateMachinePattern> makeScannerStateMachine();
 }

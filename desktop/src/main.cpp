@@ -1640,6 +1640,15 @@ namespace
                 return;
             }
 
+            // `state <name> [seconds]` - the optional seconds are this blend's
+            // length, which is how afterglow's transitionTo(state, time) pairs
+            // arrive as one line. Sticky until the next override, like the
+            // relic end of the same command.
+            if (words.size() > 2)
+            {
+                machine->setTransitionTime(static_cast<float>(atof(words[2].c_str())));
+            }
+
             std::string error;
             if (!machine->setState(words[1], error))
             {

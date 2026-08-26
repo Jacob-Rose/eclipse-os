@@ -24,6 +24,9 @@
 #include "relics/jacket/visual/state_systemoverload.h"
 #include "relics/jacket/visual/state_warpturbines.h"
 
+// The scanner's looks - afterglow's LED states. Same files the obelisk runs.
+#include "relics/scanner/scanner_patterns.h"
+
 using namespace edmx;
 
 // ============================================================================
@@ -98,8 +101,20 @@ void StateMachinePattern::ensureBuilt(const PatternContext& context)
         // wrappers reach into JacketIO for physical buttons, which do not exist
         // here. The state machine, the transitions and the pattern code are all
         // the relic's own; only where the input comes from differs.
-        auto state = std::make_shared<State_GenericHSV>(def.name.c_str(), io.get());
-        state->setGenerator(generator);
+        //
+        // A def that carries makeState is the exception: its wrapper does
+        // something the machine needs (the scanner's rewinds the look's clock
+        // on entry) and depends on no hardware, so it runs here as itself.
+        std::shared_ptr<State_GenericHSV> state;
+        if (def.makeState)
+        {
+            state = def.makeState(def.name.c_str(), io.get(), generator);
+        }
+        else
+        {
+            state = std::make_shared<State_GenericHSV>(def.name.c_str(), io.get());
+            state->setGenerator(generator);
+        }
         state->init();
 
         manager->addState(state);
@@ -240,6 +255,15 @@ void StateMachinePattern::setInput(bool inA, bool inB)
     inputB = inB;
 }
 
+void StateMachinePattern::setTransitionTime(float seconds)
+{
+    transitionTime = std::max(seconds, 0.0f);
+    if (machine)
+    {
+        machine->transitionTime = transitionTime;
+    }
+}
+
 // ============================================================================
 // The jacket
 // ============================================================================
@@ -329,4 +353,83 @@ std::unique_ptr<StateMachinePattern> edmx::makeJacketStateMachine()
         static_cast<uint8_t>(jacket::JacketSegmentID::MONOWIRE),
         whip,
         0.4f)); // the jacket's own cross-fade
+}
+
+// ============================================================================
+// The scanner
+// ============================================================================
+
+namespace
+{
+    /// A scanner look. Wrapped in State_ScannerHSV so its clock rewinds on
+    /// entry - a timed look like power_up plays from its start each visit.
+    template <typename PatternT>
+    StateDef scannerLook(const char* name)
+    {
+        StateDef def;
+        def.name = name;
+        def.make = []() {
+            return std::static_pointer_cast<eanim::GeneratorHSV>(std::make_shared<PatternT>());
+        };
+        def.makeState = [](const char* stateName, eio::RelicIO* io,
+                           std::shared_ptr<eanim::GeneratorHSV> generator) {
+            return std::static_pointer_cast<State_GenericHSV>(
+                std::make_shared<scanner::State_ScannerHSV>(stateName, io,
+                    std::static_pointer_cast<scanner::PatternScanner>(generator)));
+        };
+        return def;
+    }
+
+    /// A scanner look that is one flat colour.
+    StateDef scannerSolid(const char* name, const ecore::HSV& color)
+    {
+        StateDef def = scannerLook<scanner::Pattern_Scanner_Solid>(name);
+        def.make = [color]() {
+            return std::static_pointer_cast<eanim::GeneratorHSV>(
+                std::make_shared<scanner::Pattern_Scanner_Solid>(color));
+        };
+        return def;
+    }
+}
+
+std::unique_ptr<StateMachinePattern> edmx::makeScannerStateMachine()
+{
+    using namespace scanner;
+    using ecore::HSV;
+
+    // The same table ObeliskCore registers, and for the same reason: these
+    // names are afterglow's own state tags, so the python game can send its
+    // transitions verbatim. Variants the game picks with save-file flags
+    // (emergency lock, broken device, discovery, seed verdict) are their own
+    // tags - only the game knows the save, it just names the look it wants.
+    std::vector<StateDef> states = {
+        scannerLook<Pattern_Scanner_PowerUp>("power_up"),
+        scannerLook<Pattern_Scanner_Boot>("boot"),
+        scannerLook<Pattern_Scanner_ScanIdle>("scan_idle"),
+        scannerLook<Pattern_Scanner_Emergency>("scan_idle_emergency"),
+        scannerSolid("scan_idle_broken", HSV(0.0f, 0.0f, 0.0f)),
+        scannerLook<Pattern_Scanner_DetectedWave>("scan_item_detected_filter"),
+        scannerLook<Pattern_Scanner_DetectedShimmer>("scan_item_detected_generic"),
+        scannerLook<Pattern_Scanner_DetectedShimmer>("scan_item_detected_seed"),
+        scannerLook<Pattern_Scanner_DetectedMushroom>("scan_item_detected_mushroom"),
+        scannerLook<Pattern_Scanner_DetectedMushroomNew>("scan_item_detected_mushroom_new"),
+        scannerSolid("scan_item_success", HSV(120.0f, 1.0f, 0.392f)),   // rgb(0,100,0)
+        scannerLook<Pattern_Scanner_SuccessMushroom>("scan_item_success_mushroom"),
+        scannerSolid("scan_item_success_secret", HSV(120.0f, 1.0f, 0.392f)),
+        scannerSolid("scan_item_failure", HSV(0.0f, 1.0f, 0.471f)),     // rgb(120,0,0)
+        scannerLook<Pattern_Scanner_PlaybackMushroom>("audio_playback_mushroom"),
+        scannerLook<Pattern_Scanner_PlaybackGeneric>("audio_playback_generic"),
+        scannerSolid("audio_playback_seed", HSV(120.0f, 1.0f, 0.392f)),
+        scannerSolid("audio_playback_seed_bad", HSV(0.0f, 1.0f, 0.392f)), // rgb(100,0,0)
+        scannerSolid("audio_playback_rest", HSV(0.0f, 0.0f, 0.0f)),
+    };
+
+    // The looks read the strip index, not coordinates, so the frame is the
+    // default straight run. Segment id 0: nothing branches on it.
+    CoordFrame frame;
+
+    // 0.5s covers most of the game's transitionTo times; the game overrides
+    // per change with `state <tag> <seconds>`.
+    return std::unique_ptr<StateMachinePattern>(new StateMachinePattern(
+        "scanner", std::move(states), 0, frame, 0.5f));
 }
