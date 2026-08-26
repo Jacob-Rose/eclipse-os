@@ -922,16 +922,28 @@ namespace
             });
         }
 
-        void stop()
+        /// True means the reader is still parked in getline and the caller
+        /// must not let normal process teardown run - see the exit note where
+        /// this is called.
+        bool stop()
         {
             running = false;
-            if (thread.joinable())
+            if (!thread.joinable())
             {
-                // std::cin has no portable interrupt, so we leave the reader
-                // detached rather than hang the shutdown waiting on a line
-                // that is never going to arrive.
-                thread.detach();
+                return false;
             }
+            if (eof)
+            {
+                // getline already returned; the thread is on its way out and
+                // the join is immediate.
+                thread.join();
+                return false;
+            }
+            // std::cin has no portable interrupt, so we leave the reader
+            // detached rather than hang the shutdown waiting on a line
+            // that is never going to arrive.
+            thread.detach();
+            return true;
         }
 
         std::vector<std::string> drain()
@@ -3015,8 +3027,24 @@ int main(int argc, char** argv)
     // whose owner is on its way out.
     show.midi.close();
 
-    stdinReader.stop();
+    const bool stdinStuck = stdinReader.stop();
 
     emit("DONE frames=" + std::to_string(framesRendered));
+
+    if (stdinStuck)
+    {
+        // Detaching the reader was not the whole story. On glibc the thread
+        // is blocked in read() *holding stdin's stream lock*, and exit()'s
+        // stdio cleanup takes every stream's lock to flush it - so a --frames
+        // run at an interactive terminal printed DONE and then hung on a lock
+        // that would only be released by a keypress. Everything real is
+        // already shut down by hand above (dark frame sent, ports closed,
+        // MIDI closed, cout flushed by emit), so skip the teardown that
+        // deadlocks rather than perform it.
+        std::fflush(stdout);
+        std::fflush(stderr);
+        std::_Exit(exitCode);
+    }
+
     return exitCode;
 }
