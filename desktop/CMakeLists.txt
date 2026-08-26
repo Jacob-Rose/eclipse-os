@@ -196,6 +196,29 @@ target_link_libraries(eclipse-dmx PRIVATE edmx eclipse_relic_firmware)
 find_package(Threads REQUIRED)
 target_link_libraries(edmx PUBLIC Threads::Threads)
 
+# 32-bit ARM - a Raspberry Pi - has no inline 64-bit atomics. The beat clock's
+# atomic doubles and counters compile into __atomic_load_8 calls that live in
+# libatomic, which gcc does not link by itself, so the build dies at the last
+# step with pages of undefined references. x86-64 never notices. Probed rather
+# than matched on architecture, so any platform with the same gap gets the
+# same fix.
+include(CheckCXXSourceCompiles)
+set(ECLIPSE_ATOMIC64_TEST "
+#include <atomic>
+#include <cstdint>
+int main() { std::atomic<std::uint64_t> v{0}; ++v; return int(v.load()); }
+")
+check_cxx_source_compiles("${ECLIPSE_ATOMIC64_TEST}" ECLIPSE_ATOMIC64_BUILTIN)
+if(NOT ECLIPSE_ATOMIC64_BUILTIN)
+    set(CMAKE_REQUIRED_LIBRARIES atomic)
+    check_cxx_source_compiles("${ECLIPSE_ATOMIC64_TEST}" ECLIPSE_ATOMIC64_VIA_LIBATOMIC)
+    unset(CMAKE_REQUIRED_LIBRARIES)
+    if(NOT ECLIPSE_ATOMIC64_VIA_LIBATOMIC)
+        message(FATAL_ERROR "64-bit atomics do not link, with or without libatomic")
+    endif()
+    target_link_libraries(edmx PUBLIC atomic)
+endif()
+
 if(WIN32)
     # RegOpenKeyEx / RegEnumValue for port enumeration
     target_link_libraries(edmx PUBLIC advapi32)
