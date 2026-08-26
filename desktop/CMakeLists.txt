@@ -85,6 +85,11 @@ set(ECLIPSE_CORE_SOURCES
 set(ECLIPSE_RELIC_SOURCES
     ${ECLIPSE_SRC}/relics/obelisk/state_obelisk.cpp
 
+    # The scanner's looks - afterglow's LED states in pattern form. The
+    # scanner device itself stays python; these exist so the obelisk (and this
+    # desk) can render the matching picture.
+    ${ECLIPSE_SRC}/relics/scanner/scanner_patterns.cpp
+
     # The jacket's looks. Its State_* wrappers reach into JacketIO for physical
     # buttons, so the desktop drives the Pattern_* generators inside them
     # directly, through esm's own State_GenericHSV - the state machine is real,

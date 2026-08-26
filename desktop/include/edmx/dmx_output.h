@@ -184,6 +184,14 @@ namespace edmx
         /// The fallback, and on Windows the only one.
         SerialPort serial;
 
+        /// When the last frame was handed over, and how long it needs to clock
+        /// out. The next break must not be asserted before then — that is the
+        /// entire bug this class was rewritten for. Declared on every platform
+        /// because open() computes frameSeconds unconditionally; only the
+        /// libftdi path below actually paces on it.
+        double lastWriteAt{0.0};
+        double frameSeconds{0.0};
+
 #if !defined(_WIN32)
         /// libftdi's context, when we got one. See edmx/ftdi_dmx.h for why this
         /// is preferred over the serial port rather than the other way around:
@@ -191,12 +199,6 @@ namespace edmx
         /// break lands inside the previous frame and the rig stays dark while
         /// every diagnostic reports success.
         void* ftdi{nullptr};
-
-        /// When the last frame was handed over, and how long it needs to clock
-        /// out. The next break must not be asserted before then — that is the
-        /// entire bug this class was rewritten for.
-        double lastWriteAt{0.0};
-        double frameSeconds{0.0};
 #endif
     };
 

@@ -14,6 +14,7 @@
 // The relic's own pattern source, compiled for the host. Not a copy: this is
 // the same file the obelisk runs, and it needed no changes to get here.
 #include "relics/obelisk/state_obelisk.h"
+#include "relics/scanner/scanner_patterns.h"
 
 #include "edmx/mythos26.h"
 #include "edmx/state_machine.h"
@@ -403,6 +404,53 @@ namespace
         table["obelisk_mono"] = []() {
             return std::unique_ptr<Pattern>(new GeneratorPattern(
                 "obelisk_mono", std::make_shared<Pattern_Obelisk_Monocolor>()));
+        };
+
+        // --- the scanner's looks (afterglow), unmodified --------------------
+        // The solids are left out; `solid` and `off` already cover them.
+        table["scanner_power_up"] = []() {
+            return std::unique_ptr<Pattern>(new GeneratorPattern(
+                "scanner_power_up", std::make_shared<scanner::Pattern_Scanner_PowerUp>()));
+        };
+        table["scanner_boot"] = []() {
+            return std::unique_ptr<Pattern>(new GeneratorPattern(
+                "scanner_boot", std::make_shared<scanner::Pattern_Scanner_Boot>()));
+        };
+        table["scanner_idle"] = []() {
+            return std::unique_ptr<Pattern>(new GeneratorPattern(
+                "scanner_idle", std::make_shared<scanner::Pattern_Scanner_ScanIdle>()));
+        };
+        table["scanner_emergency"] = []() {
+            return std::unique_ptr<Pattern>(new GeneratorPattern(
+                "scanner_emergency", std::make_shared<scanner::Pattern_Scanner_Emergency>()));
+        };
+        table["scanner_detected"] = []() {
+            return std::unique_ptr<Pattern>(new GeneratorPattern(
+                "scanner_detected", std::make_shared<scanner::Pattern_Scanner_DetectedWave>()));
+        };
+        table["scanner_shimmer"] = []() {
+            return std::unique_ptr<Pattern>(new GeneratorPattern(
+                "scanner_shimmer", std::make_shared<scanner::Pattern_Scanner_DetectedShimmer>()));
+        };
+        table["scanner_mushroom"] = []() {
+            return std::unique_ptr<Pattern>(new GeneratorPattern(
+                "scanner_mushroom", std::make_shared<scanner::Pattern_Scanner_DetectedMushroom>()));
+        };
+        table["scanner_mushroom_new"] = []() {
+            return std::unique_ptr<Pattern>(new GeneratorPattern(
+                "scanner_mushroom_new", std::make_shared<scanner::Pattern_Scanner_DetectedMushroomNew>()));
+        };
+        table["scanner_success_mushroom"] = []() {
+            return std::unique_ptr<Pattern>(new GeneratorPattern(
+                "scanner_success_mushroom", std::make_shared<scanner::Pattern_Scanner_SuccessMushroom>()));
+        };
+        table["scanner_playback_mushroom"] = []() {
+            return std::unique_ptr<Pattern>(new GeneratorPattern(
+                "scanner_playback_mushroom", std::make_shared<scanner::Pattern_Scanner_PlaybackMushroom>()));
+        };
+        table["scanner_playback_generic"] = []() {
+            return std::unique_ptr<Pattern>(new GeneratorPattern(
+                "scanner_playback_generic", std::make_shared<scanner::Pattern_Scanner_PlaybackGeneric>()));
         };
     }
 }

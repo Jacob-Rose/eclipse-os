@@ -5,6 +5,7 @@
 
 #include "obelisk.h"
 
+#include <cstdlib>
 #include <string>
 
 #include "../../lib/eio/strip_projection.h"
@@ -110,6 +111,40 @@ ObeliskCore::ObeliskCore() : RelicCore()
     theaterPatternId = stateManager->addState(theaterPatternState);
     testPatternId = stateManager->addState(testPatternState);
 
+    // The scanner's looks, one state per afterglow state tag. The variants the
+    // python picks with save-file flags (emergency lock, broken device, newly
+    // discovered mushroom, seed verdict) are their own tags here, because only
+    // the scanner knows the save - it just names the look it wants.
+    auto addScannerState = [this](const char* name, shared_ptr<scanner::PatternScanner> pattern)
+    {
+        auto state = make_shared<scanner::State_ScannerHSV>(name, coreIO.get(), pattern);
+        state->init();
+        stateManager->addState(state);
+        scannerStates[name] = state;
+    };
+
+    using namespace scanner;
+
+    addScannerState("power_up",                        make_shared<Pattern_Scanner_PowerUp>());
+    addScannerState("boot",                            make_shared<Pattern_Scanner_Boot>());
+    addScannerState("scan_idle",                       make_shared<Pattern_Scanner_ScanIdle>());
+    addScannerState("scan_idle_emergency",             make_shared<Pattern_Scanner_Emergency>());
+    addScannerState("scan_idle_broken",                make_shared<Pattern_Scanner_Solid>(HSV(0.0f, 0.0f, 0.0f)));
+    addScannerState("scan_item_detected_filter",       make_shared<Pattern_Scanner_DetectedWave>());
+    addScannerState("scan_item_detected_generic",      make_shared<Pattern_Scanner_DetectedShimmer>());
+    addScannerState("scan_item_detected_seed",         make_shared<Pattern_Scanner_DetectedShimmer>());
+    addScannerState("scan_item_detected_mushroom",     make_shared<Pattern_Scanner_DetectedMushroom>());
+    addScannerState("scan_item_detected_mushroom_new", make_shared<Pattern_Scanner_DetectedMushroomNew>());
+    addScannerState("scan_item_success",               make_shared<Pattern_Scanner_Solid>(HSV(120.0f, 1.0f, 0.392f))); // rgb(0,100,0)
+    addScannerState("scan_item_success_mushroom",      make_shared<Pattern_Scanner_SuccessMushroom>());
+    addScannerState("scan_item_success_secret",        make_shared<Pattern_Scanner_Solid>(HSV(120.0f, 1.0f, 0.392f)));
+    addScannerState("scan_item_failure",               make_shared<Pattern_Scanner_Solid>(HSV(0.0f, 1.0f, 0.471f)));   // rgb(120,0,0)
+    addScannerState("audio_playback_mushroom",         make_shared<Pattern_Scanner_PlaybackMushroom>());
+    addScannerState("audio_playback_generic",          make_shared<Pattern_Scanner_PlaybackGeneric>());
+    addScannerState("audio_playback_seed",             make_shared<Pattern_Scanner_Solid>(HSV(120.0f, 1.0f, 0.392f)));
+    addScannerState("audio_playback_seed_bad",         make_shared<Pattern_Scanner_Solid>(HSV(0.0f, 1.0f, 0.392f)));   // rgb(100,0,0)
+    addScannerState("audio_playback_rest",             make_shared<Pattern_Scanner_Solid>(HSV(0.0f, 0.0f, 0.0f)));
+
     // Start State Machine
     stateMachine->setActiveState(mainPatternState);
     stateMachine->init();
@@ -176,18 +211,48 @@ bool obelisk::ObeliskCore::handleCommand(string msg)
     // Cue mode: the desk names a look and the obelisk renders it itself. The
     // names are the ones the desk's own buttons send, so a cue list works over
     // the link without either end knowing about the other's spelling.
+    //
+    // `state <name> [seconds]` - the optional seconds set the blend time for
+    // this change, which is how the scanner's transitionTo(state, time) pairs
+    // arrive as a single line.
     if (msg.rfind("state ", 0) == 0)
     {
-        const string wanted = msg.substr(6);
+        string wanted = msg.substr(6);
 
-        shared_ptr<State_GenericHSV> target{nullptr};
+        const size_t space = wanted.find(' ');
+        if (space != string::npos)
+        {
+            const string seconds = wanted.substr(space + 1);
+            wanted = wanted.substr(0, space);
+
+            const float requested = static_cast<float>(atof(seconds.c_str()));
+            if (requested >= 0.0f)
+            {
+                stateMachine->transitionTime = requested;
+            }
+        }
+
+        shared_ptr<State> target{nullptr};
         if (wanted == "seasons" || wanted == "main")   target = mainPatternState;
         else if (wanted == "theater")                  target = theaterPatternState;
         else if (wanted == "mono" || wanted == "test") target = testPatternState;
+        else
+        {
+            auto it = scannerStates.find(wanted);
+            if (it != scannerStates.end())
+            {
+                target = it->second;
+            }
+        }
 
         if (target)
         {
-            stateMachine->setNextState(target);
+            // The scanner resends its current state on reconnects; arriving
+            // where we already are is success, not an error log.
+            if (target != stateMachine->getActiveState() && target != stateMachine->getNextState())
+            {
+                stateMachine->setNextState(target);
+            }
             say("EOSLINK state " + wanted);
             return true;
         }
@@ -198,7 +263,12 @@ bool obelisk::ObeliskCore::handleCommand(string msg)
 
     if (msg == "states")
     {
-        say("EOSLINK states seasons theater mono");
+        string reply = "EOSLINK states seasons theater mono";
+        for (const auto& entry : scannerStates)
+        {
+            reply += " " + entry.first;
+        }
+        say(reply);
         return true;
     }
 

@@ -12,6 +12,11 @@
 
 #include "../../lib/eio/relic.h"
 
+#include "../scanner/scanner_patterns.h"
+
+#include <map>
+#include <string>
+
 using namespace ecore;
 using namespace eio;
 using namespace esm;
@@ -65,5 +70,10 @@ namespace obelisk
         int mainPatternId{0};
         int theaterPatternId{0};
         int testPatternId{0};
+
+        // The scanner's looks, keyed by the exact state tags afterglow's
+        // python game uses, so the scanner can mirror its state machine here
+        // by sending `state <tag>` over the link as it transitions.
+        std::map<std::string, shared_ptr<scanner::State_ScannerHSV>> scannerStates; // std:: - see relic.h
     };
 }
