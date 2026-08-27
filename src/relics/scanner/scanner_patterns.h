@@ -401,6 +401,73 @@ namespace scanner
     };
 
 
+    /* @brief Matrix rain: green code falling down the stage.
+    *
+    * Each column of the stage - x rounded to the nearest run - carries two
+    * drops, their speeds and phases scattered by irrational seeds so no two
+    * columns march together and the pair inside a column never lap in step.
+    * A drop is a bright head with a tail hanging up the column where it has
+    * been, fading as it goes; a per-frame flicker under the tail reads as
+    * the glyphs changing. Drops enter above the obelisk's top and fall off
+    * the bottom of the ring, so the rain pours through the whole stage.
+    */
+    class Pattern_Scanner_MatrixRain : public PatternScanner
+    {
+    public:
+        /// stage units per second, before the per-column scatter
+        float fallSpeed = 12.0f;
+        /// tail length in stage units
+        float tailLength = 12.0f;
+        /// how hard the glyph flicker chews the tail: 0 is a smooth streak
+        float flicker = 0.4f;
+
+        virtual void render(HSVStripNode* inNode, HSV& inOutColor) const override;
+        virtual void reflect(ecore::PropertyBag& bag) override;
+    };
+
+
+    /* @brief Fire2012, on the stage: Mark Kriegsman's classic flame sim, the
+    * one WLED ships as "Fire 2012".
+    *
+    * His three moves per frame - cool every cell, drift the heat upward,
+    * maybe spark near the base - on a heat cell per stage unit per column.
+    * The base is the stage's floor, so the ring is the ember bed and the
+    * flames lick up the obelisk's runs. Stateful, unlike most looks here:
+    * the sim advances in tick() on a fixed step, so the fire burns at the
+    * same rate whatever the frame rate, and render() only reads the grid.
+    */
+    class Pattern_Scanner_Fire2012 : public PatternScanner
+    {
+    public:
+        Pattern_Scanner_Fire2012();
+
+        /// WLED's two knobs, with their meanings kept: cooling is how fast
+        /// heat dies as it climbs, sparking the chance per step of a fresh
+        /// ember at the base. Heat runs 0..1 here where Kriegsman's was 0..255.
+        float cooling = 55.0f;
+        float sparking = 0.47f;
+        /// sim steps per second - his was "every frame" at whatever rate
+        float simRate = 30.0f;
+
+        virtual void reset() override;
+        virtual void tick(float deltaTime) override;
+        virtual void render(HSVStripNode* inNode, HSV& inOutColor) const override;
+        virtual void reflect(ecore::PropertyBag& bag) override;
+
+    private:
+        static constexpr int kColumns = 8;
+        /// one heat cell per stage unit of height
+        static constexpr int kCells = static_cast<int>(kStageTop - kStageBottom);
+
+        void step();
+        float& heatAt(int column, int cell) { return heat[column * kCells + cell]; }
+        float heatAt(int column, int cell) const { return heat[column * kCells + cell]; }
+
+        std::vector<float> heat;
+        float accumulator{0.0f};
+    };
+
+
     /* @brief One flat color. Covers the python states that just filled the
     * ring: success green, failure red, seed verdicts, and - at v 0 - the rest
     * and blackout states. */

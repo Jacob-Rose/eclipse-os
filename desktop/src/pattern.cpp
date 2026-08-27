@@ -459,6 +459,14 @@ namespace
             return std::unique_ptr<Pattern>(new GeneratorPattern(
                 "scanner_playback_generic", std::make_shared<scanner::Pattern_Scanner_PlaybackGeneric>()));
         };
+        table["scanner_matrix_rain"] = []() {
+            return std::unique_ptr<Pattern>(new GeneratorPattern(
+                "scanner_matrix_rain", std::make_shared<scanner::Pattern_Scanner_MatrixRain>()));
+        };
+        table["scanner_fire_2012"] = []() {
+            return std::unique_ptr<Pattern>(new GeneratorPattern(
+                "scanner_fire_2012", std::make_shared<scanner::Pattern_Scanner_Fire2012>()));
+        };
     }
 }
 

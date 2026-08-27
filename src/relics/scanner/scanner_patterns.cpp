@@ -385,6 +385,157 @@ void Pattern_Scanner_RecordCountdown::reflect(ecore::PropertyBag& bag)
     bag.add("sweep", sweepSeconds, 0.0f, 1.0f);
 }
 
+void Pattern_Scanner_MatrixRain::render(HSVStripNode* inNode, HSV& inOutColor) const
+{
+    const Coordinate at = nodeCoord(inNode);
+    const int column = static_cast<int>(std::floor(at.x + 0.5f));
+
+    // a drop's circuit: in above the obelisk's top, out below the ring, with
+    // the tail's length on top so the wrap happens fully off stage
+    const float span = (kStageTop - kStageBottom) + tailLength;
+
+    float brightness = 0.0f;
+    bool bHead = false;
+
+    // two drops per column, speeds and phases scattered by irrational seeds
+    // so no two columns march together and a column's pair never lap in step
+    for (int drop = 0; drop < 2; ++drop)
+    {
+        const int seed = column * 2 + drop;
+        const float seedA = std::fmod(seed * 0.6180339887f, 1.0f);
+        const float seedB = std::fmod(seed * 0.7548776662f, 1.0f);
+
+        const float speed = fallSpeed * (0.6f + 0.8f * seedA);
+        const float progress = std::fmod(timeActive * speed + seedB * span, span);
+        const float headY = (kStageTop + tailLength) - progress;
+
+        // the tail hangs up the column, where the head has been
+        const float behind = at.y - headY;
+        if (behind < 0.0f || behind > tailLength)
+        {
+            continue;
+        }
+
+        const float fade = 1.0f - behind / tailLength;
+        if (fade > brightness)
+        {
+            brightness = fade;
+            bHead = behind < 0.8f;
+        }
+    }
+
+    if (brightness <= 0.0f)
+    {
+        inOutColor = HSV(120.0f, 1.0f, 0.0f);
+        return;
+    }
+
+    if (bHead)
+    {
+        // the freshly written glyph: white-hot green, never flickered
+        inOutColor = HSV(120.0f, 0.35f, 1.0f);
+        return;
+    }
+
+    // the glyphs churn: a per-frame bite out of the tail
+    const float churn = 1.0f - get_random_float() * flicker;
+    inOutColor = HSV(120.0f, 1.0f, brightness * 0.8f * churn);
+}
+
+void Pattern_Scanner_MatrixRain::reflect(ecore::PropertyBag& bag)
+{
+    bag.add("fall_speed", fallSpeed, 2.0f, 30.0f);
+    bag.add("tail", tailLength, 2.0f, 30.0f);
+    bag.add("flicker", flicker, 0.0f, 1.0f);
+}
+
+Pattern_Scanner_Fire2012::Pattern_Scanner_Fire2012()
+    : heat(kColumns * kCells, 0.0f)
+{
+}
+
+void Pattern_Scanner_Fire2012::reset()
+{
+    PatternScanner::reset();
+    std::fill(heat.begin(), heat.end(), 0.0f);
+    accumulator = 0.0f;
+}
+
+void Pattern_Scanner_Fire2012::tick(float deltaTime)
+{
+    PatternScanner::tick(deltaTime);
+
+    accumulator += deltaTime * simRate;
+    // a stall - a debugger, a dragged window - must not fast-forward a
+    // bonfire's worth of queued steps into one visible frame
+    accumulator = std::min(accumulator, 8.0f);
+    while (accumulator >= 1.0f)
+    {
+        accumulator -= 1.0f;
+        step();
+    }
+}
+
+void Pattern_Scanner_Fire2012::step()
+{
+    // Kriegsman's three moves, per column
+    for (int column = 0; column < kColumns; ++column)
+    {
+        // 1. every cell cools a random amount - his COOLING scaling, in 0..1
+        const float coolScale = (cooling * 10.0f / kCells + 2.0f) / 255.0f;
+        for (int cell = 0; cell < kCells; ++cell)
+        {
+            heatAt(column, cell) = std::max(0.0f, heatAt(column, cell) - get_random_float() * coolScale);
+        }
+
+        // 2. heat drifts up, each cell a blend of the ones below it
+        for (int cell = kCells - 1; cell >= 2; --cell)
+        {
+            heatAt(column, cell) = (heatAt(column, cell - 1)
+                + heatAt(column, cell - 2)
+                + heatAt(column, cell - 2)) / 3.0f;
+        }
+
+        // 3. maybe a fresh ember near the base - his random8(160, 255)
+        if (get_random_float() < sparking)
+        {
+            const int cell = static_cast<int>(get_random_float() * 6.99f);
+            heatAt(column, cell) = std::min(1.0f,
+                heatAt(column, cell) + 0.63f + get_random_float() * 0.37f);
+        }
+    }
+}
+
+void Pattern_Scanner_Fire2012::render(HSVStripNode* inNode, HSV& inOutColor) const
+{
+    const Coordinate at = nodeCoord(inNode);
+    const int column = std::clamp(static_cast<int>(std::floor(at.x + 0.5f)), 0, kColumns - 1);
+    const int cell = std::clamp(static_cast<int>(std::floor(at.y - kStageBottom)), 0, kCells - 1);
+
+    const float h = heatAt(column, cell);
+
+    // HeatColor's three bands: black to red, red to yellow, yellow to white
+    if (h < 1.0f / 3.0f)
+    {
+        inOutColor = HSV(0.0f, 1.0f, h * 3.0f);
+    }
+    else if (h < 2.0f / 3.0f)
+    {
+        inOutColor = HSV((h - 1.0f / 3.0f) * 3.0f * 60.0f, 1.0f, 1.0f);
+    }
+    else
+    {
+        inOutColor = HSV(60.0f, 1.0f - (h - 2.0f / 3.0f) * 3.0f * 0.7f, 1.0f);
+    }
+}
+
+void Pattern_Scanner_Fire2012::reflect(ecore::PropertyBag& bag)
+{
+    bag.add("cooling", cooling, 10.0f, 100.0f);
+    bag.add("sparking", sparking, 0.0f, 1.0f);
+    bag.add("speed", simRate, 5.0f, 60.0f);
+}
+
 void Pattern_Scanner_Solid::render(HSVStripNode* inNode, HSV& inOutColor) const
 {
     (void)inNode;

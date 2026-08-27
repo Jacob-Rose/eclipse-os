@@ -156,6 +156,8 @@ PATTERN_BUTTONS: List[Tuple[str, Tuple[str, str]]] = [
     ("jacket", ("pattern", "jacket")),
     ("seasons", ("pattern", "obelisk_seasons")),
     ("theater", ("pattern", "obelisk_theater")),
+    ("matrix", ("pattern", "scanner_matrix_rain")),
+    ("fire", ("pattern", "scanner_fire_2012")),
     ("rainbow", ("pattern", "rainbow")),
     ("chase", ("pattern", "chase")),
     ("identify", ("pattern", "identify")),

@@ -75,6 +75,8 @@ PATTERN_NAMES = (
     "scanner_success_mushroom",
     "scanner_playback_mushroom",
     "scanner_playback_generic",
+    "scanner_matrix_rain",
+    "scanner_fire_2012",
     # the show: written for this rig, and beat-driven
     "mythos26",
 )
