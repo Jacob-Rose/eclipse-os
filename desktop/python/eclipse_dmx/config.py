@@ -60,6 +60,9 @@ PATTERN_NAMES = (
     "obelisk_mono",
     # a whole relic state machine, with its own looks and transitions
     "jacket",
+    # afterglow's state machine: every game tag as a state - the ring and the
+    # obelisk render it live, config/scanner.json previews it at a desk
+    "scanner",
     # the show: written for this rig, and beat-driven
     "mythos26",
 )
