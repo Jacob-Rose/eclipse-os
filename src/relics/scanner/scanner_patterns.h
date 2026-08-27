@@ -111,10 +111,17 @@ namespace scanner
 
 
     /* @brief scan_item_detected_filter: a cyan sine wave crawling along the
-    * strip while the tag is being read. */
+    * strip while the tag is being read.
+    *
+    * Also the recording flow's buildup shimmer, in amber - the python wrote
+    * the same sine both times, so the colour is the whole difference.
+    */
     class Pattern_Scanner_DetectedWave : public PatternScanner
     {
     public:
+        Pattern_Scanner_DetectedWave() = default;
+        explicit Pattern_Scanner_DetectedWave(const HSV& inColor) : waveColor(inColor) {}
+
         // CRGB(47, 195, 224)
         HSV waveColor = HSV(190.0f, 0.79f, 0.88f);
 
@@ -188,6 +195,61 @@ namespace scanner
             HSV(60.0f, 1.0f, 0.5f),
             HSV(30.0f, 1.0f, 1.0f),
         };
+
+        virtual void render(HSVStripNode* inNode, HSV& inOutColor) const override;
+    };
+
+
+    /* @brief The whole ring breathing one colour on a sine.
+    *
+    * The shape three of the recording-flow states share, differing only in
+    * their numbers: brightness runs floorLevel..floorLevel+gain as the sine
+    * swings, at rate radians per second.
+    *   record_arm    amber, quick and shallow, waiting for the rock
+    *   record_saved  green, faster and brighter, the take is on disk
+    *   void          purple from black, the empty stone's slow breath
+    */
+    class Pattern_Scanner_SinePulse : public PatternScanner
+    {
+    public:
+        Pattern_Scanner_SinePulse(const HSV& inColor, float inRate, float inFloor, float inGain)
+            : color(inColor), rate(inRate), floorLevel(inFloor), gain(inGain) {}
+
+        HSV color;
+        float rate;
+        float floorLevel;
+        float gain;
+
+        virtual void render(HSVStripNode* inNode, HSV& inOutColor) const override;
+    };
+
+
+    /* @brief record_active: a red comet circling the ring while tape rolls.
+    *
+    * The python ran the head at 12 pixels a second with an 8 pixel tail on
+    * the 35 pixel ring; both are fractions of the strip here, so the comet
+    * keeps its proportions on whatever strip renders it.
+    */
+    class Pattern_Scanner_RecordComet : public PatternScanner
+    {
+    public:
+        // CRGB(1.0, 0.05, 0.05)
+        HSV cometColor = HSV(0.0f, 0.95f, 1.0f);
+        float revsPerSecond = 12.0f / 35.0f;
+        float tailFraction = 8.0f / 35.0f;
+
+        virtual void render(HSVStripNode* inNode, HSV& inOutColor) const override;
+    };
+
+
+    /* @brief audio_playback_recording: the whole ring breathing warm orange
+    * with a slow per-pixel ripple riding on it, while a visitor's take plays.
+    */
+    class Pattern_Scanner_PlaybackRecording : public PatternScanner
+    {
+    public:
+        // CRGB(1.0, 0.5, 0.1)
+        HSV playbackColor = HSV(26.7f, 0.9f, 1.0f);
 
         virtual void render(HSVStripNode* inNode, HSV& inOutColor) const override;
     };

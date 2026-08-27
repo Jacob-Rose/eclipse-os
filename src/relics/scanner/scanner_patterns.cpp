@@ -148,6 +148,45 @@ void Pattern_Scanner_PlaybackGeneric::render(HSVStripNode* inNode, HSV& inOutCol
     inOutColor = rampPalette.getColor(rampAlpha);
 }
 
+void Pattern_Scanner_SinePulse::render(HSVStripNode* inNode, HSV& inOutColor) const
+{
+    (void)inNode;
+
+    const float pulse = (std::sin(timeActive * rate) + 1.0f) * 0.5f;
+
+    inOutColor = color;
+    inOutColor.setBrightnessAlpha(color.getValFloat() * (floorLevel + pulse * gain));
+}
+
+void Pattern_Scanner_RecordComet::render(HSVStripNode* inNode, HSV& inOutColor) const
+{
+    const float headAlpha = std::fmod(timeActive * revsPerSecond, 1.0f);
+
+    // how far behind the head this pixel sits, wrapped around the ring
+    float distance = headAlpha - stripAlpha(inNode);
+    if (distance < 0.0f)
+    {
+        distance += 1.0f;
+    }
+
+    // the python's clamp(1 - distance/8, 0.05, 1): a linear tail, and a 0.05
+    // floor so the rest of the ring glows dim red rather than going out
+    const float brightness = std::clamp(1.0f - distance / tailFraction, 0.05f, 1.0f);
+
+    inOutColor = cometColor;
+    inOutColor.setBrightnessAlpha(cometColor.getValFloat() * brightness);
+}
+
+void Pattern_Scanner_PlaybackRecording::render(HSVStripNode* inNode, HSV& inOutColor) const
+{
+    const float breath = (std::sin(timeActive * 2.0f) + 1.0f) * 0.5f;
+    const float ripple = std::sin(inNode->getStripIdx() * 0.7f + timeActive) * 0.15f;
+    const float brightness = clamp01(0.2f + breath * 0.6f + ripple);
+
+    inOutColor = playbackColor;
+    inOutColor.setBrightnessAlpha(playbackColor.getValFloat() * brightness);
+}
+
 void Pattern_Scanner_Solid::render(HSVStripNode* inNode, HSV& inOutColor) const
 {
     (void)inNode;

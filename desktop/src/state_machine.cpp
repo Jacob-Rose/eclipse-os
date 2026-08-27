@@ -390,6 +390,19 @@ namespace
         };
         return def;
     }
+
+    /// A scanner look whose pattern takes constructor arguments - the pulse
+    /// trio share one class and differ only in their numbers.
+    template <typename PatternT, typename... Args>
+    StateDef scannerLookWith(const char* name, Args... args)
+    {
+        StateDef def = scannerLook<PatternT>(name);
+        def.make = [args...]() {
+            return std::static_pointer_cast<eanim::GeneratorHSV>(
+                std::make_shared<PatternT>(args...));
+        };
+        return def;
+    }
 }
 
 std::unique_ptr<StateMachinePattern> edmx::makeScannerStateMachine()
@@ -422,6 +435,19 @@ std::unique_ptr<StateMachinePattern> edmx::makeScannerStateMachine()
         scannerSolid("audio_playback_seed", HSV(120.0f, 1.0f, 0.392f)),
         scannerSolid("audio_playback_seed_bad", HSV(0.0f, 1.0f, 0.392f)), // rgb(100,0,0)
         scannerSolid("audio_playback_rest", HSV(0.0f, 0.0f, 0.0f)),
+
+        // The recording flow and the void stone - the last looks the game
+        // rendered in python, so every state the scanner has is now here.
+        scannerLookWith<Pattern_Scanner_SinePulse>("record_arm",
+            HSV(45.0f, 1.0f, 1.0f), 4.0f, 0.15f, 0.5f),                 // CRGB(1.0, 0.75, 0.0)
+        scannerLook<Pattern_Scanner_RecordComet>("record_active"),
+        scannerLookWith<Pattern_Scanner_SinePulse>("record_saved",
+            HSV(132.0f, 1.0f, 1.0f), 6.0f, 0.4f, 0.6f),                 // CRGB(0.0, 1.0, 0.2)
+        scannerLookWith<Pattern_Scanner_DetectedWave>("scan_item_detected_recording",
+            HSV(33.3f, 0.9f, 1.0f)),                                    // CRGB(1.0, 0.6, 0.1)
+        scannerLook<Pattern_Scanner_PlaybackRecording>("audio_playback_recording"),
+        scannerLookWith<Pattern_Scanner_SinePulse>("void",
+            HSV(282.0f, 1.0f, 0.5f), 2.0f, 0.0f, 0.6f),                 // CRGB(0.35, 0.0, 0.5)
     };
 
     // The looks read the strip index, not coordinates, so the frame is the
