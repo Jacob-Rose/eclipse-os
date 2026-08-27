@@ -406,30 +406,35 @@ namespace scanner
 
     /* @brief Matrix rain: green code falling down the stage.
     *
-    * Each integer column of the stage carries two drops, their speeds and
-    * phases scattered by irrational seeds so no two columns march together
-    * and the pair inside a column never lap in step. A drop is a bright head
-    * with a tail hanging up the column where it has been, fading as it goes;
-    * a per-frame flicker under the tail reads as the glyphs changing. Drops
-    * enter above the obelisk's top and fall off the bottom of the ring, so
-    * the rain pours through the whole stage.
+    * A pool of drops, each falling at its own continuous x - re-rolled every
+    * time it wraps, so the rain never settles into fixed paths. A drop is a
+    * bright head with a tail hanging up where it has been, and a lateral
+    * falloff around its x, so it is a position in the plane rather than a
+    * column index: on the obelisk it lands on and between the runs, and on
+    * the ring it slides along the arc and falls *through* the circle -
+    * lighting the pixels its path crosses at the height it is passing.
     *
-    * A node is lit by its two nearest drop paths, weighted by its x distance
-    * to each, so a drop is a position rather than a rounding bucket. On the
-    * obelisk the runs sit exactly on the paths and nothing changes; the
-    * ring's circle crosses between them, and the weighting is what keeps a
-    * drop sliding smoothly along the arc instead of snapping column to
-    * column.
+    * The churn is a hash over (drop, glyph cell, churn step), not a fresh
+    * random per frame: it has to be the *same* answer for every node in a
+    * glyph cell until the next step, or the ring - where a glyph is two or
+    * three isolated pixels - reads as strobing instead of as characters
+    * changing. The obelisk hid that by having whole columns to average it.
     */
     class Pattern_Scanner_MatrixRain : public PatternScanner
     {
     public:
-        /// stage units per second, before the per-column scatter
+        /// stage units per second, before the per-drop scatter
         float fallSpeed = 12.0f;
         /// tail length in stage units
         float tailLength = 12.0f;
-        /// how hard the glyph flicker chews the tail: 0 is a smooth streak
+        /// how far a drop reaches sideways, in stage units
+        float dropWidth = 0.9f;
+        /// how many drops are in the air
+        float dropCount = 14.0f;
+        /// how hard the glyph churn chews the tail: 0 is a smooth streak
         float flicker = 0.4f;
+        /// glyph changes per second
+        float churnRate = 8.0f;
 
         virtual void render(HSVStripNode* inNode, HSV& inOutColor) const override;
         virtual void reflect(ecore::PropertyBag& bag) override;
@@ -440,12 +445,19 @@ namespace scanner
     * one WLED ships as "Fire 2012".
     *
     * His three moves per frame - cool every cell, drift the heat upward,
-    * maybe spark near the base - on a heat cell per stage unit per column,
-    * plus a fourth of ours: heat spreads a little into the neighbouring
-    * columns, wrapping 7 to 0, because the obelisk's runs are a closed loop
-    * around four sides and one fire on a sculpture is not eight fires on
-    * eight strips. The base is the stage's floor, so the ring is the ember
-    * bed and the flames lick up the obelisk's runs.
+    * maybe spark - on a heat cell per stage unit per column, plus a fourth
+    * of ours: heat spreads a little into the neighbouring columns, wrapping
+    * 7 to 0, because the obelisk's runs are a closed loop around four sides
+    * and one fire on a sculpture is not eight fires on eight strips.
+    *
+    * The ring is the fire's source. Each column's ember sits where the
+    * ring's circle actually crosses it - the ember bed *is* the lower arc -
+    * so the embers glow on the ring's own pixels, the risen heat passes
+    * through its upper arc, and the flames carry on up the obelisk. His
+    * spark was a saturating add, which either strobed the arc or pinned it
+    * white; ours raises an ember toward a mid-heat target and lets the
+    * cooling pull it back, so the bed breathes in the orange band where the
+    * palette actually shows motion.
     *
     * Stateful, unlike most looks here: the sim advances in tick() on a
     * fixed step, so the fire burns at the same rate whatever the frame
@@ -459,9 +471,9 @@ namespace scanner
         Pattern_Scanner_Fire2012();
 
         /// WLED's two knobs, with their meanings kept: cooling is how fast
-        /// heat dies as it climbs, sparking the chance per step of a fresh
-        /// ember at the base. Heat runs 0..1 here where Kriegsman's was 0..255.
-        float cooling = 55.0f;
+        /// heat dies as it climbs, sparking the chance per step of an ember
+        /// flaring. Heat runs 0..1 here where Kriegsman's was 0..255.
+        float cooling = 30.0f;
         float sparking = 0.47f;
         /// how much of a cell leaks to its side neighbours each step: 0 is
         /// eight independent Fire2012s, more couples the flames around the
@@ -487,6 +499,9 @@ namespace scanner
         /// scratch row for the lateral spread, so a step reads one coherent
         /// grid instead of half-updated neighbours
         std::vector<float> spreadRow;
+        /// where the ring's circle crosses each column, as a cell index: the
+        /// ember bed, computed once from the kRing* constants
+        std::vector<int> emberRows;
         float accumulator{0.0f};
     };
 
