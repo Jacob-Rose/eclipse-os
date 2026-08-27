@@ -2411,6 +2411,50 @@ class TheCurveProtocol(unittest.TestCase):
         finally:
             show.stop()
 
+    def test_the_announcement_lands_whole(self):
+        """When the revision moves, the knobs AND curves are all there.
+
+        The revision used to bump on the PARAMS header, so a UI polling it
+        could rebuild from a half-filled list and a just-cleared curve dict -
+        which read as the envelope target flickering out of the aim menu.
+        """
+        show = ShowController(SHOW, dry_run=True, midi="", on_frame=lambda f: None,
+                              emit_rate=20.0)
+        try:
+            for _ in range(100):
+                if show.params_revision > 0:
+                    break
+                time.sleep(0.05)
+
+            self.assertGreater(show.params_revision, 0)
+            self.assertTrue(show.params, "revision moved before the knobs landed")
+            self.assertIn("envelope", show.curves,
+                          "revision moved before the curves landed")
+        finally:
+            show.stop()
+
+    def test_reset_restores_the_cue(self):
+        """Tune a knob and redraw the envelope; reset puts both back."""
+        show = ShowController(SHOW, dry_run=True, midi="", on_frame=lambda f: None,
+                              emit_rate=20.0)
+        try:
+            time.sleep(0.6)
+            show.set_state("vu_pulse")
+            time.sleep(0.5)
+
+            show.set_param("attack", 0.4)
+            show.set_curve("envelope", [(0.0, 0.0, None), (0.9, 1.0, None),
+                                        (2.0, 0.0, None)])
+            self.assertAlmostEqual(show.get_param("attack").value, 0.4, places=3)
+
+            show.reset_look()
+
+            # the vu cue constructs attack 0.1; reset is the cue, not zero
+            self.assertAlmostEqual(show.get_param("attack").value, 0.1, places=3)
+            self.assertAlmostEqual(show.curves["envelope"][1][0], 0.1, places=3)
+        finally:
+            show.stop()
+
     def test_a_ninth_key_is_refused_whole(self):
         """Too many keys rejects the message; the look keeps its old shape."""
         show = ShowController(SHOW, dry_run=True, midi="", on_frame=lambda f: None,

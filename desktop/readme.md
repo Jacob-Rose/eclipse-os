@@ -170,8 +170,15 @@ same convention the C++ reads by. The cap is eight keys because that is
 The value axis is a 0..1 weight. Aim it at the master or any of the running
 look's float knobs, press play (or drag along the ruler to scrub), and the
 curve drives that knob live on the same rig the cue buttons drive — shape a
-hit against the actual look instead of imagining it. **copy c++** puts the
-`addKey` calls on the clipboard, ready to paste into a state.
+hit against the actual look instead of imagining it. The transport is a
+*lease*: the knob's value is held when playback or a scrub starts and put
+back when it stops, so an audition never becomes an edit. **copy c++** puts
+the `addKey` calls on the clipboard, ready to paste into a state.
+
+The look pane's **reset** button is the way back from everything else: every
+knob and curve returns to the values the cue constructed, taken from the
+look's first announcement — the executable starts fresh with the desk, so
+first-seen *is* the cue's defaults.
 
 A look can also hand out its *own* curves — `reflectCurves()`, reflect for
 shapes. Those appear in the aim menu as `~ envelope` and the like: aiming at

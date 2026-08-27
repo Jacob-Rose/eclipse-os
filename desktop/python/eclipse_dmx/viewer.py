@@ -899,8 +899,11 @@ class ViewerApp:
         self.curve_editor = CurveEditor(
             self.root, on_send=self._animate_target, on_status=self._say,
             on_send_curve=self._push_look_curve,
-            on_load_curve=self._look_curve_keys)
+            on_load_curve=self._look_curve_keys,
+            on_override=self._hold_target)
         self._curves_shown = False
+        #: (name, value) held while the editor's transport borrows a knob
+        self._held_target = None
 
         self.root.bind("<space>", lambda event: self._toggle_blackout())
         self.root.bind("<Key-n>", lambda event: self._step_pattern(1))
@@ -1089,8 +1092,21 @@ class ViewerApp:
         # -- the running look's own knobs, in the right pane ----------------
         # Everything on the left is fixed furniture. This panel is not: what it
         # holds comes from whatever is running, over the protocol.
-        tk.Label(self.param_pane, text="look", bg=PANEL, fg=TEXT_DIM,
-                 font=("Consolas", 9), anchor="w", padx=8).pack(fill="x", pady=(4, 0))
+        look_header = tk.Frame(self.param_pane, bg=PANEL)
+        look_header.pack(fill="x", pady=(4, 0))
+        tk.Label(look_header, text="look", bg=PANEL, fg=TEXT_DIM,
+                 font=("Consolas", 9), anchor="w", padx=8).pack(side="left")
+
+        # The way back: every knob and curve to the values the cue
+        # constructed, from the look's first announcement. What makes tuning
+        # and curve edits safe to try.
+        tk.Button(
+            look_header, text="reset", font=("Consolas", 8),
+            bg=BUTTON_BG, fg=TEXT_DIM, activebackground=BUTTON_BG_ACTIVE,
+            activeforeground=BUTTON_FG, relief="flat", padx=6, pady=1,
+            highlightthickness=0, borderwidth=0,
+            command=self._reset_look,
+        ).pack(side="right", padx=8)
 
         self.param_panel = tk.Frame(self.param_pane, bg=PANEL)
         self.param_panel.pack(fill="both", expand=True, padx=4, pady=2)
@@ -1551,6 +1567,49 @@ class ViewerApp:
 
     def _look_curve_keys(self, name: str):
         return self.show.curves.get(name)
+
+    def _reset_look(self) -> None:
+        """Every knob and curve back to what the cue constructed."""
+        # a running audition would re-stomp the freshly reset knob on its
+        # next tick, and then "restore" a pre-reset value on stop
+        self.curve_editor.stop_playback()
+
+        self._guard(self.show.reset_look, "reset")
+
+        # the echoes have landed (reset_look sends synchronously): put every
+        # widget and the drawn shape back in step with the look
+        for name in list(self._param_widgets):
+            self._show_param(name)
+        self.curve_editor.refresh_live()
+
+    def _hold_target(self, name: str, active: bool) -> None:
+        """The editor's transport borrows a knob; this is the lease.
+
+        On begin, the knob's current value is held; on end it goes back -
+        playing a curve at the intensity is an audition, not an edit. The
+        restore targets the *held* name, so an aim moved mid-session still
+        returns the right knob.
+        """
+        if active:
+            if name == "master":
+                self._held_target = ("master", self._master)
+            else:
+                param = self.show.get_param(name)
+                self._held_target = (name, param.value) if param else None
+            return
+
+        held = self._held_target
+        self._held_target = None
+        if held is None:
+            return
+
+        held_name, value = held
+        if held_name == "master":
+            self._set_master(value)
+        else:
+            self._guard(lambda: self.show.set_param(held_name, value),
+                        f"restore {held_name}")
+            self._show_param(held_name)
 
     def _animate_target(self, name: str, value: float) -> None:
         """One curve sample, onto whatever the editor is aimed at."""

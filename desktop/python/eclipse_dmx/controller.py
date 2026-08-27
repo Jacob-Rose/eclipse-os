@@ -274,6 +274,16 @@ class ShowController:
         #: The set being read right now, or None between blocks.
         self._params_open: Optional[List[Param]] = None
 
+        #: Which look the current announcement belongs to, from the PARAMS
+        #: header: (pattern, state).
+        self._look_key: Tuple[str, str] = ("", "")
+
+        #: The *first* announcement of each look, kept whole: knob values and
+        #: curve keys as the cue constructed them. The executable starts
+        #: fresh with every desk, so first-seen is the cue's own defaults -
+        #: which is why reset_look() needs nothing from the C++ side.
+        self._look_defaults: dict = {}
+
         #: "pixels" or "cue" when this show drives a relic over USB. Tracked
         #: rather than asked for, because the executable only announces it in
         #: reply to a command.
@@ -418,12 +428,19 @@ class ShowController:
         if not line:
             return
 
-        # Any other line closes an open PARAMS block, and this has to happen
-        # before the early returns below: a set is followed immediately by frame
-        # lines, and leaving the block open would make the next lone PARAM echo
-        # append a duplicate instead of updating in place.
-        if not line.startswith("PARAM"):
-            self._params_open = None
+        # Any other line completes an open PARAMS block, and this has to
+        # happen before the early returns below: a set is followed
+        # immediately by frame lines, and leaving the block open would make
+        # the next lone PARAM echo append a duplicate instead of updating in
+        # place. Completion is also when the revision bumps and the defaults
+        # snapshot lands - never the header, or a UI polling the revision
+        # rebuilds from a half-filled list and a just-cleared curve dict,
+        # which read as the envelope target flickering out of the aim menu.
+        # A fresh PARAMS header finalizes the previous block too ("PARAM "
+        # with the space, so PARAMS does not match).
+        if self._params_open is not None and not (
+                line.startswith("PARAM ") or line.startswith("CURVE ")):
+            self._finalize_params()
 
         # Frame lines arrive tens of times a second and are pure data, so they
         # are dispatched and dropped rather than kept in _events, which would
@@ -509,14 +526,17 @@ class ShowController:
         elif line.startswith("STATE "):
             self.current_state = line[len("STATE "):].strip()
 
-        # PARAMS opens a new set and PARAM lines fill it. Collected here rather
-        # than by asking, because the set changes under a UI whenever the cue
-        # does and a UI that only reads on demand shows knobs for a look that is
-        # no longer running.
+        # PARAMS opens a new set and PARAM/CURVE lines fill it. Collected here
+        # rather than by asking, because the set changes under a UI whenever
+        # the cue does and a UI that only reads on demand shows knobs for a
+        # look that is no longer running. The block is published - revision
+        # bump, defaults snapshot - when it completes; see _handle_stdout.
         if line.startswith("PARAMS"):
+            parts = line.split()
+            self._look_key = (parts[1] if len(parts) > 1 else "",
+                              parts[2] if len(parts) > 2 else "")
             self._params_open = []
             self.params = self._params_open
-            self.params_revision += 1
             # curves belong to the same look as the knobs, so a new block
             # replaces them together; the CURVE lines that follow refill it
             self.curves = {}
@@ -545,6 +565,25 @@ class ShowController:
         if line.startswith("READY"):
             self._ready = True
 
+        self._handle_reply_or_event(line)
+
+    def _finalize_params(self) -> None:
+        """The announcement block is whole: publish it, and remember firsts.
+
+        The first block a look ever announces is the cue's own construction -
+        the executable starts fresh with the desk - so it is kept as that
+        look's defaults, which is what reset_look() replays.
+        """
+        self._params_open = None
+        self.params_revision += 1
+
+        if self._look_key not in self._look_defaults:
+            self._look_defaults[self._look_key] = (
+                {param.name: param.value for param in self.params},
+                {name: list(keys) for name, keys in self.curves.items()},
+            )
+
+    def _handle_reply_or_event(self, line: str) -> None:
         if line.startswith("OK") or line.startswith("ERR"):
             # Before READY nothing has been asked, so an ERR here is not an
             # answer waiting to be collected - it is the show saying why it will
@@ -708,6 +747,24 @@ class ShowController:
     def get_param(self, name: str) -> Optional[Param]:
         """The named knob on the running look, or None if it has no such one."""
         return next((param for param in self.params if param.name == name), None)
+
+    def reset_look(self) -> None:
+        """Puts the running look back to the values its cue constructed.
+
+        Every knob and every curve, from the look's first announcement - see
+        _finalize_params. The look object is untouched otherwise: this is a
+        replay of settings, not a rebuild, so a running sim (a fire's
+        particles) keeps burning through it.
+        """
+        defaults = self._look_defaults.get(self._look_key)
+        if defaults is None:
+            raise ShowError("no defaults recorded for this look yet")
+
+        param_values, curve_keys = defaults
+        for name, value in param_values.items():
+            self.set_param(name, value)
+        for name, keys in curve_keys.items():
+            self.set_curve(name, keys)
 
     def set_curve(self, name: str, keys: Sequence[CurveKeyTuple]) -> None:
         """Writes a whole shape into one of the running look's curves.

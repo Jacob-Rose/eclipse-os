@@ -80,7 +80,8 @@ class CurveEditor:
                  on_send: Callable[[str, float], None],
                  on_status: Callable[[str], None],
                  on_send_curve=None,
-                 on_load_curve=None) -> None:
+                 on_load_curve=None,
+                 on_override=None) -> None:
         #: called with (target name, mapped value) for every sample sent
         self._on_send = on_send
         #: one line to the viewer's header, for refusals and confirmations
@@ -89,6 +90,11 @@ class CurveEditor:
         self._on_send_curve = on_send_curve
         #: called with a curve name; returns the look's current key tuples
         self._on_load_curve = on_load_curve
+        #: called with (target name, active) around playback and scrubbing,
+        #: so whoever owns the knob can hold its value and put it back - the
+        #: transport is a temporary override, never a lasting write
+        self._on_override = on_override
+        self._overriding = False
 
         self.curve: Curve = example_hit()
         self.selected: Optional[CurveKey] = None
@@ -231,10 +237,13 @@ class CurveEditor:
         self._refresh_range_label()
 
     def _aim_at(self, name: str) -> None:
+        # stopping first ends any override on the old target, so its held
+        # value goes back before the aim moves on
+        self.stop_playback()
+
         self._target_var.set(name)
         if name.startswith(SHAPE_PREFIX):
             self._aimed_curve = name[len(SHAPE_PREFIX):]
-            self.stop_playback()
             self._load_live(self._aimed_curve)
         else:
             self._aimed_curve = None
@@ -328,6 +337,7 @@ class CurveEditor:
         if len(self.curve.keys) < 2 or self.curve.duration <= 0.0:
             self._on_status("curve: nothing to play - it needs two keys apart in time")
             return
+        self._begin_override()
         self._play_started = time.monotonic()
         self._play_button.configure(text="stop", bg=BUTTON_BG_ACTIVE)
         self._play_tick()
@@ -341,7 +351,26 @@ class CurveEditor:
             self._play_after = None
         self._play_started = None
         self._play_button.configure(text="play", bg=BUTTON_BG)
+        self._end_override()
         self.redraw()
+
+    # -- the override: the transport borrows a knob, it never keeps it -----
+
+    def _begin_override(self) -> None:
+        """The knob's value is held before the first sample lands."""
+        if self._overriding or self._aimed_curve is not None:
+            return
+        self._overriding = True
+        if self._on_override:
+            self._on_override(self._target()[0], True)
+
+    def _end_override(self) -> None:
+        """The held value goes back - once nothing is still sending."""
+        if not self._overriding or self._play_started is not None or self._scrubbing:
+            return
+        self._overriding = False
+        if self._on_override:
+            self._on_override(self._target()[0], False)
 
     def _play_tick(self) -> None:
         self._play_after = None
@@ -416,6 +445,7 @@ class CurveEditor:
 
     def _on_press(self, event: "tk.Event") -> None:
         if event.y <= self.RULER:
+            self._begin_override()
             self._scrubbing = True
             self._scrub_to(event.x)
             return
@@ -447,6 +477,7 @@ class CurveEditor:
         finished_drag = self._dragging is not None
         self._dragging = None
         self._scrubbing = False
+        self._end_override()
         self.redraw()
         if finished_drag:
             self._push_shape()
