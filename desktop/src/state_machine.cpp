@@ -477,9 +477,14 @@ std::unique_ptr<StateMachinePattern> edmx::makeScannerStateMachine()
         scannerLook<Pattern_Scanner_RecordComet>("record_active"),
         scannerLookWith<Pattern_Scanner_SinePulse>("record_saved",
             HSV(132.0f, 1.0f, 1.0f), 6.0f, 0.4f, 0.6f),                 // CRGB(0.0, 1.0, 0.2)
+        // One recording look, not two: detected_recording flows straight into
+        // playback_recording (game.py's buildup-then-echo), and giving each
+        // its own amber pattern meant a visible seam between two states that
+        // are one moment to a visitor. Both are the amber wave now.
         scannerLookWith<Pattern_Scanner_DetectedWave>("scan_item_detected_recording",
             HSV(33.3f, 0.9f, 1.0f)),                                    // CRGB(1.0, 0.6, 0.1)
-        scannerLook<Pattern_Scanner_PlaybackRecording>("audio_playback_recording"),
+        scannerLookWith<Pattern_Scanner_DetectedWave>("audio_playback_recording",
+            HSV(33.3f, 0.9f, 1.0f)),
         scannerLookWith<Pattern_Scanner_SinePulse>("void",
             HSV(282.0f, 1.0f, 0.5f), 2.0f, 0.0f, 0.6f),                 // CRGB(0.35, 0.0, 0.5)
     };

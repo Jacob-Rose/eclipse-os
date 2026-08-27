@@ -37,6 +37,28 @@ using namespace esm;
 
 namespace scanner
 {
+    ///
+    /// The stage: one 2d space shared by everything the game drives.
+    ///
+    /// x runs across and y runs up. The obelisk stands on the floor of it -
+    /// eight runs at x 0..7, height y 0..42, exactly the coordinates
+    /// ObeliskIO::init generates - and the ring hangs just below it as a
+    /// circle, centred on the obelisk's width, its top pixel one unit under
+    /// the floor. The desktop rig (desktop/devices/scanner_ring.json) and the
+    /// live game's inline config (main-py/lib/jr_lib/eclipse_engine.py) both
+    /// write the ring at these coordinates; the constants here have to agree
+    /// with them.
+    ///
+    /// The point of sharing the space: a look that travels along y crosses
+    /// the ring first and then climbs the obelisk - one wave through one
+    /// place, not the same look running twice from scratch.
+    ///
+    constexpr float kStageBottom = -8.0f;   ///< the ring's lowest pixel
+    constexpr float kStageTop = 42.0f;      ///< the obelisk's highest
+    constexpr float kRingCenterX = 3.5f;
+    constexpr float kRingCenterY = -4.5f;
+    constexpr float kRingRadius = 3.5f;
+
     /* @brief A scanner look: a GeneratorHSV with its own resettable clock. */
     class PatternScanner : public GeneratorHSV
     {
@@ -52,6 +74,18 @@ namespace scanner
         * relic actually has.
         */
         static float stripAlpha(const HSVStripNode* node);
+
+        /* @brief Where this node stands on the stage.
+        *
+        * A mapped node answers with its real coordinates. A bare strip
+        * stands in as a vertical run - its index up the y axis - so the
+        * spatial looks still move along it instead of rendering a flat wash.
+        */
+        static Coordinate nodeCoord(const HSVStripNode* node);
+
+        /* @brief The node's height as a fraction of the stage, ring floor 0
+        * to obelisk top 1. */
+        static float stageAlpha(const HSVStripNode* node);
 
         float timeActive{0.0f};
     };
@@ -71,34 +105,62 @@ namespace scanner
         float bootTime = 2.5f;
 
         virtual void render(HSVStripNode* inNode, HSV& inOutColor) const override;
+        virtual void reflect(ecore::PropertyBag& bag) override;
     };
 
 
     /* @brief boot: a magenta swell that flickers with noise while it rises and
-    * dies away, following the original keyframe tables. */
+    * dies away.
+    *
+    * The two shapes are AutomationCurves on a normalized clock - time 1.0 is
+    * the end of the boot, whatever bootTime says - which is the house
+    * archetype for a drawn shape: the same evaluate the relics play, the same
+    * key cap, and the desk's curve editor draws one and hands back the addKey
+    * lines the constructor is made of. They replaced two equidistant float
+    * tables from the python port; the noise table's sixteen stops compress
+    * into keys with easing carrying the shoulders.
+    */
     class Pattern_Scanner_Boot : public PatternScanner
     {
     public:
+        Pattern_Scanner_Boot();
+
         float bootTime = 7.5f;
 
-        std::vector<float> brightnessKeys = {0.1f, 0.8f, 0.7f, 1.0f, 0.8f, 0.5f, 0.2f, 0.0f};
-        std::vector<float> noiseKeys = {1.0f, 0.6f, 0.4f, 0.4f, 0.4f, 0.8f, 1.0f, 0.8f, 0.2f, 0.2f, 0.1f, 0.1f, 0.0f, 0.0f, 0.0f, 0.0f};
+        /// scales the flicker curve: 0 is a clean swell, past 1 the noise
+        /// eats further into it than the curve says. Independent of bootTime,
+        /// which is the point - each is its own curve target.
+        float noiseGain = 1.0f;
+
+        /// both on the normalized 0..1 boot clock
+        eanim::AutomationCurve brightnessCurve;
+        eanim::AutomationCurve noiseCurve;
 
         virtual void render(HSVStripNode* inNode, HSV& inOutColor) const override;
+        virtual void reflect(ecore::PropertyBag& bag) override;
     };
 
 
-    /* @brief scan_idle: the whole ring breathes cyan on a 2 second heartbeat. */
+    /* @brief scan_idle: the whole ring breathes cyan on a 2 second heartbeat.
+    *
+    * The breath is an AutomationCurve on the normalized cycle, like the boot
+    * swell - the python table's run of trailing zeros collapses to its two
+    * endpoint keys.
+    */
     class Pattern_Scanner_ScanIdle : public PatternScanner
     {
     public:
+        Pattern_Scanner_ScanIdle();
+
         // CRGB(0.2, 0.7, 1.0)
         HSV scanColor = HSV(202.5f, 0.8f, 1.0f);
         float cycleTime = 2.0f;
 
-        std::vector<float> idleBrightnessKeys = {0.3f, 1.0f, 0.5f, 0.2f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+        /// on the normalized 0..1 cycle clock
+        eanim::AutomationCurve breathCurve;
 
         virtual void render(HSVStripNode* inNode, HSV& inOutColor) const override;
+        virtual void reflect(ecore::PropertyBag& bag) override;
     };
 
 
@@ -107,15 +169,24 @@ namespace scanner
     class Pattern_Scanner_Emergency : public PatternScanner
     {
     public:
+        /// radians per second into the sine; the throb spends half of each
+        /// cycle dark, so the felt pulse is this over 2 pi
+        float throbRate = 2.0f;
+
         virtual void render(HSVStripNode* inNode, HSV& inOutColor) const override;
+        virtual void reflect(ecore::PropertyBag& bag) override;
     };
 
 
-    /* @brief scan_item_detected_filter: a cyan sine wave crawling along the
-    * strip while the tag is being read.
+    /* @brief scan_item_detected_filter, and the recording flow's shimmer: a
+    * sine wave rising through the stage while a tag is being read.
     *
-    * Also the recording flow's buildup shimmer, in amber - the python wrote
-    * the same sine both times, so the colour is the whole difference.
+    * The python wrote sin(pixel + t*3) around the ring. The same sine now
+    * reads y instead of the pixel index, with the sign turned so the crests
+    * travel upward: each one crosses the ring below and then climbs the
+    * obelisk, one wave through both rigs. The colour is still the whole
+    * difference between the states that share it - cyan for the filter,
+    * amber for a visitor's recording.
     */
     class Pattern_Scanner_DetectedWave : public PatternScanner
     {
@@ -126,7 +197,14 @@ namespace scanner
         // CRGB(47, 195, 224)
         HSV waveColor = HSV(190.0f, 0.79f, 0.88f);
 
+        /// the python's numbers, reread as a wave in y: one radian per stage
+        /// unit, rising at three units a second - so a crest passes any given
+        /// pixel on the same 2.1s period the ring always had
+        float radiansPerUnit = 1.0f;
+        float unitsPerSecond = 3.0f;
+
         virtual void render(HSVStripNode* inNode, HSV& inOutColor) const override;
+        virtual void reflect(ecore::PropertyBag& bag) override;
     };
 
 
@@ -138,7 +216,11 @@ namespace scanner
     class Pattern_Scanner_DetectedShimmer : public PatternScanner
     {
     public:
+        /// radians per second into the shimmer's sine
+        float shimmerRate = 5.0f;
+
         virtual void render(HSVStripNode* inNode, HSV& inOutColor) const override;
+        virtual void reflect(ecore::PropertyBag& bag) override;
     };
 
 
@@ -151,7 +233,11 @@ namespace scanner
         HSV baseColor = HSV(72.0f, 0.1f, 0.1f);
         HSV accentColor = HSV(288.0f, 0.8f, 0.3f);
 
+        /// sawtooth passes per second between the two colours
+        float blendRate = 2.0f;
+
         virtual void render(HSVStripNode* inNode, HSV& inOutColor) const override;
+        virtual void reflect(ecore::PropertyBag& bag) override;
     };
 
 
@@ -160,25 +246,51 @@ namespace scanner
     class Pattern_Scanner_DetectedMushroomNew : public PatternScanner
     {
     public:
+        /// trips around the hue wheel per second
+        float hueRate = 0.5f;
+
         virtual void render(HSVStripNode* inNode, HSV& inOutColor) const override;
+        virtual void reflect(ecore::PropertyBag& bag) override;
     };
 
 
     /* @brief scan_item_success_mushroom: two slow hue drifts a quarter phase
-    * apart, one flat across the ring and one rippling per pixel, met halfway. */
+    * apart, one flat across the stage and one rippling over it, met halfway.
+    *
+    * The ripple's phase was the pixel index; it is x + y now, so it runs
+    * diagonally across the obelisk's face and around the ring below instead
+    * of following the wiring order.
+    */
     class Pattern_Scanner_SuccessMushroom : public PatternScanner
     {
     public:
+        /// how fast the two hue drifts wander
+        float driftRate = 1.0f;
+        /// scales the x + y phase: 0 flattens the ripple to the drift alone,
+        /// past 1 the diagonal bands tighten. Independent of driftRate.
+        float rippleScale = 1.0f;
+
         virtual void render(HSVStripNode* inNode, HSV& inOutColor) const override;
+        virtual void reflect(ecore::PropertyBag& bag) override;
     };
 
 
-    /* @brief audio_playback_mushroom: a rainbow wrapped once around the strip,
-    * rocking back and forth on a sine. */
+    /* @brief audio_playback_mushroom: a rainbow wrapped once up the stage,
+    * rocking back and forth on a sine.
+    *
+    * The python wrapped it once around the strip; the wheel now spans the
+    * stage's height, ring at one end of it and obelisk top at the other, so
+    * the two rigs are slices of one rainbow rather than each wearing their
+    * own.
+    */
     class Pattern_Scanner_PlaybackMushroom : public PatternScanner
     {
     public:
+        /// how fast the rainbow rocks back and forth
+        float rockRate = 1.0f;
+
         virtual void render(HSVStripNode* inNode, HSV& inOutColor) const override;
+        virtual void reflect(ecore::PropertyBag& bag) override;
     };
 
 
@@ -197,7 +309,11 @@ namespace scanner
             HSV(30.0f, 1.0f, 1.0f),
         };
 
+        /// ramp lengths scrolled past per second
+        float scrollRate = 1.0f;
+
         virtual void render(HSVStripNode* inNode, HSV& inOutColor) const override;
+        virtual void reflect(ecore::PropertyBag& bag) override;
     };
 
 
@@ -222,14 +338,18 @@ namespace scanner
         float gain;
 
         virtual void render(HSVStripNode* inNode, HSV& inOutColor) const override;
+        virtual void reflect(ecore::PropertyBag& bag) override;
     };
 
 
-    /* @brief record_active: a red comet circling the ring while tape rolls.
+    /* @brief record_active: a red comet orbiting the ring while tape rolls.
     *
-    * The python ran the head at 12 pixels a second with an 8 pixel tail on
-    * the 35 pixel ring; both are fractions of the strip here, so the comet
-    * keeps its proportions on whatever strip renders it.
+    * The head is an angle around the ring's centre on the stage, not an
+    * index along a strip. On the ring that is the python comet unchanged -
+    * 12 pixels a second, an 8 pixel tail, a dim red floor behind it - and on
+    * the obelisk, standing above the orbit, the same pass reads as a beam
+    * sweeping across the tower once per revolution, narrower the higher it
+    * reaches. One clock, both rigs, no per-rig cases.
     */
     class Pattern_Scanner_RecordComet : public PatternScanner
     {
@@ -237,9 +357,11 @@ namespace scanner
         // CRGB(1.0, 0.05, 0.05)
         HSV cometColor = HSV(0.0f, 0.95f, 1.0f);
         float revsPerSecond = 12.0f / 35.0f;
+        /// the tail, as a fraction of a revolution
         float tailFraction = 8.0f / 35.0f;
 
         virtual void render(HSVStripNode* inNode, HSV& inOutColor) const override;
+        virtual void reflect(ecore::PropertyBag& bag) override;
     };
 
 
@@ -247,10 +369,10 @@ namespace scanner
     * rolls, so a take does not start abruptly out of the arm state.
     *
     * Each count fires an AutomationCurveTrigger whose curve is one quick
-    * white pulse. A node's height delays its read into that curve, which is
-    * the whole sweep: on the obelisk the pulse runs bottom to top in
-    * sweepSeconds, and the ring's nodes all sit at height zero and pulse
-    * together on the count.
+    * white pulse. A node's height on the stage delays its read into that
+    * curve, which is the whole sweep: the count lands at the bottom of the
+    * ring and runs to the top of the obelisk in sweepSeconds, so the pulse
+    * crosses the ring before it climbs the sculpture.
     */
     class Pattern_Scanner_RecordCountdown : public PatternScanner
     {
@@ -260,33 +382,22 @@ namespace scanner
         virtual void reset() override;
         virtual void tick(float deltaTime) override;
         virtual void render(HSVStripNode* inNode, HSV& inOutColor) const override;
+        virtual void reflect(ecore::PropertyBag& bag) override;
 
-        /// counts fire at 0, 1 and 2 seconds; the game holds the state for 3
+        /// counts fire at 0, 1 and 2 seconds; the game holds the state for 3.
+        /// Not reflected: the count is the game's choreography, and a desk
+        /// retiming it here would desync the lights from the display and the
+        /// take.
         float secondsPerCount = 1.0f;
         int totalCounts = 3;
 
-        /// how long a pulse takes to climb. Height is divided by sweepHeight -
-        /// the obelisk's 43-pixel wall, the one physical geometry the scanner
-        /// drives - so the top of the sculpture lags the bottom by this much.
+        /// how long a pulse takes to climb the whole stage, kStageBottom to
+        /// kStageTop
         float sweepSeconds = 0.25f;
-        float sweepHeight = 43.0f;
 
     private:
         eanim::AutomationCurveTrigger pulse;
         int firedCount{0};
-    };
-
-
-    /* @brief audio_playback_recording: the whole ring breathing warm orange
-    * with a slow per-pixel ripple riding on it, while a visitor's take plays.
-    */
-    class Pattern_Scanner_PlaybackRecording : public PatternScanner
-    {
-    public:
-        // CRGB(1.0, 0.5, 0.1)
-        HSV playbackColor = HSV(26.7f, 0.9f, 1.0f);
-
-        virtual void render(HSVStripNode* inNode, HSV& inOutColor) const override;
     };
 
 

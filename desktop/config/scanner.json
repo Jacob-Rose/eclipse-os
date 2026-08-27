@@ -25,6 +25,10 @@
   },
 
   "devices": [
+    // Both devices carry literal stage coordinates - the ring a circle just
+    // below y=0, the obelisk standing on it - so zero offsets land them in
+    // one shared space and a wave running up y crosses the ring first.
+    //
     // A near-square panel for a circle, a pillar for the obelisk - view_scale
     // is a view property and touches nothing the pattern sees.
     { "device": "scanner_ring", "offset": [0, 0], "view_scale": [0.9, 1.0] },

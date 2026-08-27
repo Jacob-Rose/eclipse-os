@@ -8,7 +8,7 @@
 #include <algorithm>
 #include <cmath>
 
-// HSVStripNode_Mapped2D, for the countdown's height read
+// HSVStripNode_Mapped2D, for nodeCoord's read of the stage
 #include "../../lib/eio/strip_projection.h"
 
 using namespace scanner;
@@ -30,6 +30,23 @@ float PatternScanner::stripAlpha(const HSVStripNode* node)
     return length > 0 ? static_cast<float>(node->getStripIdx()) / static_cast<float>(length) : 0.0f;
 }
 
+Coordinate PatternScanner::nodeCoord(const HSVStripNode* node)
+{
+    if (node->GetStripNodeType() == StripNodeType::MAPPED2D)
+    {
+        return static_cast<const HSVStripNode_Mapped2D*>(node)->coord;
+    }
+
+    // a bare strip stands in as a vertical run: its index up the y axis, so a
+    // look that travels the stage still travels the strip
+    return Coordinate(0.0f, static_cast<float>(node->getStripIdx()));
+}
+
+float PatternScanner::stageAlpha(const HSVStripNode* node)
+{
+    return std::clamp((nodeCoord(node).y - kStageBottom) / (kStageTop - kStageBottom), 0.0f, 1.0f);
+}
+
 void Pattern_Scanner_PowerUp::render(HSVStripNode* inNode, HSV& inOutColor) const
 {
     // Every pixel gets a fixed slot in 0..1; it stays dark until boot progress
@@ -48,19 +65,70 @@ void Pattern_Scanner_PowerUp::render(HSVStripNode* inNode, HSV& inOutColor) cons
     }
 }
 
+void Pattern_Scanner_PowerUp::reflect(ecore::PropertyBag& bag)
+{
+    bag.add("boot_time", bootTime, 0.5f, 10.0f);
+}
+
+Pattern_Scanner_Boot::Pattern_Scanner_Boot()
+{
+    // the python's eight-stop table, one key per stop
+    brightnessCurve.addKey(0.0f,        0.1f);
+    brightnessCurve.addKey(1.0f / 7.0f, 0.8f);
+    brightnessCurve.addKey(2.0f / 7.0f, 0.7f);
+    brightnessCurve.addKey(3.0f / 7.0f, 1.0f);
+    brightnessCurve.addKey(4.0f / 7.0f, 0.8f);
+    brightnessCurve.addKey(5.0f / 7.0f, 0.5f);
+    brightnessCurve.addKey(6.0f / 7.0f, 0.2f);
+    brightnessCurve.addKey(1.0f,        0.0f);
+
+    // the sixteen-stop noise table, compressed: holds and straight runs fold
+    // into their endpoint keys, and the two curved shoulders - the opening
+    // fall and the mid-boot spike's collapse - are easings instead of stops.
+    // Within a few percent of the table everywhere, under a per-frame random
+    // flicker that hides far more than that.
+    noiseCurve.addKey(0.0f,          1.0f, easing_functions::EaseOutQuad);
+    noiseCurve.addKey(2.0f / 15.0f,  0.4f);
+    noiseCurve.addKey(4.0f / 15.0f,  0.4f, easing_functions::EaseOutQuad);
+    noiseCurve.addKey(6.0f / 15.0f,  1.0f, easing_functions::EaseInQuad);
+    noiseCurve.addKey(8.0f / 15.0f,  0.2f);
+    noiseCurve.addKey(12.0f / 15.0f, 0.0f);
+    noiseCurve.addKey(1.0f,          0.0f);
+}
+
 void Pattern_Scanner_Boot::render(HSVStripNode* inNode, HSV& inOutColor) const
 {
     (void)inNode;
 
     const float bootAlpha = clamp01(timeActive / bootTime);
-    const float brightness = lerp_keyframes(bootAlpha, brightnessKeys);
-    const float noiseStrength = lerp_keyframes(bootAlpha, noiseKeys);
+    const float brightness = brightnessCurve.evaluate(bootAlpha);
+    const float noiseStrength = noiseCurve.evaluate(bootAlpha);
 
     // mix(color, black, random * noise) - a per-pixel, per-frame flicker
     // eating into the swell.
-    const float flicker = 1.0f - get_random_float() * noiseStrength;
+    const float flicker = 1.0f - get_random_float() * noiseStrength * noiseGain;
 
     inOutColor = HSV(300.0f, 1.0f, brightness * clamp01(flicker));
+}
+
+void Pattern_Scanner_Boot::reflect(ecore::PropertyBag& bag)
+{
+    // Two independent handles on the one swell: how long it takes, and how
+    // hard the noise chews on it. Each is a curve target on its own.
+    bag.add("boot_time", bootTime, 1.0f, 15.0f);
+    bag.add("noise", noiseGain, 0.0f, 2.0f);
+}
+
+Pattern_Scanner_ScanIdle::Pattern_Scanner_ScanIdle()
+{
+    // the python's ten-stop table: a sharp swell at the top of the breath,
+    // then dark for the back half - the six trailing zeros are two keys
+    breathCurve.addKey(0.0f,        0.3f);
+    breathCurve.addKey(1.0f / 9.0f, 1.0f);
+    breathCurve.addKey(2.0f / 9.0f, 0.5f);
+    breathCurve.addKey(3.0f / 9.0f, 0.2f);
+    breathCurve.addKey(4.0f / 9.0f, 0.0f);
+    breathCurve.addKey(1.0f,        0.0f);
 }
 
 void Pattern_Scanner_ScanIdle::render(HSVStripNode* inNode, HSV& inOutColor) const
@@ -68,10 +136,15 @@ void Pattern_Scanner_ScanIdle::render(HSVStripNode* inNode, HSV& inOutColor) con
     (void)inNode;
 
     const float cycleAlpha = std::fmod(timeActive, cycleTime) / cycleTime;
-    const float brightness = lerp_keyframes(cycleAlpha, idleBrightnessKeys);
+    const float brightness = breathCurve.evaluate(cycleAlpha);
 
     inOutColor = scanColor;
     inOutColor.setBrightnessAlpha(scanColor.getValFloat() * brightness);
+}
+
+void Pattern_Scanner_ScanIdle::reflect(ecore::PropertyBag& bag)
+{
+    bag.add("cycle_time", cycleTime, 0.5f, 8.0f);
 }
 
 void Pattern_Scanner_Emergency::render(HSVStripNode* inNode, HSV& inOutColor) const
@@ -80,20 +153,35 @@ void Pattern_Scanner_Emergency::render(HSVStripNode* inNode, HSV& inOutColor) co
 
     // sin goes negative half the time; the python fed that to fancy.mix which
     // pinned it, so the throb spends half its cycle dark.
-    const float brightness = clamp01(std::sin(timeActive * 2.0f));
+    const float brightness = clamp01(std::sin(timeActive * throbRate));
 
     inOutColor = HSV(0.0f, 1.0f, brightness);
 }
 
+void Pattern_Scanner_Emergency::reflect(ecore::PropertyBag& bag)
+{
+    bag.add("throb_rate", throbRate, 0.2f, 8.0f);
+}
+
 void Pattern_Scanner_DetectedWave::render(HSVStripNode* inNode, HSV& inOutColor) const
 {
-    // mix(waveColor, black, sin(pixel + t * 3)) - the negative half of the
-    // sine pins to full color, so the wave is wide crests of cyan with narrow
-    // dark troughs sliding along the strip.
-    const float darkAlpha = clamp01(std::sin(inNode->getStripIdx() + timeActive * 3.0f));
+    // mix(waveColor, black, sin(y - t * 3)) - the negative half of the sine
+    // pins to full color, so the wave is wide crests of color with narrow
+    // dark troughs. The sign on time makes them rise: y - 3t crests move
+    // toward +y, up through the ring and on up the obelisk.
+    const float y = nodeCoord(inNode).y;
+    const float darkAlpha = clamp01(std::sin(y * radiansPerUnit - timeActive * radiansPerUnit * unitsPerSecond));
 
     inOutColor = waveColor;
     inOutColor.setBrightnessAlpha(waveColor.getValFloat() * (1.0f - darkAlpha));
+}
+
+void Pattern_Scanner_DetectedWave::reflect(ecore::PropertyBag& bag)
+{
+    // The wave's two dimensions, deliberately uncoupled: wave_scale is how
+    // tight the crests pack on the stage, rise_speed how fast they climb it.
+    bag.add("wave_scale", radiansPerUnit, 0.1f, 4.0f);
+    bag.add("rise_speed", unitsPerSecond, 0.0f, 12.0f);
 }
 
 void Pattern_Scanner_DetectedShimmer::render(HSVStripNode* inNode, HSV& inOutColor) const
@@ -101,34 +189,55 @@ void Pattern_Scanner_DetectedShimmer::render(HSVStripNode* inNode, HSV& inOutCol
     (void)inNode;
 
     // rgb(x, x, x + 20) out of 255, x swinging 0..51.
-    const float x = (std::sin(timeActive * 5.0f) + 1.0f) * 25.6f;
+    const float x = (std::sin(timeActive * shimmerRate) + 1.0f) * 25.6f;
 
     inOutColor = HSV(240.0f, 20.0f / (x + 20.0f), (x + 20.0f) / 255.0f);
+}
+
+void Pattern_Scanner_DetectedShimmer::reflect(ecore::PropertyBag& bag)
+{
+    bag.add("shimmer_rate", shimmerRate, 0.5f, 12.0f);
 }
 
 void Pattern_Scanner_DetectedMushroom::render(HSVStripNode* inNode, HSV& inOutColor) const
 {
     (void)inNode;
 
-    const float blendAlpha = std::fmod(timeActive * 2.0f, 1.0f);
+    const float blendAlpha = std::fmod(timeActive * blendRate, 1.0f);
 
     inOutColor = HSV::blend(baseColor, accentColor, blendAlpha);
+}
+
+void Pattern_Scanner_DetectedMushroom::reflect(ecore::PropertyBag& bag)
+{
+    bag.add("blend_rate", blendRate, 0.1f, 8.0f);
 }
 
 void Pattern_Scanner_DetectedMushroomNew::render(HSVStripNode* inNode, HSV& inOutColor) const
 {
     (void)inNode;
 
-    const float hueAlpha = std::fmod(timeActive * 0.5f, 1.0f);
+    const float hueAlpha = std::fmod(timeActive * hueRate, 1.0f);
 
     // CHSV(hue, 200, 200)
     inOutColor = HSV(hueAlpha * 360.0f, 0.784f, 0.784f);
 }
 
+void Pattern_Scanner_DetectedMushroomNew::reflect(ecore::PropertyBag& bag)
+{
+    bag.add("hue_rate", hueRate, 0.05f, 2.0f);
+}
+
 void Pattern_Scanner_SuccessMushroom::render(HSVStripNode* inNode, HSV& inOutColor) const
 {
-    const float hueOne = (std::sin(timeActive) + 1.0f) * 0.5f;
-    const float hueTwo = (std::sin(timeActive + kPi * 0.5f + inNode->getStripIdx()) + 1.0f) * 0.5f;
+    // the ripple's phase is the node's place on the stage, not its place in
+    // the wiring: x + y runs the ripple diagonally across the obelisk's face
+    // and around the ring's circle below
+    const Coordinate at = nodeCoord(inNode);
+
+    const float drift = timeActive * driftRate;
+    const float hueOne = (std::sin(drift) + 1.0f) * 0.5f;
+    const float hueTwo = (std::sin(drift + kPi * 0.5f + (at.x + at.y) * rippleScale) + 1.0f) * 0.5f;
 
     inOutColor = HSV::blend(
         HSV(hueOne * 360.0f, 0.5f, 0.5f),
@@ -136,19 +245,37 @@ void Pattern_Scanner_SuccessMushroom::render(HSVStripNode* inNode, HSV& inOutCol
         0.5f);
 }
 
+void Pattern_Scanner_SuccessMushroom::reflect(ecore::PropertyBag& bag)
+{
+    bag.add("drift_rate", driftRate, 0.1f, 4.0f);
+    bag.add("ripple", rippleScale, 0.0f, 4.0f);
+}
+
 void Pattern_Scanner_PlaybackMushroom::render(HSVStripNode* inNode, HSV& inOutColor) const
 {
-    const float timeSinAlpha = std::fmod((std::sin(timeActive) + 1.0f) * 0.5f, 1.0f);
-    const float hueAlpha = std::fmod(timeSinAlpha + stripAlpha(inNode), 1.0f);
+    // the wheel spans the stage's height - ring at one end, obelisk top at
+    // the other - so both rigs are slices of the one rainbow
+    const float timeSinAlpha = std::fmod((std::sin(timeActive * rockRate) + 1.0f) * 0.5f, 1.0f);
+    const float hueAlpha = std::fmod(timeSinAlpha + stageAlpha(inNode), 1.0f);
 
     inOutColor = HSV(hueAlpha * 360.0f, 1.0f, 0.5f);
 }
 
+void Pattern_Scanner_PlaybackMushroom::reflect(ecore::PropertyBag& bag)
+{
+    bag.add("rock_rate", rockRate, 0.1f, 4.0f);
+}
+
 void Pattern_Scanner_PlaybackGeneric::render(HSVStripNode* inNode, HSV& inOutColor) const
 {
-    const float rampAlpha = std::fmod(timeActive + stripAlpha(inNode), 1.0f);
+    const float rampAlpha = std::fmod(timeActive * scrollRate + stripAlpha(inNode), 1.0f);
 
     inOutColor = rampPalette.getColor(rampAlpha);
+}
+
+void Pattern_Scanner_PlaybackGeneric::reflect(ecore::PropertyBag& bag)
+{
+    bag.add("scroll_rate", scrollRate, 0.1f, 4.0f);
 }
 
 void Pattern_Scanner_SinePulse::render(HSVStripNode* inNode, HSV& inOutColor) const
@@ -161,23 +288,44 @@ void Pattern_Scanner_SinePulse::render(HSVStripNode* inNode, HSV& inOutColor) co
     inOutColor.setBrightnessAlpha(color.getValFloat() * (floorLevel + pulse * gain));
 }
 
+void Pattern_Scanner_SinePulse::reflect(ecore::PropertyBag& bag)
+{
+    // The breath's three independent handles - the states that share this
+    // class (record_arm, record_saved, void) differ only in these numbers and
+    // the colour, so the knobs *are* the state's identity, worth curves each.
+    bag.add("rate", rate, 0.5f, 12.0f);
+    bag.add("floor", floorLevel, 0.0f, 1.0f);
+    bag.add("gain", gain, 0.0f, 1.0f);
+}
+
 void Pattern_Scanner_RecordComet::render(HSVStripNode* inNode, HSV& inOutColor) const
 {
     const float headAlpha = std::fmod(timeActive * revsPerSecond, 1.0f);
 
-    // how far behind the head this pixel sits, wrapped around the ring
-    float distance = headAlpha - stripAlpha(inNode);
-    if (distance < 0.0f)
-    {
-        distance += 1.0f;
-    }
+    // the node's bearing around the orbit's centre, as a fraction of a turn.
+    // atan2(dx, dy) puts zero at the top of the ring and turns the way the
+    // pixels are numbered, so on the ring this *is* the old strip walk - and
+    // a node above the orbit still has a bearing, which is what sweeps the
+    // beam across the obelisk.
+    const Coordinate at = nodeCoord(inNode);
+    const float bearing = std::atan2(at.x - kRingCenterX, at.y - kRingCenterY) / (2.0f * kPi);
+
+    // how far behind the head this bearing sits, wrapped around the turn
+    float distance = headAlpha - bearing;
+    distance -= std::floor(distance);
 
     // the python's clamp(1 - distance/8, 0.05, 1): a linear tail, and a 0.05
-    // floor so the rest of the ring glows dim red rather than going out
+    // floor so the rest of the rig glows dim red rather than going out
     const float brightness = std::clamp(1.0f - distance / tailFraction, 0.05f, 1.0f);
 
     inOutColor = cometColor;
     inOutColor.setBrightnessAlpha(cometColor.getValFloat() * brightness);
+}
+
+void Pattern_Scanner_RecordComet::reflect(ecore::PropertyBag& bag)
+{
+    bag.add("orbit_rate", revsPerSecond, 0.05f, 2.0f);
+    bag.add("tail", tailFraction, 0.02f, 1.0f);
 }
 
 Pattern_Scanner_RecordCountdown::Pattern_Scanner_RecordCountdown()
@@ -223,26 +371,18 @@ void Pattern_Scanner_RecordCountdown::render(HSVStripNode* inNode, HSV& inOutCol
         return;
     }
 
-    // height delays the read into the pulse's curve, which is the sweep. A
-    // node with no 2d mapping sits at height zero and pulses on the count.
-    float height = 0.0f;
-    if (inNode->GetStripNodeType() == StripNodeType::MAPPED2D)
-    {
-        height = static_cast<HSVStripNode_Mapped2D*>(inNode)->coord.y;
-    }
-
-    const float delay = clamp01(height / sweepHeight) * sweepSeconds;
+    // height on the stage delays the read into the pulse's curve, which is
+    // the sweep: the count lands at the bottom of the ring and the top of the
+    // obelisk sees it sweepSeconds later.
+    const float delay = stageAlpha(inNode) * sweepSeconds;
     inOutColor = HSV(0.0f, 0.0f, pulse.curve.evaluate(sinceCount - delay));
 }
 
-void Pattern_Scanner_PlaybackRecording::render(HSVStripNode* inNode, HSV& inOutColor) const
+void Pattern_Scanner_RecordCountdown::reflect(ecore::PropertyBag& bag)
 {
-    const float breath = (std::sin(timeActive * 2.0f) + 1.0f) * 0.5f;
-    const float ripple = std::sin(inNode->getStripIdx() * 0.7f + timeActive) * 0.15f;
-    const float brightness = clamp01(0.2f + breath * 0.6f + ripple);
-
-    inOutColor = playbackColor;
-    inOutColor.setBrightnessAlpha(playbackColor.getValFloat() * brightness);
+    // only the sweep: the count's timing belongs to the game - see the
+    // header on secondsPerCount
+    bag.add("sweep", sweepSeconds, 0.0f, 1.0f);
 }
 
 void Pattern_Scanner_Solid::render(HSVStripNode* inNode, HSV& inOutColor) const
