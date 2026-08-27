@@ -24,6 +24,7 @@ from typing import Callable, List, Optional, Sequence, Tuple, Union
 
 from .binary import find_executable
 from .config import Config, ConfigError
+from .curves import EASING_NAMES
 
 Color = Union[str, Sequence[float]]
 
@@ -111,6 +112,43 @@ def _parse_param(line: str) -> Optional[Param]:
         return Param(parts[1], parts[2], value, float(parts[4]), float(parts[5]))
     except ValueError:
         return None
+
+
+#: One curve key as the wrapper holds it: (time, value, easing name or None
+#: for linear). Easing travels the wire as the C++ enum index; EASING_NAMES
+#: is in enum order, which is what makes the translation a list lookup.
+CurveKeyTuple = Tuple[float, float, Optional[str]]
+
+
+def _parse_curve(line: str) -> Optional[Tuple[str, List[CurveKeyTuple]]]:
+    """Parses one ``CURVE name t:v[:easing] ...`` line. None on malformed."""
+    parts = line.split()
+    if len(parts) < 2:
+        return None
+
+    keys: List[CurveKeyTuple] = []
+    try:
+        for token in parts[2:]:
+            fields = token.split(":")
+            if len(fields) not in (2, 3):
+                return None
+            easing = EASING_NAMES[int(fields[2])] if len(fields) == 3 else None
+            keys.append((float(fields[0]), float(fields[1]), easing))
+    except (ValueError, IndexError):
+        return None
+
+    return parts[1], keys
+
+
+def _curve_tokens(keys: "Sequence[CurveKeyTuple]") -> List[str]:
+    """The wire spelling of a key list, shared by set_curve and tests."""
+    tokens = []
+    for time_, value, easing in keys:
+        token = f"{time_:g}:{value:g}"
+        if easing is not None:
+            token += f":{EASING_NAMES.index(easing)}"
+        tokens.append(token)
+    return tokens
 
 
 def _parse_frame(line: str) -> Optional[Frame]:
@@ -227,6 +265,11 @@ class ShowController:
         #: list itself, and unlike comparing names it also catches a look whose
         #: knobs are the same ones on a different object.
         self.params_revision: int = 0
+
+        #: The running look's drawable curves, name -> key list, replaced
+        #: with the params whenever the look changes. Same revision: watch
+        #: `params_revision` and read both.
+        self.curves: dict = {}
 
         #: The set being read right now, or None between blocks.
         self._params_open: Optional[List[Param]] = None
@@ -474,6 +517,16 @@ class ShowController:
             self._params_open = []
             self.params = self._params_open
             self.params_revision += 1
+            # curves belong to the same look as the knobs, so a new block
+            # replaces them together; the CURVE lines that follow refill it
+            self.curves = {}
+        elif line.startswith("CURVE "):
+            # `CURVE envelope 0:0 0.06:1:7 0.45:0` - a look's live shape,
+            # inside a PARAMS block or alone as the echo after `curve`
+            parsed = _parse_curve(line)
+            if parsed is not None:
+                name, keys = parsed
+                self.curves[name] = keys
         elif line.startswith("PARAM "):
             param = _parse_param(line)
             if param is None:
@@ -655,6 +708,17 @@ class ShowController:
     def get_param(self, name: str) -> Optional[Param]:
         """The named knob on the running look, or None if it has no such one."""
         return next((param for param in self.params if param.name == name), None)
+
+    def set_curve(self, name: str, keys: Sequence[CurveKeyTuple]) -> None:
+        """Writes a whole shape into one of the running look's curves.
+
+        Keys are (time, value, easing name or None), the same tuples
+        `curves` holds - so an editor can read a live shape, change it, and
+        hand it straight back. The executable validates the lot before
+        touching the curve and echoes what it now holds, so `curves` is
+        current when this returns.
+        """
+        self.command(f"curve {name} " + " ".join(_curve_tokens(keys)))
 
     def refresh_params(self) -> List[Param]:
         """Asks for the set outright, rather than waiting to be told.

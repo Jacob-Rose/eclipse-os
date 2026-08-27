@@ -82,6 +82,13 @@ float ecore::get_random_float()
     return ((float)randValue) / 400;
 }
 
+float ecore::hash01(uint32_t n)
+{
+    n = (n << 13u) ^ n;
+    n = n * (n * n * 15731u + 789221u) + 1376312589u;
+    return static_cast<float>(n & 0x7fffffffu) / 2147483647.0f;
+}
+
 float ecore::get_random_float_in_range(float min, float max)
 {
     float randVal = get_random_float();

@@ -127,6 +127,11 @@ namespace edmx
         /// for speed and width overrides without calling up.
         virtual void reflect(ecore::PropertyBag& bag);
 
+        /// The drawable shapes this pattern offers - reflect(), for
+        /// AutomationCurves. Same freshness rules. Empty by default: most
+        /// patterns have no live shape worth handing to a curve editor.
+        virtual void reflectCurves(eanim::CurveBag& /*bag*/) {}
+
         /// Live control, driven by the stdin protocol. Values are applied
         /// immediately so the python wrapper can nudge a running show.
         virtual void setSpeed(float value) { speed = value; }
@@ -172,6 +177,7 @@ namespace edmx
         /// Straight through to the generator: a relic look's knobs are the
         /// look's, not the wrapper's, and speed/width mean nothing here.
         void reflect(ecore::PropertyBag& bag) override;
+        void reflectCurves(eanim::CurveBag& bag) override;
 
     private:
         /// Rebuilds the node set when the rig changes shape.

@@ -53,6 +53,16 @@ namespace eanim
         * to. @see ecore::PropertyBag
         */
         virtual void reflect(ecore::PropertyBag& /*bag*/) {}
+
+        /* @brief Hand out the shapes worth drawing while this look runs.
+        *
+        * reflect(), for AutomationCurves: an envelope or a swell a desk's
+        * curve editor can load live and write an edited shape back into.
+        * Same rules - optional, empty by default, one line per curve, and
+        * only the shapes that actually change how the look reads.
+        * @see eanim::CurveBag
+        */
+        virtual void reflectCurves(class CurveBag& /*bag*/) {}
     };
 
 

@@ -99,6 +99,16 @@ void Pattern_Mythos_BeatPulse::reflect(ecore::PropertyBag& bag)
     bag.add("color", pulseColor);
 }
 
+void Pattern_Mythos_BeatPulse::reflectCurves(eanim::CurveBag& bag)
+{
+    // The envelope itself, drawable. The attack/decay knobs are the shorthand
+    // that *writes* this curve, so the two can fight: a drawn shape holds
+    // until either knob is touched, at which point setEnvelope rebuilds the
+    // rise-and-fall over it. Last writer wins, which is the only honest
+    // answer for two spellings of one shape.
+    bag.add("envelope", envelope.curve);
+}
+
 void Pattern_Mythos_BeatPulse::init()
 {
     started = false;
@@ -222,6 +232,13 @@ void Pattern_Mythos_VuPulse::reflect(ecore::PropertyBag& bag)
     bag.add("base_gain", baseGain, 0.0f, 2.0f);
     bag.add("base_floor", baseFloor, 0.0f, 1.0f);
     bag.add("base_smoothing", baseSmoothing, 0.0f, 2.0f);
+}
+
+void Pattern_Mythos_VuPulse::reflectCurves(eanim::CurveBag& bag)
+{
+    // the flash's envelope, same name as on beat_pulse - one shape, drawable
+    // from either state
+    pulse.reflectCurves(bag);
 }
 
 void Pattern_Mythos_VuPulse::init()

@@ -75,8 +75,11 @@ PATTERN_NAMES = (
     "scanner_success_mushroom",
     "scanner_playback_mushroom",
     "scanner_playback_generic",
-    "scanner_matrix_rain",
-    "scanner_fire_2012",
+    # the generic looks - free-standing stage patterns, most from WLED - as
+    # one machine: each look a cue state
+    "generic",
+    # the obelisk's own ambient looks, likewise grouped
+    "obelisk",
     # the show: written for this rig, and beat-driven
     "mythos26",
 )
@@ -115,11 +118,39 @@ MYTHOS26_STATES = (
     "slot_7",
 )
 
+#: The generic looks' states, in machine order. Must stay in step with
+#: makeGenericStateMachine() in desktop/src/state_machine.cpp.
+GENERIC_STATES = (
+    "matrix_rain",
+    "fire_2012",
+    "flow",
+    "lake",
+    "pacifica",
+    "phased",
+    "saw",
+    "spots_fade",
+    "twinkleup",
+    "waterfall",
+    "color_clouds",
+    "rainbow",
+    "chase",
+    "theater",
+)
+
+#: The obelisk machine's states. Must stay in step with
+#: makeObeliskStateMachine() in desktop/src/state_machine.cpp.
+OBELISK_STATES = (
+    "seasons",
+    "mono",
+)
+
 #: Which patterns are state machines, and what states each offers. Used to
 #: check `pattern.state` before a binary is necessarily around.
 STATE_MACHINE_STATES = {
     "jacket": JACKET_STATES,
     "mythos26": MYTHOS26_STATES,
+    "generic": GENERIC_STATES,
+    "obelisk": OBELISK_STATES,
 }
 
 ADDRESSING_MODES = ("one", "zero")

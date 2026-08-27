@@ -1811,8 +1811,15 @@ class ViewerOnTheShow(unittest.TestCase):
     def test_tapping_does_not_error(self):
         self.settle(0.5)
         self.app._run_button(("beat", ""))
-        self.settle(0.5)
         self.assertEqual(self.app._status, "")
+
+        # The beat line re-announces on its own cadence, so "manual" lands in
+        # the header a beat or two after the tap - poll rather than guess the
+        # one sleep that always wins the race.
+        for _ in range(12):
+            self.settle(0.5)
+            if "manual" in self.app.header.cget("text"):
+                break
         self.assertIn("manual", self.app.header.cget("text"))
 
     def test_the_master_slider_reaches_the_rig(self):
@@ -2319,6 +2326,102 @@ class ScannerKnobs(unittest.TestCase):
             reds = [frame[0][0] for frame in frames]
             self.assertGreater(min(reds), 200, "not at full amber")
             self.assertLessEqual(max(reds) - min(reds), 2, "still breathing")
+        finally:
+            show.stop()
+
+
+class TheCurveProtocol(unittest.TestCase):
+    """Live shapes over the wire: CURVE announcements and the `curve` command.
+
+    The point of the whole channel: a look's envelope is an AutomationCurve,
+    and the desk's curve editor loads the live shape and writes an edited one
+    back - so the protocol must announce shapes with the knobs and accept a
+    whole shape at once.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        executable_or_skip()
+
+    def test_the_pulse_announces_its_envelope(self):
+        show = ShowController(SHOW, dry_run=True, midi="", on_frame=lambda f: None,
+                              emit_rate=20.0)
+        try:
+            time.sleep(0.6)
+            self.assertIn("envelope", show.curves)
+            self.assertGreaterEqual(len(show.curves["envelope"]), 3)
+
+            # vu_pulse forwards the same flash, so the same shape shows there
+            show.set_state("vu_pulse")
+            time.sleep(0.5)
+            self.assertIn("envelope", show.curves)
+        finally:
+            show.stop()
+
+    def test_a_drawn_shape_lands_and_echoes(self):
+        show = ShowController(SHOW, dry_run=True, midi="", on_frame=lambda f: None,
+                              emit_rate=20.0)
+        try:
+            time.sleep(0.6)
+            show.set_curve("envelope", [
+                (0.0, 0.0, None),
+                (0.1, 1.0, "EaseOutCubic"),
+                (0.6, 0.0, None),
+            ])
+
+            keys = show.curves["envelope"]
+            self.assertEqual(len(keys), 3)
+            self.assertAlmostEqual(keys[1][0], 0.1, places=4)
+            self.assertAlmostEqual(keys[1][1], 1.0, places=4)
+            self.assertEqual(keys[1][2], "EaseOutCubic")
+            self.assertIsNone(keys[0][2])
+        finally:
+            show.stop()
+
+    def test_a_shape_reaches_the_render(self):
+        """Flatten the boot swell's brightness curve to zero: the rig darkens."""
+        frames = []
+        show = ShowController(SCANNER, dry_run=True, midi="", on_frame=frames.append,
+                              emit_rate=20.0)
+        try:
+            show.set_state("boot")
+            time.sleep(1.2)
+            self.assertIn("brightness", show.curves)
+            self.assertIn("noise", show.curves)
+
+            show.set_curve("brightness", [(0.0, 0.0, None), (1.0, 0.0, None)])
+            time.sleep(0.3)
+            frames.clear()
+            time.sleep(0.5)
+
+            self.assertTrue(frames)
+            self.assertLess(max(max(color) for frame in frames for color in frame), 20,
+                            "still lit after the swell was drawn flat")
+        finally:
+            show.stop()
+
+    def test_an_unknown_curve_is_refused_without_dying(self):
+        show = ShowController(SHOW, dry_run=True, midi="", on_frame=lambda f: None,
+                              emit_rate=20.0)
+        try:
+            time.sleep(0.6)
+            with self.assertRaises(ShowError):
+                show.set_curve("not_a_curve", [(0.0, 0.0, None), (1.0, 1.0, None)])
+            self.assertTrue(show.is_running)
+        finally:
+            show.stop()
+
+    def test_a_ninth_key_is_refused_whole(self):
+        """Too many keys rejects the message; the look keeps its old shape."""
+        show = ShowController(SHOW, dry_run=True, midi="", on_frame=lambda f: None,
+                              emit_rate=20.0)
+        try:
+            time.sleep(0.6)
+            before = show.curves["envelope"]
+            with self.assertRaises(ShowError):
+                show.set_curve("envelope",
+                               [(i * 0.1, 0.5, None) for i in range(9)])
+            self.assertEqual(show.curves["envelope"], before)
         finally:
             show.stop()
 

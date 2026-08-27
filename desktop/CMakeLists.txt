@@ -49,6 +49,7 @@ set(ECLIPSE_CORE_SOURCES
     ${ECLIPSE_SRC}/lib/eanim/generator_hsv.cpp
     ${ECLIPSE_SRC}/lib/eanim/lfo.cpp
     ${ECLIPSE_SRC}/lib/eanim/noise.cpp
+    ${ECLIPSE_SRC}/lib/eanim/particles.cpp
     ${ECLIPSE_SRC}/lib/eanim/processor_float.cpp
 
     # The wire between a desk and a relic. Built here as well as on the
@@ -89,6 +90,10 @@ set(ECLIPSE_RELIC_SOURCES
     # scanner device itself stays python; these exist so the obelisk (and this
     # desk) can render the matching picture.
     ${ECLIPSE_SRC}/relics/scanner/scanner_patterns.cpp
+
+    # The generic looks: stage patterns with no game state, most recreated
+    # from WLED. Same stage, free-standing.
+    ${ECLIPSE_SRC}/relics/scanner/generic_patterns.cpp
 
     # The jacket's looks. Its State_* wrappers reach into JacketIO for physical
     # buttons, so the desktop drives the Pattern_* generators inside them

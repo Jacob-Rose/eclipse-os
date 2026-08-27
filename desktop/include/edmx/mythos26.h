@@ -71,6 +71,7 @@ namespace edmx
         virtual void tick(float deltaTime) override;
         virtual void render(eio::HSVStripNode* node, ecore::HSV& inOutColor) const override;
         virtual void reflect(ecore::PropertyBag& bag) override;
+        virtual void reflectCurves(eanim::CurveBag& bag) override;
 
         /// White to open on. The whole look is one colour and one envelope, so
         /// this is the knob that changes it — a `color` property, which means a
@@ -240,6 +241,7 @@ namespace edmx
         virtual void tick(float deltaTime) override;
         virtual void render(eio::HSVStripNode* node, ecore::HSV& inOutColor) const override;
         virtual void reflect(ecore::PropertyBag& bag) override;
+        virtual void reflectCurves(eanim::CurveBag& bag) override;
 
         /// The flash. Same shape, colour and rate knobs as beat_pulse.
         Pattern_Mythos_BeatPulse pulse;

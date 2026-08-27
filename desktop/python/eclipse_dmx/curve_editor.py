@@ -54,6 +54,11 @@ Target = Tuple[str, float, float]
 #: knobs of its own, so the editor is demonstrable on anything.
 MASTER: Target = ("master", 0.0, 1.0)
 
+#: How a live-shape target is spelled in the aim menu. A knob target streams
+#: evaluated values at the look; a shape target *is* one of the look's own
+#: AutomationCurves - drawing here rewrites the curve the look plays.
+SHAPE_PREFIX = "~ "
+
 
 class CurveEditor:
     """The timeline band. Owns a Curve, draws it, plays it at a knob."""
@@ -73,16 +78,26 @@ class CurveEditor:
 
     def __init__(self, parent: tk.Widget,
                  on_send: Callable[[str, float], None],
-                 on_status: Callable[[str], None]) -> None:
+                 on_status: Callable[[str], None],
+                 on_send_curve=None,
+                 on_load_curve=None) -> None:
         #: called with (target name, mapped value) for every sample sent
         self._on_send = on_send
         #: one line to the viewer's header, for refusals and confirmations
         self._on_status = on_status
+        #: called with (curve name, key tuples) when a live shape is edited
+        self._on_send_curve = on_send_curve
+        #: called with a curve name; returns the look's current key tuples
+        self._on_load_curve = on_load_curve
 
         self.curve: Curve = example_hit()
         self.selected: Optional[CurveKey] = None
 
         self._targets: List[Target] = [MASTER]
+        #: live-shape targets the running look offers, by bare name
+        self._curve_names: List[str] = []
+        #: the live shape being edited, or None when aimed at a knob
+        self._aimed_curve: Optional[str] = None
 
         self._dragging: Optional[CurveKey] = None
         self._scrubbing = False
@@ -184,35 +199,82 @@ class CurveEditor:
 
     # -- targets -----------------------------------------------------------
 
-    def set_targets(self, targets: List[Target]) -> None:
-        """The float knobs the running look offers, plus the master.
+    def set_targets(self, targets: List[Target], curve_names=()) -> None:
+        """What the running look offers: float knobs, and its live shapes.
 
         Called whenever the look changes. The current aim survives the change
-        when the new look has a knob of the same name; otherwise it falls back
-        to the master rather than silently driving a knob that no longer
-        exists.
+        when the new look has a target of the same name; otherwise it falls
+        back to the master rather than silently driving something that no
+        longer exists. An aim that survives on a *shape* reloads it, because
+        the same name on a new look is a different curve.
         """
         self._targets = [MASTER] + [t for t in targets if t[0] != MASTER[0]]
+        self._curve_names = list(curve_names)
 
         menu = self._target_menu["menu"]
         menu.delete(0, "end")
         for name, _low, _high in self._targets:
             menu.add_command(label=name,
                              command=lambda n=name: self._aim_at(n))
+        for name in self._curve_names:
+            label = SHAPE_PREFIX + name
+            menu.add_command(label=label,
+                             command=lambda n=label: self._aim_at(n))
 
-        if self._target_var.get() not in {name for name, _l, _h in self._targets}:
+        valid = {name for name, _l, _h in self._targets}
+        valid.update(SHAPE_PREFIX + name for name in self._curve_names)
+        if self._target_var.get() not in valid:
             self._target_var.set(MASTER[0])
+            self._aimed_curve = None
+        elif self._aimed_curve is not None:
+            self._load_live(self._aimed_curve)
         self._refresh_range_label()
 
     def _aim_at(self, name: str) -> None:
         self._target_var.set(name)
+        if name.startswith(SHAPE_PREFIX):
+            self._aimed_curve = name[len(SHAPE_PREFIX):]
+            self.stop_playback()
+            self._load_live(self._aimed_curve)
+        else:
+            self._aimed_curve = None
         self._refresh_range_label()
+
+    def refresh_live(self) -> None:
+        """Reloads the aimed shape from the look.
+
+        For after something else rewrote it - the attack and decay knobs
+        rebuild the envelope over a drawn shape - so the picture follows the
+        look rather than the other way round. A drag in progress is left
+        alone; the hand wins over the refresh.
+        """
+        if self._aimed_curve is not None and self._dragging is None:
+            self._load_live(self._aimed_curve)
+
+    def _load_live(self, name: str) -> None:
+        """The look's current shape, into the editor - so an edit starts from
+        what is actually playing rather than from a blank."""
+        keys = self._on_load_curve(name) if self._on_load_curve else None
+        if not keys:
+            return
+
+        loaded = Curve()
+        for key_time, key_value, easing in keys:
+            loaded.add_key(key_time, key_value, easing or LINEAR)
+        self.curve = loaded
+        self._select(None)
+        self._fit_span()
+        self.redraw()
 
     def _target(self) -> Target:
         wanted = self._target_var.get()
         return next((t for t in self._targets if t[0] == wanted), MASTER)
 
     def _refresh_range_label(self) -> None:
+        if self._aimed_curve is not None:
+            # not a mapped range: edits rewrite the look's own curve
+            self._range_label.configure(text="live shape")
+            return
         _name, low, high = self._target()
         self._range_label.configure(text=f"{low:g}..{high:g}")
 
@@ -225,10 +287,34 @@ class CurveEditor:
         overshooting, because that is its shape, but a knob has a range and
         the executable would clamp anyway - doing it here keeps the number on
         the wire the number the rig uses.
+
+        Aimed at a live shape, this sends nothing: the look plays its own
+        curve on its own triggers, and the transport here is just a preview.
         """
+        if self._aimed_curve is not None:
+            return
         weight = max(0.0, min(1.0, self.curve.evaluate(seconds)))
         name, low, high = self._target()
         self._on_send(name, low + weight * (high - low))
+
+    def _push_shape(self) -> None:
+        """The drawn shape, into the look it belongs to.
+
+        Called after each completed edit - a drag released, a key added or
+        deleted, an easing chosen - never per motion event: a shape is one
+        edit, and the look should see finished shapes, not the mouse.
+        """
+        if self._aimed_curve is None or self._on_send_curve is None:
+            return
+        if len(self.curve.keys) < 2:
+            # an empty or one-key curve is a flat line the look cannot play;
+            # keep drawing, send when it is a shape again
+            return
+
+        self._on_send_curve(self._aimed_curve, [
+            (key.time, key.value, None if key.easing == LINEAR else key.easing)
+            for key in self.curve.keys
+        ])
 
     # -- playback ----------------------------------------------------------
 
@@ -358,9 +444,12 @@ class CurveEditor:
         self.redraw()
 
     def _on_release(self, event: "tk.Event") -> None:
+        finished_drag = self._dragging is not None
         self._dragging = None
         self._scrubbing = False
         self.redraw()
+        if finished_drag:
+            self._push_shape()
 
     def _on_double(self, event: "tk.Event") -> None:
         if event.y <= self.RULER or self._key_at(event.x, event.y) is not None:
@@ -377,6 +466,7 @@ class CurveEditor:
         self._select(added)
         self._fit_span()
         self.redraw()
+        self._push_shape()
 
     def _on_right(self, event: "tk.Event") -> None:
         key = self._key_at(event.x, event.y)
@@ -387,6 +477,7 @@ class CurveEditor:
             self._select(None)
         self._fit_span()
         self.redraw()
+        self._push_shape()
 
     def _scrub_to(self, x: float) -> None:
         seconds, _value = self._from_px(x, 0.0)
@@ -407,6 +498,7 @@ class CurveEditor:
             return
         self.selected.easing = self._easing_var.get()
         self.redraw()
+        self._push_shape()
 
     # -- tooling -----------------------------------------------------------
 
@@ -425,6 +517,7 @@ class CurveEditor:
         self._select(None)
         self._fit_span()
         self.redraw()
+        self._push_shape()
 
     def _clear(self) -> None:
         self.curve.clear()

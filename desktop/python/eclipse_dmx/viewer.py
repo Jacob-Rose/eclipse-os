@@ -154,12 +154,12 @@ INPUT_BUTTONS: List[Tuple[str, str]] = [
 PATTERN_BUTTONS: List[Tuple[str, Tuple[str, str]]] = [
     ("mythos26", ("pattern", "mythos26")),
     ("jacket", ("pattern", "jacket")),
-    ("seasons", ("pattern", "obelisk_seasons")),
-    ("theater", ("pattern", "obelisk_theater")),
-    ("matrix", ("pattern", "scanner_matrix_rain")),
-    ("fire", ("pattern", "scanner_fire_2012")),
-    ("rainbow", ("pattern", "rainbow")),
-    ("chase", ("pattern", "chase")),
+    # the machines: click one and its cue list fills the band above.
+    # `generic` is the WLED recreations and the other free-standing stage
+    # looks (matrix rain, fire, flow, lake, rainbow, chase, ...); `obelisk`
+    # is the sculpture's own ambient looks (seasons, mono).
+    ("generic", ("pattern", "generic")),
+    ("obelisk", ("pattern", "obelisk")),
     ("identify", ("pattern", "identify")),
 ]
 
@@ -897,7 +897,9 @@ class ViewerApp:
         # the rig stays on screen while a curve is being shaped at it - seeing
         # the animation land on the fixtures is the whole point of it.
         self.curve_editor = CurveEditor(
-            self.root, on_send=self._animate_target, on_status=self._say)
+            self.root, on_send=self._animate_target, on_status=self._say,
+            on_send_curve=self._push_look_curve,
+            on_load_curve=self._look_curve_keys)
         self._curves_shown = False
 
         self.root.bind("<space>", lambda event: self._toggle_blackout())
@@ -1300,6 +1302,11 @@ class ViewerApp:
         # the other way round.
         self._show_param(name)
 
+        # A knob can rebuild a curve (attack and decay rewrite the envelope),
+        # and the echo re-announces the shapes - so the editor's drawing
+        # follows the look too.
+        self.curve_editor.refresh_live()
+
     def _show_param(self, name: str) -> None:
         param = self.show.get_param(name)
         widgets = self._param_widgets.get(name)
@@ -1528,12 +1535,22 @@ class ViewerApp:
         self._toggle_curves()
 
     def _refresh_curve_targets(self) -> None:
-        """Hands the editor the running look's float knobs, plus the master."""
-        self.curve_editor.set_targets([
-            (param.name, param.minimum, param.maximum)
-            for param in self.show.params
-            if not param.is_bool and not param.is_color
-        ])
+        """Hands the editor the look's float knobs and its live shapes."""
+        self.curve_editor.set_targets(
+            [
+                (param.name, param.minimum, param.maximum)
+                for param in self.show.params
+                if not param.is_bool and not param.is_color
+            ],
+            curve_names=list(self.show.curves.keys()),
+        )
+
+    def _push_look_curve(self, name: str, keys) -> None:
+        """One edited shape, into the running look's own curve."""
+        self._guard(lambda: self.show.set_curve(name, keys), f"curve {name}")
+
+    def _look_curve_keys(self, name: str):
+        return self.show.curves.get(name)
 
     def _animate_target(self, name: str, value: float) -> None:
         """One curve sample, onto whatever the editor is aimed at."""

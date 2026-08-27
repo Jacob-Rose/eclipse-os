@@ -173,6 +173,15 @@ curve drives that knob live on the same rig the cue buttons drive — shape a
 hit against the actual look instead of imagining it. **copy c++** puts the
 `addKey` calls on the clipboard, ready to paste into a state.
 
+A look can also hand out its *own* curves — `reflectCurves()`, reflect for
+shapes. Those appear in the aim menu as `~ envelope` and the like: aiming at
+one loads the live shape (the beat pulse's attack/decay envelope, the boot
+swell), and every finished edit writes the whole curve back over the
+protocol (`CURVE` announcements, the `curve` command), so the next beat
+plays the shape you just drew. The attack/decay knobs still work; they
+rebuild the curve over a drawn one, last writer wins, and the drawing
+follows.
+
 The maths is `eclipse_dmx/curves.py`, a line-for-line mirror of the C++
 evaluate — including two accidents the vendored easing library ships with
 (an unsequenced double decrement in `easeInOutCubic`, and the bounce trio

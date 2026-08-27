@@ -27,6 +27,12 @@
 // The scanner's looks - afterglow's LED states. Same files the obelisk runs.
 #include "relics/scanner/scanner_patterns.h"
 
+// The generic looks - free-standing stage patterns, grouped as a machine.
+#include "relics/scanner/generic_patterns.h"
+
+// The obelisk's own looks, for their machine and a borrowed generic cue.
+#include "relics/obelisk/state_obelisk.h"
+
 using namespace edmx;
 
 // ============================================================================
@@ -221,6 +227,16 @@ void StateMachinePattern::reflect(ecore::PropertyBag& bag)
     if (activeIndex < generators.size() && generators[activeIndex])
     {
         generators[activeIndex]->reflect(bag);
+    }
+}
+
+void StateMachinePattern::reflectCurves(eanim::CurveBag& bag)
+{
+    // Same shape and same lifetime rules as reflect(): the showing look's
+    // drawable curves, and only its.
+    if (activeIndex < generators.size() && generators[activeIndex])
+    {
+        generators[activeIndex]->reflectCurves(bag);
     }
 }
 
@@ -436,6 +452,20 @@ namespace
         };
         return def;
     }
+
+    /// A look that is a plain GeneratorHSV, not a PatternScanner - no clock
+    /// to rewind, so the default State_GenericHSV wrapper is the right one.
+    /// The obelisk's ambient looks are these.
+    template <typename PatternT>
+    StateDef plainLook(const char* name)
+    {
+        StateDef def;
+        def.name = name;
+        def.make = []() {
+            return std::static_pointer_cast<eanim::GeneratorHSV>(std::make_shared<PatternT>());
+        };
+        return def;
+    }
 }
 
 std::unique_ptr<StateMachinePattern> edmx::makeScannerStateMachine()
@@ -497,4 +527,52 @@ std::unique_ptr<StateMachinePattern> edmx::makeScannerStateMachine()
     // per change with `state <tag> <seconds>`.
     return std::unique_ptr<StateMachinePattern>(new StateMachinePattern(
         "scanner", std::move(states), 0, frame, 0.5f));
+}
+
+std::unique_ptr<StateMachinePattern> edmx::makeGenericStateMachine()
+{
+    using namespace scanner;
+
+    // The generic looks as one machine, like mythos26: each look a state,
+    // with the machine's real cross-fade between them - so the desk shows
+    // one cue list instead of eleven top-level patterns, and switching looks
+    // blends instead of cutting. scannerLook's wrapper rewinds a look's
+    // clock on entry, which is also what clears the particle pools.
+    std::vector<StateDef> states = {
+        scannerLook<Pattern_Generic_MatrixRain>("matrix_rain"),
+        scannerLook<Pattern_Generic_Fire2012>("fire_2012"),
+        scannerLook<Pattern_Generic_Flow>("flow"),
+        scannerLook<Pattern_Generic_Lake>("lake"),
+        scannerLook<Pattern_Generic_Pacifica>("pacifica"),
+        scannerLook<Pattern_Generic_Phased>("phased"),
+        scannerLook<Pattern_Generic_Saw>("saw"),
+        scannerLook<Pattern_Generic_SpotsFade>("spots_fade"),
+        scannerLook<Pattern_Generic_TwinkleUp>("twinkleup"),
+        scannerLook<Pattern_Generic_Waterfall>("waterfall"),
+        scannerLook<Pattern_Generic_ColorClouds>("color_clouds"),
+        scannerLook<Pattern_Generic_Rainbow>("rainbow"),
+        scannerLook<Pattern_Generic_Chase>("chase"),
+        // borrowed: the obelisk's theater look plays fine anywhere the
+        // stage's coordinates reach, so it sits in the generic list too
+        plainLook<Pattern_Obelisk_Theater>("theater"),
+    };
+
+    CoordFrame frame;
+    return std::unique_ptr<StateMachinePattern>(new StateMachinePattern(
+        "generic", std::move(states), 0, frame, 0.5f));
+}
+
+std::unique_ptr<StateMachinePattern> edmx::makeObeliskStateMachine()
+{
+    // The obelisk's own ambient looks, as one machine. The default frame is
+    // already the space they were tuned in - 8 x 43 from the origin - which
+    // is what a normalized rig gets stretched across.
+    std::vector<StateDef> states = {
+        plainLook<Pattern_Obelisk_FourSeasons>("seasons"),
+        plainLook<Pattern_Obelisk_Monocolor>("mono"),
+    };
+
+    CoordFrame frame;
+    return std::unique_ptr<StateMachinePattern>(new StateMachinePattern(
+        "obelisk", std::move(states), 0, frame, 0.5f));
 }

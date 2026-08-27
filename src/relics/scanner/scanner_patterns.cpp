@@ -22,20 +22,6 @@ namespace
     {
         return std::clamp(v, 0.0f, 1.0f);
     }
-
-    /* A cheap deterministic hash to 0..1.
-    *
-    * For texture that has to hold still: every node asking about the same
-    * thing on the same frame - and the next frame - must get the same
-    * answer, which get_random_float cannot promise. Unsigned throughout, so
-    * the overflow the mixing leans on is defined.
-    */
-    float hash01(uint32_t n)
-    {
-        n = (n << 13u) ^ n;
-        n = n * (n * n * 15731u + 789221u) + 1376312589u;
-        return static_cast<float>(n & 0x7fffffffu) / 2147483647.0f;
-    }
 }
 
 float PatternScanner::stripAlpha(const HSVStripNode* node)
@@ -134,6 +120,12 @@ void Pattern_Scanner_Boot::reflect(ecore::PropertyBag& bag)
     bag.add("noise", noiseGain, 0.0f, 2.0f);
 }
 
+void Pattern_Scanner_Boot::reflectCurves(eanim::CurveBag& bag)
+{
+    bag.add("brightness", brightnessCurve);
+    bag.add("noise", noiseCurve);
+}
+
 Pattern_Scanner_ScanIdle::Pattern_Scanner_ScanIdle()
 {
     // the python's ten-stop table: a sharp swell at the top of the breath,
@@ -160,6 +152,11 @@ void Pattern_Scanner_ScanIdle::render(HSVStripNode* inNode, HSV& inOutColor) con
 void Pattern_Scanner_ScanIdle::reflect(ecore::PropertyBag& bag)
 {
     bag.add("cycle_time", cycleTime, 0.5f, 8.0f);
+}
+
+void Pattern_Scanner_ScanIdle::reflectCurves(eanim::CurveBag& bag)
+{
+    bag.add("breath", breathCurve);
 }
 
 void Pattern_Scanner_Emergency::render(HSVStripNode* inNode, HSV& inOutColor) const
@@ -398,245 +395,6 @@ void Pattern_Scanner_RecordCountdown::reflect(ecore::PropertyBag& bag)
     // only the sweep: the count's timing belongs to the game - see the
     // header on secondsPerCount
     bag.add("sweep", sweepSeconds, 0.0f, 1.0f);
-}
-
-void Pattern_Scanner_MatrixRain::render(HSVStripNode* inNode, HSV& inOutColor) const
-{
-    const Coordinate at = nodeCoord(inNode);
-
-    // a drop's circuit: in above the obelisk's top, out below the ring, with
-    // the tail's length on top so the wrap happens fully off stage
-    const float span = (kStageTop - kStageBottom) + tailLength;
-
-    float brightness = 0.0f;
-    float headness = 0.0f;
-    int litDrop = 0;
-
-    // A pool of drops, each at its own continuous x with a lateral falloff:
-    // a drop is a position in the plane, not a column index. Its x re-rolls
-    // every time it wraps, so the rain keeps finding new places to fall -
-    // and on the ring, a drop's path crosses the circle wherever it happens
-    // to be, lighting the arc's pixels at the height it is passing.
-    for (int drop = 0; drop < static_cast<int>(dropCount); ++drop)
-    {
-        const float speed = fallSpeed
-            * (0.6f + 0.8f * hash01(static_cast<uint32_t>(drop * 3 + 1)));
-        const float phase = hash01(static_cast<uint32_t>(drop * 3 + 2)) * span;
-
-        const float total = timeActive * speed + phase;
-        const int cycle = static_cast<int>(total / span);
-        const float progress = total - cycle * span;
-        const float headY = (kStageTop + tailLength) - progress;
-
-        const float dropX = hash01(static_cast<uint32_t>(drop * 977 + cycle * 131))
-            * (kStageColumns - 1);
-
-        const float lateral = 1.0f - std::fabs(at.x - dropX) / dropWidth;
-        if (lateral <= 0.0f)
-        {
-            continue;
-        }
-
-        // the tail hangs up the path, where the head has been
-        const float behind = at.y - headY;
-        if (behind < 0.0f || behind > tailLength)
-        {
-            continue;
-        }
-
-        const float fade = (1.0f - behind / tailLength) * lateral;
-        if (fade > brightness)
-        {
-            brightness = fade;
-            // how head-like this pass is: right at the head, laterally
-            // close. Continuous, so it fades out instead of popping at a
-            // threshold as a drop slides along the ring's arc.
-            headness = std::max(0.0f, 1.0f - behind / 0.8f) * lateral;
-            litDrop = drop;
-        }
-    }
-
-    if (brightness <= 0.0f)
-    {
-        inOutColor = HSV(120.0f, 1.0f, 0.0f);
-        return;
-    }
-
-    // The glyph churn, hashed over (drop, glyph cell, churn step): the same
-    // answer for every node of a glyph until the step turns over. A fresh
-    // random per frame read as texture on the obelisk's long tails, but made
-    // the ring - two or three isolated pixels per glyph - strobe.
-    const int glyphCell = static_cast<int>(std::floor(at.y - kStageBottom));
-    const int churnStep = static_cast<int>(timeActive * churnRate);
-    const float churnHash = hash01(static_cast<uint32_t>(
-        litDrop * 89 + glyphCell * 7 + churnStep * 131));
-    const float churn = 1.0f - churnHash * flicker;
-
-    // the head is the freshly written glyph: white-hot, never churned. The
-    // blend runs on headness so a pass sliding off a node whitens and dims
-    // smoothly on both axes.
-    inOutColor = HSV(
-        120.0f,
-        lerp(1.0f, 0.35f, headness),
-        brightness * lerp(0.8f * churn, 1.0f, headness));
-}
-
-void Pattern_Scanner_MatrixRain::reflect(ecore::PropertyBag& bag)
-{
-    bag.add("fall_speed", fallSpeed, 2.0f, 30.0f);
-    bag.add("tail", tailLength, 2.0f, 30.0f);
-    bag.add("drops", dropCount, 2.0f, 30.0f);
-    bag.add("width", dropWidth, 0.3f, 2.0f);
-    bag.add("flicker", flicker, 0.0f, 1.0f);
-    bag.add("churn_rate", churnRate, 1.0f, 20.0f);
-}
-
-Pattern_Scanner_Fire2012::Pattern_Scanner_Fire2012()
-    : heat(kStageColumns * kCells, 0.0f)
-    , spreadRow(kStageColumns, 0.0f)
-    , emberRows(kStageColumns, 0)
-{
-    // The ember bed is the ring: each column's ember sits where the circle's
-    // lower arc crosses that column, so the fire is sourced by the ring's
-    // real geometry - deepest mid-stage, rising to the tangent points at the
-    // outer columns.
-    for (int column = 0; column < kStageColumns; ++column)
-    {
-        const float dx = column - kRingCenterX;
-        const float reach = kRingRadius * kRingRadius - dx * dx;
-        const float arcY = kRingCenterY - std::sqrt(std::max(reach, 0.0f));
-        emberRows[column] = std::clamp(
-            static_cast<int>(std::floor(arcY - kStageBottom + 0.5f)), 0, kCells - 1);
-    }
-}
-
-void Pattern_Scanner_Fire2012::reset()
-{
-    PatternScanner::reset();
-    std::fill(heat.begin(), heat.end(), 0.0f);
-    accumulator = 0.0f;
-}
-
-void Pattern_Scanner_Fire2012::tick(float deltaTime)
-{
-    PatternScanner::tick(deltaTime);
-
-    accumulator += deltaTime * simRate;
-    // a stall - a debugger, a dragged window - must not fast-forward a
-    // bonfire's worth of queued steps into one visible frame
-    accumulator = std::min(accumulator, 8.0f);
-    while (accumulator >= 1.0f)
-    {
-        accumulator -= 1.0f;
-        step();
-    }
-}
-
-void Pattern_Scanner_Fire2012::step()
-{
-    // Kriegsman's three moves, per column
-    for (int column = 0; column < kStageColumns; ++column)
-    {
-        // 1. every cell cools a random amount - his COOLING scaling, in 0..1
-        const float coolScale = (cooling * 10.0f / kCells + 2.0f) / 255.0f;
-        for (int cell = 0; cell < kCells; ++cell)
-        {
-            heatAt(column, cell) = std::max(0.0f, heatAt(column, cell) - get_random_float() * coolScale);
-        }
-
-        // 2. heat drifts up, each cell a blend of the ones below it. The
-        // drift stops just above the ember bed: his rows 0 and 1 persist
-        // because nothing overwrites them, and our bed sits wherever the
-        // ring's arc put it, so it earns the same exemption - otherwise the
-        // dark cells under the arc flood it every step and the embers
-        // strobe instead of holding.
-        for (int cell = kCells - 1; cell >= emberRows[column] + 2; --cell)
-        {
-            heatAt(column, cell) = (heatAt(column, cell - 1)
-                + heatAt(column, cell - 2)
-                + heatAt(column, cell - 2)) / 3.0f;
-        }
-
-        // 3. maybe the ember bed flares - the arc's cell or the one above,
-        // the two the drift leaves alone. Raised *toward* a mid-heat target
-        // rather than his saturating add: an add either strobed the arc or
-        // pinned it at white, where the palette shows nothing; lifted to
-        // 0.35..0.75 and pulled back down by the cooling, the bed breathes
-        // through the orange band instead.
-        if (get_random_float() < sparking)
-        {
-            const int cell = emberRows[column] + (get_random_float() < 0.5f ? 0 : 1);
-            heatAt(column, cell) = std::max(heatAt(column, cell),
-                0.35f + get_random_float() * 0.4f);
-        }
-    }
-
-    // 4. ours: heat leaks sideways, wrapping 7 to 0, because the runs are a
-    // closed loop around the sculpture and one fire is not eight fires. Via
-    // the scratch row so every read sees the pre-spread grid.
-    if (spread > 0.0f)
-    {
-        for (int cell = 0; cell < kCells; ++cell)
-        {
-            for (int column = 0; column < kStageColumns; ++column)
-            {
-                const int left = (column + kStageColumns - 1) % kStageColumns;
-                const int right = (column + 1) % kStageColumns;
-                spreadRow[column] = heatAt(column, cell) * (1.0f - spread)
-                    + (heatAt(left, cell) + heatAt(right, cell)) * spread * 0.5f;
-            }
-            for (int column = 0; column < kStageColumns; ++column)
-            {
-                heatAt(column, cell) = spreadRow[column];
-            }
-        }
-    }
-}
-
-void Pattern_Scanner_Fire2012::render(HSVStripNode* inNode, HSV& inOutColor) const
-{
-    // the field at the node's real (x, y): bilinear between the two nearest
-    // columns and cells. Obelisk runs land exactly on grid lines and read
-    // one cell as before; the ring's arc lives between them, and this is
-    // what keeps its heat continuous around the circle.
-    const Coordinate at = nodeCoord(inNode);
-
-    const float fx = std::clamp(at.x, 0.0f, static_cast<float>(kStageColumns - 1));
-    const int columnA = static_cast<int>(std::floor(fx));
-    const int columnB = std::min(columnA + 1, kStageColumns - 1);
-    const float alongX = fx - columnA;
-
-    const float fy = std::clamp(at.y - kStageBottom, 0.0f, static_cast<float>(kCells - 1));
-    const int cellA = static_cast<int>(std::floor(fy));
-    const int cellB = std::min(cellA + 1, kCells - 1);
-    const float alongY = fy - cellA;
-
-    const float h = lerp(
-        lerp(heatAt(columnA, cellA), heatAt(columnB, cellA), alongX),
-        lerp(heatAt(columnA, cellB), heatAt(columnB, cellB), alongX),
-        alongY);
-
-    // HeatColor's three bands: black to red, red to yellow, yellow to white
-    if (h < 1.0f / 3.0f)
-    {
-        inOutColor = HSV(0.0f, 1.0f, h * 3.0f);
-    }
-    else if (h < 2.0f / 3.0f)
-    {
-        inOutColor = HSV((h - 1.0f / 3.0f) * 3.0f * 60.0f, 1.0f, 1.0f);
-    }
-    else
-    {
-        inOutColor = HSV(60.0f, 1.0f - (h - 2.0f / 3.0f) * 3.0f * 0.7f, 1.0f);
-    }
-}
-
-void Pattern_Scanner_Fire2012::reflect(ecore::PropertyBag& bag)
-{
-    bag.add("cooling", cooling, 10.0f, 100.0f);
-    bag.add("sparking", sparking, 0.0f, 1.0f);
-    bag.add("spread", spread, 0.0f, 0.5f);
-    bag.add("speed", simRate, 5.0f, 60.0f);
 }
 
 void Pattern_Scanner_Solid::render(HSVStripNode* inNode, HSV& inOutColor) const

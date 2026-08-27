@@ -98,6 +98,7 @@ namespace edmx
         /// gets the current look's, and emitParams() re-announces them on every
         /// state change.
         void reflect(ecore::PropertyBag& bag) override;
+        void reflectCurves(eanim::CurveBag& bag) override;
 
         /// Every state, in table order. This is what a UI builds buttons from.
         std::vector<std::string> stateNames() const;
@@ -161,4 +162,11 @@ namespace edmx
     /// between, so the game can mirror itself here with `state <tag> [seconds]`
     /// and let this end render its pixels.
     std::unique_ptr<StateMachinePattern> makeScannerStateMachine();
+
+    /// The generic looks - the free-standing stage patterns, most recreated
+    /// from WLED - as one machine: each look a cue, with real cross-fades.
+    std::unique_ptr<StateMachinePattern> makeGenericStateMachine();
+
+    /// The obelisk's own ambient looks as one machine.
+    std::unique_ptr<StateMachinePattern> makeObeliskStateMachine();
 }

@@ -1269,6 +1269,28 @@ namespace
         return out.str();
     }
 
+    /// One `CURVE name t:v[:easing] ...` line: a look's live AutomationCurve.
+    ///
+    /// Easing travels as the easing_functions enum *index* - the python
+    /// mirror's EASING_NAMES is in enum order precisely so an integer means
+    /// the same shape on both sides. A key with no third field is linear.
+    std::string curveLine(const eanim::CurveRef& ref)
+    {
+        std::ostringstream out;
+        out << "CURVE " << ref.name;
+
+        for (int idx = 0; idx < ref.curve->getKeyCount(); ++idx)
+        {
+            const eanim::AutomationKey* key = ref.curve->getKey(idx);
+            out << " " << key->time << ":" << key->value;
+            if (key->bUseEasing)
+            {
+                out << ":" << static_cast<int>(key->easingFunction);
+            }
+        }
+        return out.str();
+    }
+
     /// The tunable knobs of whatever is showing, for a UI to build controls from.
     ///
     /// Emitted whenever the pattern or the state changes, because on a state
@@ -1303,6 +1325,17 @@ namespace
         for (const ecore::Property& property : bag.all())
         {
             emit(paramLine(property));
+        }
+
+        // The look's drawable shapes ride in the same block: a client that
+        // rebuilds on PARAMS gets knobs and curves as one announcement, with
+        // each curve's *current* keys - which is what lets a curve editor
+        // open on the live envelope rather than on a blank.
+        eanim::CurveBag curves;
+        show.pattern->reflectCurves(curves);
+        for (const eanim::CurveRef& ref : curves.all())
+        {
+            emit(curveLine(ref));
         }
     }
 
@@ -1803,7 +1836,100 @@ namespace
             // number about as often as the new one.
             emit(paramLine(*target));
 
+            // A knob's onChanged can rebuild a curve - attack and decay
+            // rewrite the envelope - so the shapes are re-said with the
+            // value, or a curve editor keeps drawing a shape the look no
+            // longer holds.
+            eanim::CurveBag curves;
+            show.pattern->reflectCurves(curves);
+            for (const eanim::CurveRef& ref : curves.all())
+            {
+                emit(curveLine(ref));
+            }
+
             emit("OK param " + words[1] + " " + words[2]);
+            return;
+        }
+
+        if (command == "curve")
+        {
+            // `curve envelope 0:0 0.06:1:7 0.45:0` - the whole shape at once,
+            // keys as t:v with an optional easing_functions index. Whole
+            // rather than key-at-a-time on purpose: a shape is one edit, and
+            // a client that could send half of one would sooner or later show
+            // half of one.
+            if (words.size() < 4)
+            {
+                emit("ERR curve needs a name and at least two t:v keys");
+                return;
+            }
+
+            if (!show.pattern)
+            {
+                emit("ERR no pattern");
+                return;
+            }
+
+            eanim::CurveBag bag;
+            show.pattern->reflectCurves(bag);
+
+            eanim::CurveRef* target = bag.find(words[1]);
+            if (target == nullptr)
+            {
+                std::string known;
+                for (const eanim::CurveRef& ref : bag.all())
+                {
+                    known += (known.empty() ? "" : ", ") + ref.name;
+                }
+                emit("ERR no curve '" + words[1] + "'"
+                   + (known.empty() ? " (this look has none)" : " (have: " + known + ")"));
+                return;
+            }
+
+            // Parse into a scratch curve first: the live one is only touched
+            // once the whole message has proven well-formed, so a typo cannot
+            // leave the look holding half a shape.
+            eanim::AutomationCurve parsed;
+            for (size_t at = 2; at < words.size(); ++at)
+            {
+                float keyTime = 0.0f;
+                float keyValue = 0.0f;
+                int easing = -1;
+                const int got = std::sscanf(words[at].c_str(), "%f:%f:%d",
+                                            &keyTime, &keyValue, &easing);
+                if (got < 2)
+                {
+                    emit("ERR curve key '" + words[at] + "' is not t:v or t:v:easing");
+                    return;
+                }
+                if (got >= 3 && (easing < 0 || easing > static_cast<int>(easing_functions::EaseInOutBounce)))
+                {
+                    emit("ERR curve key '" + words[at] + "': no easing #" + std::to_string(easing));
+                    return;
+                }
+
+                const bool added = (got >= 3)
+                    ? parsed.addKey(keyTime, keyValue, static_cast<easing_functions>(easing))
+                    : parsed.addKey(keyTime, keyValue);
+                if (!added)
+                {
+                    emit("ERR curve holds at most "
+                       + std::to_string(eanim::AutomationCurve::kMaxKeys) + " keys");
+                    return;
+                }
+            }
+
+            *target->curve = parsed;
+            if (target->onChanged)
+            {
+                target->onChanged();
+            }
+
+            // the echo before the OK, same contract as param: what the look
+            // actually holds now, for the client that reads after the reply
+            emit(curveLine(*target));
+
+            emit("OK curve " + words[1]);
             return;
         }
 

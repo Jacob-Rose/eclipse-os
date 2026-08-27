@@ -14,6 +14,7 @@
 // The relic's own pattern source, compiled for the host. Not a copy: this is
 // the same file the obelisk runs, and it needed no changes to get here.
 #include "relics/obelisk/state_obelisk.h"
+#include "relics/scanner/generic_patterns.h"
 #include "relics/scanner/scanner_patterns.h"
 
 #include "edmx/mythos26.h"
@@ -268,6 +269,14 @@ void Pattern::reflect(ecore::PropertyBag& bag)
 // GeneratorHSV adapter
 // ============================================================================
 
+void GeneratorPattern::reflectCurves(eanim::CurveBag& bag)
+{
+    if (generator)
+    {
+        generator->reflectCurves(bag);
+    }
+}
+
 void GeneratorPattern::reflect(ecore::PropertyBag& bag)
 {
     // Not calling up: a relic look does its own motion internally and reads
@@ -459,13 +468,18 @@ namespace
             return std::unique_ptr<Pattern>(new GeneratorPattern(
                 "scanner_playback_generic", std::make_shared<scanner::Pattern_Scanner_PlaybackGeneric>()));
         };
-        table["scanner_matrix_rain"] = []() {
-            return std::unique_ptr<Pattern>(new GeneratorPattern(
-                "scanner_matrix_rain", std::make_shared<scanner::Pattern_Scanner_MatrixRain>()));
+        // --- the generic looks: one machine, each look a cue ---------------
+        // Free-standing stage patterns with no game state, most recreated
+        // from WLED - see src/relics/scanner/generic_patterns.h. Grouped
+        // like mythos26 rather than registered one by one, so the desk gets
+        // a cue list and real cross-fades between the looks.
+        table["generic"] = []() {
+            return std::unique_ptr<Pattern>(makeGenericStateMachine().release());
         };
-        table["scanner_fire_2012"] = []() {
-            return std::unique_ptr<Pattern>(new GeneratorPattern(
-                "scanner_fire_2012", std::make_shared<scanner::Pattern_Scanner_Fire2012>()));
+
+        // --- the obelisk's own looks, likewise grouped ---------------------
+        table["obelisk"] = []() {
+            return std::unique_ptr<Pattern>(makeObeliskStateMachine().release());
         };
     }
 }
