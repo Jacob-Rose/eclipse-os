@@ -31,6 +31,7 @@ from typing import Dict, List, Optional, Sequence, Tuple, Union
 
 from .config import RELIC_TYPES, Config
 from .controller import Frame, ShowController, ShowError
+from .curve_editor import CurveEditor
 from .patterns import list_patterns
 
 RGB = Tuple[int, int, int]
@@ -672,7 +673,10 @@ def plan_layout(config: Config) -> List[Placement]:
         return [(value - low) / (high - low) for value in values]
 
     xs = normalise([point[0] for point in raw])
-    ys = normalise([point[1] for point in raw])
+    # y is up in the configs - the obelisk's floor is y=0 and the ring hangs
+    # below it - and down on a canvas, so it flips here. Rigs with no vertical
+    # extent (a row of pars) normalise to a centred 0.5 and never notice.
+    ys = [1.0 - value for value in normalise([point[1] for point in raw])]
 
     return [
         Placement(
@@ -871,7 +875,7 @@ class ViewerApp:
             padx=12,
             pady=6,
             text="[space] blackout   [n]/[p] pattern   [↑]/[↓] master   "
-            "[←]/[→] speed   [t] tap the beat   [q] quit",
+            "[←]/[→] speed   [t] tap the beat   [e] curves   [q] quit",
         )
         self.footer.pack(side="bottom", fill="x")
 
@@ -886,6 +890,14 @@ class ViewerApp:
 
         self.surface.bind("<Configure>", lambda event: self._on_surface_resized())
 
+        # -- the curve editor, folded away until asked for -------------------
+        # A band between the desk and the buttons rather than a swap view, so
+        # the rig stays on screen while a curve is being shaped at it - seeing
+        # the animation land on the fixtures is the whole point of it.
+        self.curve_editor = CurveEditor(
+            self.root, on_send=self._animate_target, on_status=self._say)
+        self._curves_shown = False
+
         self.root.bind("<space>", lambda event: self._toggle_blackout())
         self.root.bind("<Key-n>", lambda event: self._step_pattern(1))
         self.root.bind("<Key-p>", lambda event: self._step_pattern(-1))
@@ -894,6 +906,7 @@ class ViewerApp:
         self.root.bind("<Right>", lambda event: self._nudge_speed(1.25))
         self.root.bind("<Left>", lambda event: self._nudge_speed(0.8))
         self.root.bind("<Key-t>", lambda event: self._run_button(("beat", "")))
+        self.root.bind("<Key-e>", lambda event: self._on_curves_key())
         self.root.bind("<Key-q>", lambda event: self._quit())
         self.root.bind("<Escape>", lambda event: self._quit())
         self.root.protocol("WM_DELETE_WINDOW", self._quit)
@@ -988,6 +1001,17 @@ class ViewerApp:
             button.bind("<ButtonRelease-1>", lambda e, c=channel: self._set_input(c, False))
             button.pack(side="left", padx=3, pady=3)
             self._input_buttons[channel] = button
+
+        # the curve editor's toggle, in the band the rest of the desk lives in
+        tk.Label(self.extra_row, text="   ", bg=PANEL).pack(side="left")
+        self._curves_button = tk.Button(
+            self.extra_row, text="curves", font=("Consolas", 9),
+            bg=BUTTON_BG, fg=BUTTON_FG, activebackground=BUTTON_BG_ACTIVE,
+            activeforeground=BUTTON_FG, relief="flat", padx=8, pady=3,
+            highlightthickness=0, borderwidth=0,
+            command=self._toggle_curves,
+        )
+        self._curves_button.pack(side="left", padx=3, pady=3)
 
         self.extra_row.pack(fill="x")
 
@@ -1463,6 +1487,66 @@ class ViewerApp:
         if button is not None:
             button.configure(bg=BUTTON_BG_ACTIVE if down else BUTTON_BG)
 
+    # -- the curve editor --------------------------------------------------
+
+    def _toggle_curves(self) -> None:
+        """Folds the curve editor in and out, between the desk and the buttons."""
+        self._curves_shown = not self._curves_shown
+        if self._curves_shown:
+            # packed bottom-up like the rest of the furniture: the band lands
+            # above the split, and the window grows by the band rather than
+            # the desk shrinking by it - the rig picture is what a curve is
+            # being shaped against, so it is the one thing the band must not
+            # eat. A maximised window has nowhere to grow, so there the desk
+            # pays after all.
+            self.curve_editor.frame.pack(side="bottom", fill="x", padx=4, pady=(0, 4))
+            self._refresh_curve_targets()
+            self._grow_for_curves(1)
+        else:
+            # a hidden editor driving a knob would be a haunting, not a tool
+            self.curve_editor.stop_playback()
+            self.curve_editor.frame.pack_forget()
+            self._grow_for_curves(-1)
+        self._curves_button.configure(
+            bg=BUTTON_BG_ACTIVE if self._curves_shown else BUTTON_BG)
+
+    def _grow_for_curves(self, direction: int) -> None:
+        if self.root.state() == "zoomed":
+            return
+        self.root.update_idletasks()
+        band = self.curve_editor.frame.winfo_reqheight() + 4
+        self.root.geometry(
+            f"{self.root.winfo_width()}x{self.root.winfo_height() + direction * band}")
+
+    def _on_curves_key(self) -> None:
+        # [e] lands in the entries too - a value being typed into a param box
+        # must not fold the window about underneath it
+        if isinstance(self.root.focus_get(), tk.Entry):
+            return
+        self._toggle_curves()
+
+    def _refresh_curve_targets(self) -> None:
+        """Hands the editor the running look's float knobs, plus the master."""
+        self.curve_editor.set_targets([
+            (param.name, param.minimum, param.maximum)
+            for param in self.show.params
+            if not param.is_bool and not param.is_color
+        ])
+
+    def _animate_target(self, name: str, value: float) -> None:
+        """One curve sample, onto whatever the editor is aimed at."""
+        if name == "master":
+            self._set_master(value)
+            return
+        self._guard(lambda: self.show.set_param(name, value), f"curve {name}")
+        # the executable's echo drives the knob's own slider, so the panel
+        # visibly plays the curve too
+        self._show_param(name)
+
+    def _say(self, message: str) -> None:
+        self._status = message
+        self._refresh_header()
+
     def _rebuild_items(self) -> None:
         """Builds one panel per device and tiles them across the surface.
 
@@ -1708,6 +1792,7 @@ class ViewerApp:
         if self.show.params_revision != self._param_revision:
             self._param_revision = self.show.params_revision
             self._build_params()
+            self._refresh_curve_targets()
 
         now = time.monotonic()
         elapsed = now - self._fps_marker
@@ -1880,6 +1965,13 @@ class ViewerApp:
         if self._closing:
             return
         self._closing = True
+
+        # Same reason as the pump below: a playback tick queued on a window
+        # being torn down would fire into a dead interpreter.
+        try:
+            self.curve_editor.stop_playback()
+        except Exception:
+            pass
 
         # Cancel the pending redraw first. destroy() does not drop queued
         # `after` callbacks, so one would fire into a dead interpreter and

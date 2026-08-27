@@ -63,6 +63,18 @@ PATTERN_NAMES = (
     # afterglow's state machine: every game tag as a state - the ring and the
     # obelisk render it live, config/scanner.json previews it at a desk
     "scanner",
+    # the scanner's individual looks, bare - for poking one on any rig
+    "scanner_power_up",
+    "scanner_boot",
+    "scanner_idle",
+    "scanner_emergency",
+    "scanner_detected",
+    "scanner_shimmer",
+    "scanner_mushroom",
+    "scanner_mushroom_new",
+    "scanner_success_mushroom",
+    "scanner_playback_mushroom",
+    "scanner_playback_generic",
     # the show: written for this rig, and beat-driven
     "mythos26",
 )

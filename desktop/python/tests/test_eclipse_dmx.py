@@ -30,12 +30,19 @@ from eclipse_dmx.config import (  # noqa: E402
     MidiConfig,
 )
 from eclipse_dmx.controller import ShowController, ShowError, _parse_frame  # noqa: E402
+from eclipse_dmx.curves import (  # noqa: E402
+    EASING_NAMES,
+    Curve,
+    apply_easing,
+    example_hit,
+)
 from eclipse_dmx import osc  # noqa: E402
 
 RIG = DESKTOP / "config" / "uking_par36_x10.json"
 SHOW = DESKTOP / "config" / "mythos26.json"
 OBELISK = DESKTOP / "config" / "obelisk.json"
 OBELISK_USB = DESKTOP / "config" / "obelisk_usb.json"
+SCANNER = DESKTOP / "config" / "scanner.json"
 
 #: The sculpture's own numbers, from src/relics/obelisk/state_obelisk.h and the
 #: eight GenerateAxisRow calls in obelisk.cpp. The config has to agree with
@@ -2238,6 +2245,202 @@ class LookParams(unittest.TestCase):
                              ["speed", "width", "brightness"])
         finally:
             show.stop()
+
+
+class ScannerKnobs(unittest.TestCase):
+    """The scanner looks' tuning surface - the knobs the curve editor drives."""
+
+    @classmethod
+    def setUpClass(cls):
+        executable_or_skip()
+
+    def _show(self, **kwargs):
+        return ShowController(SCANNER, dry_run=True, midi="", on_frame=lambda f: None,
+                              emit_rate=20.0, **kwargs)
+
+    def test_the_boot_swell_has_two_independent_knobs(self):
+        show = self._show()
+        try:
+            show.set_state("boot")
+            time.sleep(0.8)
+            self.assertEqual([param.name for param in show.params],
+                             ["boot_time", "noise"])
+        finally:
+            show.stop()
+
+    def test_the_recording_states_share_one_wave_and_its_knobs(self):
+        """Unified look, unified surface: both states offer the same wave."""
+        show = self._show()
+        try:
+            show.set_state("scan_item_detected_filter")
+            time.sleep(0.8)
+            wave = [param.name for param in show.params]
+            self.assertEqual(wave, ["wave_scale", "rise_speed"])
+
+            show.set_state("audio_playback_recording")
+            time.sleep(0.8)
+            self.assertEqual([param.name for param in show.params], wave)
+        finally:
+            show.stop()
+
+    def test_the_recording_flow_offers_its_shapes(self):
+        show = self._show()
+        try:
+            show.set_state("record_arm")
+            time.sleep(0.8)
+            self.assertEqual([param.name for param in show.params],
+                             ["rate", "floor", "gain"])
+
+            show.set_state("record_active")
+            time.sleep(0.8)
+            self.assertEqual([param.name for param in show.params],
+                             ["orbit_rate", "tail"])
+
+            show.set_state("record_countdown")
+            time.sleep(0.8)
+            self.assertEqual([param.name for param in show.params], ["sweep"])
+        finally:
+            show.stop()
+
+    def test_a_scanner_knob_reaches_the_render(self):
+        """floor 1, gain 0 flattens record_arm's breath to a steady amber."""
+        frames = []
+        show = ShowController(SCANNER, dry_run=True, midi="", on_frame=frames.append,
+                              emit_rate=20.0)
+        try:
+            show.set_state("record_arm")
+            time.sleep(1.2)          # past the cue blend
+            show.set_param("floor", 1.0)
+            show.set_param("gain", 0.0)
+            time.sleep(0.3)
+            frames.clear()
+            time.sleep(0.8)
+
+            reds = [frame[0][0] for frame in frames]
+            self.assertGreater(min(reds), 200, "not at full amber")
+            self.assertLessEqual(max(reds) - min(reds), 2, "still breathing")
+        finally:
+            show.stop()
+
+
+class TheCurveMirror(unittest.TestCase):
+    """curves.py must agree with eanim::AutomationCurve, line for line.
+
+    The editor previews what the sculpture will play, so any drift between the
+    two is a curve that was tuned against the wrong maths.
+    """
+
+    def test_an_empty_curve_is_zero(self):
+        self.assertEqual(Curve().evaluate(1.0), 0.0)
+
+    def test_one_key_is_that_value_everywhere(self):
+        curve = Curve()
+        curve.add_key(1.0, 0.7)
+        for seconds in (0.0, 1.0, 5.0):
+            self.assertAlmostEqual(curve.evaluate(seconds), 0.7)
+
+    def test_the_span_clamps_at_both_ends(self):
+        curve = Curve()
+        curve.add_key(1.0, 0.2)
+        curve.add_key(2.0, 0.8)
+        self.assertAlmostEqual(curve.evaluate(0.0), 0.2)
+        self.assertAlmostEqual(curve.evaluate(9.0), 0.8)
+
+    def test_a_segment_without_easing_is_linear(self):
+        curve = Curve()
+        curve.add_key(0.0, 0.0)
+        curve.add_key(2.0, 1.0)
+        self.assertAlmostEqual(curve.evaluate(0.5), 0.25)
+
+    def test_two_keys_at_one_time_step_and_the_later_wins(self):
+        curve = Curve()
+        curve.add_key(0.0, 0.0)
+        curve.add_key(1.0, 1.0)
+        curve.add_key(1.0, 0.3)
+        curve.add_key(2.0, 0.3)
+        self.assertAlmostEqual(curve.evaluate(1.0), 0.3)
+
+    def test_easing_shapes_the_segment_it_leaves(self):
+        curve = Curve()
+        curve.add_key(0.0, 0.0, "EaseInQuad")
+        curve.add_key(1.0, 1.0)
+        # alpha 0.5 through t*t is 0.25
+        self.assertAlmostEqual(curve.evaluate(0.5), 0.25)
+
+    def test_keys_sort_on_the_way_in(self):
+        curve = Curve()
+        curve.add_key(2.0, 0.2)
+        curve.add_key(0.5, 0.5)
+        curve.add_key(1.0, 1.0)
+        self.assertEqual([key.time for key in curve.keys], [0.5, 1.0, 2.0])
+        self.assertAlmostEqual(curve.duration, 2.0)
+
+    def test_the_ninth_key_is_refused_like_the_sculptures(self):
+        curve = Curve()
+        for index in range(Curve.MAX_KEYS):
+            self.assertTrue(curve.add_key(float(index), 0.5))
+        self.assertFalse(curve.add_key(99.0, 0.5))
+        self.assertEqual(len(curve.keys), Curve.MAX_KEYS)
+
+    def test_the_cpp_round_trip_is_addkey_calls(self):
+        curve = Curve()
+        curve.add_key(0.0, 0.0, "EaseOutCubic")
+        curve.add_key(1.5, 1.0)
+        self.assertEqual(
+            curve.to_cpp("hit").splitlines(),
+            ["hit.clear();",
+             "hit.addKey(0.000f, 0.000f, easing_functions::EaseOutCubic);",
+             "hit.addKey(1.500f, 1.000f);"])
+
+    def test_the_example_fits_on_a_relic(self):
+        curve = example_hit()
+        self.assertTrue(0 < len(curve.keys) <= Curve.MAX_KEYS)
+        self.assertAlmostEqual(curve.evaluate(0.0), 0.0)
+        self.assertGreater(curve.duration, 0.0)
+
+
+class TheEasingPort(unittest.TestCase):
+    """Golden values from external/easing.cpp compiled by the pinned g++.
+
+    Including the library's own two accidents, mirrored on purpose: the
+    unsequenced double decrement in easeInOutCubic (every operand ends up
+    seeing t-2, so the upper half is 1+4(t-2)^3 and dives negative), and the
+    bounce trio calling the *int* abs so the sine truncates away. The editor
+    must draw what the binary plays, accidents included.
+    """
+
+    #: (enum name, alpha, what the compiled getEasingFunction returned)
+    GOLDEN = [
+        ("EaseInSine", 0.25, 0.3826834262),
+        ("EaseOutQuad", 0.75, 0.9375000000),
+        ("EaseInOutSine", 0.5, 0.5000000000),
+        ("EaseOutCubic", 0.1, 0.2710000000),
+        ("EaseInExpo", 0.9, 0.5726799586),
+        ("EaseInOutCirc", 0.6, 0.7236067977),
+        ("EaseOutBack", 0.5, 1.0876975000),
+        ("EaseOutElastic", 0.25, 1.2923212582),
+        # the accidents
+        ("EaseInOutCubic", 0.5, -12.5),
+        ("EaseInOutCubic", 0.75, -6.8125),
+        ("EaseInBounce", 0.9, 0.0),
+        ("EaseOutBounce", 0.25, 1.0),
+        ("EaseInOutBounce", 0.5, 0.5),
+    ]
+
+    def test_the_port_matches_the_binary(self):
+        for name, alpha, want in self.GOLDEN:
+            self.assertAlmostEqual(apply_easing(name, alpha), want, places=9,
+                                   msg=f"{name} at {alpha}")
+
+    def test_linear_and_nonsense_pass_through(self):
+        self.assertEqual(apply_easing("linear", 0.3), 0.3)
+        self.assertEqual(apply_easing("NotAnEasing", 0.3), 0.3)
+
+    def test_the_table_is_the_enum(self):
+        # index order is what a C++ curve would store, so it must be complete
+        self.assertEqual(len(EASING_NAMES), 30)
+        self.assertEqual(EASING_NAMES[0], "EaseInSine")
+        self.assertEqual(EASING_NAMES[-1], "EaseInOutBounce")
 
 
 if __name__ == "__main__":

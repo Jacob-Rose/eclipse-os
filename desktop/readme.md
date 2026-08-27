@@ -154,6 +154,31 @@ to catch.
 It needs tkinter, which ships with python on Windows and macOS. On Debian and
 Ubuntu, `sudo apt install python3-tk`.
 
+### the curve editor
+
+`[e]`, or the **curves** button in the band, unfolds a timeline between the
+picture and the buttons: an editor for the `AutomationCurve` shapes the relics
+play from an impulse (`src/lib/eanim/automation_curve.h`). The window grows by
+the band rather than the desk shrinking by it, because the rig picture is what
+a curve is being shaped against.
+
+Double-click adds a key, dragging moves it, right-click deletes it, and the
+easing menu sets the shape of the segment *leaving* the selected key — the
+same convention the C++ reads by. The cap is eight keys because that is
+`kMaxKeys` on the sculpture: nothing drawable here fails to fit there.
+
+The value axis is a 0..1 weight. Aim it at the master or any of the running
+look's float knobs, press play (or drag along the ruler to scrub), and the
+curve drives that knob live on the same rig the cue buttons drive — shape a
+hit against the actual look instead of imagining it. **copy c++** puts the
+`addKey` calls on the clipboard, ready to paste into a state.
+
+The maths is `eclipse_dmx/curves.py`, a line-for-line mirror of the C++
+evaluate — including two accidents the vendored easing library ships with
+(an unsequenced double decrement in `easeInOutCubic`, and the bounce trio
+calling the *int* `abs`), mirrored on purpose so the editor draws what the
+binary will actually play.
+
 ### the frame stream
 
 The viewer is a client of a flag anything can use:
@@ -555,9 +580,16 @@ Both devices in one window, and every game state on a cue button — the
 `scanner` pattern names its states with afterglow's own tags (`power_up`,
 `scan_idle`, `record_countdown`, `void`, …), so clicking down the list is
 clicking through the game, and `state <tag> <seconds>` typed at the process is
-byte-for-byte what the game sends. The looks that read height — the record
-countdown's bottom-to-top sweep — render on the obelisk's real geometry, which
-is the point of previewing on this rig rather than a bare strip.
+byte-for-byte what the game sends.
+
+The two devices stand on one stage: literal coordinates, x across and y up,
+the obelisk's floor at y=0 and the ring a circle hanging just below it (the
+`kStage*`/`kRing*` constants in `src/relics/scanner/scanner_patterns.h`). The
+spatial looks read that space rather than the wiring order — the detected
+wave and the countdown sweep rise through the ring and then up the obelisk,
+the record comet orbits the ring's centre and reads as a sweeping beam on the
+tower above — which is the point of previewing on this rig rather than a bare
+strip.
 
 Nothing reaches hardware without `--live`. With it, the obelisk device's own
 output drives a plugged-in sculpture exactly as the game does, so a new look
