@@ -361,16 +361,15 @@ std::unique_ptr<StateMachinePattern> edmx::makeJacketStateMachine()
 
 namespace
 {
-    /// A scanner look. Wrapped in State_ScannerHSV so its clock rewinds on
-    /// entry - a timed look like power_up plays from its start each visit.
-    template <typename PatternT>
-    StateDef scannerLook(const char* name)
+    /// The part every scanner look shares: the name, and the State_ScannerHSV
+    /// wrapper that rewinds the look's clock on entry so a timed look like
+    /// power_up plays from its start each visit. `make` is the caller's to
+    /// fill in - kept out of here so a pattern with no default constructor
+    /// never has one instantiated for it.
+    StateDef scannerDef(const char* name)
     {
         StateDef def;
         def.name = name;
-        def.make = []() {
-            return std::static_pointer_cast<eanim::GeneratorHSV>(std::make_shared<PatternT>());
-        };
         def.makeState = [](const char* stateName, eio::RelicIO* io,
                            std::shared_ptr<eanim::GeneratorHSV> generator) {
             return std::static_pointer_cast<State_GenericHSV>(
@@ -380,10 +379,21 @@ namespace
         return def;
     }
 
+    /// A scanner look built with its defaults.
+    template <typename PatternT>
+    StateDef scannerLook(const char* name)
+    {
+        StateDef def = scannerDef(name);
+        def.make = []() {
+            return std::static_pointer_cast<eanim::GeneratorHSV>(std::make_shared<PatternT>());
+        };
+        return def;
+    }
+
     /// A scanner look that is one flat colour.
     StateDef scannerSolid(const char* name, const ecore::HSV& color)
     {
-        StateDef def = scannerLook<scanner::Pattern_Scanner_Solid>(name);
+        StateDef def = scannerDef(name);
         def.make = [color]() {
             return std::static_pointer_cast<eanim::GeneratorHSV>(
                 std::make_shared<scanner::Pattern_Scanner_Solid>(color));
@@ -396,7 +406,7 @@ namespace
     template <typename PatternT, typename... Args>
     StateDef scannerLookWith(const char* name, Args... args)
     {
-        StateDef def = scannerLook<PatternT>(name);
+        StateDef def = scannerDef(name);
         def.make = [args...]() {
             return std::static_pointer_cast<eanim::GeneratorHSV>(
                 std::make_shared<PatternT>(args...));
