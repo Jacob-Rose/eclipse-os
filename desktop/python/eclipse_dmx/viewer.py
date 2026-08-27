@@ -308,6 +308,58 @@ class CueGroup:
         self.frame.destroy()
 
 
+class CueSection:
+    """A whole machine's cue list, sectioned off as one nest.
+
+    The family columns sit inside it and the section is the outline around
+    them, with the machine's name on the corner - so afterglow's twenty-six
+    cues read as one block, cleanly apart from whatever else shares the band.
+    Folding the section folds the machine down to its name.
+    """
+
+    def __init__(self, parent: tk.Widget, title: str, on_toggle=None):
+        self.title = title
+        self.frame = tk.Frame(parent, bg=PANEL, highlightthickness=1,
+                              highlightbackground=PANEL_EDGE)
+        self.header = tk.Label(
+            self.frame, text="", anchor="w", cursor="hand2",
+            bg=PANEL, fg=TEXT, font=("Consolas", 9, "bold"), padx=4,
+        )
+        self.header.pack(fill="x")
+        self.header.bind("<Button-1>", lambda event: self.toggle())
+
+        self.body = tk.Frame(self.frame, bg=PANEL)
+        self.body.pack(fill="x", padx=2, pady=(0, 2))
+
+        self.collapsed = False
+        self.groups: List[CueGroup] = []
+        self._on_toggle = on_toggle
+        self._refresh_header()
+
+    def set_collapsed(self, collapsed: bool) -> None:
+        if collapsed == self.collapsed:
+            return
+        self.collapsed = collapsed
+        if collapsed:
+            self.body.pack_forget()
+        else:
+            self.body.pack(fill="x", padx=2, pady=(0, 2))
+        self._refresh_header()
+
+    def toggle(self) -> None:
+        self.set_collapsed(not self.collapsed)
+        if self._on_toggle:
+            self._on_toggle(self)
+
+    def _refresh_header(self) -> None:
+        arrow = "▸" if self.collapsed else "▾"
+        count = sum(len(group.buttons) for group in self.groups)
+        self.header.configure(text=f"{arrow} {self.title} ({count})")
+
+    def destroy(self) -> None:
+        self.frame.destroy()
+
+
 class DevicePanel:
     """One device's own little window inside the main one.
 
@@ -872,6 +924,8 @@ class ViewerApp:
         self._state_buttons: Dict[str, tk.Button] = {}
         self._curated_groups: List[CueGroup] = []
         self._generated_groups: List[CueGroup] = []
+        #: The nest the generated families live in, named for the machine.
+        self._generated_section: Optional[CueSection] = None
         self._generated_for: Tuple[str, ...] = ()
         #: collapse decisions made by hand, by group title. An auto default
         #: never overrides one of these.
@@ -1255,16 +1309,31 @@ class ViewerApp:
             )
 
         # fold what tonight's machine cannot use, open what it can - unless a
-        # hand already decided - and let the live groups float above the rest
-        groups = self._curated_groups + self._generated_groups
-        for group in groups:
+        # hand already decided
+        for group in self._curated_groups + self._generated_groups:
             if group.title in self._collapse_override:
                 group.set_collapsed(self._collapse_override[group.title])
             else:
                 group.set_collapsed(not self._group_is_live(group))
-        for group in sorted(groups, key=lambda entry: not self._group_is_live(entry)):
-            group.frame.pack_forget()
-            group.frame.pack(side="left", anchor="n", padx=2)
+
+        # the band's top level: the machine's section and the curated groups,
+        # live ones floating left of the folded. The families inside the
+        # section keep their build order - the nest is the unit that moves.
+        units: List[Tuple[bool, object]] = []
+        if self._generated_section is not None:
+            section = self._generated_section
+            live = any(self._group_is_live(group) for group in section.groups)
+            if section.title in self._collapse_override:
+                section.set_collapsed(self._collapse_override[section.title])
+            else:
+                section.set_collapsed(not live)
+            units.append((live, section))
+        for group in self._curated_groups:
+            units.append((self._group_is_live(group), group))
+
+        for live, unit in sorted(units, key=lambda entry: not entry[0]):
+            unit.frame.pack_forget()
+            unit.frame.pack(side="left", anchor="n", padx=2)
 
         self._resize_split()
 
@@ -1291,8 +1360,10 @@ class ViewerApp:
         for group in self._generated_groups:
             for name in group.states:
                 self._state_buttons.pop(name, None)
-            group.destroy()
         self._generated_groups = []
+        if self._generated_section is not None:
+            self._generated_section.destroy()
+            self._generated_section = None
 
         if not wanted:
             return
@@ -1308,13 +1379,24 @@ class ViewerApp:
         if "other" in grouped:
             order.append("other")
 
+        # The nest: one section named for the machine, its families as columns
+        # inside. The border is what keeps this machine's cues reading as one
+        # block rather than bleeding into whatever shares the band.
+        section = CueSection(self.cue_area, self.current_pattern,
+                             on_toggle=self._on_group_toggled)
+        self._generated_section = section
+
         for title in order:
-            group = CueGroup(self.cue_area, title, on_toggle=self._on_group_toggled)
+            group = CueGroup(section.body, title, on_toggle=self._on_group_toggled)
             for name in grouped[title]:
                 self._state_buttons[name] = group.add_button(
                     _generated_label(name, title), ("state", name), self._run_button)
             group.frame.pack(side="left", anchor="n", padx=2)
+            section.groups.append(group)
             self._generated_groups.append(group)
+
+        section._refresh_header()
+        section.frame.pack(side="left", anchor="n", padx=2)
 
     def _run_button(self, command: Tuple[str, str]) -> None:
         kind, value = command
