@@ -115,13 +115,25 @@ def _generated_group(state: str) -> str:
     return "other"
 
 
+#: Labels for tags the stripping rule below would mangle - a tag that *is*
+#: its whole family would otherwise come out empty or keep its full length,
+#: and these columns are paid for by the pixel.
+GENERATED_LABELS = {
+    "power_up": "power up",
+    "scan_idle": "idle",
+    "scan_item_failure": "failure",
+}
+
+
 def _generated_label(state: str, group: str) -> str:
     """`scan_item_detected_mushroom_new` in group `detected` -> `mushroom new`.
 
     The group header already says the family, so the button says only what is
-    left of the name - and a tag that *is* its whole family (`boot`, `void`)
-    keeps its own name rather than becoming an empty button.
+    left of the name.
     """
+    if state in GENERATED_LABELS:
+        return GENERATED_LABELS[state]
+
     remainder = state
     for candidate, prefix in GENERATED_STATE_GROUPS:
         if candidate == group and state.startswith(prefix):
@@ -222,16 +234,18 @@ def _run_name(name: str) -> str:
 
 
 class CueGroup:
-    """One collapsible family of cue buttons.
+    """One collapsible family of cue buttons: a column in the cue band.
 
-    Twenty-six states in flat rows is a wall; grouped by family it is a menu.
-    The header is the toggle - click it to fold the family away - and it
-    carries the count, so a folded group still says how much it is hiding.
+    Twenty-six states in flat rows is a wall. As columns side by side - the
+    family name on top, its cues stacked under it - the whole machine sits in
+    one horizontal band and reads like a menu. The header is the toggle:
+    click it and the family folds to just its name, and the count says how
+    much a folded column is hiding.
     """
 
-    #: Buttons per row inside a group. Six keeps the widest family (detected)
-    #: to one row on a normal window without any row growing past the sash.
-    PER_ROW = 6
+    #: Buttons per column before a family spills into a second one. Six caps
+    #: a column's height at the band the window already pays for.
+    PER_COLUMN = 6
 
     def __init__(self, parent: tk.Widget, title: str, on_toggle=None):
         self.title = title
@@ -247,7 +261,7 @@ class CueGroup:
         self.header.bind("<Button-1>", lambda event: self.toggle())
 
         self.body = tk.Frame(self.frame, bg=PANEL)
-        self.body.pack(fill="x", padx=8)
+        self.body.pack(fill="x", padx=4)
 
         self.collapsed = False
         self.buttons: List[tk.Button] = []
@@ -263,8 +277,8 @@ class CueGroup:
             command=lambda c=command: runner(c),
         )
         index = len(self.buttons)
-        button.grid(row=index // self.PER_ROW, column=index % self.PER_ROW,
-                    sticky="ew", padx=3, pady=3)
+        button.grid(row=index % self.PER_COLUMN, column=index // self.PER_COLUMN,
+                    sticky="ew", padx=2, pady=2)
         self.buttons.append(button)
         if command[0] == "state":
             self.states.add(command[1])
@@ -278,7 +292,7 @@ class CueGroup:
         if collapsed:
             self.body.pack_forget()
         else:
-            self.body.pack(fill="x", padx=8)
+            self.body.pack(fill="x", padx=4)
         self._refresh_header()
 
     def toggle(self) -> None:
@@ -635,10 +649,12 @@ class ViewerApp:
         osc=None,
         osc_device: Optional[str] = None,
         osc_fixture: int = 0,
-        width: int = 1000,
-        # Room for four rows of cue buttons under the canvas. The knobs sit
+        # Wide enough for the whole cue band - every family of a 26-state
+        # machine as a column - without folding anything.
+        width: int = 1200,
+        # Room for one band of cue columns under the canvas. The knobs sit
         # beside them rather than below, so this does not grow with them.
-        height: int = 600,
+        height: int = 620,
     ) -> None:
         self.config_path = Path(config_path)
         self.config = Config.load(self.config_path)
@@ -867,7 +883,7 @@ class ViewerApp:
                 button = group.add_button(label, command, self._run_button)
                 if command[0] == "state":
                     self._state_buttons[command[1]] = button
-            group.frame.pack(fill="x")
+            group.frame.pack(side="left", anchor="n", padx=2)
             self._curated_groups.append(group)
 
         #: what the curated tables already cover; a generated button exists
@@ -1018,11 +1034,11 @@ class ViewerApp:
         if not self._sash_placed and self.split.winfo_width() > 1:
             self._sash_placed = True
 
-            # Enough for the widest cue row on the left and one column of knobs
-            # on the right. Both halves have a natural width and they add up to
+            # Enough for the cue band on the left and one column of knobs on
+            # the right. Both halves have a natural width and they add up to
             # about the window, so this is close to what a drag would land on
             # anyway - it just saves doing it on every launch.
-            self.split.sash_place(0, int(self.split.winfo_width() * 0.68), 0)
+            self.split.sash_place(0, int(self.split.winfo_width() * 0.74), 0)
 
     # -- the running look's knobs -----------------------------------------
 
@@ -1248,7 +1264,7 @@ class ViewerApp:
                 group.set_collapsed(not self._group_is_live(group))
         for group in sorted(groups, key=lambda entry: not self._group_is_live(entry)):
             group.frame.pack_forget()
-            group.frame.pack(fill="x")
+            group.frame.pack(side="left", anchor="n", padx=2)
 
         self._resize_split()
 
@@ -1297,7 +1313,7 @@ class ViewerApp:
             for name in grouped[title]:
                 self._state_buttons[name] = group.add_button(
                     _generated_label(name, title), ("state", name), self._run_button)
-            group.frame.pack(fill="x")
+            group.frame.pack(side="left", anchor="n", padx=2)
             self._generated_groups.append(group)
 
     def _run_button(self, command: Tuple[str, str]) -> None:
