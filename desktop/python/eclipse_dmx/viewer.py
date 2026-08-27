@@ -39,10 +39,17 @@ RGB = Tuple[int, int, int]
 # The buttons. This is the bit to edit.
 # ===========================================================================
 #
-# Hardcoded on purpose rather than generated from whatever the executable
-# reports: a generated row gives every look equal weight and alphabetical
+# Two sources, and they compose. The *curated* groups below are hardcoded on
+# purpose: a generated row gives every look equal weight and alphabetical
 # order, and what you actually want at a desk is the four you are using
-# tonight, first, with the names you call them.
+# tonight, first, with the names you call them. Then every state the running
+# machine offers that no curated button covers gets a *generated* button, so
+# a new machine's whole cue list is clickable before anyone edits this file -
+# grouped by the prefix table further down.
+#
+# Groups collapse: click a header. A group none of whose states the running
+# machine knows starts collapsed; one with live states starts open. A group
+# toggled by hand stays where it was put.
 #
 # Each entry is (label, command). A command is one of:
 #
@@ -53,16 +60,13 @@ RGB = Tuple[int, int, int]
 #     ("beat",    "")             a downbeat, now - tap it in
 #     ("bpm",     "128")          set the tempo outright
 #
-# Rows are drawn in order, one strip of buttons per row. Add, remove and
-# reorder freely; nothing else needs to change. A state the running pattern
-# does not offer is dimmed rather than hidden, so a row can hold looks from
-# more than one machine.
+# A state the running pattern does not offer is dimmed rather than hidden, so
+# a group can hold looks from more than one machine.
 
-STATE_BUTTONS: List[List[Tuple[str, Tuple[str, str]]]] = [
-    # --- mythos26 -----------------------------------------------------
+STATE_GROUPS: List[Tuple[str, List[Tuple[str, Tuple[str, str]]]]] = [
     # slot_5 onwards are still placeholders. Rename them here when they are
     # renamed in makeMythos26StateMachine().
-    [
+    ("mythos26", [
         ("pulse", ("state", "beat_pulse")),
         ("vu pulse", ("state", "vu_pulse")),
         ("static b/w", ("state", "tv_static_mono")),
@@ -70,25 +74,60 @@ STATE_BUTTONS: List[List[Tuple[str, Tuple[str, str]]]] = [
         ("slot 5", ("state", "slot_5")),
         ("slot 6", ("state", "slot_6")),
         ("slot 7", ("state", "slot_7")),
-    ],
-    # --- the jacket's looks -------------------------------------------
-    [
+    ]),
+    ("jacket", [
         ("void", ("state", "digital_void")),
         ("forest", ("state", "enchanted_forest")),
         ("turbines", ("state", "warp_turbines")),
         ("rainbow", ("state", "rainbow_road")),
         ("breathe", ("state", "breathe_with_me")),
         ("parrot", ("state", "parrot")),
-    ],
-    [
         ("overload", ("state", "system_overload")),
         ("toxin", ("state", "cyber_toxin")),
         ("datamine", ("state", "datamine")),
         ("bluemagic", ("state", "blue_magic")),
         ("campfire", ("state", "campfire")),
         ("hitstop", ("state", "hitstop")),
-    ],
+    ]),
 ]
+
+#: Where a generated button lands: (group, tag prefix), first match wins, and
+#: anything unclaimed goes in "other". These are afterglow's state families
+#: today; a machine this table has never heard of still gets every button,
+#: just less tidily sorted.
+GENERATED_STATE_GROUPS: List[Tuple[str, str]] = [
+    ("boot", "power_up"),
+    ("boot", "boot"),
+    ("idle", "scan_idle"),
+    ("detected", "scan_item_detected"),
+    ("success", "scan_item_success"),
+    ("failure", "scan_item_failure"),
+    ("playback", "audio_playback"),
+    ("record", "record"),
+    ("void", "void"),
+]
+
+
+def _generated_group(state: str) -> str:
+    for group, prefix in GENERATED_STATE_GROUPS:
+        if state.startswith(prefix):
+            return group
+    return "other"
+
+
+def _generated_label(state: str, group: str) -> str:
+    """`scan_item_detected_mushroom_new` in group `detected` -> `mushroom new`.
+
+    The group header already says the family, so the button says only what is
+    left of the name - and a tag that *is* its whole family (`boot`, `void`)
+    keeps its own name rather than becoming an empty button.
+    """
+    remainder = state
+    for candidate, prefix in GENERATED_STATE_GROUPS:
+        if candidate == group and state.startswith(prefix):
+            remainder = state[len(prefix):].lstrip("_")
+            break
+    return (remainder or state).replace("_", " ")
 
 #: Held down, not toggled - these are momentary, like the remote buttons the
 #: jacket's looks were written around.
@@ -180,6 +219,79 @@ def _run_name(name: str) -> str:
     """
     head, sep, tail = name.rpartition("_")
     return head if sep and tail.isdigit() else name
+
+
+class CueGroup:
+    """One collapsible family of cue buttons.
+
+    Twenty-six states in flat rows is a wall; grouped by family it is a menu.
+    The header is the toggle - click it to fold the family away - and it
+    carries the count, so a folded group still says how much it is hiding.
+    """
+
+    #: Buttons per row inside a group. Six keeps the widest family (detected)
+    #: to one row on a normal window without any row growing past the sash.
+    PER_ROW = 6
+
+    def __init__(self, parent: tk.Widget, title: str, on_toggle=None):
+        self.title = title
+        #: The state names this group's buttons drive - what "live" means.
+        self.states: set = set()
+
+        self.frame = tk.Frame(parent, bg=PANEL)
+        self.header = tk.Label(
+            self.frame, text="", anchor="w", cursor="hand2",
+            bg=PANEL, fg=TEXT_DIM, font=("Consolas", 9), padx=4,
+        )
+        self.header.pack(fill="x")
+        self.header.bind("<Button-1>", lambda event: self.toggle())
+
+        self.body = tk.Frame(self.frame, bg=PANEL)
+        self.body.pack(fill="x", padx=8)
+
+        self.collapsed = False
+        self.buttons: List[tk.Button] = []
+        self._on_toggle = on_toggle
+        self._refresh_header()
+
+    def add_button(self, label: str, command: Tuple[str, str], runner) -> tk.Button:
+        button = tk.Button(
+            self.body, text=label, font=("Consolas", 9),
+            bg=BUTTON_BG, fg=BUTTON_FG, activebackground=BUTTON_BG_ACTIVE,
+            activeforeground=BUTTON_FG, relief="flat", padx=8, pady=3,
+            highlightthickness=0, borderwidth=0,
+            command=lambda c=command: runner(c),
+        )
+        index = len(self.buttons)
+        button.grid(row=index // self.PER_ROW, column=index % self.PER_ROW,
+                    sticky="ew", padx=3, pady=3)
+        self.buttons.append(button)
+        if command[0] == "state":
+            self.states.add(command[1])
+        self._refresh_header()
+        return button
+
+    def set_collapsed(self, collapsed: bool) -> None:
+        if collapsed == self.collapsed:
+            return
+        self.collapsed = collapsed
+        if collapsed:
+            self.body.pack_forget()
+        else:
+            self.body.pack(fill="x", padx=8)
+        self._refresh_header()
+
+    def toggle(self) -> None:
+        self.set_collapsed(not self.collapsed)
+        if self._on_toggle:
+            self._on_toggle(self)
+
+    def _refresh_header(self) -> None:
+        arrow = "▸" if self.collapsed else "▾"
+        self.header.configure(text=f"{arrow} {self.title} ({len(self.buttons)})")
+
+    def destroy(self) -> None:
+        self.frame.destroy()
 
 
 class DevicePanel:
@@ -646,6 +758,19 @@ class ViewerApp:
         )
         self.header.pack(fill="x")
 
+        # -- the devices, as a row to look through --------------------------
+        # One button per device plus "all": a device's button gives its panel
+        # the whole surface, "all" restores the tiled desk. Populated once the
+        # executable announces what is actually in the show, and only shown
+        # when there is more than one panel - a choice with one answer is
+        # furniture.
+        self.device_row = tk.Frame(self.root, bg=PANEL)
+        self._device_row_label = tk.Label(self.device_row, text="devices ", bg=PANEL,
+                                          fg=TEXT_DIM, font=("Consolas", 9), padx=12)
+        self._device_row_label.pack(side="left")
+        self._device_buttons: Dict[Optional[str], tk.Button] = {}
+        self._focus_device: Optional[str] = None
+
         # Packed from the bottom up, and the canvas last. The canvas is the only
         # thing that expands, so packing it first lets it claim the window and
         # push the controls off the bottom edge whenever they grow — which they
@@ -722,23 +847,32 @@ class ViewerApp:
         self.split.add(self.button_panel, stretch="always", minsize=260)
         self.split.add(self.param_pane, stretch="always", minsize=180)
 
-        self._state_rows: List[tk.Frame] = []
-        self._state_buttons: Dict[str, tk.Button] = {}
+        # -- the cue list, grouped ------------------------------------------
+        # Curated groups are built once; generated groups are rebuilt whenever
+        # the running machine's state list changes. One containing frame, so
+        # the whole cue list packs and unpacks as a unit.
+        self.cue_area = tk.Frame(self.button_panel, bg=PANEL)
 
-        for row in STATE_BUTTONS:
-            frame = tk.Frame(self.button_panel, bg=PANEL)
-            for label, command in row:
-                button = tk.Button(
-                    frame, text=label, font=("Consolas", 9),
-                    bg=BUTTON_BG, fg=BUTTON_FG, activebackground=BUTTON_BG_ACTIVE,
-                    activeforeground=BUTTON_FG, relief="flat", padx=8, pady=3,
-                    highlightthickness=0, borderwidth=0,
-                    command=lambda c=command: self._run_button(c),
-                )
-                button.pack(side="left", padx=3, pady=3)
+        self._state_buttons: Dict[str, tk.Button] = {}
+        self._curated_groups: List[CueGroup] = []
+        self._generated_groups: List[CueGroup] = []
+        self._generated_for: Tuple[str, ...] = ()
+        #: collapse decisions made by hand, by group title. An auto default
+        #: never overrides one of these.
+        self._collapse_override: Dict[str, bool] = {}
+
+        for title, entries in STATE_GROUPS:
+            group = CueGroup(self.cue_area, title, on_toggle=self._on_group_toggled)
+            for label, command in entries:
+                button = group.add_button(label, command, self._run_button)
                 if command[0] == "state":
                     self._state_buttons[command[1]] = button
-            self._state_rows.append(frame)
+            group.frame.pack(fill="x")
+            self._curated_groups.append(group)
+
+        #: what the curated tables already cover; a generated button exists
+        #: only for a state outside this set
+        self._curated_states = set(self._state_buttons)
 
         # the plain patterns, plus the momentary inputs, share a row
         self.extra_row = tk.Frame(self.button_panel, bg=PANEL)
@@ -1077,14 +1211,22 @@ class ViewerApp:
         self._param_sent[name] = param.value
 
     def _refresh_buttons(self) -> None:
-        """Shows the state rows only when the pattern actually has states."""
-        has_states = bool(self.show.state_names)
+        """The cue list follows the running machine.
 
-        for frame in self._state_rows:
-            if has_states and not frame.winfo_ismapped():
-                frame.pack(fill="x", before=self.extra_row)
-            elif not has_states and frame.winfo_ismapped():
-                frame.pack_forget()
+        Generated groups are rebuilt when the state list changes; curated ones
+        are permanent furniture. A group with nothing the machine knows starts
+        folded and sinks below the live ones; a group toggled by hand stays
+        where its collapse was put.
+        """
+        state_names = tuple(self.show.state_names)
+        has_states = bool(state_names)
+
+        if has_states and not self.cue_area.winfo_ismapped():
+            self.cue_area.pack(fill="x", before=self.extra_row)
+        elif not has_states and self.cue_area.winfo_ismapped():
+            self.cue_area.pack_forget()
+
+        self._rebuild_generated_groups(state_names)
 
         # a state the running machine does not offer is dimmed, not hidden:
         # the table is yours, and silently dropping an entry would read as a bug
@@ -1096,7 +1238,67 @@ class ViewerApp:
                 fg=BUTTON_FG if known else TEXT_DIM,
             )
 
+        # fold what tonight's machine cannot use, open what it can - unless a
+        # hand already decided - and let the live groups float above the rest
+        groups = self._curated_groups + self._generated_groups
+        for group in groups:
+            if group.title in self._collapse_override:
+                group.set_collapsed(self._collapse_override[group.title])
+            else:
+                group.set_collapsed(not self._group_is_live(group))
+        for group in sorted(groups, key=lambda entry: not self._group_is_live(entry)):
+            group.frame.pack_forget()
+            group.frame.pack(fill="x")
+
         self._resize_split()
+
+    def _group_is_live(self, group: CueGroup) -> bool:
+        return any(name in self.show.state_names for name in group.states)
+
+    def _on_group_toggled(self, group: CueGroup) -> None:
+        self._collapse_override[group.title] = group.collapsed
+        self._resize_split()
+
+    def _rebuild_generated_groups(self, state_names: Tuple[str, ...]) -> None:
+        """A button for every state no curated table covers.
+
+        Grouped by GENERATED_STATE_GROUPS, in that table's order, with the
+        machine's own order kept inside a group. Torn down and rebuilt only
+        when the uncovered set changes, which is a pattern switch - never on a
+        click, so buttons do not flicker under the cursor.
+        """
+        wanted = tuple(name for name in state_names if name not in self._curated_states)
+        if wanted == self._generated_for:
+            return
+        self._generated_for = wanted
+
+        for group in self._generated_groups:
+            for name in group.states:
+                self._state_buttons.pop(name, None)
+            group.destroy()
+        self._generated_groups = []
+
+        if not wanted:
+            return
+
+        grouped: Dict[str, List[str]] = {}
+        for name in wanted:
+            grouped.setdefault(_generated_group(name), []).append(name)
+
+        order: List[str] = []
+        for title, _prefix in GENERATED_STATE_GROUPS:
+            if title in grouped and title not in order:
+                order.append(title)
+        if "other" in grouped:
+            order.append("other")
+
+        for title in order:
+            group = CueGroup(self.cue_area, title, on_toggle=self._on_group_toggled)
+            for name in grouped[title]:
+                self._state_buttons[name] = group.add_button(
+                    _generated_label(name, title), ("state", name), self._run_button)
+            group.frame.pack(fill="x")
+            self._generated_groups.append(group)
 
     def _run_button(self, command: Tuple[str, str]) -> None:
         kind, value = command
@@ -1189,7 +1391,82 @@ class ViewerApp:
                 panel.set_offline(offline[span.name])
             self._panels.append(panel)
 
-        self._tile_panels()
+        # A focus on a device that is no longer in the show is a focus on
+        # nothing - back to the desk.
+        if self._focus_device not in {panel.name for panel in self._panels}:
+            self._focus_device = None
+
+        self._rebuild_device_row()
+        self._apply_layout()
+
+    def _rebuild_device_row(self) -> None:
+        for button in self._device_buttons.values():
+            button.destroy()
+        self._device_buttons = {}
+
+        if len(self._panels) < 2:
+            self.device_row.pack_forget()
+            return
+
+        if not self.device_row.winfo_ismapped():
+            self.device_row.pack(fill="x", after=self.header)
+
+        names: List[Optional[str]] = [None] + [panel.name for panel in self._panels]
+        for name in names:
+            button = tk.Button(
+                self.device_row, text="all" if name is None else name,
+                font=("Consolas", 9),
+                bg=BUTTON_BG, fg=BUTTON_FG, activebackground=BUTTON_BG_ACTIVE,
+                activeforeground=BUTTON_FG, relief="flat", padx=8, pady=2,
+                highlightthickness=0, borderwidth=0,
+                command=lambda n=name: self._focus_on(n),
+            )
+            button.pack(side="left", padx=3, pady=3)
+            self._device_buttons[name] = button
+
+        self._refresh_device_buttons()
+
+    def _refresh_device_buttons(self) -> None:
+        for name, button in self._device_buttons.items():
+            button.configure(bg=BUTTON_BG_ACTIVE if name == self._focus_device else BUTTON_BG)
+
+    def _focus_on(self, name: Optional[str]) -> None:
+        if name == self._focus_device:
+            return
+        self._focus_device = name
+        self._refresh_device_buttons()
+        self._apply_layout()
+
+    def _apply_layout(self) -> None:
+        """The surface, laid out for the current focus.
+
+        "all" is the tiled desk, dragged and sized however it was left. A
+        focused device takes the whole surface and the rest step out of the
+        way - they keep painting, so flipping through devices is instant and
+        the picture is always current when it lands.
+
+        Coming back to "all" re-tiles rather than restoring hand positions:
+        the coordinates a drag left behind may belong to a window size that no
+        longer exists, and a fresh even tile is legible where a half-restored
+        layout is a mess.
+        """
+        if not self._panels:
+            return
+
+        if self._focus_device is None:
+            self._panels_touched = False
+            self._tile_panels()
+            return
+
+        gap = 6
+        width = max(self.surface.winfo_width() - 2 * gap, 120)
+        height = max(self.surface.winfo_height() - 2 * gap, 90)
+        for panel in self._panels:
+            if panel.name == self._focus_device:
+                panel.place(x=gap, y=gap, width=width, height=height)
+                panel.frame.lift()
+            else:
+                panel.frame.place_forget()
 
     def _tile_panels(self) -> None:
         """An opening arrangement: side by side, widest device first.
@@ -1231,10 +1508,11 @@ class ViewerApp:
         self._panels_touched = True
 
     def _on_surface_resized(self) -> None:
-        """Re-tile only while nothing has been moved by hand."""
-        if self._panels_touched:
-            return
-        self._tile_panels()
+        """Re-fit a focused panel; re-tile the desk only while it is untouched."""
+        if self._focus_device is not None:
+            self._apply_layout()
+        elif not self._panels_touched:
+            self._tile_panels()
 
     # -- the show ----------------------------------------------------------
 

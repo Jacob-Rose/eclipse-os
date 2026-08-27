@@ -25,9 +25,9 @@
   },
 
   "devices": [
-    // A wide short panel for a ring, a pillar for the obelisk - view_scale
+    // A near-square panel for a circle, a pillar for the obelisk - view_scale
     // is a view property and touches nothing the pattern sees.
-    { "device": "scanner_ring", "offset": [0, 0], "view_scale": [1.7, 0.45] },
+    { "device": "scanner_ring", "offset": [0, 0], "view_scale": [0.9, 1.0] },
     { "device": "obelisk",      "offset": [0, 0], "view_scale": [0.5, 1.1] }
   ]
 }
