@@ -24,7 +24,7 @@ using namespace esm;
 class State_GenericHSV : public State
 {
 public:
-    State_GenericHSV(const char* InStateName, RelicIO* inIO) : io(inIO), State(InStateName) {}
+    State_GenericHSV(const char* InStateName, RelicIO* inIO) : State(InStateName), io(inIO) {}
 
     void setGenerator(std::shared_ptr<GeneratorHSV> inGenerator) { generator = inGenerator; }
     std::shared_ptr<GeneratorHSV> getGenerator() const { return generator; }

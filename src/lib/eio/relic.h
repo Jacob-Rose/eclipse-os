@@ -45,7 +45,10 @@ namespace eio
         COUNT 
     };
 
-    static uint8_t getEBrightnessAsByte(EBrightness inBrightness);
+    // not static: the definition lives in relic.cpp, and a static declaration
+    // here gave every other translation unit an internal function with no
+    // definition behind it - same shape as the fp.h getFloat bug
+    uint8_t getEBrightnessAsByte(EBrightness inBrightness);
 
     class RelicIO : public Tickable
     {
@@ -93,7 +96,7 @@ namespace eio
         virtual void tickWhileLinked(float deltaTime) { (void)deltaTime; }
 
         // returns if the command was handled/consumed
-        virtual bool handleCommand(string msg) { return false; }
+        virtual bool handleCommand(string msg) { (void)msg; return false; }
 
         void runTick();
 
