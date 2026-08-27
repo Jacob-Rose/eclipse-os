@@ -1,0 +1,22 @@
+{
+  // The scanner's NeoPixel ring as a device: 35 pixels in one run.
+  //
+  // No positions on purpose - patch order *is* the ring, and every scanner
+  // look reads the strip index rather than a coordinate, exactly as on the
+  // Pi (main-py/lib/jr_lib/eclipse_engine.py builds this same rig inline for
+  // the live game; this file exists so a desk can build it from config).
+  //
+  // Preview output: this device's frames only ever go to a screen - the real
+  // ring is painted by the game out of the frame stream, never by a wire.
+
+  "name": "scanner_ring",
+
+  "output": {
+    "type": "preview",
+    "fps": 30
+  },
+
+  "fixtures": [
+    { "profile": "rgb3", "name": "px", "address": 1, "count": 35 }
+  ]
+}

@@ -543,6 +543,26 @@ labels on the run rather than on every pixel. A glow is nine canvas items and tk
 recolours them one at a time from python, so 344 of them would be 3096 calls per
 repaint and the window would crawl.
 
+### the scanner show, on screen
+
+`config/scanner.json` is afterglow's ring-and-obelisk show at a desk:
+
+```sh
+python -m eclipse_dmx view config/scanner.json
+```
+
+Both devices in one window, and every game state on a cue button — the
+`scanner` pattern names its states with afterglow's own tags (`power_up`,
+`scan_idle`, `record_countdown`, `void`, …), so clicking down the list is
+clicking through the game, and `state <tag> <seconds>` typed at the process is
+byte-for-byte what the game sends. The looks that read height — the record
+countdown's bottom-to-top sweep — render on the obelisk's real geometry, which
+is the point of previewing on this rig rather than a bare strip.
+
+Nothing reaches hardware without `--live`. With it, the obelisk device's own
+output drives a plugged-in sculpture exactly as the game does, so a new look
+goes from screen to object with the same file.
+
 ### mythos26 — the show
 
 `config/mythos26.json` is the show, on the same ten pars.
