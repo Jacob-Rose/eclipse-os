@@ -1100,6 +1100,12 @@ namespace
         /// sharedBeatClock(), which is what patterns read; this is only the
         /// device feeding it.
         MidiInput midi;
+
+        /// The last accepted `state ...` line, verbatim - blend seconds and
+        /// all. Replayed to a cue-mode relic the moment it comes online, so a
+        /// sculpture plugged in mid-show joins the show at its current look
+        /// instead of sitting in its own idle until the next transition.
+        std::string lastCue;
     };
 
     /// Resolves the coordinate frame for whatever pattern is running.
@@ -1606,49 +1612,47 @@ namespace
 
         if (command == "state")
         {
-            // In cue mode the relic is the thing rendering, so a cue is for it
-            // rather than for our own state machine. Forwarded verbatim: the
-            // relic's handleCommand decides whether it knows the name, and this
-            // end has no business guessing at another device's look list.
-            const std::vector<RelicUsbOutput*> relics = relicLinks(show);
-            const bool anyInCueMode = std::any_of(relics.begin(), relics.end(),
-                [](RelicUsbOutput* relic) { return relic->getMode() == RelicUsbOutput::Mode::Cue; });
-
-            if (anyInCueMode)
+            if (words.size() < 2)
             {
-                if (words.size() < 2)
+                emit("ERR state needs a name");
+                return;
+            }
+
+            // A cue reaches every end that renders. A relic in cue mode is
+            // drawing its own pixels, so the line goes to it verbatim - blend
+            // seconds included, its handleCommand decides whether it knows the
+            // name, and this end has no business guessing at another device's
+            // look list. And when our own pattern is a state machine it takes
+            // the same cue: the scanner's ring and the obelisk on its cable
+            // are one show changing looks together, not alternatives.
+            const std::vector<RelicUsbOutput*> relics = relicLinks(show);
+            bool anyCued = false;
+            std::string error;
+            for (RelicUsbOutput* relic : relics)
+            {
+                if (relic->getMode() != RelicUsbOutput::Mode::Cue)
                 {
-                    emit("ERR state needs a name");
+                    continue;
+                }
+                if (!relic->sendCommand(line, error))
+                {
+                    emit("ERR link " + error);
                     return;
                 }
-
-                std::string error;
-                for (RelicUsbOutput* relic : relics)
-                {
-                    if (relic->getMode() != RelicUsbOutput::Mode::Cue)
-                    {
-                        continue;
-                    }
-                    if (!relic->sendCommand(line, error))
-                    {
-                        emit("ERR link " + error);
-                        return;
-                    }
-                }
-                emit("OK state " + words[1] + " (to the relic)");
-                return;
+                anyCued = true;
             }
 
             StateMachinePattern* machine = show.pattern ? show.pattern->asStateMachine() : nullptr;
             if (!machine)
             {
-                emit("ERR pattern '" + std::string(show.pattern ? show.pattern->getName() : "none")
-                   + "' is not a state machine");
-                return;
-            }
-            if (words.size() < 2)
-            {
-                emit("ERR state needs a name");
+                if (!anyCued)
+                {
+                    emit("ERR pattern '" + std::string(show.pattern ? show.pattern->getName() : "none")
+                       + "' is not a state machine");
+                    return;
+                }
+                show.lastCue = line;
+                emit("OK state " + words[1] + " (to the relic)");
                 return;
             }
 
@@ -1661,13 +1665,16 @@ namespace
                 machine->setTransitionTime(static_cast<float>(atof(words[2].c_str())));
             }
 
-            std::string error;
             if (!machine->setState(words[1], error))
             {
-                emit("ERR " + error);
+                // A name only the relic knows - `theater` cued at a scanner
+                // show - still went to the relic above, and saying otherwise
+                // would be a lie about the sculpture.
+                emit("ERR " + error + (anyCued ? " (the cue relics took it)" : ""));
                 return;
             }
 
+            show.lastCue = line;
             emit("OK state " + words[1]);
             emit("STATE " + machine->currentStateName());
             emitParams(show);
@@ -2815,6 +2822,19 @@ int main(int argc, char** argv)
                 logLine("[" + device.name() + "] output: " + device.output->describe());
                 emit("ONLINE " + device.name() + ": " + device.output->describe());
                 device.reportedOffline.clear();
+
+                // A relic that arrives mid-show missed every cue before now.
+                // In cue mode the current look is the entire contract, so
+                // replay the last one - the sculpture joins the show where it
+                // is, not at whatever its firmware idles in. Best-effort: if
+                // this write fails the wire is already on its way back to the
+                // retry path above.
+                RelicUsbOutput* relic = device.output->asRelicLink();
+                if (relic && relic->getMode() == RelicUsbOutput::Mode::Cue && !show.lastCue.empty())
+                {
+                    std::string cueError;
+                    relic->sendCommand(show.lastCue, cueError);
+                }
             }
             else if (device.offline != device.reportedOffline)
             {
