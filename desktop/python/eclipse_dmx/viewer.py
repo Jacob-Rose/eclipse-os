@@ -715,6 +715,23 @@ class ViewerApp:
         self.placements = plan_layout(self.config)
         self.live = live
 
+        # -- the screen is not an LED ---------------------------------------
+        # A frame arrives with master.gamma already applied, because an LED is
+        # linear in duty cycle and an eye is not. A monitor corrects again all
+        # by itself, so painting the raw channels applies the curve twice and
+        # everything below mid-brightness crushes toward black - the dim looks
+        # (a breathing floor of 0.15, a void stone at a third) read as not
+        # animating at all, while the same frames look right on the sculpture.
+        # Undo it exactly once, for the same reason the OSC sender does; a
+        # 256-entry table because this runs per channel per frame.
+        gamma = float(getattr(self.config.master, "gamma", 1.0) or 1.0)
+        self._ungamma: Optional[List[int]] = None
+        if abs(gamma - 1.0) > 1e-3:
+            self._ungamma = [
+                min(255, int(round(((value / 255.0) ** (1.0 / gamma)) * 255.0)))
+                for value in range(256)
+            ]
+
         try:
             self.pattern_names = list_patterns(executable)
         except Exception:
@@ -1713,14 +1730,21 @@ class ViewerApp:
             return
         self._painted = frame
 
+        # the double-gamma fix - see __init__. On the raw frame once, so every
+        # panel and slice below shares the one corrected copy.
+        shown = frame
+        if shown is not None and self._ungamma is not None:
+            table = self._ungamma
+            shown = [(table[r], table[g], table[b]) for r, g, b in shown]
+
         spans = list(self.show.devices)
         for index, panel in enumerate(self._panels):
-            if frame is None:
+            if shown is None:
                 panel.paint(None)
             elif index < len(spans):
-                panel.paint(spans[index].slice(frame))
+                panel.paint(spans[index].slice(shown))
             else:
-                panel.paint(frame)
+                panel.paint(shown)
 
 
     def _refresh_header(self) -> None:
