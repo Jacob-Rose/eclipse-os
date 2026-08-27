@@ -104,6 +104,17 @@ namespace esm
     
         void setActiveState(std::shared_ptr<State> inNewState);
         void setNextState(std::shared_ptr<State> inNextState);
+
+        /* @brief Re-enters a state the machine is already showing or blending toward.
+        *
+        * setNextState refuses a self-transition, and should - but a cue that
+        * names the current state means "take it from the top". The scanner
+        * leans on this: a machine starts in its first state at launch, so a
+        * boot's first cue can name a state that is already active with its
+        * clock long run out. The re-entry goes through Off so it reads as a
+        * genuine entry to states whose entry logic keys on the edge.
+        */
+        void restartState(std::shared_ptr<State> inState);
         std::shared_ptr<State> getActiveState() const { return ActiveState; } // returns the currently active state
         std::shared_ptr<State> getNextState() const { return NextState; }
 

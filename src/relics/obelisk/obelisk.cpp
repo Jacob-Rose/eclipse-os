@@ -149,6 +149,7 @@ ObeliskCore::ObeliskCore() : RelicCore()
     // makeScannerStateMachine() in the desktop build, kept in step so a cue
     // works wherever it lands.
     addScannerState("record_arm",                      make_shared<Pattern_Scanner_SinePulse>(HSV(45.0f, 1.0f, 1.0f), 4.0f, 0.15f, 0.5f));   // CRGB(1.0, 0.75, 0.0)
+    addScannerState("record_countdown",                make_shared<Pattern_Scanner_RecordCountdown>());
     addScannerState("record_active",                   make_shared<Pattern_Scanner_RecordComet>());
     addScannerState("record_saved",                    make_shared<Pattern_Scanner_SinePulse>(HSV(132.0f, 1.0f, 1.0f), 6.0f, 0.4f, 0.6f));   // CRGB(0.0, 1.0, 0.2)
     addScannerState("scan_item_detected_recording",    make_shared<Pattern_Scanner_DetectedWave>(HSV(33.3f, 0.9f, 1.0f)));                   // CRGB(1.0, 0.6, 0.1)

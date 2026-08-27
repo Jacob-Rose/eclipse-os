@@ -8,6 +8,9 @@
 #include <algorithm>
 #include <cmath>
 
+// HSVStripNode_Mapped2D, for the countdown's height read
+#include "../../lib/eio/strip_projection.h"
+
 using namespace scanner;
 
 namespace
@@ -175,6 +178,61 @@ void Pattern_Scanner_RecordComet::render(HSVStripNode* inNode, HSV& inOutColor) 
 
     inOutColor = cometColor;
     inOutColor.setBrightnessAlpha(cometColor.getValFloat() * brightness);
+}
+
+Pattern_Scanner_RecordCountdown::Pattern_Scanner_RecordCountdown()
+{
+    // one count's shape: snap to white, fall away before the next count
+    pulse.curve.addKey(0.00f, 0.0f);
+    pulse.curve.addKey(0.06f, 1.0f, easing_functions::EaseOutCubic);
+    pulse.curve.addKey(0.45f, 0.0f);
+
+    // a pulse is over well before the next count fires, so a plain restart
+    // never shows the step-down RestartHold exists to hide
+    pulse.retriggerMode = eanim::RetriggerMode::Restart;
+}
+
+void Pattern_Scanner_RecordCountdown::reset()
+{
+    PatternScanner::reset();
+    firedCount = 0;
+    pulse.reset();
+}
+
+void Pattern_Scanner_RecordCountdown::tick(float deltaTime)
+{
+    PatternScanner::tick(deltaTime);
+
+    // triggerAt with how long ago the count really landed, so a count that
+    // falls mid-frame is not quantised onto the frame grid
+    while (firedCount < totalCounts && timeActive >= firedCount * secondsPerCount)
+    {
+        pulse.triggerAt(timeActive - firedCount * secondsPerCount);
+        ++firedCount;
+    }
+
+    pulse.tick(deltaTime);
+}
+
+void Pattern_Scanner_RecordCountdown::render(HSVStripNode* inNode, HSV& inOutColor) const
+{
+    const float sinceCount = pulse.getTimeSinceTrigger();
+    if (sinceCount < 0.0f)
+    {
+        inOutColor = HSV(0.0f, 0.0f, 0.0f);
+        return;
+    }
+
+    // height delays the read into the pulse's curve, which is the sweep. A
+    // node with no 2d mapping sits at height zero and pulses on the count.
+    float height = 0.0f;
+    if (inNode->GetStripNodeType() == StripNodeType::MAPPED2D)
+    {
+        height = static_cast<HSVStripNode_Mapped2D*>(inNode)->coord.y;
+    }
+
+    const float delay = clamp01(height / sweepHeight) * sweepSeconds;
+    inOutColor = HSV(0.0f, 0.0f, pulse.curve.evaluate(sinceCount - delay));
 }
 
 void Pattern_Scanner_PlaybackRecording::render(HSVStripNode* inNode, HSV& inOutColor) const

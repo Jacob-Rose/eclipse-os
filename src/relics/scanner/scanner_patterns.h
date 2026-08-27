@@ -11,6 +11,7 @@
 
 #include "../../lib/ecore/hsv.h"
 #include "../../lib/ecore/math.h"
+#include "../../lib/eanim/automation_curve.h"
 #include "../../lib/eanim/generator_hsv.h"
 #include "../../lib/esm/state_generic.h"
 
@@ -239,6 +240,40 @@ namespace scanner
         float tailFraction = 8.0f / 35.0f;
 
         virtual void render(HSVStripNode* inNode, HSV& inOutColor) const override;
+    };
+
+
+    /* @brief record_countdown: three white pulses - 3, 2, 1 - before the tape
+    * rolls, so a take does not start abruptly out of the arm state.
+    *
+    * Each count fires an AutomationCurveTrigger whose curve is one quick
+    * white pulse. A node's height delays its read into that curve, which is
+    * the whole sweep: on the obelisk the pulse runs bottom to top in
+    * sweepSeconds, and the ring's nodes all sit at height zero and pulse
+    * together on the count.
+    */
+    class Pattern_Scanner_RecordCountdown : public PatternScanner
+    {
+    public:
+        Pattern_Scanner_RecordCountdown();
+
+        virtual void reset() override;
+        virtual void tick(float deltaTime) override;
+        virtual void render(HSVStripNode* inNode, HSV& inOutColor) const override;
+
+        /// counts fire at 0, 1 and 2 seconds; the game holds the state for 3
+        float secondsPerCount = 1.0f;
+        int totalCounts = 3;
+
+        /// how long a pulse takes to climb. Height is divided by sweepHeight -
+        /// the obelisk's 43-pixel wall, the one physical geometry the scanner
+        /// drives - so the top of the sculpture lags the bottom by this much.
+        float sweepSeconds = 0.25f;
+        float sweepHeight = 43.0f;
+
+    private:
+        eanim::AutomationCurveTrigger pulse;
+        int firedCount{0};
     };
 
 

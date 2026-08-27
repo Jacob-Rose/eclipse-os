@@ -34,7 +34,8 @@ using namespace edmx;
 // ============================================================================
 
 void HostRelicIO::build(size_t count, uint8_t segmentId, const CoordFrame& frame,
-                        const std::vector<float>& positions)
+                        const std::vector<float>& positions,
+                        const std::vector<ecore::Coordinate>& nodeCoords)
 {
     strip_segments.clear();
     strips.clear();
@@ -48,8 +49,20 @@ void HostRelicIO::build(size_t count, uint8_t segmentId, const CoordFrame& frame
     {
         auto node = std::make_shared<eio::HSVStripNode_Mapped2D>(segment.get(), static_cast<int>(idx));
 
-        const float position = (idx < positions.size()) ? positions[idx] : 0.0f;
-        node->coord = frame.at(position);
+        if (idx < nodeCoords.size())
+        {
+            // The rig knows where its nodes are - same rule as
+            // GeneratorPattern. Most scanner looks read the strip index and
+            // never notice, but a look that reads height (the record
+            // countdown's bottom-to-top sweep) gets the obelisk's real
+            // geometry instead of a straight run.
+            node->coord = nodeCoords[idx];
+        }
+        else
+        {
+            const float position = (idx < positions.size()) ? positions[idx] : 0.0f;
+            node->coord = frame.at(position);
+        }
 
         nodes.push_back(node);
         segment->addNode(node);
@@ -83,7 +96,8 @@ void StateMachinePattern::ensureBuilt(const PatternContext& context)
     builtFor = context.fixtureCount;
 
     io.reset(new HostRelicIO());
-    io->build(context.fixtureCount, segmentId, context.coords, context.positions);
+    io->build(context.fixtureCount, segmentId, context.coords, context.positions,
+              context.nodeCoords);
 
     manager.reset(new esm::StateManager());
     machine.reset(new StateMachine_GenericHSV());
@@ -235,7 +249,16 @@ bool StateMachinePattern::setState(const std::string& stateName, std::string& ou
 
     if (target == activeIndex)
     {
-        return true; // already there; asking twice is not a failure
+        // Not a no-op: naming the showing state again restarts it. The game
+        // rewinds a look by transitioning to it, and the machine also starts
+        // in state 0 at process launch - so a boot's first `state power_up`
+        // arrives with power_up already active and its fill animation long
+        // finished. Without this the boot look was over before anyone saw it.
+        if (machine && target < instances.size())
+        {
+            machine->restartState(instances[target]);
+        }
+        return true;
     }
 
     activeIndex = target;
@@ -450,6 +473,7 @@ std::unique_ptr<StateMachinePattern> edmx::makeScannerStateMachine()
         // rendered in python, so every state the scanner has is now here.
         scannerLookWith<Pattern_Scanner_SinePulse>("record_arm",
             HSV(45.0f, 1.0f, 1.0f), 4.0f, 0.15f, 0.5f),                 // CRGB(1.0, 0.75, 0.0)
+        scannerLook<Pattern_Scanner_RecordCountdown>("record_countdown"),
         scannerLook<Pattern_Scanner_RecordComet>("record_active"),
         scannerLookWith<Pattern_Scanner_SinePulse>("record_saved",
             HSV(132.0f, 1.0f, 1.0f), 6.0f, 0.4f, 0.6f),                 // CRGB(0.0, 1.0, 0.2)

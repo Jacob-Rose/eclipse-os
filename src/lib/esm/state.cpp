@@ -198,6 +198,21 @@ void StateMachine::setNextState(std::shared_ptr<State> inNextState)
     NextState = inNextState;
 }
 
+void StateMachine::restartState(std::shared_ptr<State> inState)
+{
+    // Only a state the machine is actually running can be restarted; anything
+    // else is a caller confused about what is showing, and re-entering an Off
+    // state would fight whatever is.
+    if (inState == nullptr || (inState != ActiveState && inState != NextState))
+    {
+        return;
+    }
+
+    inState->onStateChangeState(StateStatus::Off);
+    inState->onStateChangeState(inState == NextState ? StateStatus::TransitionIn
+                                                     : StateStatus::Active);
+}
+
 bool StateMachine::isInTransition() const
 {
     return NextState.get() != nullptr;

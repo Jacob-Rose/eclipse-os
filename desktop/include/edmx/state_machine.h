@@ -36,7 +36,8 @@ namespace edmx
         /// a sleeve ring than on the monowire — so the id we claim here decides
         /// which branch a rig gets. See JACKET_SEGMENT_ID.
         void build(size_t count, uint8_t segmentId, const CoordFrame& frame,
-                   const std::vector<float>& positions);
+                   const std::vector<float>& positions,
+                   const std::vector<ecore::Coordinate>& nodeCoords);
 
         eio::HSVStrip* getStrip() const { return strip.get(); }
 
