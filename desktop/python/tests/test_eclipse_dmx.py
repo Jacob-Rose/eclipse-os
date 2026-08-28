@@ -36,7 +36,7 @@ from eclipse_dmx.curves import (  # noqa: E402
     apply_easing,
     example_hit,
 )
-from eclipse_dmx import osc  # noqa: E402
+from eclipse_dmx import look_presets, midi_map, osc  # noqa: E402
 
 RIG = DESKTOP / "config" / "uking_par36_x10.json"
 SHOW = DESKTOP / "config" / "mythos26.json"
@@ -2588,6 +2588,248 @@ class TheEasingPort(unittest.TestCase):
         self.assertEqual(len(EASING_NAMES), 30)
         self.assertEqual(EASING_NAMES[0], "EaseInSine")
         self.assertEqual(EASING_NAMES[-1], "EaseInOutBounce")
+
+
+class OscBeyondFloats(unittest.TestCase):
+    """The routes that carry names and slots, not colours."""
+
+    def test_strings_are_tagged_and_padded(self):
+        packet = osc.encode("/presets", "Deep")
+        # address, then ",s", then the string, every block 4-aligned
+        self.assertIn(b"/presets\0", packet)
+        self.assertIn(b",s\0", packet)
+        self.assertTrue(packet.endswith(b"Deep\0\0\0\0"))
+        self.assertEqual(len(packet) % 4, 0)
+
+    def test_ints_are_big_endian_int32(self):
+        packet = osc.encode("/x", 3)
+        self.assertIn(b",i\0", packet)
+        self.assertTrue(packet.endswith(b"\x00\x00\x00\x03"))
+
+    def test_floats_still_floats(self):
+        packet = osc.encode("/x", 0.5)
+        self.assertIn(b",f\0", packet)
+
+    def test_mixed_arguments_keep_their_order(self):
+        packet = osc.encode("/x", 1, "a", 0.5)
+        self.assertIn(b",isf\0", packet)
+
+    def test_scene_address_folds_the_name(self):
+        # lowercase, and spaces/underscores/hyphens removed - the app's rule
+        self.assertEqual(osc.scene_address("Neon Grid"), "/scenes/neongrid")
+        self.assertEqual(osc.scene_address("mecha_wave-2"), "/scenes/mechawave2")
+
+
+class _RecorderLink:
+    """Stands in for SynesthesiaLink; remembers instead of sending."""
+
+    def __init__(self):
+        self.calls = []
+
+    def send_scene(self, scene, preset=None):
+        self.calls.append(("scene", scene, preset))
+
+    def send_preset(self, preset):
+        self.calls.append(("preset", preset))
+
+    def send_favslot(self, slot):
+        self.calls.append(("favslot", slot))
+
+    def send_media(self, name):
+        self.calls.append(("media", name))
+
+    def send_raw(self, address, *values):
+        self.calls.append(("raw", address) + values)
+
+
+class TheMidiMap(unittest.TestCase):
+    """The mapping model: what a monitor line becomes, and what it fires."""
+
+    def _dispatcher(self, mappings):
+        link = _RecorderLink()
+        context = midi_map.ActionContext(show=None, osc_factory=lambda: link)
+        return midi_map.Dispatcher(midi_map.MappingSet(mappings), context), link
+
+    def test_a_monitor_line_parses(self):
+        event = midi_map.parse_midi_line("ch=1 cc 40 127")
+        self.assertEqual((event.kind, event.channel, event.data1, event.data2),
+                        ("cc", 1, 40, 127))
+
+    def test_monitor_noise_is_none_not_a_crash(self):
+        # the monitor's own overflow note, and anything else non-message
+        self.assertIsNone(midi_map.parse_midi_line("dropped 3"))
+        self.assertIsNone(midi_map.parse_midi_line("ch=x cc 40 127"))
+        self.assertIsNone(midi_map.parse_midi_line(""))
+
+    def test_press_fires_on_the_down_stroke_only(self):
+        mapping = midi_map.Mapping(kind="cc", channel=0, number=40, mode="press",
+                                   action="syn_scene", params={"scene": "Neon Grid"})
+        down = midi_map.parse_midi_line("ch=1 cc 40 127")
+        up = midi_map.parse_midi_line("ch=1 cc 40 0")
+        self.assertEqual(mapping.fires_on(down), 1.0)
+        self.assertIsNone(mapping.fires_on(up))
+
+    def test_release_is_the_other_edge(self):
+        mapping = midi_map.Mapping(kind="note", number=60, mode="release",
+                                   action="syn_preset", params={"preset": "x"})
+        self.assertIsNone(mapping.fires_on(midi_map.parse_midi_line("ch=1 note_on 60 100")))
+        self.assertEqual(mapping.fires_on(midi_map.parse_midi_line("ch=1 note_off 60 0")), 1.0)
+        # a pad that releases as note_on velocity 0 is the same up-stroke
+        self.assertEqual(mapping.fires_on(midi_map.parse_midi_line("ch=1 note_on 60 0")), 1.0)
+
+    def test_value_carries_the_fader(self):
+        mapping = midi_map.Mapping(kind="cc", number=7, mode="value",
+                                   action="syn_control", params={"address": "/x"})
+        value = mapping.fires_on(midi_map.parse_midi_line("ch=1 cc 7 64"))
+        self.assertAlmostEqual(value, 64 / 127.0)
+
+    def test_channel_zero_is_any_channel(self):
+        anywhere = midi_map.Mapping(kind="note", channel=0, number=60)
+        somewhere = midi_map.Mapping(kind="note", channel=2, number=60)
+        event = midi_map.parse_midi_line("ch=5 note_on 60 100")
+        self.assertTrue(anywhere.matches(event))
+        self.assertFalse(somewhere.matches(event))
+
+    def test_round_trips_through_json(self):
+        mapping = midi_map.Mapping(label="drop", kind="cc", channel=3, number=41,
+                                   mode="press", action="syn_scene",
+                                   params={"scene": "Neon Grid", "preset": "Deep"},
+                                   enabled=False)
+        blob = json.dumps(midi_map.MappingSet([mapping]).to_dict())
+        back = midi_map.MappingSet.from_dict(json.loads(blob)).mappings[0]
+        self.assertEqual(back.to_dict(), mapping.to_dict())
+
+    def test_a_press_sends_scene_and_preset(self):
+        dispatcher, link = self._dispatcher([
+            midi_map.Mapping(kind="note", number=36, mode="press",
+                             action="syn_scene",
+                             params={"scene": "Neon Grid", "preset": "Deep"}),
+        ])
+        said = dispatcher.handle(midi_map.parse_midi_line("ch=1 note_on 36 90"))
+        self.assertEqual(link.calls, [("scene", "Neon Grid", "Deep")])
+        self.assertTrue(said and "Neon Grid" in said[0])
+
+    def test_a_fader_scales_into_its_range(self):
+        dispatcher, link = self._dispatcher([
+            midi_map.Mapping(kind="cc", number=7, mode="value", action="syn_control",
+                             params={"address": "/controls/global/slider/1",
+                                     "low": 0.0, "high": 2.0}),
+        ])
+        dispatcher.handle(midi_map.parse_midi_line("ch=1 cc 7 127"))
+        self.assertEqual(link.calls, [("raw", "/controls/global/slider/1", 2.0)])
+
+    def test_a_disabled_mapping_is_silent(self):
+        dispatcher, link = self._dispatcher([
+            midi_map.Mapping(kind="note", number=36, action="syn_favslot",
+                             params={"slot": 2}, enabled=False),
+        ])
+        dispatcher.handle(midi_map.parse_midi_line("ch=1 note_on 36 90"))
+        self.assertEqual(link.calls, [])
+
+    def test_one_broken_mapping_does_not_stop_the_next(self):
+        # the first has no show to talk to; the second must still send
+        dispatcher, link = self._dispatcher([
+            midi_map.Mapping(kind="note", number=36, action="state",
+                             params={"name": "campfire"}),
+            midi_map.Mapping(kind="note", number=36, action="syn_favslot",
+                             params={"slot": 3}),
+        ])
+        said = dispatcher.handle(midi_map.parse_midi_line("ch=1 note_on 36 90"))
+        self.assertEqual(link.calls, [("favslot", 3)])
+        self.assertEqual(len(said), 2)
+
+    def test_an_unknown_action_is_a_line_not_a_crash(self):
+        dispatcher, _link = self._dispatcher([
+            midi_map.Mapping(kind="note", number=36, action="warp_core"),
+        ])
+        said = dispatcher.handle(midi_map.parse_midi_line("ch=1 note_on 36 90"))
+        self.assertIn("warp_core", said[0])
+
+    def test_load_coerces_a_hand_edited_slot(self):
+        # a string where an int belongs must come back an int, not a TypeError
+        # at showtime
+        data = {"mappings": [{"trigger": {"kind": "note", "channel": 0, "number": 36},
+                              "action": "syn_favslot", "params": {"slot": "4"}}]}
+        back = midi_map.MappingSet.from_dict(data).mappings[0]
+        self.assertEqual(back.params["slot"], 4)
+
+
+class _RecorderShow:
+    """Stands in for ShowController: a fixed set of knobs, and a record of
+    what apply_preset sent at them."""
+
+    def __init__(self, param_names, curve_names=()):
+        from eclipse_dmx.controller import Param
+        self.params = [Param(name, "f", 0.5, 0.0, 1.0) for name in param_names]
+        self.curves = {name: [(0.0, 0.0, None), (1.0, 1.0, None)]
+                       for name in curve_names}
+        self.sent = []
+
+    def get_param(self, name):
+        return next((p for p in self.params if p.name == name), None)
+
+    def set_param(self, name, value):
+        self.sent.append(("param", name, value))
+
+    def set_curve(self, name, keys):
+        self.sent.append(("curve", name, list(keys)))
+
+
+class TheLookPresets(unittest.TestCase):
+    """Keeping a state's knobs as a .config file, and putting them back."""
+
+    def setUp(self):
+        import tempfile
+        self.dir = Path(tempfile.mkdtemp())
+
+    def test_snapshot_keeps_every_knob_and_curve(self):
+        show = _RecorderShow(["speed", "color"], ["envelope"])
+        show.params[1].kind = "c"
+        show.params[1].value = "#ff8800"
+        preset = look_presets.snapshot(show, "warm", "mythos26", "campfire")
+        self.assertEqual(preset.params, {"speed": 0.5, "color": "#ff8800"})
+        self.assertEqual(list(preset.curves), ["envelope"])
+
+    def test_round_trips_through_the_file(self):
+        preset = look_presets.LookPreset(
+            name="warm dusk", pattern="mythos26", state="campfire",
+            params={"speed": 0.25, "color": "#ff8800"},
+            curves={"envelope": [(0.0, 0.0, None), (0.06, 1.0, "EaseOutCubic")]})
+        path = look_presets.save_preset(self.dir, preset)
+        self.assertTrue(path.name.endswith(".config"))
+        back = look_presets.load_preset(path)
+        self.assertEqual(back.to_dict(), preset.to_dict())
+
+    def test_listed_under_its_state_by_its_pretty_name(self):
+        preset = look_presets.LookPreset(name="warm dusk!", state="campfire")
+        look_presets.save_preset(self.dir, preset)
+        self.assertEqual(look_presets.list_presets(self.dir, "campfire"),
+                         ["warm dusk!"])
+        # the filename was folded; the display name was not
+        self.assertEqual(look_presets.list_presets(self.dir, "digital_void"), [])
+
+    def test_no_folder_is_no_presets_not_an_error(self):
+        self.assertEqual(look_presets.list_presets(self.dir / "nope", "x"), [])
+
+    def test_apply_matches_by_name_and_reports_the_rest(self):
+        show = _RecorderShow(["speed"], ["envelope"])
+        preset = look_presets.LookPreset(
+            name="p", params={"speed": 0.8, "gone": 0.1},
+            curves={"envelope": [(0.0, 1.0, None)], "vanished": [(0.0, 0.0, None)]})
+        applied, skipped = look_presets.apply_preset(show, preset)
+        self.assertEqual(applied, 2)
+        self.assertEqual(sorted(skipped), ["gone", "~vanished"])
+        self.assertIn(("param", "speed", 0.8), show.sent)
+        self.assertIn(("curve", "envelope", [(0.0, 1.0, None)]), show.sent)
+        # nothing was sent for the names with no home
+        self.assertEqual(len(show.sent), 2)
+
+    def test_a_broken_file_hides_itself_not_the_list(self):
+        look_presets.save_preset(self.dir, look_presets.LookPreset(
+            name="good", state="campfire"))
+        bad = look_presets.state_dir(self.dir, "campfire") / "bad.config"
+        bad.write_text("not json", encoding="utf-8")
+        self.assertEqual(look_presets.list_presets(self.dir, "campfire"), ["good"])
 
 
 if __name__ == "__main__":

@@ -442,6 +442,7 @@ def _cmd_view(args: argparse.Namespace) -> int:
         osc=link,
         osc_device=args.osc_device,
         osc_fixture=args.osc_fixture,
+        midimap=args.midimap,
     )
 
 
@@ -611,6 +612,9 @@ def build_parser() -> argparse.ArgumentParser:
                         help="which fixture to send, indexed across every device")
     viewer.add_argument("--osc-control", default=DEFAULT_CONTROL,
                         help=f"OSC address of the colour control (default {DEFAULT_CONTROL})")
+    viewer.add_argument("--midimap", metavar="FILE",
+                        help="load this midi mapping file into the [m] panel "
+                             "(default: midimaps/default.json beside the config, if present)")
     _add_tempo_args(viewer)
     viewer.set_defaults(func=_cmd_view)
 

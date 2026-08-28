@@ -24,14 +24,18 @@ import math
 import threading
 import time
 import tkinter as tk
+from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
-from tkinter import colorchooser
+from tkinter import colorchooser, simpledialog
 from typing import Dict, List, Optional, Sequence, Tuple, Union
 
+from . import look_presets
 from .config import RELIC_TYPES, Config
 from .controller import Frame, ShowController, ShowError
 from .curve_editor import CurveEditor
+from .midi_map import ActionContext, Dispatcher, MappingSet, parse_midi_line
+from .midi_panel import MidiMapPanel
 from .patterns import list_patterns
 
 RGB = Tuple[int, int, int]
@@ -707,6 +711,7 @@ class ViewerApp:
         osc=None,
         osc_device: Optional[str] = None,
         osc_fixture: int = 0,
+        midimap: Optional[Union[str, Path]] = None,
         # Wide enough for the whole cue band - every family of a 26-state
         # machine as a column - without folding anything.
         width: int = 1200,
@@ -806,20 +811,74 @@ class ViewerApp:
         self._osc_fixture = osc_fixture
         self._osc_resolved = False
 
+        # -- midi mappings, pads bound to cues and visuals ------------------
+        #
+        # Events arrive on the reader thread (via on_midi, below) and are
+        # dispatched from _pump on the tk thread. Deliberately not fired from
+        # the callback: an action that talks the protocol waits on a reply the
+        # reader thread itself delivers, so firing there would deadlock the
+        # desk on its first pad. A deque because appends are atomic and the
+        # pump drains within a frame - latest-wins is wrong here, every press
+        # counts.
+        self._midi_events: "deque[object]" = deque(maxlen=256)
+
+        self._midimap_dir = self.config_path.parent / "midimaps"
+        midimap_path = Path(midimap) if midimap else self._midimap_dir / "default.json"
+        self._midimap = MappingSet()
+        self._midimap_note = ""
+        if midimap_path.exists():
+            try:
+                self._midimap = MappingSet.load(midimap_path)
+            except (OSError, ValueError, KeyError) as error:
+                # a broken file must not refuse the window; say so instead
+                self._midimap_note = f"midi map: {error}"
+        elif midimap:
+            self._midimap_note = f"midi map: {midimap_path.name} not found; starting empty"
+        #: where the panel saves without asking. A --midimap that does not
+        #: exist yet is still the place its mappings should land.
+        self._midimap_path: Optional[Path] = (
+            midimap_path if (midimap or midimap_path.exists()) else None)
+
+        #: the mapping actions' own link to the visualiser, made on first
+        #: use when --osc did not already provide one
+        self._map_link = None
+
+        # -- look presets, a state's knobs kept as files --------------------
+        # Beside the environment configs, like the midimaps: what a tuning
+        # session leaves behind should live with the rig it was tuned on.
+        self._preset_dir = self.config_path.parent / "looks"
+        #: (state, names) the dropdown was last built for, so the pump can
+        #: refresh it by comparing rather than re-listing a directory a
+        #: hundred times a second
+        self._preset_signature: Tuple = ()
+
         self.show = ShowController(
             self.config_path,
             executable=executable,
             dry_run=not live,
             on_frame=self._on_frame,
+            on_midi=self._on_midi_line,
             emit_rate=emit_rate,
             midi=midi,
             bpm=bpm,
             autostart=False,
         )
 
+        self._dispatcher = Dispatcher(self._midimap, ActionContext(
+            show=self.show, osc_factory=self._map_osc, say=self._say))
+
         self._build_window(width, height)
 
         self.show.start()
+
+        # The monitor is what carries pad presses up to the mappings; on with
+        # no port open it is silent and free, so it is simply always on.
+        try:
+            self.show.midi_monitor(True)
+        except ShowError:
+            pass
+        if self._midimap_note:
+            self._say(self._midimap_note)
         if pattern:
             self.show.set_pattern(pattern)
             self.current_pattern = pattern
@@ -877,7 +936,7 @@ class ViewerApp:
             padx=12,
             pady=6,
             text="[space] blackout   [n]/[p] pattern   [↑]/[↓] master   "
-            "[←]/[→] speed   [t] tap the beat   [e] curves   [q] quit",
+            "[←]/[→] speed   [t] tap the beat   [e] curves   [m] midi   [q] quit",
         )
         self.footer.pack(side="bottom", fill="x")
 
@@ -905,16 +964,36 @@ class ViewerApp:
         #: (name, value) held while the editor's transport borrows a knob
         self._held_target = None
 
-        self.root.bind("<space>", lambda event: self._toggle_blackout())
-        self.root.bind("<Key-n>", lambda event: self._step_pattern(1))
-        self.root.bind("<Key-p>", lambda event: self._step_pattern(-1))
-        self.root.bind("<Up>", lambda event: self._nudge_master(0.05))
-        self.root.bind("<Down>", lambda event: self._nudge_master(-0.05))
-        self.root.bind("<Right>", lambda event: self._nudge_speed(1.25))
-        self.root.bind("<Left>", lambda event: self._nudge_speed(0.8))
-        self.root.bind("<Key-t>", lambda event: self._run_button(("beat", "")))
+        # -- the midi map, folded away down the right edge -------------------
+        # Beside the desk rather than under it: a binding is made while
+        # watching the cue it fires, and the rig picture is the thing the
+        # panel must not cover. Packed on toggle; see _toggle_midimap.
+        self.midi_panel = MidiMapPanel(
+            self.root, self._midimap, self._midimap_path, self._midimap_dir,
+            on_status=self._say, on_open_midi=self._open_midi)
+        self._midimap_shown = False
+
+        # Every single-key binding steps aside while an Entry has the focus:
+        # the mapping editor and the knobs are full of text fields, and a
+        # scene name with a q in it must not close the window.
+        def hotkey(action):
+            def handler(event):
+                if isinstance(self.root.focus_get(), tk.Entry):
+                    return
+                action()
+            return handler
+
+        self.root.bind("<space>", hotkey(self._toggle_blackout))
+        self.root.bind("<Key-n>", hotkey(lambda: self._step_pattern(1)))
+        self.root.bind("<Key-p>", hotkey(lambda: self._step_pattern(-1)))
+        self.root.bind("<Up>", hotkey(lambda: self._nudge_master(0.05)))
+        self.root.bind("<Down>", hotkey(lambda: self._nudge_master(-0.05)))
+        self.root.bind("<Right>", hotkey(lambda: self._nudge_speed(1.25)))
+        self.root.bind("<Left>", hotkey(lambda: self._nudge_speed(0.8)))
+        self.root.bind("<Key-t>", hotkey(lambda: self._run_button(("beat", ""))))
         self.root.bind("<Key-e>", lambda event: self._on_curves_key())
-        self.root.bind("<Key-q>", lambda event: self._quit())
+        self.root.bind("<Key-m>", hotkey(self._toggle_midimap))
+        self.root.bind("<Key-q>", hotkey(self._quit))
         self.root.bind("<Escape>", lambda event: self._quit())
         self.root.protocol("WM_DELETE_WINDOW", self._quit)
 
@@ -1020,6 +1099,16 @@ class ViewerApp:
         )
         self._curves_button.pack(side="left", padx=3, pady=3)
 
+        # and the midi map's, beside it
+        self._midimap_button = tk.Button(
+            self.extra_row, text="midi", font=("Consolas", 9),
+            bg=BUTTON_BG, fg=BUTTON_FG, activebackground=BUTTON_BG_ACTIVE,
+            activeforeground=BUTTON_FG, relief="flat", padx=8, pady=3,
+            highlightthickness=0, borderwidth=0,
+            command=self._toggle_midimap,
+        )
+        self._midimap_button.pack(side="left", padx=3, pady=3)
+
         self.extra_row.pack(fill="x")
 
         # -- tempo, division and master, on their own row ------------------
@@ -1096,6 +1185,31 @@ class ViewerApp:
         look_header.pack(fill="x", pady=(4, 0))
         tk.Label(look_header, text="look", bg=PANEL, fg=TEXT_DIM,
                  font=("Consolas", 9), anchor="w", padx=8).pack(side="left")
+
+        # -- kept looks: a dropdown of this state's presets, and a way to
+        # add one. The menu applies on pick; "add" snapshots every knob and
+        # curve as they stand and asks what to call it.
+        self._preset_menu = tk.OptionMenu(look_header, tk.StringVar(), "")
+        self._preset_menu.configure(
+            # unbind the variable so the button reads as a menu, not a value:
+            # picking a preset is an action, and the state it acted on moves
+            # on the moment a slider is touched
+            textvariable="", text="presets", font=("Consolas", 8),
+            bg=BUTTON_BG, fg=TEXT_DIM, activebackground=BUTTON_BG_ACTIVE,
+            activeforeground=BUTTON_FG, relief="flat", highlightthickness=0,
+            borderwidth=0, indicatoron=False, padx=6, pady=1)
+        self._preset_menu["menu"].configure(
+            bg=BUTTON_BG, fg=BUTTON_FG, font=("Consolas", 9),
+            activebackground=BUTTON_BG_ACTIVE, borderwidth=0)
+        self._preset_menu.pack(side="left", padx=(4, 0))
+
+        tk.Button(
+            look_header, text="add", font=("Consolas", 8),
+            bg=BUTTON_BG, fg=TEXT_DIM, activebackground=BUTTON_BG_ACTIVE,
+            activeforeground=BUTTON_FG, relief="flat", padx=6, pady=1,
+            highlightthickness=0, borderwidth=0,
+            command=self._save_look_preset,
+        ).pack(side="left", padx=3)
 
         # The way back: every knob and curve to the values the cue
         # constructed, from the look's first announcement. What makes tuning
@@ -1512,6 +1626,48 @@ class ViewerApp:
         if button is not None:
             button.configure(bg=BUTTON_BG_ACTIVE if down else BUTTON_BG)
 
+    # -- the midi map ------------------------------------------------------
+
+    def _toggle_midimap(self) -> None:
+        """Folds the mapping editor in and out, down the right of the desk."""
+        self._midimap_shown = not self._midimap_shown
+        if self._midimap_shown:
+            # before the surface, so the panel takes the right edge and the
+            # desk keeps the rest; the surface is the only thing that flexes
+            self.midi_panel.frame.pack(side="right", fill="y",
+                                       before=self.surface, padx=(0, 4), pady=2)
+        else:
+            self.midi_panel.frame.pack_forget()
+        self._midimap_button.configure(
+            bg=BUTTON_BG_ACTIVE if self._midimap_shown else BUTTON_BG)
+
+    def _open_midi(self) -> None:
+        """The panel's way in when the show was started without --midi."""
+        self._guard(lambda: self.show.midi_open("auto"), "midi open")
+
+    def _on_midi_line(self, payload: str) -> None:
+        """Called on the reader thread. Parses and queues; does not touch tk
+        and does not fire actions - see the deque's note in __init__."""
+        event = parse_midi_line(payload)
+        if event is not None:
+            self._midi_events.append(event)
+
+    def _drain_midi(self) -> None:
+        """Every queued event, through learn first and then the mappings.
+        On the tk thread, from _pump."""
+        last_event = None
+        fired: List[str] = []
+        while self._midi_events:
+            event = self._midi_events.popleft()
+            last_event = event
+            if self.midi_panel.take_learn(event):
+                continue
+            fired.extend(self._dispatcher.handle(event))
+        if last_event is not None:
+            self.midi_panel.show_traffic(last_event, fired)
+        if fired:
+            self._say(fired[-1])
+
     # -- the curve editor --------------------------------------------------
 
     def _toggle_curves(self) -> None:
@@ -1581,6 +1737,82 @@ class ViewerApp:
         for name in list(self._param_widgets):
             self._show_param(name)
         self.curve_editor.refresh_live()
+
+    # -- look presets ------------------------------------------------------
+
+    def _look_state(self) -> str:
+        """Which folder a preset belongs to: the state, or for a plain
+        pattern with no states, the pattern itself."""
+        return self.show.current_state or self.current_pattern
+
+    def _refresh_look_presets(self) -> None:
+        """Rebuilds the dropdown for the current state. Compared against a
+        signature because the pump calls this on every params revision, and
+        most revisions are a slider echo, not a new cue."""
+        state = self._look_state()
+        names = look_presets.list_presets(self._preset_dir, state)
+        signature = (state, tuple(names))
+        if signature == self._preset_signature:
+            return
+        self._preset_signature = signature
+
+        menu = self._preset_menu["menu"]
+        menu.delete(0, "end")
+        if not names:
+            menu.add_command(label="(no presets kept)", state="disabled")
+            return
+        for name in names:
+            menu.add_command(label=name,
+                             command=lambda n=name: self._apply_look_preset(n))
+
+    def _apply_look_preset(self, name: str) -> None:
+        state = self._look_state()
+        try:
+            preset = look_presets.load_preset(
+                look_presets.preset_path(self._preset_dir, state, name))
+        except (OSError, ValueError, KeyError) as error:
+            self._say(f"preset {name}: {error}")
+            return
+
+        # not through _guard: success clears the status there, and the
+        # skipped-names report is this feature's whole answer to a preset
+        # tried on a look that half-fits
+        try:
+            applied, skipped = look_presets.apply_preset(self.show, preset)
+        except ShowError as error:
+            self._say(f"preset {name}: {error}")
+            return
+        note = f"preset {name}: {applied} set"
+        if skipped:
+            note += f", no home for {', '.join(skipped[:4])}"
+            if len(skipped) > 4:
+                note += f" +{len(skipped) - 4}"
+        self._say(note)
+
+    def _save_look_preset(self) -> None:
+        """Snapshot the running look's values, ask for a name, keep it."""
+        if not self.show.params and not self.show.curves:
+            self._say("preset: this look has no knobs to keep")
+            return
+        name = simpledialog.askstring(
+            "keep this look", "name this preset:", parent=self.root)
+        if not name or not name.strip():
+            return
+        name = name.strip()
+
+        # _look_state, not current_state: a stateless pattern's presets file
+        # under the pattern's own name rather than all sharing one folder
+        preset = look_presets.snapshot(
+            self.show, name, self.current_pattern, self._look_state())
+        try:
+            path = look_presets.save_preset(self._preset_dir, preset)
+        except OSError as error:
+            self._say(f"preset {name}: {error}")
+            return
+        # forget the signature so the new file shows up this pump
+        self._preset_signature = ()
+        self._refresh_look_presets()
+        self._say(f"kept {path.parent.name}/{path.name}")
 
     def _hold_target(self, name: str, active: bool) -> None:
         """The editor's transport borrows a knob; this is the lease.
@@ -1848,6 +2080,12 @@ class ViewerApp:
 
         self._paint(frame)
 
+        # Pad presses queued by the reader thread, fired here where talking
+        # the protocol back is safe. Before the button refresh below, so a
+        # pad that changed the state lights the matching cue button in the
+        # same frame.
+        self._drain_midi()
+
         # STATES and STATE arrive on the reader thread, whenever the executable
         # gets round to them, so the buttons follow from here rather than from
         # the click that caused it.
@@ -1871,6 +2109,7 @@ class ViewerApp:
             self._param_revision = self.show.params_revision
             self._build_params()
             self._refresh_curve_targets()
+            self._refresh_look_presets()
 
         now = time.monotonic()
         elapsed = now - self._fps_marker
@@ -1959,6 +2198,21 @@ class ViewerApp:
         self.header.configure(text=line, fg=TEXT_WARN if (self._status or offline) else TEXT)
 
     # -- controls ----------------------------------------------------------
+
+    def _map_osc(self):
+        """The mapping actions' link to the visualiser.
+
+        --osc already made one, use it - one socket, one endpoint, and the
+        colour tap and the scene bindings arrive as one peer. Otherwise make
+        one at the defaults on first use, so a viewer opened with no OSC
+        flags still fires Synesthesia bindings at the app next door.
+        """
+        if self._osc is not None:
+            return self._osc
+        if self._map_link is None:
+            from .osc import SynesthesiaLink
+            self._map_link = SynesthesiaLink()
+        return self._map_link
 
     def _guard(self, action, describe: str) -> None:
         """Runs a control action, surfacing a refusal instead of dying on it."""
@@ -2051,6 +2305,12 @@ class ViewerApp:
         except Exception:
             pass
 
+        # An evening's bindings are worth more than a question on the way out.
+        try:
+            self.midi_panel.save_if_dirty()
+        except Exception:
+            pass
+
         # Cancel the pending redraw first. destroy() does not drop queued
         # `after` callbacks, so one would fire into a dead interpreter and
         # print a Tcl error over the top of a clean exit.
@@ -2082,6 +2342,11 @@ class ViewerApp:
                     self._osc.close()
                 except Exception:
                     pass
+            if self._map_link is not None:
+                try:
+                    self._map_link.close()
+                except Exception:
+                    pass
         return 0
 
 
@@ -2097,6 +2362,7 @@ def view(
     osc=None,
     osc_device: Optional[str] = None,
     osc_fixture: int = 0,
+    midimap: Optional[Union[str, Path]] = None,
 ) -> int:
     """Opens the viewer on a config and blocks until the window closes."""
     app = ViewerApp(
@@ -2111,5 +2377,6 @@ def view(
         osc=osc,
         osc_device=osc_device,
         osc_fixture=osc_fixture,
+        midimap=midimap,
     )
     return app.run()

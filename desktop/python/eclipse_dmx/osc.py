@@ -70,16 +70,39 @@ def _pad(block: bytes) -> bytes:
     return block + b"\0" * (-len(block) % 4)
 
 
-def encode(address: str, *values: float) -> bytes:
-    """One OSC message: an address and zero or more float arguments.
+def encode(address: str, *values: Union[float, int, str]) -> bytes:
+    """One OSC message: an address and zero or more arguments.
 
-    Floats only. Synesthesia's controls are all normalised 0..1 floats, and a
-    builder that also did ints and strings would be three times the size for
-    arguments nothing here sends.
+    Three types, tagged by what python type arrives: str -> `s`, int -> `i`,
+    everything else through float() -> `f`. That is the whole of what
+    Synesthesia's routes take - floats for controls, strings for scene and
+    preset names, ints for slot and playlist positions - and OSC 1.0 has no
+    other types this caller needs.
     """
-    tags = "," + "f" * len(values)
-    body = b"".join(struct.pack(">f", float(value)) for value in values)
+    tags = ","
+    body = b""
+    for value in values:
+        if isinstance(value, str):
+            tags += "s"
+            body += _pad(value.encode("utf-8"))
+        elif isinstance(value, bool) or not isinstance(value, int):
+            tags += "f"
+            body += struct.pack(">f", float(value))
+        else:
+            tags += "i"
+            body += struct.pack(">i", value)
     return _pad(address.encode("ascii")) + _pad(tags.encode("ascii")) + body
+
+
+def scene_address(name: str) -> str:
+    """A scene name, as Synesthesia spells it in an OSC address.
+
+    The app matches scenes on a folded form of the title: lowercase, with
+    spaces, underscores and hyphens removed. "Neon Grid" is /scenes/neongrid.
+    Folding here means mapping files can carry the human spelling.
+    """
+    folded = "".join(ch for ch in name.lower() if ch not in " _-")
+    return f"/scenes/{folded}"
 
 
 def parse_endpoint(text: str, default_port: int = 6000) -> Tuple[str, int]:
@@ -152,9 +175,39 @@ class SynesthesiaLink:
         else:
             self._send(encode(self.control, red, green, blue))
 
-    def send_raw(self, address: str, *values: float) -> None:
-        """Any other control, for callers that want more than a colour."""
+    def send_raw(self, address: str, *values: Union[float, int, str]) -> None:
+        """Any other route, for callers that want more than a colour."""
         self._send(encode(address, *values))
+
+    # -- the app's other routes -------------------------------------------
+    # Scene, preset, favslot, media: the desk telling the visualiser what to
+    # *be*, where send_color tells it what colour it is. Same socket, same
+    # fire-and-forget contract - a cue must land on the rig whether or not
+    # anything is listening for the matching visual.
+
+    def send_scene(self, scene: str, preset: Optional[str] = None) -> None:
+        """Launches a scene by name, optionally with one of its presets.
+
+        The scene name is folded the way Synesthesia matches it (see
+        scene_address); the preset name goes through verbatim, because on
+        that side the app is case-sensitive.
+        """
+        if preset:
+            self._send(encode(scene_address(scene), preset))
+        else:
+            self._send(encode(scene_address(scene)))
+
+    def send_preset(self, preset: str) -> None:
+        """Loads a saved preset on whatever scene is running."""
+        self._send(encode("/presets", preset))
+
+    def send_favslot(self, slot: int) -> None:
+        """Launches a favorites slot. The first slot is 1."""
+        self._send(encode(f"/favslots/{int(slot)}"))
+
+    def send_media(self, name: str) -> None:
+        """Selects a media file by name or full path."""
+        self._send(encode("/media/name", name))
 
     def _normalize(self, channel: int) -> float:
         value = max(0.0, min(1.0, channel / 255.0))
