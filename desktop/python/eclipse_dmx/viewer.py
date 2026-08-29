@@ -156,14 +156,18 @@ INPUT_BUTTONS: List[Tuple[str, str]] = [
 #: Offered when the running pattern is not a state machine, so the window is
 #: still useful for the plain looks.
 PATTERN_BUTTONS: List[Tuple[str, Tuple[str, str]]] = [
-    ("mythos26", ("pattern", "mythos26")),
-    ("jacket", ("pattern", "jacket")),
     # the machines: click one and its cue list fills the band above.
-    # `generic` is the WLED recreations and the other free-standing stage
-    # looks (matrix rain, fire, flow, lake, rainbow, chase, ...); `obelisk`
-    # is the sculpture's own ambient looks (seasons, mono).
+    # `scanner` is the game itself - every state the tower can be in, named
+    # with its own tags - and the one a scanner config opens on, so it is
+    # first: it is the way back from the others. `generic` is the WLED
+    # recreations and the other free-standing stage looks (matrix rain,
+    # fire, flow, lake, rainbow, chase, ...); `obelisk` is the sculpture's
+    # own ambient looks (seasons, blobs, mono).
+    ("scanner", ("pattern", "scanner")),
     ("generic", ("pattern", "generic")),
     ("obelisk", ("pattern", "obelisk")),
+    ("mythos26", ("pattern", "mythos26")),
+    ("jacket", ("pattern", "jacket")),
     ("identify", ("pattern", "identify")),
 ]
 
