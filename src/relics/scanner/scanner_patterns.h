@@ -152,8 +152,8 @@ namespace scanner
 
 
     /* @brief scan_idle: the ring breathes cyan on a 2 second heartbeat, a
-    * beam of the same cyan goes round the obelisk side by side, and a
-    * scanner runs the truss end to end.
+    * beam of the same cyan goes round the obelisk side by side, and the
+    * truss stays dark (a scanner along it is there behind a knob).
     *
     * The first look to read the objects rather than the stage: each node
     * says which space it is in (eio::spaceOf), and the look renders each
@@ -183,8 +183,10 @@ namespace scanner
         float beamWidth = 1.5f;
         bool bySide = true;
 
-        /// the truss's scanner: sweeps per second end to end and back, and
-        /// how much of the truss the dot covers
+        /// the truss: dark while the tower idles unless trussScan is on -
+        /// then a scanner along it, at sweeps per second end to end and
+        /// back, the dot covering this much of the truss
+        bool trussScan = false;
         float sweepRate = 0.6f;
         float sweepWidth = 0.25f;
 

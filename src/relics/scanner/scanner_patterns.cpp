@@ -170,12 +170,17 @@ void Pattern_Scanner_ScanIdle::render(HSVStripNode* inNode, HSV& inOutColor) con
     }
     else if (spaced != nullptr && spaced->space == NodeSpace::Truss)
     {
-        // A scanner along the truss: the dot runs end to end and back on a
-        // triangle of time, and a par lights by how close it is to it.
-        const float phase = timeActive * sweepRate - std::floor(timeActive * sweepRate);
-        const float dot = 1.0f - std::fabs(2.0f * phase - 1.0f);
-        const float lit = clamp01(1.0f - std::fabs(spaced->u - dot) / std::max(sweepWidth, 0.01f));
-        brightness = std::max(floorLevel * breath, lit * lit);
+        // The truss stays dark while the tower idles, unless asked: then a
+        // scanner along it, the dot running end to end and back on a
+        // triangle of time, and a par lighting by how close it is to it.
+        brightness = 0.0f;
+        if (trussScan)
+        {
+            const float phase = timeActive * sweepRate - std::floor(timeActive * sweepRate);
+            const float dot = 1.0f - std::fabs(2.0f * phase - 1.0f);
+            const float lit = clamp01(1.0f - std::fabs(spaced->u - dot) / std::max(sweepWidth, 0.01f));
+            brightness = std::max(floorLevel * breath, lit * lit);
+        }
     }
 
     inOutColor = scanColor;
@@ -188,6 +193,7 @@ void Pattern_Scanner_ScanIdle::reflect(ecore::PropertyBag& bag)
     bag.add("rotate_rate", rotateRate, 0.0f, 2.0f);
     bag.add("beam_width", beamWidth, 0.5f, 4.0f);
     bag.add("by_side", bySide);
+    bag.add("truss_scan", trussScan);
     bag.add("sweep_rate", sweepRate, 0.0f, 3.0f);
     bag.add("sweep_width", sweepWidth, 0.05f, 1.0f);
     bag.add("floor", floorLevel, 0.0f, 1.0f);

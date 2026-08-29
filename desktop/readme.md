@@ -637,8 +637,9 @@ a bare strip, a file that never said — comes back null and the look falls
 through to the stage, so a look written for the objects still runs on
 anything. `scan_idle` is the first: the ring breathes as it always did, the
 obelisk gets a cyan beam going round its sides (`rotate_rate`, `beam_width`,
-`by_side`), and the truss a scanner running its length (`sweep_rate`,
-`sweep_width`), with `floor` for how much of the breath is left behind them.
+`by_side`), and the truss stays dark — `truss_scan` turns on a scanner
+running its length (`sweep_rate`, `sweep_width`) — with `floor` for how much
+of the breath is left behind them.
 
 The plumbing is `PatternContext::nodeMappings`, filled beside `nodeCoords`
 from each device's locals before placement, and `edmx::makeStripNode`, which
