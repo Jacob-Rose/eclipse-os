@@ -11,7 +11,9 @@ silent no-op on a rig full of lights.
 
 from __future__ import annotations
 
+import os
 import queue
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -27,6 +29,20 @@ from .config import Config, ConfigError
 from .curves import EASING_NAMES
 
 Color = Union[str, Sequence[float]]
+
+#: What `remote=` runs on the far host when nothing else is named: a shell
+#: line, with the same flags a local start would pass appended to it, quoted
+#: for a POSIX shell. It has to speak the executable's protocol on its own
+#: stdin/stdout, and it may be the executable itself - but it is usually a
+#: wrapper that also does what the host has to do for itself, which on the
+#: scanner is paint the ring (afterglow's launch-desk.sh). Override per call
+#: with `remote_command`, or per machine with ECLIPSE_DMX_REMOTE_COMMAND.
+DEFAULT_REMOTE_COMMAND = "~/Documents/afterglow/launch-desk.sh"
+
+#: The desktop/ directory this package lives under. A remote host with the
+#: same checkout resolves a config path relative to it, so `config/scanner.json`
+#: names the same file at both ends whatever the checkouts are called.
+_DESKTOP_ROOT = Path(__file__).resolve().parents[2]
 
 #: One frame as the viewer sees it: the (r, g, b) each fixture is showing.
 Frame = List[Tuple[int, int, int]]
@@ -179,6 +195,15 @@ class ShowController:
         with ShowController(config) as show:
             show.set_pattern("chase")
             show.wait(seconds=30)
+
+    `remote="host"` runs the show on another machine over ssh instead. The
+    protocol is lines on stdin and stdout, flushed one at a time, and that is
+    exactly what ssh presents - so nothing above this class can tell the
+    difference, and the rig's wires (a relic on USB, the scanner's ring) stay
+    on the machine they are plugged into. What runs at the far end is
+    `remote_command` (see DEFAULT_REMOTE_COMMAND); the config is a path *on
+    that host*, sent relative to desktop/ when it lives under this checkout.
+    ssh is run in batch mode, so it needs a key, not a password.
     """
 
     def __init__(
@@ -199,8 +224,16 @@ class ShowController:
         bpm: Optional[float] = None,
         autostart: bool = True,
         command_timeout: float = 5.0,
+        remote: Optional[str] = None,
+        remote_command: Optional[str] = None,
     ) -> None:
-        self.executable = find_executable(executable)
+        #: The ssh host running the show, or None for this machine.
+        self.remote = remote
+        self.remote_command = (remote_command
+                               or os.environ.get("ECLIPSE_DMX_REMOTE_COMMAND")
+                               or DEFAULT_REMOTE_COMMAND)
+        #: The binary, when it runs here. A remote show needs none locally.
+        self.executable: Optional[Path] = None if remote else find_executable(executable)
         self.dry_run = dry_run
         self.frames = frames
         self.verbose = verbose
@@ -297,6 +330,12 @@ class ShowController:
         self._process: Optional[subprocess.Popen] = None
         self._replies: "queue.Queue[str]" = queue.Queue()
 
+        #: The last few stderr lines, for a start() that fails without an ERR
+        #: of its own. Over ssh that is where the reason lives - "Permission
+        #: denied (publickey)", "sudo: a password is required" - and an exit
+        #: code alone says nothing (255 for everything ssh itself refuses).
+        self._stderr_tail: "deque[str]" = deque(maxlen=8)
+
         #: Whether READY has been seen. Only start() cares, and only to tell an
         #: ERR that is an answer from an ERR that is a refusal to start.
         self._ready: bool = False
@@ -305,6 +344,11 @@ class ShowController:
         self._reader_threads: List[threading.Thread] = []
         self._temp_config: Optional[Path] = None
 
+        #: The config exactly as the caller spelled it. Path() on Windows
+        #: turns `/home/jakee/rig.json` into `\home\jakee\rig.json`, which is
+        #: fine for a local file and wrong for one named in a Linux host's
+        #: terms - so a remote show that passes a path through passes this.
+        self._config_as_given = "" if isinstance(config, Config) else str(config)
         self.config_path = self._prepare_config(config)
 
         if autostart:
@@ -315,6 +359,12 @@ class ShowController:
     def _prepare_config(self, config: Union[Config, str, Path]) -> Path:
         """Materialises the config on disk, since the executable reads a file."""
         if isinstance(config, Config):
+            if self.remote is not None:
+                # A file written here is not a file there. Shipping one would
+                # need the far end to accept it some other way than by path,
+                # and every remote show so far is a config the host already
+                # has. Say so rather than start a show on a file it cannot see.
+                raise ConfigError("a remote show takes a config path on the host, not a Config object")
             warnings = config.validate()
             self._warnings.extend(warnings)
 
@@ -328,12 +378,46 @@ class ShowController:
             return self._temp_config
 
         path = Path(config)
-        if not path.exists():
+        if not path.exists() and self.remote is None:
             raise ConfigError(f"no config file at '{path}'")
         return path
 
+    def _remote_config_path(self) -> str:
+        """The config as the far host should name it.
+
+        A path under this checkout's desktop/ goes across relative to it, so
+        `C:\\...\\desktop\\config\\scanner.json` here becomes
+        `config/scanner.json` there and the remote command's `cd` finishes the
+        job. Anything else is passed through as written - a caller naming a
+        path that only exists on the host is naming it in the host's terms.
+        """
+        path = Path(self.config_path)
+        try:
+            relative = path.resolve().relative_to(_DESKTOP_ROOT)
+        except (ValueError, OSError):
+            return self._config_as_given or str(self.config_path)
+        return relative.as_posix()
+
     def _build_args(self) -> List[str]:
-        args = [str(self.executable), "--config", str(self.config_path)]
+        if self.remote is not None:
+            flags = self._build_flags(self._remote_config_path())
+            # One argument for the remote shell: ssh joins what it is given
+            # with spaces and hands the line to a shell at the far end, so the
+            # flags are quoted for one. The far end is POSIX whatever this
+            # end is - that is the only reason shlex is right here on Windows.
+            line = self.remote_command + " " + " ".join(shlex.quote(flag) for flag in flags)
+            return [
+                "ssh",
+                "-o", "BatchMode=yes",              # a key or nothing; never a prompt in a pipe
+                "-o", "ServerAliveInterval=5",      # notice a dead host in ~15s rather than never
+                "-o", "ServerAliveCountMax=3",
+                self.remote,
+                line,
+            ]
+        return [str(self.executable)] + self._build_flags(str(self.config_path))
+
+    def _build_flags(self, config_path: str) -> List[str]:
+        args = ["--config", config_path]
         if self.dry_run:
             args.append("--dry-run")
         if self.frames > 0:
@@ -365,6 +449,16 @@ class ShowController:
             bufsize=1,
         )
 
+        # A text pipe on Windows turns "\n" into "\r\n" on the way out. The
+        # local binary never sees that - the C runtime folds it back - but a
+        # Linux host at the far end of ssh gets the "\r" raw. Its tokenizer
+        # happens to treat "\r" as whitespace, so nothing breaks today; the
+        # line protocol is still "\n"-terminated, and this is where it is sent.
+        try:
+            self._process.stdin.reconfigure(newline="\n")
+        except (AttributeError, ValueError):
+            pass
+
         self._start_reader(self._process.stdout, self._handle_stdout)
         self._start_reader(self._process.stderr, self._handle_stderr)
 
@@ -394,11 +488,21 @@ class ShowController:
                 code = self.stop()
                 if failure is not None:
                     raise ShowError(f"eclipse-dmx failed to start: {failure}")
-                raise ShowError(f"eclipse-dmx exited immediately with code {code}")
+                raise ShowError(
+                    f"{self._what()} exited immediately with code {code}{self._stderr_hint()}")
             time.sleep(0.02)
 
         self.stop()
-        raise ShowError("eclipse-dmx did not report READY in time")
+        raise ShowError(f"{self._what()} did not report READY in time{self._stderr_hint()}")
+
+    def _what(self) -> str:
+        return f"eclipse-dmx on {self.remote}" if self.remote else "eclipse-dmx"
+
+    def _stderr_hint(self) -> str:
+        """The tail of stderr, as a suffix for an error that has no better reason."""
+        if not self._stderr_tail:
+            return ""
+        return " (stderr: " + " | ".join(self._stderr_tail) + ")"
 
     def _startup_failure(self) -> Optional[str]:
         """Why the show refused to start, or None while it still might.
@@ -602,6 +706,8 @@ class ShowController:
             self.on_event(line)
 
     def _handle_stderr(self, line: str) -> None:
+        if line:
+            self._stderr_tail.append(line)
         if self.on_log is not None:
             self.on_log(line)
 

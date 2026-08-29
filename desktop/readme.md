@@ -1721,6 +1721,56 @@ One relic per config and one port; nothing fans a look out to several
 sculptures. And the relic's frame rate is its own — the desk cannot make an
 obelisk draw faster than its `show()` allows.
 
+## Over ssh
+
+The desk on one machine, the rig on another:
+
+```sh
+python -m eclipse_dmx view config/scanner.json --live --host scanner-pi
+python -m eclipse_dmx run  config/scanner.json --host scanner-pi --seconds 30
+```
+
+The window is the same window, with the knobs, the cue list and the curve
+editor; what changed is where the executable runs. Nothing in the control
+protocol had to: it is lines on stdin and stdout, flushed one at a time, and
+`ssh host cmd` presents exactly those two pipes. So `ShowController` runs
+`ssh` in place of the binary, the config path goes across relative to
+`desktop/` (the same checkout at both ends names the file the same way), and
+everything above it is unchanged. The frame stream is a few kilobytes a frame,
+which a LAN does not notice.
+
+The point of it is where the wires are. The obelisk's USB cable is on the pi,
+so the elink frames never leave it; the scanner's ring is on the pi's GPIO, so
+it is painted there. What runs at the far end is not the bare executable but a
+wrapper that does what the host has to do for itself — afterglow's
+`launch-desk.sh`, which starts `main-py/ring_bridge.py` as root: eclipse-dmx,
+its stdin and stdout relayed verbatim, and the ring's slice of every `F` line
+put on the NeoPixels on the way past. Name something else with
+`--remote-command` (or `ECLIPSE_DMX_REMOTE_COMMAND`); `eclipse-dmx` on the
+host's PATH is enough for a rig with no ring.
+
+Three things the far end has to be set up for, all one-off:
+
+- **A key, not a password.** ssh runs in batch mode, because a prompt in a
+  pipe is a hang. `ssh scanner-pi true` should print nothing and exit 0.
+- **Root without a prompt**, for the NeoPixels. One line in
+  `/etc/sudoers.d/` — `launch-desk.sh` has it, and says so on the protocol if
+  it is missing.
+- **The game stopped.** It owns the ring and the relic's port while it runs,
+  and the bridge refuses to start beside it rather than fight it. A dry run
+  (no `--live`) opens no port and paints no ring, so it can run alongside.
+
+The bridge also closes one gap on purpose: the executable keeps running when
+its stdin closes, which is right for a supervisor detaching from an unattended
+rig and wrong for a desk that vanished mid-show — that would leave a process
+holding the obelisk until someone found it. Over ssh, EOF *is* the desk
+leaving, so the bridge sends `quit` and the relic gets its pixels back.
+
+What does not cross the link: MIDI. The executable reads it, so a controller
+or Mixxx on the desk is invisible to a show on the pi; a pad-to-cue mapping
+that leans on `MIDI-IN` lines goes quiet. The OSC sender is desk-side off the
+frame stream and works as before.
+
 ## What is not here yet
 
 - **Art-Net / sACN.** Only the USB widgets. The `DmxOutput` interface is the

@@ -194,6 +194,8 @@ def _cmd_run(args: argparse.Namespace) -> int:
         midi=args.midi,
         bpm=args.bpm,
         on_log=log if args.verbose else None,
+        remote=args.host,
+        remote_command=args.remote_command,
     )
 
     with show:
@@ -443,6 +445,8 @@ def _cmd_view(args: argparse.Namespace) -> int:
         osc_device=args.osc_device,
         osc_fixture=args.osc_fixture,
         midimap=args.midimap,
+        host=args.host,
+        remote_command=args.remote_command,
     )
 
 
@@ -487,6 +491,12 @@ def build_parser() -> argparse.ArgumentParser:
         description="configure and drive eclipse-dmx, the eclipse-os DMX renderer",
     )
     parser.add_argument("--executable", help="path to eclipse-dmx (default: the build output, then PATH)")
+    parser.add_argument("--host", metavar="SSH_HOST",
+                        help="run the show on this machine over ssh (run and view); the config "
+                             "path is the host's, relative to desktop/ when it is under this checkout")
+    parser.add_argument("--remote-command", metavar="SHELL_LINE",
+                        help="what --host runs at the far end (default: afterglow's launch-desk.sh, "
+                             "or $ECLIPSE_DMX_REMOTE_COMMAND)")
 
     subparsers = parser.add_subparsers(dest="command", required=True)
 

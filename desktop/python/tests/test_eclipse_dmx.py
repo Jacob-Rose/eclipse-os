@@ -524,6 +524,65 @@ class TheObeliskOnAWire(unittest.TestCase):
         self.assertLessEqual(Config.load(OBELISK_USB).device.fps, 30.0)
 
 
+class OverSsh(unittest.TestCase):
+    """A remote show is the same protocol through ssh's pipes.
+
+    None of this needs a host or the binary: it checks what would be run, not
+    that it ran. The far end is exercised by pointing a viewer at the pi.
+    """
+
+    def _remote(self, config=SCANNER, **kwargs):
+        return ShowController(config, remote="scanner-pi", autostart=False,
+                              on_frame=lambda f: None, **kwargs)
+
+    def test_needs_no_local_binary(self):
+        show = self._remote(executable="/definitely/not/here")
+        self.assertIsNone(show.executable)
+
+    def test_runs_ssh_in_batch_mode(self):
+        args = self._remote()._build_args()
+        self.assertEqual(args[0], "ssh")
+        self.assertIn("BatchMode=yes", args)
+        self.assertEqual(args[-2], "scanner-pi")
+
+    def test_config_travels_relative_to_desktop(self):
+        """The same checkout at both ends names the file the same way, whatever
+        the checkouts are called and whichever slash the desk uses."""
+        line = self._remote()._build_args()[-1]
+        self.assertIn("--config config/scanner.json", line)
+        self.assertNotIn("\\", line)
+
+    def test_a_path_only_the_host_has_goes_through_as_written(self):
+        line = self._remote(config="/home/jakee/rig.json")._build_args()[-1]
+        self.assertIn("--config /home/jakee/rig.json", line)
+
+    def test_flags_are_quoted_for_a_posix_shell(self):
+        line = self._remote(remote_command="./desk.sh", midi="loopMIDI Port")._build_args()[-1]
+        self.assertTrue(line.startswith("./desk.sh "))
+        self.assertIn("--midi 'loopMIDI Port'", line)
+        self.assertIn("--emit-frames", line)
+
+    def test_remote_command_can_be_named(self):
+        line = self._remote(remote_command="eclipse-dmx")._build_args()[-1]
+        self.assertTrue(line.startswith("eclipse-dmx --config"))
+
+    def test_a_config_object_is_refused(self):
+        """A file written here is not a file there."""
+        config = Config()
+        config.add_bank("uking_par36", count=2, address=1)
+        with self.assertRaises(ConfigError):
+            self._remote(config=config)
+
+    def test_local_shows_are_unchanged(self):
+        try:
+            show = ShowController(SCANNER, autostart=False, on_frame=lambda f: None)
+        except BinaryNotFoundError as error:
+            raise unittest.SkipTest(str(error))
+        args = show._build_args()
+        self.assertNotEqual(args[0], "ssh")
+        self.assertEqual(args[1:3], ["--config", str(SCANNER)])
+
+
 class TheLinkProtocol(unittest.TestCase):
     """The wire format and the relic's end of it, exercised by the executable.
 

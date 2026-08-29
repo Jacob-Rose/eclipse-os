@@ -712,6 +712,8 @@ class ViewerApp:
         osc_device: Optional[str] = None,
         osc_fixture: int = 0,
         midimap: Optional[Union[str, Path]] = None,
+        host: Optional[str] = None,
+        remote_command: Optional[str] = None,
         # Wide enough for the whole cue band - every family of a 26-state
         # machine as a column - without folding anything.
         width: int = 1200,
@@ -719,12 +721,17 @@ class ViewerApp:
         # beside them rather than below, so this does not grow with them.
         height: int = 620,
     ) -> None:
+        # The picture is drawn from the local copy of the config, whether the
+        # show runs here or on `host`: the far end reads the same file out of
+        # the same checkout, and what the executable actually put in a frame
+        # comes back over the stream either way.
         self.config_path = Path(config_path)
         self.config = Config.load(self.config_path)
         self.config.validate(strict_overlap=False)
 
         self.placements = plan_layout(self.config)
         self.live = live
+        self.host = host
 
         # -- the screen is not an LED ---------------------------------------
         # A frame arrives with master.gamma already applied, because an LED is
@@ -862,6 +869,8 @@ class ViewerApp:
             midi=midi,
             bpm=bpm,
             autostart=False,
+            remote=host,
+            remote_command=remote_command,
         )
 
         self._dispatcher = Dispatcher(self._midimap, ActionContext(
@@ -898,7 +907,8 @@ class ViewerApp:
 
     def _build_window(self, width: int, height: int) -> None:
         self.root = tk.Tk()
-        self.root.title(f"eclipse-dmx  -  {self.config_path.name}")
+        where = f"  @ {self.host}" if self.host else ""
+        self.root.title(f"eclipse-dmx  -  {self.config_path.name}{where}")
         self.root.configure(bg=PANEL)
         self.root.geometry(f"{width}x{height}")
         self.root.minsize(480, 280)
@@ -2151,6 +2161,8 @@ class ViewerApp:
 
     def _refresh_header(self) -> None:
         source = "LIVE" if self.live else "dry-run"
+        if self.host:
+            source += f" on {self.host}"
         parts = [f"{self.current_pattern}"]
         if self.show.current_state and self.show.state_names:
             parts.append(self.show.current_state)
@@ -2363,6 +2375,8 @@ def view(
     osc_device: Optional[str] = None,
     osc_fixture: int = 0,
     midimap: Optional[Union[str, Path]] = None,
+    host: Optional[str] = None,
+    remote_command: Optional[str] = None,
 ) -> int:
     """Opens the viewer on a config and blocks until the window closes."""
     app = ViewerApp(
@@ -2378,5 +2392,7 @@ def view(
         osc_device=osc_device,
         osc_fixture=osc_fixture,
         midimap=midimap,
+        host=host,
+        remote_command=remote_command,
     )
     return app.run()
