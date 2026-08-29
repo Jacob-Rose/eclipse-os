@@ -4,6 +4,8 @@
 // See readme.md for full license details.
 #include "state_obelisk.h"
 
+#include <algorithm>
+
 #include "../../lib/ecore/math.h"
 #include "../../lib/ecore/logging.h"
 #include "../../kits/palettes.h"
@@ -116,4 +118,53 @@ Pattern_Obelisk_Monocolor::Pattern_Obelisk_Monocolor()
 void Pattern_Obelisk_Monocolor::render(HSVStripNode *inNode, HSV &inOutColor) const
 {
     inOutColor = color;
+}
+
+void Pattern_Obelisk_Monocolor::reflect(ecore::PropertyBag& bag)
+{
+    bag.add("color", color);
+}
+
+Pattern_Obelisk_Blobs::Pattern_Obelisk_Blobs()
+{
+    // the seasons look's field, with the same kind of cells
+    noise.noise.SetNoiseType(FastNoiseLite::NoiseType_OpenSimplex2);
+    noise.noise.SetFrequency(scale);
+    noise.timeScale = 0.33f;
+    noise.imageScaleX = 1.0f;
+    noise.imageScaleY = 1.0f;
+}
+
+void Pattern_Obelisk_Blobs::tick(float deltaTime)
+{
+    noise.tick(deltaTime);
+}
+
+void Pattern_Obelisk_Blobs::render(HSVStripNode* inNode, HSV& inOutColor) const
+{
+    HSVStripNode_Mapped2D* castedNode = static_cast<HSVStripNode_Mapped2D*>(inNode);
+
+    // simplex comes out -1..1; 0..1 is what a threshold wants
+    const float field = 0.5f + 0.5f * noise.evaluate(castedNode->coord.x, castedNode->coord.y);
+
+    // Everything above the threshold is accent, and the threshold sits so
+    // that `coverage` of the field's range is above it. The edge is a
+    // smoothstep `softness` wide around it: at 0 a blob is a hard cell, at 1
+    // the whole field is one gradient between the two colours.
+    const float threshold = 1.0f - coverage;
+    const float halfEdge = 0.5f * softness + 0.001f;
+    float t = std::clamp((field - (threshold - halfEdge)) / (2.0f * halfEdge), 0.0f, 1.0f);
+    t = t * t * (3.0f - 2.0f * t);
+
+    inOutColor = HSV::blend(primary, accent, t);
+}
+
+void Pattern_Obelisk_Blobs::reflect(ecore::PropertyBag& bag)
+{
+    bag.add("primary", primary);
+    bag.add("accent", accent);
+    bag.add("speed", noise.timeScale, 0.0f, 2.0f);
+    bag.add("scale", scale, 0.01f, 0.3f, [this] { noise.noise.SetFrequency(scale); });
+    bag.add("coverage", coverage, 0.0f, 1.0f);
+    bag.add("softness", softness, 0.0f, 1.0f);
 }

@@ -552,9 +552,10 @@ std::unique_ptr<StateMachinePattern> edmx::makeGenericStateMachine()
         scannerLook<Pattern_Generic_ColorClouds>("color_clouds"),
         scannerLook<Pattern_Generic_Rainbow>("rainbow"),
         scannerLook<Pattern_Generic_Chase>("chase"),
-        // borrowed: the obelisk's theater look plays fine anywhere the
-        // stage's coordinates reach, so it sits in the generic list too
+        // borrowed: the obelisk's theater and blobs looks play fine anywhere
+        // the stage's coordinates reach, so they sit in the generic list too
         plainLook<Pattern_Obelisk_Theater>("theater"),
+        plainLook<Pattern_Obelisk_Blobs>("blobs"),
     };
 
     CoordFrame frame;
@@ -569,6 +570,8 @@ std::unique_ptr<StateMachinePattern> edmx::makeObeliskStateMachine()
     // is what a normalized rig gets stretched across.
     std::vector<StateDef> states = {
         plainLook<Pattern_Obelisk_FourSeasons>("seasons"),
+        // the seasons field generalised: one field, two pickable colours
+        plainLook<Pattern_Obelisk_Blobs>("blobs"),
         plainLook<Pattern_Obelisk_Monocolor>("mono"),
     };
 

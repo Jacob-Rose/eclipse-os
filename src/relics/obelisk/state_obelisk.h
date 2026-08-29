@@ -74,6 +74,36 @@ public:
     HSV color = HSV(100.0f, 0.5f, 0.5f);
 
     virtual void render(HSVStripNode* inNode, HSV& inOutColor) const override;
+    virtual void reflect(ecore::PropertyBag& bag) override;
+};
+
+/*
+* Blobs of an accent colour drifting through a primary one.
+*
+* The four-seasons look's noise field, generalised: one field over the whole
+* stage rather than a palette per side, so it reads the same on the obelisk,
+* the ring, a truss - anything with a coordinate - and both colours are knobs
+* at the desk instead of a palette compiled in. The field is thresholded into
+* blobs: `coverage` is how much of the stage the accent takes, `softness` how
+* wide a blob's edge is, from a hard-edged cell to a full gradient.
+*/
+class Pattern_Obelisk_Blobs : public GeneratorHSV
+{
+public:
+    Pattern_Obelisk_Blobs();
+
+    PerlinNoiseGenerator2D noise;
+
+    HSV primary = HSV(255.0f, 1.0f, 0.39f);   // p_neoncity's deep violet
+    HSV accent = HSV(309.0f, 0.92f, 0.98f);   // and its magenta
+
+    float scale = 0.05f;     // noise frequency: smaller is bigger blobs
+    float coverage = 0.5f;   // 0..1, how much of the field is accent
+    float softness = 0.3f;   // 0..1, edge width of a blob
+
+    virtual void tick(float deltaTime) override;
+    virtual void render(HSVStripNode* inNode, HSV& inOutColor) const override;
+    virtual void reflect(ecore::PropertyBag& bag) override;
 };
 
 class Pattern_Obelisk_Theater : public GeneratorHSV 

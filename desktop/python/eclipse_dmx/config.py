@@ -135,12 +135,14 @@ GENERIC_STATES = (
     "rainbow",
     "chase",
     "theater",
+    "blobs",
 )
 
 #: The obelisk machine's states. Must stay in step with
 #: makeObeliskStateMachine() in desktop/src/state_machine.cpp.
 OBELISK_STATES = (
     "seasons",
+    "blobs",
     "mono",
 )
 
