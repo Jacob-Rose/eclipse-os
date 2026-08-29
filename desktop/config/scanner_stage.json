@@ -34,21 +34,29 @@
     { "device": "obelisk",      "offset": [0, 0], "view_scale": [0.5, 1.1] },
 
     {
-      // The truss, on the floor at the foot of the sculpture. The pars are
-      // normalized - a line along x, 0..1 in their own file - so "fit"
-      // stretches that line over the sculpture's width and a zero offset
-      // lays it along the obelisk's lowest run. The scanner's looks travel
-      // up y: a wave starts on the truss and the foot of the obelisk
-      // together, passes through the ring and climbs to the top. The UV
-      // samples the middle of the run.
+      // The truss, on the floor at the foot of the sculpture, as wide as one
+      // face of it and centred on it.
       //
-      // Move it by changing these two lines. A truss across the top of the
-      // stage is `"offset": [0, 45]`; one standing off to the side, as
-      // mythos26 places it, is `"offset": [10, 0]` with no fit.
+      // The pars are normalized - 0..1 along the truss in their own file -
+      // and a normalized device's local coordinates are the pattern frame's
+      // *diagonal*: 0..1 becomes (0,0)..(8,43), a line climbing the whole
+      // stage. So both axes are fitted: x to two strip-units (a face is two
+      // strips), y to 0 - which collapses the climb to a flat row - and the
+      // offset puts that row at floor height, centred on the obelisk's
+      // middle, x 3.5. The truss is physically about the sculpture's width,
+      // so it sees the slice of a look that one face does rather than a lap
+      // of all eight strips. The scanner's looks travel up y: a wave starts
+      // on the truss and the foot of the obelisk together, passes through
+      // the ring and climbs to the top. The UV samples the middle of the run.
+      //
+      // Move it by changing these two lines. A truss spanning every strip
+      // is `"fit": [7, 0]` at `"offset": [0, 0]`; one standing off to the
+      // side and climbing the same height as the sculpture, as mythos26
+      // places it, is `"offset": [10, 0]` with no fit at all.
       "device": "uking_par36_x10",
       "name": "pars",
-      "offset": [0, 0],
-      "fit": [7, null],
+      "offset": [2.5, 0],
+      "fit": [2, 0],
 
       // Wide and short on screen: ten pars in a line want the width and none
       // of the height. View only; the pattern never sees it.

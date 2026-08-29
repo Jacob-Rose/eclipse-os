@@ -30,16 +30,6 @@ namespace
         return v - std::floor(v);
     }
 
-    /* Where the ring's lower arc sits at a given x - the fire's continuous
-    * ignition curve. Beyond the circle's tangent points it settles at the
-    * centre height, which only matters to callers that clamp x anyway. */
-    float arcLowerY(float x)
-    {
-        const float dx = x - kRingCenterX;
-        const float reach = kRingRadius * kRingRadius - dx * dx;
-        return kRingCenterY - std::sqrt(std::max(reach, 0.0f));
-    }
-
     /* Kriegsman's HeatColor, in HSV bands: black to red, red to yellow,
     * yellow to white. */
     HSV heatColor(float h)
@@ -268,11 +258,11 @@ void Pattern_Generic_Fire2012::tick(float deltaTime)
             break;
         }
 
-        // anywhere on the ring's lower arc - a continuous curve, which is
-        // the point of the particles: the ignition line is the ring itself,
-        // not eight columns
+        // anywhere along the floor - a continuous line, which is the point
+        // of the particles: the ignition line is the foot of the stage, not
+        // eight columns. The truss stands on the same line, so it burns too.
         const float x = hash01(flame->seed ^ 0xabcdef01u) * (kStageColumns - 1);
-        flame->position = Coordinate(x, arcLowerY(x));
+        flame->position = Coordinate(x, kStageBottom);
         flame->velocity.y = riseSpeed * (0.7f + 0.6f * hash01(flame->seed * 3u));
         flame->radius = 1.4f + 1.6f * hash01(flame->seed * 5u);
 
@@ -342,18 +332,15 @@ void Pattern_Generic_Fire2012::render(HSVStripNode* inNode, HSV& inOutColor) con
         heat = std::max(heat, glow * born * heatFrac);
     }
 
-    // the ember bed: the ring's lower arc as a distance field, glowing with
-    // a slow lerped flicker - the floor the risers are born from
-    if (at.y <= kRingCenterY + 1.0f)
+    // the ember bed: the floor as a distance field, glowing with a slow
+    // lerped flicker per stretch of it - the line the risers are born from
     {
-        const float dx = at.x - kRingCenterX;
-        const float dy = at.y - kRingCenterY;
-        const float fromArc = std::fabs(std::sqrt(dx * dx + dy * dy) - kRingRadius);
-        const float bed = 1.0f - fromArc / 1.5f;
+        const float fromFloor = std::fabs(at.y - kStageBottom);
+        const float bed = 1.0f - fromFloor / 1.5f;
 
         if (bed > 0.0f)
         {
-            const int segment = static_cast<int>((std::atan2(dx, -dy) + kPi) * 3.0f);
+            const int segment = static_cast<int>(at.x * 1.5f);
             const float breath = timeActive * 2.0f;
             const int step = static_cast<int>(breath);
             const float flicker = lerp(

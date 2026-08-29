@@ -595,14 +595,18 @@ class TheScannerStage(unittest.TestCase):
         self.assertEqual([device.name for device in self.config.devices],
                          ["scanner_ring", "obelisk", "pars"])
 
-    def test_the_truss_stands_on_the_floor(self):
-        """On kStageBottom (0) with the obelisk's lowest run, across the
-        sculpture's eight strips - so a wave starts on both, and every par
-        sees a different x."""
+    def test_the_truss_stands_on_the_floor_centred_on_the_obelisk(self):
+        """On kStageBottom (0) with the obelisk's lowest run, one face wide
+        (two strips) and centred on x 3.5 - so a wave starts on both, and the
+        truss sees what one face of the sculpture sees."""
         pars = self.config.devices[2]
         self.assertEqual(pars.output.type, "enttec_open")
-        self.assertEqual(pars.placement.offset, [0.0, 0.0])
-        self.assertEqual(pars.placement.fit, [7.0, None])
+        # y fitted to 0: a normalized device's local coordinates run up the
+        # frame's diagonal, and only a zero fit flattens that to a row
+        self.assertEqual(pars.placement.fit, [2.0, 0.0])
+        self.assertEqual(pars.placement.offset[1], 0.0)
+        centre = pars.placement.offset[0] + pars.placement.fit[0] / 2.0
+        self.assertAlmostEqual(centre, 3.5)
 
     def test_it_is_the_scanners_show(self):
         self.assertEqual(self.config.pattern.name, "scanner")

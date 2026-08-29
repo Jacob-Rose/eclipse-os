@@ -72,18 +72,19 @@ namespace scanner
     };
 
 
-    /* @brief Fire 2012, reimagined on the particle system: the ring burns,
+    /* @brief Fire 2012, reimagined on the particle system: the floor burns,
     * and the flames are risers.
     *
     * Kriegsman's grid sim (the one WLED ships) is a per-strip diffusion; on
     * the stage it kept fighting the geometry - integer columns, a bed that
     * either strobed or froze. Particles fit what this fire actually is
-    * here: embers ignite *anywhere on the ring's lower arc* - a continuous
-    * curve, not eight columns - rise with a lateral wander, cool from
-    * white-yellow through orange to red as they age, and gutter out partway
-    * up the obelisk. The bed itself is a distance-to-circle field with a
-    * slow flicker, so the ring's arc holds a breathing ember floor while
-    * the risers pass through its upper half and on up the runs.
+    * here: embers ignite *anywhere along the foot of the stage* - a
+    * continuous line, not eight columns - rise with a lateral wander, cool
+    * from white-yellow through orange to red as they age, and gutter out
+    * partway up the obelisk. The bed itself is a distance-to-floor field
+    * with a slow flicker, so the obelisk's lowest run and the truss beside
+    * it hold a breathing ember floor while the risers climb through the
+    * ring and on up the runs.
     *
     * The knobs keep their Fire2012 names and feel: cooling is how fast a
     * flame dies (so higher cooling is a shorter fire), sparking is how
