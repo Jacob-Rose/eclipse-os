@@ -2204,10 +2204,18 @@ class ViewerApp:
         if offline:
             line += "      " + ", ".join(f"{name} OFFLINE: {why}" for name, why in offline)
 
+        # What the show warned about as it came up - a stale binary at the far
+        # end of an ssh link, a channel claimed twice - said permanently for
+        # the same reason: a cue that answers "unknown pattern" because the
+        # executable predates it is not something the next click explains.
+        warnings = self.show.warnings
+        if warnings:
+            line += "      " + " | ".join(warnings)
+
         if self._status:
             line += f"      {self._status}"
 
-        self.header.configure(text=line, fg=TEXT_WARN if (self._status or offline) else TEXT)
+        self.header.configure(text=line, fg=TEXT_WARN if (self._status or offline or warnings) else TEXT)
 
     # -- controls ----------------------------------------------------------
 
