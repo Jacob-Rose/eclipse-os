@@ -583,6 +583,32 @@ class OverSsh(unittest.TestCase):
         self.assertEqual(args[1:3], ["--config", str(SCANNER)])
 
 
+class TheScannerStage(unittest.TestCase):
+    """config/scanner_stage.json: the scanner's show with the DMX truss in it."""
+
+    def setUp(self):
+        self.config = Config.load(DESKTOP / "config" / "scanner_stage.json")
+
+    def test_three_devices_ring_first(self):
+        """The ring first, as the game's own inline config has it; the truss
+        last, so adding it moved nothing in the frame stream."""
+        self.assertEqual([device.name for device in self.config.devices],
+                         ["scanner_ring", "obelisk", "pars"])
+
+    def test_the_truss_hangs_above_the_obelisk(self):
+        """Above kStageTop (42), across the sculpture's eight strips - so a
+        wave climbing the stage reaches it last, and every par sees a
+        different x."""
+        pars = self.config.devices[2]
+        self.assertEqual(pars.output.type, "enttec_open")
+        self.assertGreater(pars.placement.offset[1], 42.0)
+        self.assertEqual(pars.placement.fit, [7.0, None])
+
+    def test_it_is_the_scanners_show(self):
+        self.assertEqual(self.config.pattern.name, "scanner")
+        self.assertEqual(self.config.validate(strict_overlap=False), [])
+
+
 class TheLinkProtocol(unittest.TestCase):
     """The wire format and the relic's end of it, exercised by the executable.
 

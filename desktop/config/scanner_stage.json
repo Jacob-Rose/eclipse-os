@@ -1,0 +1,60 @@
+{
+  // The scanner's show with the DMX truss in it: the ring, the obelisk and
+  // the ten U'King pars (plus the UV) on one stage, one look across all three.
+  //
+  //   python -m eclipse_dmx view config/scanner_stage.json --live --host scanner-pi
+  //
+  // Everything config/scanner.json says still holds - the cue list is the
+  // game's own state tags, `state <tag> <seconds>` is what the game sends.
+  // This file adds a device, and where it stands.
+  //
+  // The truss rides the same eclipse-dmx as the sculpture, so with --host the
+  // Enttec cable has to be on the pi, not the desk. It is an enttec_open
+  // widget, which on Linux goes through libftdi (installed there); "port":
+  // "auto" finds it by USB and cannot confuse it with the obelisk, which is a
+  // CDC device on ttyACM and never a candidate. A truss that is not plugged in
+  // comes up OFFLINE, says so in the viewer's header, and the show runs on
+  // without it - exactly as the obelisk does.
+
+  "master": {
+    "brightness": 1.0,
+    "gamma": 2.2
+  },
+
+  "pattern": {
+    "name": "scanner"
+  },
+
+  "devices": [
+    // The stage: literal coordinates, x across the obelisk's eight strips
+    // (0..7), y up - the ring's lowest pixel at -8, the sculpture's floor at
+    // 0, its top at 42 (kStage* in src/relics/scanner/scanner_patterns.h).
+    { "device": "scanner_ring", "offset": [0, 0], "view_scale": [0.9, 1.0] },
+    { "device": "obelisk",      "offset": [0, 0], "view_scale": [0.5, 1.1] },
+
+    {
+      // The truss, hung across the top of the stage. The pars are normalized
+      // - a line along x, 0..1 in their own file - so "fit" stretches that
+      // line over the sculpture's width and the offset lifts it just above
+      // the obelisk's highest pixel. The scanner's looks travel up y: a wave
+      // crosses the ring, climbs the obelisk and reaches the truss last, and
+      // the countdown sweep ends on it. The UV samples the middle of the run.
+      //
+      // Move it by changing these two lines. A truss on the floor beside the
+      // sculpture is `"offset": [0, -8]`; one standing off to the side, as
+      // mythos26 places it, is `"offset": [10, 0]` with no fit.
+      "device": "uking_par36_x10",
+      "name": "pars",
+      "offset": [0, 45],
+      "fit": [7, null],
+
+      // Wide and short on screen: ten pars in a line want the width and none
+      // of the height. View only; the pattern never sees it.
+      "view_scale": [1.7, 0.45],
+
+      // Trim the truss against the sculpture here, not in the device file: it
+      // is a property of this room, not of the lights.
+      "brightness": 1.0
+    }
+  ]
+}

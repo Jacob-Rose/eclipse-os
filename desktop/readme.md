@@ -1771,6 +1771,27 @@ or Mixxx on the desk is invisible to a show on the pi; a pad-to-cue mapping
 that leans on `MIDI-IN` lines goes quiet. The OSC sender is desk-side off the
 frame stream and works as before.
 
+The same rule decides where a DMX widget goes: on the machine running the
+executable. `config/scanner_stage.json` is the scanner's show with the truss
+in it — ring, obelisk and the ten pars on one stage, the truss hung across the
+top so a wave that climbs the sculpture reaches it last:
+
+```sh
+python -m eclipse_dmx view config/scanner_stage.json --live --host scanner-pi
+```
+
+With `--host`, the Enttec cable is plugged into the pi. It is an `enttec_open`
+widget, so on the pi it goes through libftdi (see [widgets](#widgets)); `auto`
+finds it by USB and cannot mistake the obelisk for it, which is a CDC device on
+`ttyACM` and never a candidate. Unplugged, the truss is OFFLINE in the header
+and the show runs without it.
+
+One more thing the far end needs for that: the executable there has to be
+built from sources that know the show. `launch-desk.sh` does not build, on
+purpose, and the bridge warns when the binary on the pi is older than what was
+pulled — a cue that answers `unknown pattern` is what a stale binary looks
+like from the desk.
+
 ## What is not here yet
 
 - **Art-Net / sACN.** Only the USB widgets. The `DmxOutput` interface is the
