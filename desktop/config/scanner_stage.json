@@ -27,25 +27,27 @@
 
   "devices": [
     // The stage: literal coordinates, x across the obelisk's eight strips
-    // (0..7), y up - the ring's lowest pixel at -8, the sculpture's floor at
-    // 0, its top at 42 (kStage* in src/relics/scanner/scanner_patterns.h).
+    // (0..7), y up - the floor at 0, the sculpture's top at 42, the ring a
+    // third of the way up it (kStage*/kRing* in
+    // src/relics/scanner/scanner_patterns.h).
     { "device": "scanner_ring", "offset": [0, 0], "view_scale": [0.9, 1.0] },
     { "device": "obelisk",      "offset": [0, 0], "view_scale": [0.5, 1.1] },
 
     {
-      // The truss, hung across the top of the stage. The pars are normalized
-      // - a line along x, 0..1 in their own file - so "fit" stretches that
-      // line over the sculpture's width and the offset lifts it just above
-      // the obelisk's highest pixel. The scanner's looks travel up y: a wave
-      // crosses the ring, climbs the obelisk and reaches the truss last, and
-      // the countdown sweep ends on it. The UV samples the middle of the run.
+      // The truss, on the floor at the foot of the sculpture. The pars are
+      // normalized - a line along x, 0..1 in their own file - so "fit"
+      // stretches that line over the sculpture's width and a zero offset
+      // lays it along the obelisk's lowest run. The scanner's looks travel
+      // up y: a wave starts on the truss and the foot of the obelisk
+      // together, passes through the ring and climbs to the top. The UV
+      // samples the middle of the run.
       //
-      // Move it by changing these two lines. A truss on the floor beside the
-      // sculpture is `"offset": [0, -8]`; one standing off to the side, as
+      // Move it by changing these two lines. A truss across the top of the
+      // stage is `"offset": [0, 45]`; one standing off to the side, as
       // mythos26 places it, is `"offset": [10, 0]` with no fit.
       "device": "uking_par36_x10",
       "name": "pars",
-      "offset": [0, 45],
+      "offset": [0, 0],
       "fit": [7, null],
 
       // Wide and short on screen: ten pars in a line want the width and none

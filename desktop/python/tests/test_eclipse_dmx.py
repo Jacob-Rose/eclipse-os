@@ -595,18 +595,69 @@ class TheScannerStage(unittest.TestCase):
         self.assertEqual([device.name for device in self.config.devices],
                          ["scanner_ring", "obelisk", "pars"])
 
-    def test_the_truss_hangs_above_the_obelisk(self):
-        """Above kStageTop (42), across the sculpture's eight strips - so a
-        wave climbing the stage reaches it last, and every par sees a
-        different x."""
+    def test_the_truss_stands_on_the_floor(self):
+        """On kStageBottom (0) with the obelisk's lowest run, across the
+        sculpture's eight strips - so a wave starts on both, and every par
+        sees a different x."""
         pars = self.config.devices[2]
         self.assertEqual(pars.output.type, "enttec_open")
-        self.assertGreater(pars.placement.offset[1], 42.0)
+        self.assertEqual(pars.placement.offset, [0.0, 0.0])
         self.assertEqual(pars.placement.fit, [7.0, None])
 
     def test_it_is_the_scanners_show(self):
         self.assertEqual(self.config.pattern.name, "scanner")
         self.assertEqual(self.config.validate(strict_overlap=False), [])
+
+
+class TheStageGeometry(unittest.TestCase):
+    """The ring's circle is written in three places and read from one.
+
+    The looks read kRing* in scanner_patterns.h; the desk draws
+    devices/scanner_ring.json; the live game writes the same circle inline in
+    afterglow's eclipse_engine.py. Nothing checks them against each other at
+    runtime, so this does.
+    """
+
+    HEADER = DESKTOP.parent / "src" / "relics" / "scanner" / "scanner_patterns.h"
+
+    def _constant(self, name: str) -> float:
+        import re
+
+        text = self.HEADER.read_text(encoding="utf-8")
+        match = re.search(rf"constexpr float {name} = (-?[\d.]+)f", text)
+        self.assertIsNotNone(match, f"{name} not found in {self.HEADER}")
+        return float(match.group(1))
+
+    def test_the_ring_device_is_the_looks_circle(self):
+        cx, cy, r = (self._constant(n) for n in ("kRingCenterX", "kRingCenterY", "kRingRadius"))
+        ring = Config.load(DESKTOP / "devices" / "scanner_ring.json").devices[0]
+        self.assertEqual(len(ring.fixtures), 35)
+        for fixture in ring.fixtures:
+            distance = ((fixture.position[0] - cx) ** 2 + (fixture.position[1] - cy) ** 2) ** 0.5
+            self.assertAlmostEqual(distance, r, places=3, msg=fixture.name)
+        # pixel 0 at the top of the circle, the way the physical ring runs
+        self.assertAlmostEqual(ring.fixtures[0].position[1], cy + r, places=3)
+
+    def test_the_ring_sits_a_third_of_the_way_up(self):
+        top, cy = self._constant("kStageTop"), self._constant("kRingCenterY")
+        self.assertAlmostEqual(cy, top / 3.0, places=3)
+        self.assertEqual(self._constant("kStageBottom"), 0.0)
+
+    def test_the_game_writes_the_same_circle(self):
+        # desktop/ -> eclipse-os/ -> afterglow/, when this is the submodule
+        engine = DESKTOP.parents[1] / "main-py" / "lib" / "jr_lib" / "eclipse_engine.py"
+        if not engine.exists():
+            raise unittest.SkipTest("not inside the afterglow checkout")
+        import re
+
+        cx, cy = self._constant("kRingCenterX"), self._constant("kRingCenterY")
+        text = engine.read_text(encoding="utf-8")
+        centre_x = re.search(r"round\((-?[\d.]+) \+ 3\.5 \* math\.sin\(angle\), 4\)", text)
+        centre_y = re.search(r"round\((-?[\d.]+) \+ 3\.5 \* math\.cos\(angle\), 4\)", text)
+        self.assertIsNotNone(centre_x)
+        self.assertIsNotNone(centre_y)
+        self.assertAlmostEqual(float(centre_x.group(1)), cx)
+        self.assertAlmostEqual(float(centre_y.group(1)), cy)
 
 
 class TheLinkProtocol(unittest.TestCase):

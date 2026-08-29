@@ -599,13 +599,13 @@ clicking through the game, and `state <tag> <seconds>` typed at the process is
 byte-for-byte what the game sends.
 
 The two devices stand on one stage: literal coordinates, x across and y up,
-the obelisk's floor at y=0 and the ring a circle hanging just below it (the
-`kStage*`/`kRing*` constants in `src/relics/scanner/scanner_patterns.h`). The
-spatial looks read that space rather than the wiring order — the detected
-wave and the countdown sweep rise through the ring and then up the obelisk,
-the record comet orbits the ring's centre and reads as a sweeping beam on the
-tower above — which is the point of previewing on this rig rather than a bare
-strip.
+the obelisk's floor at y=0, its top at 42, and the ring a circle a third of
+the way up it, the way the scanner sits on the tower (the `kStage*`/`kRing*`
+constants in `src/relics/scanner/scanner_patterns.h`). The spatial looks read
+that space rather than the wiring order — the detected wave and the countdown
+sweep climb the obelisk and pass through the ring on the way, the record comet
+orbits the ring's centre and reads as a sweeping beam on the tower around it —
+which is the point of previewing on this rig rather than a bare strip.
 
 Nothing reaches hardware without `--live`. With it, the obelisk device's own
 output drives a plugged-in sculpture exactly as the game does, so a new look
@@ -1773,8 +1773,8 @@ frame stream and works as before.
 
 The same rule decides where a DMX widget goes: on the machine running the
 executable. `config/scanner_stage.json` is the scanner's show with the truss
-in it — ring, obelisk and the ten pars on one stage, the truss hung across the
-top so a wave that climbs the sculpture reaches it last:
+in it — ring, obelisk and the ten pars on one stage, the truss on the floor at
+the foot of the sculpture so a wave starts on both and climbs from there:
 
 ```sh
 python -m eclipse_dmx view config/scanner_stage.json --live --host scanner-pi

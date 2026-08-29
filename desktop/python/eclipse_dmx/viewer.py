@@ -679,9 +679,10 @@ def plan_layout(config: Config) -> List[Placement]:
         return [(value - low) / (high - low) for value in values]
 
     xs = normalise([point[0] for point in raw])
-    # y is up in the configs - the obelisk's floor is y=0 and the ring hangs
-    # below it - and down on a canvas, so it flips here. Rigs with no vertical
-    # extent (a row of pars) normalise to a centred 0.5 and never notice.
+    # y is up in the configs - the obelisk's floor is y=0 and the ring sits a
+    # third of the way up it - and down on a canvas, so it flips here. Rigs
+    # with no vertical extent (a row of pars) normalise to a centred 0.5 and
+    # never notice.
     ys = [1.0 - value for value in normalise([point[1] for point in raw])]
 
     return [

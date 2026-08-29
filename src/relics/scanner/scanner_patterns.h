@@ -42,21 +42,22 @@ namespace scanner
     ///
     /// x runs across and y runs up. The obelisk stands on the floor of it -
     /// eight runs at x 0..7, height y 0..42, exactly the coordinates
-    /// ObeliskIO::init generates - and the ring hangs just below it as a
-    /// circle, centred on the obelisk's width, its top pixel one unit under
-    /// the floor. The desktop rig (desktop/devices/scanner_ring.json) and the
-    /// live game's inline config (main-py/lib/jr_lib/eclipse_engine.py) both
-    /// write the ring at these coordinates; the constants here have to agree
-    /// with them.
+    /// ObeliskIO::init generates - and the ring sits on the sculpture a
+    /// third of the way up, a circle centred on the obelisk's width, the way
+    /// the scanner is mounted on the tower. The floor is where the DMX truss
+    /// stands too (desktop/config/scanner_stage.json). The desktop rig
+    /// (desktop/devices/scanner_ring.json) and the live game's inline config
+    /// (main-py/lib/jr_lib/eclipse_engine.py) both write the ring at these
+    /// coordinates; the constants here have to agree with them.
     ///
-    /// The point of sharing the space: a look that travels along y crosses
-    /// the ring first and then climbs the obelisk - one wave through one
-    /// place, not the same look running twice from scratch.
+    /// The point of sharing the space: a look that travels along y climbs
+    /// the obelisk and passes through the ring on the way - one wave through
+    /// one place, not the same look running twice from scratch.
     ///
-    constexpr float kStageBottom = -8.0f;   ///< the ring's lowest pixel
+    constexpr float kStageBottom = 0.0f;    ///< the floor: the obelisk's lowest run, the truss
     constexpr float kStageTop = 42.0f;      ///< the obelisk's highest
     constexpr float kRingCenterX = 3.5f;
-    constexpr float kRingCenterY = -4.5f;
+    constexpr float kRingCenterY = 14.0f;   ///< kStageTop / 3
     constexpr float kRingRadius = 3.5f;
     /// the obelisk's runs: integer x 0..7, a closed loop around four sides -
     /// column 7 is physically beside column 0

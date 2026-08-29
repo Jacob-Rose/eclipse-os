@@ -25,9 +25,10 @@
   },
 
   "devices": [
-    // Both devices carry literal stage coordinates - the ring a circle just
-    // below y=0, the obelisk standing on it - so zero offsets land them in
-    // one shared space and a wave running up y crosses the ring first.
+    // Both devices carry literal stage coordinates - the obelisk standing on
+    // y=0, the ring a circle a third of the way up it - so zero offsets land
+    // them in one shared space and a wave running up y passes through the
+    // ring on its way up the sculpture.
     //
     // A near-square panel for a circle, a pillar for the obelisk - view_scale
     // is a view property and touches nothing the pattern sees.
