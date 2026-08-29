@@ -35,9 +35,7 @@ namespace edmx
         /// segment a node belongs to — the jacket's looks render differently on
         /// a sleeve ring than on the monowire — so the id we claim here decides
         /// which branch a rig gets. See JACKET_SEGMENT_ID.
-        void build(size_t count, uint8_t segmentId, const CoordFrame& frame,
-                   const std::vector<float>& positions,
-                   const std::vector<ecore::Coordinate>& nodeCoords);
+        void build(const PatternContext& context, uint8_t segmentId);
 
         eio::HSVStrip* getStrip() const { return strip.get(); }
 

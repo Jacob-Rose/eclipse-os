@@ -42,23 +42,28 @@ namespace scanner
     ///
     /// x runs across and y runs up. The obelisk stands on the floor of it -
     /// eight runs at x 0..7, height y 0..42, exactly the coordinates
-    /// ObeliskIO::init generates - and the ring sits on the sculpture a
-    /// third of the way up, a circle centred on the obelisk's width, the way
-    /// the scanner is mounted on the tower. The floor is where the DMX truss
-    /// stands too (desktop/config/scanner_stage.json). The desktop rig
-    /// (desktop/devices/scanner_ring.json) and the live game's inline config
-    /// (main-py/lib/jr_lib/eclipse_engine.py) both write the ring at these
-    /// coordinates; the constants here have to agree with them.
+    /// ObeliskIO::init generates. The ring sits on the sculpture as a
+    /// circle centred on the obelisk's width, the way the scanner is
+    /// mounted on the tower, with its lowest pixel on the *origin line* -
+    /// the height the DMX truss hangs at (desktop/config/scanner_stage.json),
+    /// and where a look synced to the beat is to start from. The desktop
+    /// rig (desktop/devices/scanner_ring.json) and the live game's inline
+    /// config (main-py/lib/jr_lib/eclipse_engine.py) both write the ring at
+    /// these coordinates; the constants here have to agree with them, and
+    /// the desktop's tests check that they do.
     ///
     /// The point of sharing the space: a look that travels along y climbs
     /// the obelisk and passes through the ring on the way - one wave through
     /// one place, not the same look running twice from scratch.
     ///
-    constexpr float kStageBottom = 0.0f;    ///< the floor: the obelisk's lowest run, the truss
+    constexpr float kStageBottom = 0.0f;    ///< the floor: the obelisk's lowest run
     constexpr float kStageTop = 42.0f;      ///< the obelisk's highest
-    constexpr float kRingCenterX = 3.5f;
-    constexpr float kRingCenterY = 14.0f;   ///< kStageTop / 3
+    /// the origin line: the truss, the ring's lowest pixel, and where a
+    /// beat-synced look originates
+    constexpr float kStageOriginY = 16.0f;
     constexpr float kRingRadius = 3.5f;
+    constexpr float kRingCenterX = 3.5f;
+    constexpr float kRingCenterY = kStageOriginY + kRingRadius;
     /// the obelisk's runs: integer x 0..7, a closed loop around four sides -
     /// column 7 is physically beside column 0
     constexpr int kStageColumns = 8;
@@ -146,11 +151,18 @@ namespace scanner
     };
 
 
-    /* @brief scan_idle: the whole ring breathes cyan on a 2 second heartbeat.
+    /* @brief scan_idle: the ring breathes cyan on a 2 second heartbeat, a
+    * beam of the same cyan goes round the obelisk side by side, and a
+    * scanner runs the truss end to end.
     *
-    * The breath is an AutomationCurve on the normalized cycle, like the boot
-    * swell - the python table's run of trailing zeros collapses to its two
-    * endpoint keys.
+    * The first look to read the objects rather than the stage: each node
+    * says which space it is in (eio::spaceOf), and the look renders each
+    * object in its own terms - the obelisk by strip around its four sides,
+    * the truss by its length - while a node with no space of its own (the
+    * ring, a bare strip) gets the breath, which is what every node got
+    * before. The breath is an AutomationCurve on the normalized cycle, like
+    * the boot swell - the python table's run of trailing zeros collapses to
+    * its two endpoint keys.
     */
     class Pattern_Scanner_ScanIdle : public PatternScanner
     {
@@ -163,6 +175,22 @@ namespace scanner
 
         /// on the normalized 0..1 cycle clock
         eanim::AutomationCurve breathCurve;
+
+        /// the obelisk's beam: turns per second around the tower, how many
+        /// strips wide it is, and whether a side lights as one (both strips
+        /// together, stepping side to side) or strip by strip
+        float rotateRate = 0.4f;
+        float beamWidth = 1.5f;
+        bool bySide = true;
+
+        /// the truss's scanner: sweeps per second end to end and back, and
+        /// how much of the truss the dot covers
+        float sweepRate = 0.6f;
+        float sweepWidth = 0.25f;
+
+        /// how much of the breath the beam and the scanner leave behind them,
+        /// so the objects never go fully dark between passes
+        float floorLevel = 0.15f;
 
         virtual void render(HSVStripNode* inNode, HSV& inOutColor) const override;
         virtual void reflect(ecore::PropertyBag& bag) override;

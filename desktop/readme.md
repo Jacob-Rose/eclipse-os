@@ -599,13 +599,51 @@ clicking through the game, and `state <tag> <seconds>` typed at the process is
 byte-for-byte what the game sends.
 
 The two devices stand on one stage: literal coordinates, x across and y up,
-the obelisk's floor at y=0, its top at 42, and the ring a circle a third of
-the way up it, the way the scanner sits on the tower (the `kStage*`/`kRing*`
-constants in `src/relics/scanner/scanner_patterns.h`). The spatial looks read
+the obelisk's floor at y=0, its top at 42, and the ring a circle on the
+sculpture with its lowest pixel on the *origin line* y=16 — the height the
+truss hangs at in `scanner_stage.json`, and where a beat-synced look starts
+from (`kStageOriginY` and the `kRing*` constants in
+`src/relics/scanner/scanner_patterns.h`). The spatial looks read
 that space rather than the wiring order — the detected wave and the countdown
 sweep climb the obelisk and pass through the ring on the way, the record comet
 orbits the ring's centre and reads as a sweeping beam on the tower around it —
 which is the point of previewing on this rig rather than a bare strip.
+
+#### the objects, beside the stage
+
+One stage is what lets a wave cross everything as one wave. It is also the
+wrong space for a look that wants the sculpture *as a sculpture* — a beam
+going round its four sides — or the truss as a truss. So a node carries both:
+its stage coordinate, and which object it is part of with its place in that
+object's own terms.
+
+A device file says what it is:
+
+```json
+"space": "obelisk"        // or "ring", "truss"
+```
+
+and every node built for it becomes an `eio::HSVStripNode_Space`: a mapped
+node (every look that checks for `MAPPED2D` and casts sees exactly what it
+saw before) that also answers `asSpace()` — the house downcast without RTTI,
+the same idiom as `asStateMachine()` — with the object (`space`), the node's
+place among the object's nodes (`index`, `count`), the object's own
+coordinates before the environment placed it (`local`: for the obelisk, strip
+0..7 and height 0..42 whatever the stage did to it), and the same normalized
+over the object's extent (`u`, `v`).
+
+A look asks with `eio::spaceOf(node)` and branches; a node with no space —
+a bare strip, a file that never said — comes back null and the look falls
+through to the stage, so a look written for the objects still runs on
+anything. `scan_idle` is the first: the ring breathes as it always did, the
+obelisk gets a cyan beam going round its sides (`rotate_rate`, `beam_width`,
+`by_side`), and the truss a scanner running its length (`sweep_rate`,
+`sweep_width`), with `floor` for how much of the breath is left behind them.
+
+The plumbing is `PatternContext::nodeMappings`, filled beside `nodeCoords`
+from each device's locals before placement, and `edmx::makeStripNode`, which
+both `GeneratorPattern` and the state machine's `HostRelicIO` build their
+nodes through — so a look gets the same answer bare or in a machine.
 
 Nothing reaches hardware without `--live`. With it, the obelisk device's own
 output drives a plugged-in sculpture exactly as the game does, so a new look

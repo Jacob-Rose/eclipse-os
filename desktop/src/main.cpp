@@ -1146,11 +1146,13 @@ namespace
         // every device, always: with one device at the default placement this
         // is exactly what the single-rig path produced before.
         show.context.nodeCoords.resize(show.context.fixtureCount);
+        show.context.nodeMappings.resize(show.context.fixtureCount);
 
         size_t at = 0;
         for (const Device& device : show.config.devices)
         {
             const size_t count = device.fixtures.size();
+            const eio::NodeSpace space = eio::nodeSpaceFromName(device.space);
 
             // Pass one: local coordinates, and how far they reach.
             float minX = 0.0f, maxX = 0.0f, minY = 0.0f, maxY = 0.0f;
@@ -1180,6 +1182,26 @@ namespace
                 }
 
                 show.context.nodeCoords[at + idx] = local;
+            }
+
+            // The relative view, taken before the placement rewrites the
+            // locals: the device's own coordinates, and the same normalized
+            // over its extent. An axis with no extent - a flat row of pars -
+            // reads 0.5, the middle, rather than dividing by nothing.
+            {
+                const float extentX = maxX - minX;
+                const float extentY = maxY - minY;
+                for (size_t idx = 0; idx < count; ++idx)
+                {
+                    const ecore::Coordinate& local = show.context.nodeCoords[at + idx];
+                    PatternContext::NodeMapping& mapping = show.context.nodeMappings[at + idx];
+                    mapping.space = space;
+                    mapping.index = static_cast<int>(idx);
+                    mapping.count = static_cast<int>(count);
+                    mapping.local = local;
+                    mapping.u = (extentX > 1e-6f) ? (local.x - minX) / extentX : 0.5f;
+                    mapping.v = (extentY > 1e-6f) ? (local.y - minY) / extentY : 0.5f;
+                }
             }
 
             // Pass two: the placement, now that the extent is known. `fit`

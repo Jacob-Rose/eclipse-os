@@ -294,6 +294,13 @@ namespace
         }
     }
 
+    // ---- what it is -----------------------------------------------------
+    // Beside where its numbers sit on the stage, which object this is - so
+    // a look can treat the sculpture as a sculpture. Free text here; the
+    // pattern side maps it (eio::nodeSpaceFromName) and an unknown word is
+    // simply "the stage", so a file that never says loses nothing.
+    device.space = root["space"].asString("");
+
     // ---- device -------------------------------------------------------
     {
         // `output` is the name now; `device` is still read so every config written
@@ -939,6 +946,9 @@ bool edmx::loadConfig(const std::string& path, Config& outConfig, std::string& o
                          + " coord_space must be \"normalized\" or \"literal\", got '" + space + "'";
                 return false;
             }
+
+            // an environment may say what a device is, for a file that did not
+            device.space = entry["space"].asString(device.space);
 
             for (const std::string& warning : deviceWarnings)
             {

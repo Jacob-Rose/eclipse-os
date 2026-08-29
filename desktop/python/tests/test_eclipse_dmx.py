@@ -604,7 +604,8 @@ class TheScannerStage(unittest.TestCase):
         # y fitted to 0: a normalized device's local coordinates run up the
         # frame's diagonal, and only a zero fit flattens that to a row
         self.assertEqual(pars.placement.fit, [2.0, 0.0])
-        self.assertEqual(pars.placement.offset[1], 0.0)
+        # at the ring's height, a little above its centre
+        self.assertEqual(pars.placement.offset[1], 16.0)
         centre = pars.placement.offset[0] + pars.placement.fit[0] / 2.0
         self.assertAlmostEqual(centre, 3.5)
 
@@ -625,10 +626,17 @@ class TheStageGeometry(unittest.TestCase):
     HEADER = DESKTOP.parent / "src" / "relics" / "scanner" / "scanner_patterns.h"
 
     def _constant(self, name: str) -> float:
+        """A `constexpr float NAME = <number>f` out of the header.
+
+        kRingCenterY is spelled as a sum of two others rather than a number,
+        so it is resolved here the same way.
+        """
         import re
 
         text = self.HEADER.read_text(encoding="utf-8")
         match = re.search(rf"constexpr float {name} = (-?[\d.]+)f", text)
+        if match is None and name == "kRingCenterY":
+            return self._constant("kStageOriginY") + self._constant("kRingRadius")
         self.assertIsNotNone(match, f"{name} not found in {self.HEADER}")
         return float(match.group(1))
 
@@ -642,9 +650,25 @@ class TheStageGeometry(unittest.TestCase):
         # pixel 0 at the top of the circle, the way the physical ring runs
         self.assertAlmostEqual(ring.fixtures[0].position[1], cy + r, places=3)
 
-    def test_the_ring_sits_a_third_of_the_way_up(self):
-        top, cy = self._constant("kStageTop"), self._constant("kRingCenterY")
-        self.assertAlmostEqual(cy, top / 3.0, places=3)
+    def test_the_ring_says_what_it_is(self):
+        """A look that treats the ring as the ring finds it by its space."""
+        ring = Config.load(DESKTOP / "devices" / "scanner_ring.json").devices[0]
+        self.assertEqual(ring.space, "ring")
+        obelisk = Config.load(DESKTOP / "devices" / "obelisk.json").devices[0]
+        self.assertEqual(obelisk.space, "obelisk")
+        pars = Config.load(DESKTOP / "devices" / "uking_par36_x10.json").devices[0]
+        self.assertEqual(pars.space, "truss")
+
+    def test_the_rings_lowest_pixel_is_on_the_origin_line(self):
+        """The ring's bottom, the truss and the beat's origin are one line."""
+        origin = self._constant("kStageOriginY")
+        ring = Config.load(DESKTOP / "devices" / "scanner_ring.json").devices[0]
+        lowest = min(fixture.position[1] for fixture in ring.fixtures)
+        # 35 pixels round a circle put none exactly at the bottom; the
+        # nearest is a hundredth above it
+        self.assertAlmostEqual(lowest, origin, delta=0.05)
+        pars = Config.load(DESKTOP / "config" / "scanner_stage.json").devices[2]
+        self.assertAlmostEqual(pars.placement.offset[1], origin)
         self.assertEqual(self._constant("kStageBottom"), 0.0)
 
     def test_the_game_writes_the_same_circle(self):

@@ -728,6 +728,11 @@ class Device:
     #: its own geometry wants. See edmx::CoordSpace.
     coord_space: str = "normalized"
 
+    #: What the device *is* - "ring", "obelisk", "truss" - for a look that
+    #: treats it as itself rather than as part of the stage. The file's own
+    #: word, kept as written; "" when it never said. See eio::NodeSpace.
+    space: str = ""
+
     brightness: float = 1.0
 
     def display_channel(self, channel: int) -> int:
@@ -739,13 +744,16 @@ class Device:
         return max((max(f.used_channels()) for f in self.fixtures), default=0)
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        out = {
             "name": self.name,
             "addressing": "one",
             "coord_space": self.coord_space,
             "output": self.output.to_dict(),
             "fixtures": [fixture.to_dict() for fixture in self.fixtures],
         }
+        if self.space:
+            out["space"] = self.space
+        return out
 
 
 @dataclass
@@ -1071,6 +1079,10 @@ class Config:
             device.coord_space = "normalized"
         else:
             raise ConfigError(f"coord_space must be \"normalized\" or \"literal\", got '{space}'")
+
+        # What it is, beside where its numbers sit. Free text, kept as written:
+        # the pattern side maps it and an unknown word is "the stage".
+        device.space = str(data.get("space", "") or "").lower()
 
 
         # `output` is the name now; `device` is still read so every config written

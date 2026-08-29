@@ -22,6 +22,13 @@
   // its noise field gets the variation that keeps it from reading as flat.
   "coord_space": "literal",
 
+  // What it is, for a look that treats the sculpture as a sculpture - a
+  // beam going round its four sides - rather than as part of the stage. A
+  // node on it then carries its strip (0..7) and height (0..42) as its own
+  // coordinates whatever the environment did to place it. See
+  // eio::NodeSpace in src/lib/eio/strip_projection.h.
+  "space": "obelisk",
+
   "output": {
     "type": "relic_usb",
     "port": "auto",

@@ -140,10 +140,43 @@ Pattern_Scanner_ScanIdle::Pattern_Scanner_ScanIdle()
 
 void Pattern_Scanner_ScanIdle::render(HSVStripNode* inNode, HSV& inOutColor) const
 {
-    (void)inNode;
-
     const float cycleAlpha = std::fmod(timeActive, cycleTime) / cycleTime;
-    const float brightness = breathCurve.evaluate(cycleAlpha);
+    const float breath = breathCurve.evaluate(cycleAlpha);
+
+    // the ring, and anything that never said what it is: the breath
+    float brightness = breath;
+
+    const HSVStripNode_Space* spaced = eio::spaceOf(inNode);
+    if (spaced != nullptr && spaced->space == NodeSpace::Obelisk)
+    {
+        // A beam going round the tower. The obelisk's own x is its strip,
+        // 0..7 around four sides, column 7 beside column 0 - so a strip's
+        // place is a fraction of a turn, the beam is another, and the
+        // distance between them is taken the short way round. By side, a
+        // strip answers with its side's centre, so both strips of a side
+        // light together and the beam steps side to side.
+        const float strips = static_cast<float>(kStageColumns);
+        float here = spaced->local.x + 0.5f;
+        if (bySide)
+        {
+            here = std::floor(spaced->local.x / 2.0f) * 2.0f + 1.0f;
+        }
+        const float at = std::fmod(here, strips) / strips;
+        const float beam = timeActive * rotateRate - std::floor(timeActive * rotateRate);
+        float away = std::fabs(at - beam);
+        away = std::min(away, 1.0f - away) * strips;   // in strips, the short way
+        const float lit = clamp01(1.0f - away / std::max(beamWidth, 0.01f));
+        brightness = std::max(floorLevel * breath, lit * lit);
+    }
+    else if (spaced != nullptr && spaced->space == NodeSpace::Truss)
+    {
+        // A scanner along the truss: the dot runs end to end and back on a
+        // triangle of time, and a par lights by how close it is to it.
+        const float phase = timeActive * sweepRate - std::floor(timeActive * sweepRate);
+        const float dot = 1.0f - std::fabs(2.0f * phase - 1.0f);
+        const float lit = clamp01(1.0f - std::fabs(spaced->u - dot) / std::max(sweepWidth, 0.01f));
+        brightness = std::max(floorLevel * breath, lit * lit);
+    }
 
     inOutColor = scanColor;
     inOutColor.setBrightnessAlpha(scanColor.getValFloat() * brightness);
@@ -152,6 +185,12 @@ void Pattern_Scanner_ScanIdle::render(HSVStripNode* inNode, HSV& inOutColor) con
 void Pattern_Scanner_ScanIdle::reflect(ecore::PropertyBag& bag)
 {
     bag.add("cycle_time", cycleTime, 0.5f, 8.0f);
+    bag.add("rotate_rate", rotateRate, 0.0f, 2.0f);
+    bag.add("beam_width", beamWidth, 0.5f, 4.0f);
+    bag.add("by_side", bySide);
+    bag.add("sweep_rate", sweepRate, 0.0f, 3.0f);
+    bag.add("sweep_width", sweepWidth, 0.05f, 1.0f);
+    bag.add("floor", floorLevel, 0.0f, 1.0f);
 }
 
 void Pattern_Scanner_ScanIdle::reflectCurves(eanim::CurveBag& bag)

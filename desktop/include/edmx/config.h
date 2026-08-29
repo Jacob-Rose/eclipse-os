@@ -249,6 +249,12 @@ namespace edmx
         Addressing addressing{Addressing::OneBased};
         CoordSpace coordSpace{CoordSpace::Normalized};
 
+        /// What this device *is*, for a look that treats it as itself rather
+        /// than as part of the stage: "ring", "obelisk", "truss". The file's
+        /// "space" field, as written; empty when it never said. See
+        /// eio::NodeSpace for what a pattern makes of it.
+        std::string space;
+
         OutputConfig output;
         FixtureMap fixtures;
         Placement placement;

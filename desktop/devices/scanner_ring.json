@@ -4,16 +4,17 @@
   //
   // Coordinates are literal, in the same space as the obelisk device (x is
   // across, y is up, the obelisk's floor at y=0 and its top at y=42): the
-  // ring is a circle of radius 3.5 centred at (3.5, 14.0), a third of the way
-  // up the sculpture and spanning its width - the way the scanner is mounted
-  // on the tower. That is the point of it: a look that travels along y
-  // starts at the foot of the obelisk (where the DMX truss stands, in
-  // config/scanner_stage.json), passes through the ring and climbs on to the
-  // top. Pixel 0 sits at the top of the circle, numbered the way the physical
-  // ring runs; the centre and radius are kRing* in
-  // src/relics/scanner/scanner_patterns.h, and the live game writes the same
-  // circle inline - main-py/lib/jr_lib/eclipse_engine.py - so the three have
-  // to agree (python/tests checks that they do).
+  // ring is a circle of radius 3.5 centred at (3.5, 19.5), spanning the
+  // sculpture's width, with its lowest pixel on the stage's origin line
+  // y=16 - the height the DMX truss hangs at (config/scanner_stage.json)
+  // and where a beat-synced look starts from. That is the point of it: a
+  // look that travels along y starts at the foot of the obelisk, passes
+  // through the ring and climbs on to the top. Pixel 0 sits at the top of
+  // the circle, numbered the way the physical ring runs; the centre and
+  // radius are kRing*/kStageOriginY in src/relics/scanner/scanner_patterns.h,
+  // and the live game writes the same circle inline -
+  // main-py/lib/jr_lib/eclipse_engine.py - so the three have to agree
+  // (python/tests checks that they do).
   //
   // The viewer draws its picture from these same fields, which is why they
   // are a real circle and not a convenient line.
@@ -26,46 +27,50 @@
 
   "coord_space": "literal",
 
+  // What it is, for a look that treats the ring as the ring rather than as
+  // part of the stage. See eio::NodeSpace in src/lib/eio/strip_projection.h.
+  "space": "ring",
+
   "output": {
     "type": "preview",
     "fps": 30
   },
 
   "fixtures": [
-    { "profile": "rgb3", "name": "px_00", "address":   1, "position": [ 3.5000, 17.5000] },
-    { "profile": "rgb3", "name": "px_01", "address":   4, "position": [ 4.1249, 17.4438] },
-    { "profile": "rgb3", "name": "px_02", "address":   7, "position": [ 4.7298, 17.2768] },
-    { "profile": "rgb3", "name": "px_03", "address":  10, "position": [ 5.2951, 17.0046] },
-    { "profile": "rgb3", "name": "px_04", "address":  13, "position": [ 5.8028, 16.6358] },
-    { "profile": "rgb3", "name": "px_05", "address":  16, "position": [ 6.2364, 16.1822] },
-    { "profile": "rgb3", "name": "px_06", "address":  19, "position": [ 6.5821, 15.6585] },
-    { "profile": "rgb3", "name": "px_07", "address":  22, "position": [ 6.8287, 15.0816] },
-    { "profile": "rgb3", "name": "px_08", "address":  25, "position": [ 6.9683, 14.4698] },
-    { "profile": "rgb3", "name": "px_09", "address":  28, "position": [ 6.9965, 13.8430] },
-    { "profile": "rgb3", "name": "px_10", "address":  31, "position": [ 6.9122, 13.2212] },
-    { "profile": "rgb3", "name": "px_11", "address":  34, "position": [ 6.7183, 12.6244] },
-    { "profile": "rgb3", "name": "px_12", "address":  37, "position": [ 6.4210, 12.0719] },
-    { "profile": "rgb3", "name": "px_13", "address":  40, "position": [ 6.0298, 11.5813] },
-    { "profile": "rgb3", "name": "px_14", "address":  43, "position": [ 5.5572, 11.1684] },
-    { "profile": "rgb3", "name": "px_15", "address":  46, "position": [ 5.0186, 10.8466] },
-    { "profile": "rgb3", "name": "px_16", "address":  49, "position": [ 4.4311, 10.6261] },
-    { "profile": "rgb3", "name": "px_17", "address":  52, "position": [ 3.8137, 10.5141] },
-    { "profile": "rgb3", "name": "px_18", "address":  55, "position": [ 3.1863, 10.5141] },
-    { "profile": "rgb3", "name": "px_19", "address":  58, "position": [ 2.5689, 10.6261] },
-    { "profile": "rgb3", "name": "px_20", "address":  61, "position": [ 1.9814, 10.8466] },
-    { "profile": "rgb3", "name": "px_21", "address":  64, "position": [ 1.4428, 11.1684] },
-    { "profile": "rgb3", "name": "px_22", "address":  67, "position": [ 0.9702, 11.5813] },
-    { "profile": "rgb3", "name": "px_23", "address":  70, "position": [ 0.5790, 12.0719] },
-    { "profile": "rgb3", "name": "px_24", "address":  73, "position": [ 0.2817, 12.6244] },
-    { "profile": "rgb3", "name": "px_25", "address":  76, "position": [ 0.0878, 13.2212] },
-    { "profile": "rgb3", "name": "px_26", "address":  79, "position": [ 0.0035, 13.8430] },
-    { "profile": "rgb3", "name": "px_27", "address":  82, "position": [ 0.0317, 14.4698] },
-    { "profile": "rgb3", "name": "px_28", "address":  85, "position": [ 0.1713, 15.0816] },
-    { "profile": "rgb3", "name": "px_29", "address":  88, "position": [ 0.4179, 15.6585] },
-    { "profile": "rgb3", "name": "px_30", "address":  91, "position": [ 0.7636, 16.1822] },
-    { "profile": "rgb3", "name": "px_31", "address":  94, "position": [ 1.1972, 16.6358] },
-    { "profile": "rgb3", "name": "px_32", "address":  97, "position": [ 1.7049, 17.0046] },
-    { "profile": "rgb3", "name": "px_33", "address": 100, "position": [ 2.2702, 17.2768] },
-    { "profile": "rgb3", "name": "px_34", "address": 103, "position": [ 2.8751, 17.4438] }
+    { "profile": "rgb3", "name": "px_00", "address":   1, "position": [ 3.5000, 23.0000] },
+    { "profile": "rgb3", "name": "px_01", "address":   4, "position": [ 4.1249, 22.9438] },
+    { "profile": "rgb3", "name": "px_02", "address":   7, "position": [ 4.7298, 22.7768] },
+    { "profile": "rgb3", "name": "px_03", "address":  10, "position": [ 5.2951, 22.5046] },
+    { "profile": "rgb3", "name": "px_04", "address":  13, "position": [ 5.8028, 22.1358] },
+    { "profile": "rgb3", "name": "px_05", "address":  16, "position": [ 6.2364, 21.6822] },
+    { "profile": "rgb3", "name": "px_06", "address":  19, "position": [ 6.5821, 21.1585] },
+    { "profile": "rgb3", "name": "px_07", "address":  22, "position": [ 6.8287, 20.5816] },
+    { "profile": "rgb3", "name": "px_08", "address":  25, "position": [ 6.9683, 19.9698] },
+    { "profile": "rgb3", "name": "px_09", "address":  28, "position": [ 6.9965, 19.3430] },
+    { "profile": "rgb3", "name": "px_10", "address":  31, "position": [ 6.9122, 18.7212] },
+    { "profile": "rgb3", "name": "px_11", "address":  34, "position": [ 6.7183, 18.1244] },
+    { "profile": "rgb3", "name": "px_12", "address":  37, "position": [ 6.4210, 17.5719] },
+    { "profile": "rgb3", "name": "px_13", "address":  40, "position": [ 6.0298, 17.0813] },
+    { "profile": "rgb3", "name": "px_14", "address":  43, "position": [ 5.5572, 16.6684] },
+    { "profile": "rgb3", "name": "px_15", "address":  46, "position": [ 5.0186, 16.3466] },
+    { "profile": "rgb3", "name": "px_16", "address":  49, "position": [ 4.4311, 16.1261] },
+    { "profile": "rgb3", "name": "px_17", "address":  52, "position": [ 3.8137, 16.0141] },
+    { "profile": "rgb3", "name": "px_18", "address":  55, "position": [ 3.1863, 16.0141] },
+    { "profile": "rgb3", "name": "px_19", "address":  58, "position": [ 2.5689, 16.1261] },
+    { "profile": "rgb3", "name": "px_20", "address":  61, "position": [ 1.9814, 16.3466] },
+    { "profile": "rgb3", "name": "px_21", "address":  64, "position": [ 1.4428, 16.6684] },
+    { "profile": "rgb3", "name": "px_22", "address":  67, "position": [ 0.9702, 17.0813] },
+    { "profile": "rgb3", "name": "px_23", "address":  70, "position": [ 0.5790, 17.5719] },
+    { "profile": "rgb3", "name": "px_24", "address":  73, "position": [ 0.2817, 18.1244] },
+    { "profile": "rgb3", "name": "px_25", "address":  76, "position": [ 0.0878, 18.7212] },
+    { "profile": "rgb3", "name": "px_26", "address":  79, "position": [ 0.0035, 19.3430] },
+    { "profile": "rgb3", "name": "px_27", "address":  82, "position": [ 0.0317, 19.9698] },
+    { "profile": "rgb3", "name": "px_28", "address":  85, "position": [ 0.1713, 20.5816] },
+    { "profile": "rgb3", "name": "px_29", "address":  88, "position": [ 0.4179, 21.1585] },
+    { "profile": "rgb3", "name": "px_30", "address":  91, "position": [ 0.7636, 21.6822] },
+    { "profile": "rgb3", "name": "px_31", "address":  94, "position": [ 1.1972, 22.1358] },
+    { "profile": "rgb3", "name": "px_32", "address":  97, "position": [ 1.7049, 22.5046] },
+    { "profile": "rgb3", "name": "px_33", "address": 100, "position": [ 2.2702, 22.7768] },
+    { "profile": "rgb3", "name": "px_34", "address": 103, "position": [ 2.8751, 22.9438] }
   ]
 }

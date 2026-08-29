@@ -288,6 +288,27 @@ void GeneratorPattern::reflect(ecore::PropertyBag& bag)
     }
 }
 
+std::shared_ptr<eio::HSVStripNode_Mapped2D> edmx::makeStripNode(const PatternContext& context,
+                                                                eio::HSVStripSegment* segment,
+                                                                size_t idx)
+{
+    if (idx < context.nodeMappings.size())
+    {
+        // The rig said what each node is part of: build the node that can
+        // answer, so a look asking for the sculpture gets the sculpture.
+        const PatternContext::NodeMapping& mapping = context.nodeMappings[idx];
+        auto node = std::make_shared<eio::HSVStripNode_Space>(segment, static_cast<int>(idx));
+        node->space = mapping.space;
+        node->index = mapping.index;
+        node->count = mapping.count;
+        node->local = mapping.local;
+        node->u = mapping.u;
+        node->v = mapping.v;
+        return node;
+    }
+    return std::make_shared<eio::HSVStripNode_Mapped2D>(segment, static_cast<int>(idx));
+}
+
 GeneratorPattern::GeneratorPattern(const char* inName, std::shared_ptr<eanim::GeneratorHSV> inGenerator)
     : name(inName), generator(std::move(inGenerator))
 {
@@ -306,7 +327,7 @@ void GeneratorPattern::ensureNodes(const PatternContext& context)
 
     for (size_t idx = 0; idx < context.fixtureCount; ++idx)
     {
-        auto node = std::make_shared<eio::HSVStripNode_Mapped2D>(segment.get(), static_cast<int>(idx));
+        auto node = edmx::makeStripNode(context, segment.get(), idx);
 
         if (idx < context.nodeCoords.size())
         {

@@ -33,6 +33,11 @@
   // the truss.
   "coord_space": "normalized",
 
+  // What it is, for a look that treats the truss as a truss - a scanner
+  // running its length - rather than as part of the stage. See
+  // eio::NodeSpace in src/lib/eio/strip_projection.h.
+  "space": "truss",
+
   // The widget on this rig is a bare FTDI cable - it enumerates as
   // "FT232R USB UART" with a stock, unprogrammed EEPROM, which is exactly what
   // QLC+ shows for it too. There is no firmware in it, so the host generates

@@ -86,10 +86,35 @@ namespace edmx
         /// see Config::coordSpace.
         std::vector<ecore::Coordinate> nodeCoords;
 
+        /// Which object each node belongs to, and where it is in that
+        /// object's own terms - the relative view beside the stage one. See
+        /// eio::HSVStripNode_Space, which is what a pattern gets built from
+        /// these. Index-aligned with nodeCoords; empty means the rig has
+        /// nothing to say and every node is plainly on the stage.
+        struct NodeMapping
+        {
+            eio::NodeSpace space{eio::NodeSpace::Stage};
+            int index{0};
+            int count{1};
+            ecore::Coordinate local;
+            float u{0.5f};
+            float v{0.5f};
+        };
+        std::vector<NodeMapping> nodeMappings;
+
         /// Resolved for the running pattern: its own default frame, with any
         /// config override applied on top. Unused when nodeCoords is set.
         CoordFrame coords;
     };
+
+    /// One node for fixture `idx`, as the rig described it: a spaced node
+    /// when the context carries mappings, a plain mapped one otherwise. The
+    /// caller still sets `coord`. Shared by every pattern that builds nodes
+    /// here, so all of them answer a look's question about spaces the same
+    /// way.
+    std::shared_ptr<eio::HSVStripNode_Mapped2D> makeStripNode(const PatternContext& context,
+                                                              eio::HSVStripSegment* segment,
+                                                              size_t idx);
 
     class Pattern : public ecore::Tickable
     {

@@ -39,10 +39,10 @@ using namespace edmx;
 // HostRelicIO
 // ============================================================================
 
-void HostRelicIO::build(size_t count, uint8_t segmentId, const CoordFrame& frame,
-                        const std::vector<float>& positions,
-                        const std::vector<ecore::Coordinate>& nodeCoords)
+void HostRelicIO::build(const PatternContext& context, uint8_t segmentId)
 {
+    const size_t count = context.fixtureCount;
+
     strip_segments.clear();
     strips.clear();
     nodes.clear();
@@ -53,21 +53,23 @@ void HostRelicIO::build(size_t count, uint8_t segmentId, const CoordFrame& frame
 
     for (size_t idx = 0; idx < count; ++idx)
     {
-        auto node = std::make_shared<eio::HSVStripNode_Mapped2D>(segment.get(), static_cast<int>(idx));
+        // The same node GeneratorPattern builds - spaced when the rig said
+        // what each node is part of - so a scanner look asking which object
+        // it is lighting gets the same answer in a machine as bare.
+        auto node = edmx::makeStripNode(context, segment.get(), idx);
 
-        if (idx < nodeCoords.size())
+        if (idx < context.nodeCoords.size())
         {
-            // The rig knows where its nodes are - same rule as
-            // GeneratorPattern. Most scanner looks read the strip index and
-            // never notice, but a look that reads height (the record
-            // countdown's bottom-to-top sweep) gets the obelisk's real
-            // geometry instead of a straight run.
-            node->coord = nodeCoords[idx];
+            // The rig knows where its nodes are. Most scanner looks read the
+            // strip index and never notice, but a look that reads height
+            // (the record countdown's bottom-to-top sweep) gets the
+            // obelisk's real geometry instead of a straight run.
+            node->coord = context.nodeCoords[idx];
         }
         else
         {
-            const float position = (idx < positions.size()) ? positions[idx] : 0.0f;
-            node->coord = frame.at(position);
+            const float position = (idx < context.positions.size()) ? context.positions[idx] : 0.0f;
+            node->coord = context.coords.at(position);
         }
 
         nodes.push_back(node);
@@ -102,8 +104,7 @@ void StateMachinePattern::ensureBuilt(const PatternContext& context)
     builtFor = context.fixtureCount;
 
     io.reset(new HostRelicIO());
-    io->build(context.fixtureCount, segmentId, context.coords, context.positions,
-              context.nodeCoords);
+    io->build(context, segmentId);
 
     manager.reset(new esm::StateManager());
     machine.reset(new StateMachine_GenericHSV());

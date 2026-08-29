@@ -27,35 +27,36 @@
 
   "devices": [
     // The stage: literal coordinates, x across the obelisk's eight strips
-    // (0..7), y up - the floor at 0, the sculpture's top at 42, the ring a
-    // third of the way up it (kStage*/kRing* in
+    // (0..7), y up - the floor at 0, the sculpture's top at 42, the ring on
+    // it with its lowest pixel on the origin line y 16 (kStage*/kRing* in
     // src/relics/scanner/scanner_patterns.h).
     { "device": "scanner_ring", "offset": [0, 0], "view_scale": [0.9, 1.0] },
     { "device": "obelisk",      "offset": [0, 0], "view_scale": [0.5, 1.1] },
 
     {
-      // The truss, on the floor at the foot of the sculpture, as wide as one
-      // face of it and centred on it.
+      // The truss, on the stage's origin line - y 16, kStageOriginY in
+      // src/relics/scanner/scanner_patterns.h: the ring's lowest pixel is on
+      // it too, and it is where a beat-synced look starts from - as wide as
+      // one face of the sculpture and centred on it.
       //
       // The pars are normalized - 0..1 along the truss in their own file -
       // and a normalized device's local coordinates are the pattern frame's
       // *diagonal*: 0..1 becomes (0,0)..(8,43), a line climbing the whole
       // stage. So both axes are fitted: x to two strip-units (a face is two
       // strips), y to 0 - which collapses the climb to a flat row - and the
-      // offset puts that row at floor height, centred on the obelisk's
-      // middle, x 3.5. The truss is physically about the sculpture's width,
-      // so it sees the slice of a look that one face does rather than a lap
-      // of all eight strips. The scanner's looks travel up y: a wave starts
-      // on the truss and the foot of the obelisk together, passes through
-      // the ring and climbs to the top. The UV samples the middle of the run.
+      // offset puts that row at y 16, centred on the obelisk's middle, x
+      // 3.5. The truss is physically about the sculpture's width, so it
+      // sees the slice of a look that one face does rather than a lap of
+      // all eight strips. The UV samples the middle of the run.
       //
-      // Move it by changing these two lines. A truss spanning every strip
-      // is `"fit": [7, 0]` at `"offset": [0, 0]`; one standing off to the
-      // side and climbing the same height as the sculpture, as mythos26
-      // places it, is `"offset": [10, 0]` with no fit at all.
+      // Move it by changing these two lines. On the floor at the foot of
+      // the obelisk is `"offset": [2.5, 0]`; spanning every strip is
+      // `"fit": [7, 0]` at `"offset": [0, 0]`; standing off to the side and
+      // climbing the same height as the sculpture, as mythos26 places it,
+      // is `"offset": [10, 0]` with no fit at all.
       "device": "uking_par36_x10",
       "name": "pars",
-      "offset": [2.5, 0],
+      "offset": [2.5, 16],
       "fit": [2, 0],
 
       // Wide and short on screen: ten pars in a line want the width and none
