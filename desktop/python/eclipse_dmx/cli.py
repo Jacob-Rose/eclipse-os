@@ -474,6 +474,22 @@ def _cmd_list(args: argparse.Namespace) -> int:
     return 0
 
 
+def _add_remote_args(parser: argparse.ArgumentParser) -> None:
+    """--host and --remote-command, on a subcommand as well as before it.
+
+    argparse only reads a top-level option before the subcommand's name, and
+    `view config.json --host pi` is how anyone types it. Defaults are
+    SUPPRESSed here so a subcommand that was not given them leaves the
+    top-level value (or its None) alone rather than overwriting it.
+    """
+    parser.add_argument("--host", metavar="SSH_HOST", default=argparse.SUPPRESS,
+                        help="run the show on this machine over ssh; the config path is the "
+                             "host's, relative to desktop/ when it is under this checkout")
+    parser.add_argument("--remote-command", metavar="SHELL_LINE", default=argparse.SUPPRESS,
+                        help="what --host runs at the far end (default: afterglow's "
+                             "launch-desk.sh, or $ECLIPSE_DMX_REMOTE_COMMAND)")
+
+
 def _add_tempo_args(parser: argparse.ArgumentParser) -> None:
     """Tempo overrides, shared by the subcommands that start a show."""
     parser.add_argument("--midi", metavar="SPEC",
@@ -491,10 +507,10 @@ def build_parser() -> argparse.ArgumentParser:
         description="configure and drive eclipse-dmx, the eclipse-os DMX renderer",
     )
     parser.add_argument("--executable", help="path to eclipse-dmx (default: the build output, then PATH)")
-    parser.add_argument("--host", metavar="SSH_HOST",
+    parser.add_argument("--host", metavar="SSH_HOST", default=None,
                         help="run the show on this machine over ssh (run and view); the config "
                              "path is the host's, relative to desktop/ when it is under this checkout")
-    parser.add_argument("--remote-command", metavar="SHELL_LINE",
+    parser.add_argument("--remote-command", metavar="SHELL_LINE", default=None,
                         help="what --host runs at the far end (default: afterglow's launch-desk.sh, "
                              "or $ECLIPSE_DMX_REMOTE_COMMAND)")
 
@@ -561,6 +577,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--brightness", type=float, help="override master brightness (0..1)")
     run.add_argument("--verbose", "-v", action="store_true", help="echo the executable's logs")
     _add_tempo_args(run)
+    _add_remote_args(run)
     run.set_defaults(func=_cmd_run)
 
     osc = subparsers.add_parser(
@@ -626,6 +643,7 @@ def build_parser() -> argparse.ArgumentParser:
                         help="load this midi mapping file into the [m] panel "
                              "(default: midimaps/default.json beside the config, if present)")
     _add_tempo_args(viewer)
+    _add_remote_args(viewer)
     viewer.set_defaults(func=_cmd_view)
 
     return parser
