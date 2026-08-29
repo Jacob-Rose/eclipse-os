@@ -1106,7 +1106,143 @@ namespace
         /// sculpture plugged in mid-show joins the show at its current look
         /// instead of sitting in its own idle until the next transition.
         std::string lastCue;
+
+        /// A second pattern on a few named fixtures, rendered over the show
+        /// each frame - the UV par with its own off / flash / on machine
+        /// while the truss around it follows the scanner. Its pattern sees
+        /// only its fixtures, as a rig of their own that still carries the
+        /// stage coordinates and spaces those fixtures have in the show.
+        /// See LayerConfig, buildLayers and the `layer` command.
+        struct Layer
+        {
+            const LayerConfig* config{nullptr};
+            std::string name;
+            std::vector<size_t> fixtures;   ///< show-wide indices, in the layer's order
+            std::unique_ptr<Pattern> pattern;
+            PatternContext context;
+            std::vector<ecore::HSV> colors;
+        };
+        std::vector<Layer> layers;
     };
+
+    /// Each layer's slice of the rig, taken from the show's own context -
+    /// re-cut whenever that is, so a placement change reaches the layers.
+    void applyLayerContexts(ShowState& show)
+    {
+        for (ShowState::Layer& layer : show.layers)
+        {
+            PatternContext& context = layer.context;
+            const size_t count = layer.fixtures.size();
+
+            context.fixtureCount = count;
+            context.positions.resize(count);
+            context.nodeCoords.resize(count);
+            context.nodeMappings.resize(count);
+
+            for (size_t idx = 0; idx < count; ++idx)
+            {
+                const size_t at = layer.fixtures[idx];
+                context.positions[idx] = (count > 1)
+                    ? static_cast<float>(idx) / static_cast<float>(count - 1) : 0.0f;
+                if (at < show.context.nodeCoords.size())
+                {
+                    context.nodeCoords[idx] = show.context.nodeCoords[at];
+                }
+                if (at < show.context.nodeMappings.size())
+                {
+                    context.nodeMappings[idx] = show.context.nodeMappings[at];
+                }
+            }
+
+            if (layer.pattern)
+            {
+                context.coords = layer.pattern->defaultCoordFrame();
+            }
+            layer.colors.assign(count, ecore::HSV());
+        }
+    }
+
+    /// Resolves the config's layers against the devices and builds their
+    /// patterns.
+    ///
+    /// A fixture name that resolves to nothing is fatal, the way a device
+    /// file that does not exist is: it is a typo, and a layer quietly bound
+    /// to nothing would be a UV that never comes on with no message saying
+    /// why. `device/fixture` names one exactly; a bare `fixture` is accepted
+    /// while only one device has it.
+    bool buildLayers(ShowState& show, std::string& outError)
+    {
+        show.layers.clear();
+
+        for (const LayerConfig& config : show.config.layers)
+        {
+            ShowState::Layer layer;
+            layer.config = &config;
+            layer.name = config.name;
+
+            for (const std::string& reference : config.fixtures)
+            {
+                const size_t slash = reference.find('/');
+                const std::string deviceName = (slash == std::string::npos) ? "" : reference.substr(0, slash);
+                const std::string fixtureName = (slash == std::string::npos) ? reference : reference.substr(slash + 1);
+
+                std::vector<size_t> found;
+                size_t at = 0;
+                for (const Device& device : show.config.devices)
+                {
+                    for (size_t idx = 0; idx < device.fixtures.size(); ++idx)
+                    {
+                        if ((deviceName.empty() || device.name == deviceName)
+                            && device.fixtures[idx].name == fixtureName)
+                        {
+                            found.push_back(at + idx);
+                        }
+                    }
+                    at += device.fixtures.size();
+                }
+
+                if (found.empty())
+                {
+                    outError = "layer '" + config.name + "': no fixture named '" + reference + "'";
+                    return false;
+                }
+                if (found.size() > 1 && deviceName.empty())
+                {
+                    outError = "layer '" + config.name + "': more than one device has a '" + reference
+                             + "'; name it as device/" + reference;
+                    return false;
+                }
+                layer.fixtures.insert(layer.fixtures.end(), found.begin(), found.end());
+            }
+
+            PatternConfig patternConfig;
+            patternConfig.name = config.pattern;
+            patternConfig.stateName = config.state;
+            layer.pattern = makePattern(config.pattern, patternConfig, outError);
+            if (!layer.pattern)
+            {
+                outError = "layer '" + config.name + "': " + outError;
+                return false;
+            }
+
+            show.layers.push_back(std::move(layer));
+        }
+
+        applyLayerContexts(show);
+        return true;
+    }
+
+    ShowState::Layer* findLayer(ShowState& show, const std::string& name)
+    {
+        for (ShowState::Layer& layer : show.layers)
+        {
+            if (layer.name == name)
+            {
+                return &layer;
+            }
+        }
+        return nullptr;
+    }
 
     /// Resolves the coordinate frame for whatever pattern is running.
     ///
@@ -1233,18 +1369,22 @@ namespace
 
             at += count;
         }
+
+        // the layers see the stage through the show's nodes, so they follow
+        applyLayerContexts(show);
     }
 
-    /// Tells a UI which states it can offer, and which is showing.
+    /// Tells a UI which states a pattern can offer, and which is showing.
     ///
-    /// Emitted whenever the pattern changes, so a client that switches to a
-    /// state machine learns its states without having to ask.
-    void emitStates(ShowState& show)
+    /// `prefix` is "" for the show's own pattern and "LAYER <name> " for a
+    /// layer's, on every line - one announcement format, and a client that
+    /// reads the show's reads a layer's by stripping the prefix.
+    void emitStatesFor(Pattern* pattern, const std::string& prefix)
     {
-        StateMachinePattern* machine = show.pattern ? show.pattern->asStateMachine() : nullptr;
+        StateMachinePattern* machine = pattern ? pattern->asStateMachine() : nullptr;
         if (!machine)
         {
-            emit("STATES");
+            emit(prefix + "STATES");
             return;
         }
 
@@ -1254,8 +1394,15 @@ namespace
         {
             out << " " << state;
         }
-        emit(out.str());
-        emit("STATE " + machine->currentStateName());
+        emit(prefix + out.str());
+        emit(prefix + "STATE " + machine->currentStateName());
+    }
+
+    /// Emitted whenever the pattern changes, so a client that switches to a
+    /// state machine learns its states without having to ask.
+    void emitStates(ShowState& show)
+    {
+        emitStatesFor(show.pattern.get(), "");
     }
 
     /// A colour as `#rrggbb`, the way every other colour on this wire is
@@ -1327,26 +1474,26 @@ namespace
     ///
     /// Bools and colours carry a range too, pointless as it is, so one parser
     /// reads all three and only branches on the widget it builds.
-    void emitParams(ShowState& show)
+    void emitParamsFor(Pattern* pattern, const std::string& prefix)
     {
-        StateMachinePattern* machine = show.pattern ? show.pattern->asStateMachine() : nullptr;
+        StateMachinePattern* machine = pattern ? pattern->asStateMachine() : nullptr;
 
         std::ostringstream header;
-        header << "PARAMS " << (show.pattern ? show.pattern->getName() : "none")
+        header << "PARAMS " << (pattern ? pattern->getName() : "none")
                << " " << (machine ? machine->currentStateName() : "-");
-        emit(header.str());
+        emit(prefix + header.str());
 
-        if (!show.pattern)
+        if (!pattern)
         {
             return;
         }
 
         ecore::PropertyBag bag;
-        show.pattern->reflect(bag);
+        pattern->reflect(bag);
 
         for (const ecore::Property& property : bag.all())
         {
-            emit(paramLine(property));
+            emit(prefix + paramLine(property));
         }
 
         // The look's drawable shapes ride in the same block: a client that
@@ -1354,11 +1501,196 @@ namespace
         // each curve's *current* keys - which is what lets a curve editor
         // open on the live envelope rather than on a blank.
         eanim::CurveBag curves;
-        show.pattern->reflectCurves(curves);
+        pattern->reflectCurves(curves);
         for (const eanim::CurveRef& ref : curves.all())
         {
-            emit(curveLine(ref));
+            emit(prefix + curveLine(ref));
         }
+    }
+
+    void emitParams(ShowState& show)
+    {
+        emitParamsFor(show.pattern.get(), "");
+    }
+
+    /// The current set as one line of JSON, for keeping a tuning session.
+    std::string dumpLine(Pattern& pattern)
+    {
+        ecore::PropertyBag bag;
+        pattern.reflect(bag);
+
+        std::ostringstream out;
+        out << "DUMP {";
+        bool first = true;
+        for (const ecore::Property& property : bag.all())
+        {
+            out << (first ? "" : ", ") << "\"" << property.name << "\": ";
+            if (property.type == ecore::Property::Type::Bool)
+            {
+                out << (property.get() != 0.0f ? "true" : "false");
+            }
+            else if (property.type == ecore::Property::Type::Color)
+            {
+                // Quoted, as a config file writes a colour - the point of a
+                // dump is that it can be pasted back.
+                out << "\"" << colorToHex(property.getColor()) << "\"";
+            }
+            else
+            {
+                out << property.get();
+            }
+            first = false;
+        }
+        out << "}";
+        return out.str();
+    }
+
+    /// `param <name> <value>` against one pattern.
+    ///
+    /// Looks the knob up before reading the value, because what the value
+    /// *is* depends on the knob: `#ff2200` is a colour on a colour and a
+    /// mis-parse on an attack time. Says what it actually landed on - and
+    /// every curve, since a knob can rebuild one - *before* the caller's OK,
+    /// so a client that waits on the reply and then reads has the new value.
+    /// False after an ERR has gone out.
+    bool applyParam(Pattern& pattern, const std::string& name, const std::string& text,
+                    const std::string& prefix)
+    {
+        ecore::PropertyBag bag;
+        pattern.reflect(bag);
+
+        const ecore::Property* target = bag.find(name);
+        if (target == nullptr)
+        {
+            std::string known;
+            for (const ecore::Property& property : bag.all())
+            {
+                known += (known.empty() ? "" : ", ") + property.name;
+            }
+            emit("ERR no param '" + name + "'"
+               + (known.empty() ? " (this look has none)" : " (have: " + known + ")"));
+            return false;
+        }
+
+        if (target->type == ecore::Property::Type::Color)
+        {
+            ecore::HSV parsed;
+            if (!parseColorString(text, parsed))
+            {
+                emit("ERR param " + name + ": '" + text + "' is not a colour (want '#rrggbb')");
+                return false;
+            }
+            bag.setColor(name, parsed);
+        }
+        else
+        {
+            float value = 0.0f;
+            if (!parseFloatArg(text, value))
+            {
+                // A bool reads better as on/off at a desk than as 1/0, and
+                // the two spellings cost one comparison each.
+                if (text == "on" || text == "true")        value = 1.0f;
+                else if (text == "off" || text == "false") value = 0.0f;
+                else
+                {
+                    emit("ERR '" + text + "' is not a number");
+                    return false;
+                }
+            }
+            bag.set(name, value);
+        }
+
+        emit(prefix + paramLine(*target));
+
+        eanim::CurveBag curves;
+        pattern.reflectCurves(curves);
+        for (const eanim::CurveRef& ref : curves.all())
+        {
+            emit(prefix + curveLine(ref));
+        }
+        return true;
+    }
+
+    /// `curve <name> t:v[:easing] ...` against one pattern: the whole shape
+    /// at once, parsed into a scratch curve first so a typo cannot leave the
+    /// look holding half of one. Echoes what the look now holds before the
+    /// caller's OK. False after an ERR has gone out.
+    bool applyCurve(Pattern& pattern, const std::string& name,
+                    const std::vector<std::string>& words, size_t firstKey,
+                    const std::string& prefix)
+    {
+        eanim::CurveBag bag;
+        pattern.reflectCurves(bag);
+
+        eanim::CurveRef* target = bag.find(name);
+        if (target == nullptr)
+        {
+            std::string known;
+            for (const eanim::CurveRef& ref : bag.all())
+            {
+                known += (known.empty() ? "" : ", ") + ref.name;
+            }
+            emit("ERR no curve '" + name + "'"
+               + (known.empty() ? " (this look has none)" : " (have: " + known + ")"));
+            return false;
+        }
+
+        eanim::AutomationCurve parsed;
+        for (size_t at = firstKey; at < words.size(); ++at)
+        {
+            float keyTime = 0.0f;
+            float keyValue = 0.0f;
+            int easing = -1;
+            const int got = std::sscanf(words[at].c_str(), "%f:%f:%d", &keyTime, &keyValue, &easing);
+            if (got < 2)
+            {
+                emit("ERR curve key '" + words[at] + "' is not t:v or t:v:easing");
+                return false;
+            }
+            if (got >= 3 && (easing < 0 || easing > static_cast<int>(easing_functions::EaseInOutBounce)))
+            {
+                emit("ERR curve key '" + words[at] + "': no easing #" + std::to_string(easing));
+                return false;
+            }
+
+            const bool added = (got >= 3)
+                ? parsed.addKey(keyTime, keyValue, static_cast<easing_functions>(easing))
+                : parsed.addKey(keyTime, keyValue);
+            if (!added)
+            {
+                emit("ERR curve holds at most " + std::to_string(eanim::AutomationCurve::kMaxKeys) + " keys");
+                return false;
+            }
+        }
+
+        *target->curve = parsed;
+        if (target->onChanged)
+        {
+            target->onChanged();
+        }
+
+        emit(prefix + curveLine(*target));
+        return true;
+    }
+
+    /// Everything a client needs to know about one layer, in the order a
+    /// client that learns the show learns it: what it is on, then its
+    /// states and knobs with the same lines the show gets, prefixed.
+    void announceLayer(ShowState::Layer& layer)
+    {
+        const std::string prefix = "LAYER " + layer.name + " ";
+
+        std::ostringstream out;
+        out << "FIXTURES";
+        for (size_t at : layer.fixtures)
+        {
+            out << " " << at;
+        }
+        emit(prefix + out.str());
+        emit(prefix + "PATTERN " + (layer.pattern ? layer.pattern->getName() : "none"));
+
+        emitStatesFor(layer.pattern.get(), prefix);
+        emitParamsFor(layer.pattern.get(), prefix);
     }
 
     /// Lists what the machine can hear, for `midi list` and `--list-midi`.
@@ -1750,36 +2082,15 @@ namespace
             // paste, not a side effect of turning a knob.
             if (words.size() > 1 && words[1] == "dump")
             {
+                if (!show.pattern)
+                {
+                    emit("DUMP {}");
+                    emit("OK params dump 0");
+                    return;
+                }
+                emit(dumpLine(*show.pattern));
                 ecore::PropertyBag bag;
-                if (show.pattern)
-                {
-                    show.pattern->reflect(bag);
-                }
-
-                std::ostringstream out;
-                out << "DUMP {";
-                bool first = true;
-                for (const ecore::Property& property : bag.all())
-                {
-                    out << (first ? "" : ", ") << "\"" << property.name << "\": ";
-                    if (property.type == ecore::Property::Type::Bool)
-                    {
-                        out << (property.get() != 0.0f ? "true" : "false");
-                    }
-                    else if (property.type == ecore::Property::Type::Color)
-                    {
-                        // Quoted, as a config file writes a colour - the point
-                        // of a dump is that it can be pasted back.
-                        out << "\"" << colorToHex(property.getColor()) << "\"";
-                    }
-                    else
-                    {
-                        out << property.get();
-                    }
-                    first = false;
-                }
-                out << "}";
-                emit(out.str());
+                show.pattern->reflect(bag);
                 emit("OK params dump " + std::to_string(bag.size()));
                 return;
             }
@@ -1803,70 +2114,12 @@ namespace
                 return;
             }
 
-            ecore::PropertyBag bag;
-            show.pattern->reflect(bag);
-
-            // Look the knob up before reading the value, because what the value
-            // *is* depends on the knob: `#ff2200` is a colour and a mis-parse
-            // depending on which one you sent it to.
-            const ecore::Property* target = bag.find(words[1]);
-            if (target == nullptr)
+            // The echo of what it landed on goes out before the OK - see
+            // applyParam - so a client that waits on the reply and then reads
+            // has the new value and not the old one.
+            if (!applyParam(*show.pattern, words[1], words[2], ""))
             {
-                std::string known;
-                for (const ecore::Property& property : bag.all())
-                {
-                    known += (known.empty() ? "" : ", ") + property.name;
-                }
-                emit("ERR no param '" + words[1] + "'"
-                   + (known.empty() ? " (this look has none)" : " (have: " + known + ")"));
                 return;
-            }
-
-            if (target->type == ecore::Property::Type::Color)
-            {
-                ecore::HSV parsed;
-                if (!parseColorString(words[2], parsed))
-                {
-                    emit("ERR param " + words[1] + ": '" + words[2] + "' is not a colour"
-                       + " (want '#rrggbb')");
-                    return;
-                }
-                bag.setColor(words[1], parsed);
-            }
-            else
-            {
-                float value = 0.0f;
-                if (!parseFloatArg(words[2], value))
-                {
-                    // A bool reads better as on/off at a desk than as 1/0, and
-                    // the two spellings cost one comparison each.
-                    if (words[2] == "on" || words[2] == "true")        value = 1.0f;
-                    else if (words[2] == "off" || words[2] == "false") value = 0.0f;
-                    else
-                    {
-                        emit("ERR '" + words[2] + "' is not a number");
-                        return;
-                    }
-                }
-                bag.set(words[1], value);
-            }
-
-            // Say what it actually landed on, *before* the OK. A value outside
-            // the range is clamped, a rate snaps to the nearest musical one, and
-            // a client that waits on the OK and then reads the value would
-            // otherwise race the line telling it so - it would see the old
-            // number about as often as the new one.
-            emit(paramLine(*target));
-
-            // A knob's onChanged can rebuild a curve - attack and decay
-            // rewrite the envelope - so the shapes are re-said with the
-            // value, or a curve editor keeps drawing a shape the look no
-            // longer holds.
-            eanim::CurveBag curves;
-            show.pattern->reflectCurves(curves);
-            for (const eanim::CurveRef& ref : curves.all())
-            {
-                emit(curveLine(ref));
             }
 
             emit("OK param " + words[1] + " " + words[2]);
@@ -1892,66 +2145,140 @@ namespace
                 return;
             }
 
-            eanim::CurveBag bag;
-            show.pattern->reflectCurves(bag);
-
-            eanim::CurveRef* target = bag.find(words[1]);
-            if (target == nullptr)
+            if (!applyCurve(*show.pattern, words[1], words, 2, ""))
             {
-                std::string known;
-                for (const eanim::CurveRef& ref : bag.all())
-                {
-                    known += (known.empty() ? "" : ", ") + ref.name;
-                }
-                emit("ERR no curve '" + words[1] + "'"
-                   + (known.empty() ? " (this look has none)" : " (have: " + known + ")"));
                 return;
             }
 
-            // Parse into a scratch curve first: the live one is only touched
-            // once the whole message has proven well-formed, so a typo cannot
-            // leave the look holding half a shape.
-            eanim::AutomationCurve parsed;
-            for (size_t at = 2; at < words.size(); ++at)
-            {
-                float keyTime = 0.0f;
-                float keyValue = 0.0f;
-                int easing = -1;
-                const int got = std::sscanf(words[at].c_str(), "%f:%f:%d",
-                                            &keyTime, &keyValue, &easing);
-                if (got < 2)
-                {
-                    emit("ERR curve key '" + words[at] + "' is not t:v or t:v:easing");
-                    return;
-                }
-                if (got >= 3 && (easing < 0 || easing > static_cast<int>(easing_functions::EaseInOutBounce)))
-                {
-                    emit("ERR curve key '" + words[at] + "': no easing #" + std::to_string(easing));
-                    return;
-                }
-
-                const bool added = (got >= 3)
-                    ? parsed.addKey(keyTime, keyValue, static_cast<easing_functions>(easing))
-                    : parsed.addKey(keyTime, keyValue);
-                if (!added)
-                {
-                    emit("ERR curve holds at most "
-                       + std::to_string(eanim::AutomationCurve::kMaxKeys) + " keys");
-                    return;
-                }
-            }
-
-            *target->curve = parsed;
-            if (target->onChanged)
-            {
-                target->onChanged();
-            }
-
-            // the echo before the OK, same contract as param: what the look
-            // actually holds now, for the client that reads after the reply
-            emit(curveLine(*target));
-
             emit("OK curve " + words[1]);
+            return;
+        }
+
+        if (command == "layers")
+        {
+            // Everything about every layer, for a client that attached late
+            // or wants to be sure. The same lines it got at startup.
+            for (ShowState::Layer& layer : show.layers)
+            {
+                announceLayer(layer);
+            }
+            emit("OK " + std::to_string(show.layers.size()) + " layers");
+            return;
+        }
+
+        if (command == "layer")
+        {
+            // `layer <name> state <s> [seconds]` and, for the rest of what a
+            // pattern takes - states, params [dump], param <k> <v>, curve <k>
+            // keys... - the show's own commands with the layer's name in
+            // front. Its announcements come back the same way: every line
+            // the show's version emits, prefixed `LAYER <name>`. The reply
+            // itself is a plain OK/ERR, because a reply is to a command and
+            // a command is one at a time.
+            if (words.size() < 3)
+            {
+                emit("ERR layer needs a name and a command (state, states, params, param, curve)");
+                return;
+            }
+
+            ShowState::Layer* layer = findLayer(show, words[1]);
+            if (layer == nullptr)
+            {
+                std::string known;
+                for (const ShowState::Layer& each : show.layers)
+                {
+                    known += (known.empty() ? "" : ", ") + each.name;
+                }
+                emit("ERR no layer '" + words[1] + "'"
+                   + (known.empty() ? " (this show has none)" : " (have: " + known + ")"));
+                return;
+            }
+
+            const std::string prefix = "LAYER " + layer->name + " ";
+            const std::string& sub = words[2];
+            Pattern& pattern = *layer->pattern;
+
+            if (sub == "state")
+            {
+                if (words.size() < 4)
+                {
+                    emit("ERR layer state needs a name");
+                    return;
+                }
+                StateMachinePattern* machine = pattern.asStateMachine();
+                if (machine == nullptr)
+                {
+                    emit("ERR layer '" + layer->name + "' runs '" + pattern.getName()
+                       + "', which is not a state machine");
+                    return;
+                }
+                if (words.size() > 4)
+                {
+                    machine->setTransitionTime(static_cast<float>(atof(words[4].c_str())));
+                }
+                std::string error;
+                if (!machine->setState(words[3], error))
+                {
+                    emit("ERR layer " + layer->name + ": " + error);
+                    return;
+                }
+                emit("OK layer " + layer->name + " state " + words[3]);
+                emit(prefix + "STATE " + machine->currentStateName());
+                emitParamsFor(&pattern, prefix);
+                return;
+            }
+
+            if (sub == "states")
+            {
+                emitStatesFor(&pattern, prefix);
+                emit("OK layer " + layer->name + " states");
+                return;
+            }
+
+            if (sub == "params")
+            {
+                if (words.size() > 3 && words[3] == "dump")
+                {
+                    emit(prefix + dumpLine(pattern));
+                    emit("OK layer " + layer->name + " params dump");
+                    return;
+                }
+                emitParamsFor(&pattern, prefix);
+                emit("OK layer " + layer->name + " params");
+                return;
+            }
+
+            if (sub == "param")
+            {
+                if (words.size() < 5)
+                {
+                    emit("ERR layer param needs a name and a value");
+                    return;
+                }
+                if (!applyParam(pattern, words[3], words[4], prefix))
+                {
+                    return;
+                }
+                emit("OK layer " + layer->name + " param " + words[3] + " " + words[4]);
+                return;
+            }
+
+            if (sub == "curve")
+            {
+                if (words.size() < 6)
+                {
+                    emit("ERR layer curve needs a name and at least two t:v keys");
+                    return;
+                }
+                if (!applyCurve(pattern, words[3], words, 4, prefix))
+                {
+                    return;
+                }
+                emit("OK layer " + layer->name + " curve " + words[3]);
+                return;
+            }
+
+            emit("ERR layer: unknown command '" + sub + "' (state, states, params, param, curve)");
             return;
         }
 
@@ -2807,6 +3134,15 @@ int main(int argc, char** argv)
     // Fills nodeCoords, which is where the placements are actually applied.
     applyCoordFrame(show);
 
+    // The layers, once the nodes they slice exist. A name that resolves to
+    // nothing is fatal here, like a missing device file: it is a typo.
+    if (!buildLayers(show, error))
+    {
+        logLine("config error: " + error);
+        emit("ERR config " + error);
+        return 1;
+    }
+
     {
         std::ostringstream ready;
         ready << "READY fixtures=" << fixtureCount
@@ -2925,12 +3261,36 @@ int main(int argc, char** argv)
         show.pattern->tick(deltaTime);
         show.pattern->render(show.context, show.colors);
 
+        // The layers, over the show: each renders its own few fixtures as a
+        // rig of their own and writes the result over what the show put
+        // there. The UV par flashing on the beat while the truss around it
+        // follows the scanner is one layer of one fixture.
+        for (ShowState::Layer& layer : show.layers)
+        {
+            layer.pattern->tick(deltaTime);
+            layer.pattern->render(layer.context, layer.colors);
+            for (size_t idx = 0; idx < layer.fixtures.size() && idx < layer.colors.size(); ++idx)
+            {
+                const size_t at = layer.fixtures[idx];
+                if (at < show.colors.size())
+                {
+                    show.colors[at] = layer.colors[idx];
+                }
+            }
+        }
+
         // Once, after the first frame. A state machine's looks are not built
         // until it has been rendered — that is when it learns the rig's shape —
-        // so announcing the knobs any earlier announces an empty set.
+        // so announcing the knobs any earlier announces an empty set. The
+        // layers likewise, and after the show's so a client that reads
+        // blocks in order finishes the show's before a layer's begins.
         if (framesRendered == 0)
         {
             emitParams(show);
+            for (ShowState::Layer& layer : show.layers)
+            {
+                announceLayer(layer);
+            }
         }
 
         // One render, then each device takes its own slice of it. This is the

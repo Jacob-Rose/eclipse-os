@@ -67,5 +67,16 @@
       // is a property of this room, not of the lights.
       "brightness": 1.0
     }
+  ],
+
+  // A second pattern on a few named fixtures, rendered over the show.
+  //
+  // The UV par is on the truss's cable, so it is a fixture of the pars device
+  // and not a device of its own - but it has its own job. This layer gives
+  // it its own machine: `off`, `flash` (the beat pulse, envelope drawable at
+  // the desk) and `on`, driven with `layer uv state <mode>` independently of
+  // the show's cues, and written over whatever the show put on the fixture.
+  "layers": [
+    { "name": "uv", "fixtures": ["pars/uv"], "pattern": "uv", "state": "off" }
   ]
 }

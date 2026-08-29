@@ -502,6 +502,11 @@ namespace
         table["obelisk"] = []() {
             return std::unique_ptr<Pattern>(makeObeliskStateMachine().release());
         };
+
+        // --- the UV par's three modes, for a layer over the show --------
+        table["uv"] = []() {
+            return std::unique_ptr<Pattern>(makeUvStateMachine().release());
+        };
     }
 }
 

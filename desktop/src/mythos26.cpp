@@ -543,6 +543,56 @@ namespace
         };
         return def;
     }
+
+    /// One flat level of white: a light held where it is put. The UV par's
+    /// `off` and `on` are this at 0 and 1; `level` is a knob so `on` can be
+    /// trimmed at the desk without becoming a different state.
+    class Pattern_Level : public eanim::GeneratorHSV
+    {
+    public:
+        float level{1.0f};
+
+        virtual void render(eio::HSVStripNode* /*node*/, ecore::HSV& inOutColor) const override
+        {
+            inOutColor = ecore::HSV(0.0f, 0.0f, level);
+        }
+
+        virtual void reflect(ecore::PropertyBag& bag) override
+        {
+            bag.add("level", level, 0.0f, 1.0f);
+        }
+    };
+
+    StateDef levelLook(const char* name, float level)
+    {
+        StateDef def;
+        def.name = name;
+        def.make = [level]() -> std::shared_ptr<eanim::GeneratorHSV> {
+            auto pattern = std::make_shared<Pattern_Level>();
+            pattern->level = level;
+            return pattern;
+        };
+        return def;
+    }
+}
+
+std::unique_ptr<StateMachinePattern> edmx::makeUvStateMachine()
+{
+    // The UV par's three modes, as a layer's machine. `flash` is the show's
+    // beat pulse - the same envelope, drawable at the desk, the same rate
+    // knob - on a light that is nothing but a level, so the UV hits on the
+    // beat while the truss around it follows the scanner.
+    std::vector<StateDef> states = {
+        levelLook("off", 0.0f),
+        //                                     attack decay  rate
+        beatLook<Pattern_Mythos_BeatPulse>("flash", 0.02f, 0.30f, 1.0f),
+        levelLook("on", 1.0f),
+    };
+
+    CoordFrame frame;
+    // a short cross-fade: a light changing mode should snap, not swim
+    return std::unique_ptr<StateMachinePattern>(new StateMachinePattern(
+        "uv", std::move(states), 0, frame, 0.15f));
 }
 
 std::unique_ptr<StateMachinePattern> edmx::makeMythos26StateMachine()

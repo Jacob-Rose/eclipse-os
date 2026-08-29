@@ -167,6 +167,133 @@ def _curve_tokens(keys: "Sequence[CurveKeyTuple]") -> List[str]:
     return tokens
 
 
+class LayerView:
+    """One layer of the running show, as the desk sees it.
+
+    A layer is a second pattern on a few named fixtures, rendered over the
+    show - the UV par with its own off / flash / on machine. It announces
+    itself with the show's own lines prefixed ``LAYER <name>``, so this holds
+    the same things ShowController holds for the show's look - states,
+    params, curves, a revision - and offers the same calls, sent as
+    ``layer <name> ...``. A UI that can tune the show's look can tune a
+    layer's by pointing at one of these instead.
+    """
+
+    def __init__(self, show: "ShowController", name: str) -> None:
+        self.show = show
+        self.name = name
+        #: show-wide fixture indices this layer paints, in its order
+        self.fixtures: List[int] = []
+        self.pattern_name: str = ""
+        self.state_names: List[str] = []
+        self.current_state: str = ""
+        self.params: List[Param] = []
+        self.params_revision: int = 0
+        self.curves: dict = {}
+        self._params_open: Optional[List[Param]] = None
+        self._look_key: Tuple[str, str] = ("", "")
+        self._look_defaults: dict = {}
+
+    # -- what the executable says ------------------------------------------
+
+    def saw_line(self, raw: str) -> None:
+        """Any line at all off the executable, before it is dispatched.
+
+        Closes an open PARAMS block unless the line continues it. The block
+        is otherwise ended by whatever follows it - normally a frame line,
+        which the show's reader drops without this layer ever seeing it.
+        """
+        if self._params_open is None:
+            return
+        mine = "LAYER " + self.name + " "
+        if raw.startswith(mine + "PARAM ") or raw.startswith(mine + "CURVE "):
+            return
+        self._finalize_params()
+
+    def handle(self, line: str) -> None:
+        """One announcement, with the ``LAYER <name>`` already stripped."""
+        if self._params_open is not None and not (
+                line.startswith("PARAM ") or line.startswith("CURVE ")):
+            self._finalize_params()
+
+        if line.startswith("FIXTURES "):
+            try:
+                self.fixtures = [int(token) for token in line.split()[1:]]
+            except ValueError:
+                pass
+        elif line.startswith("PATTERN "):
+            self.pattern_name = line[len("PATTERN "):].strip()
+        elif line.startswith("STATES"):
+            self.state_names = line.split()[1:]
+        elif line.startswith("STATE "):
+            self.current_state = line[len("STATE "):].strip()
+        elif line.startswith("PARAMS"):
+            parts = line.split()
+            self._look_key = (parts[1] if len(parts) > 1 else "",
+                              parts[2] if len(parts) > 2 else "")
+            self._params_open = []
+            self.params = self._params_open
+            self.curves = {}
+        elif line.startswith("CURVE "):
+            parsed = _parse_curve(line)
+            if parsed is not None:
+                self.curves[parsed[0]] = parsed[1]
+        elif line.startswith("PARAM "):
+            param = _parse_param(line)
+            if param is None:
+                pass
+            elif self._params_open is not None:
+                self._params_open.append(param)
+            else:
+                for index, existing in enumerate(self.params):
+                    if existing.name == param.name:
+                        self.params[index] = param
+                        break
+
+    def _finalize_params(self) -> None:
+        self._params_open = None
+        self.params_revision += 1
+        if self._look_key not in self._look_defaults:
+            self._look_defaults[self._look_key] = (
+                {param.name: param.value for param in self.params},
+                {name: list(keys) for name, keys in self.curves.items()},
+            )
+
+    # -- what a desk does to it --------------------------------------------
+
+    def set_state(self, name: str) -> None:
+        self.show.command(f"layer {self.name} state {name}")
+        self.current_state = name
+
+    def set_param(self, name: str, value: Union[float, bool, str]) -> None:
+        if isinstance(value, bool):
+            value = 1 if value else 0
+        self.show.command(f"layer {self.name} param {name} {value}")
+
+    def get_param(self, name: str) -> Optional[Param]:
+        return next((param for param in self.params if param.name == name), None)
+
+    def set_curve(self, name: str, keys: Sequence[CurveKeyTuple]) -> None:
+        self.show.command(f"layer {self.name} curve {name} " + " ".join(_curve_tokens(keys)))
+
+    def reset_look(self) -> None:
+        defaults = self._look_defaults.get(self._look_key)
+        if defaults is None:
+            raise ShowError("no defaults recorded for this look yet")
+        param_values, curve_keys = defaults
+        for name, value in param_values.items():
+            self.set_param(name, value)
+        for name, keys in curve_keys.items():
+            self.set_curve(name, keys)
+
+    def refresh_params(self) -> List[Param]:
+        self.show.command(f"layer {self.name} params")
+        return self.params
+
+    def __repr__(self) -> str:
+        return f"LayerView({self.name}: {self.pattern_name} {self.current_state or '-'})"
+
+
 def _parse_frame(line: str) -> Optional[Frame]:
     """Parses one ``F rrggbb rrggbb ...`` line into per-fixture colours.
 
@@ -316,6 +443,12 @@ class ShowController:
         #: fresh with every desk, so first-seen is the cue's own defaults -
         #: which is why reset_look() needs nothing from the C++ side.
         self._look_defaults: dict = {}
+
+        #: The show's layers by name - a second pattern each on a few named
+        #: fixtures, announced after the first frame. `layers_revision` moves
+        #: when one appears, so a UI can build a control for it.
+        self.layers: dict = {}
+        self.layers_revision: int = 0
 
         #: "pixels" or "cue" when this show drives a relic over USB. Tracked
         #: rather than asked for, because the executable only announces it in
@@ -545,6 +678,29 @@ class ShowController:
         if self._params_open is not None and not (
                 line.startswith("PARAM ") or line.startswith("CURVE ")):
             self._finalize_params()
+
+        # A layer's PARAMS block ends the way the show's does - at the first
+        # line that is not part of it - but the line that ends it is usually
+        # a frame, which never reaches the layer. So the layers are told
+        # here, before anything else sees the line, that something else
+        # arrived; each closes its block unless the line is its own.
+        for layer in self.layers.values():
+            layer.saw_line(line)
+
+        # A layer's announcements are the show's own lines with `LAYER <name>`
+        # in front: handed to that layer's view, which reads them the way
+        # this reads the show's. Kept out of _events for the same reason as
+        # PARAM lines - a set arrives on every state change.
+        if line.startswith("LAYER "):
+            parts = line.split(None, 2)
+            if len(parts) == 3:
+                layer = self.layers.get(parts[1])
+                if layer is None:
+                    layer = LayerView(self, parts[1])
+                    self.layers[parts[1]] = layer
+                    self.layers_revision += 1
+                layer.handle(parts[2])
+            return
 
         # Frame lines arrive tens of times a second and are pure data, so they
         # are dispatched and dropped rather than kept in _events, which would

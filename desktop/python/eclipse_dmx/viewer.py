@@ -881,6 +881,16 @@ class ViewerApp:
         self._dispatcher = Dispatcher(self._midimap, ActionContext(
             show=self.show, osc_factory=self._map_osc, say=self._say))
 
+        #: Whose knobs the right-hand pane shows and the curve editor drives:
+        #: the show's look, or one of its layers'. Both offer the same calls
+        #: (params, curves, get/set_param, set_curve, reset_look, a revision),
+        #: so everything below that tunes a look tunes whichever this is.
+        self._knobs = self.show
+        self._knob_target_buttons: Dict[str, tk.Button] = {}
+        #: per layer, its state buttons by state name
+        self._layer_buttons: Dict[str, Dict[str, tk.Button]] = {}
+        self._layers_revision = -1
+
         self._build_window(width, height)
 
         self.show.start()
@@ -1126,6 +1136,12 @@ class ViewerApp:
 
         self.extra_row.pack(fill="x")
 
+        # -- the layers, a row each, under the patterns --------------------
+        # Empty and unpacked until the executable announces one; see
+        # _refresh_layers. A layer is its own small cue list - the UV's
+        # off / flash / on - that the show's cues never touch.
+        self.layer_row = tk.Frame(self.button_panel, bg=PANEL)
+
         # -- tempo, division and master, on their own row ------------------
         # Separate from the pattern row because these apply to whatever is
         # running: they are the desk, not the cue list.
@@ -1200,6 +1216,13 @@ class ViewerApp:
         look_header.pack(fill="x", pady=(4, 0))
         tk.Label(look_header, text="look", bg=PANEL, fg=TEXT_DIM,
                  font=("Consolas", 9), anchor="w", padx=8).pack(side="left")
+
+        # Whose look: the show's, or a layer's. One button each, the layers'
+        # added as the executable announces them. The pane, the curve
+        # editor's aim and reset all follow the choice.
+        self._knob_target_row = tk.Frame(look_header, bg=PANEL)
+        self._knob_target_row.pack(side="left")
+        self._add_knob_target("show", self.show)
 
         # -- kept looks: a dropdown of this state's presets, and a way to
         # add one. The menu applies on pick; "add" snapshots every knob and
@@ -1286,6 +1309,92 @@ class ViewerApp:
 
     # -- the running look's knobs -----------------------------------------
 
+    def _add_knob_target(self, label: str, target) -> None:
+        button = tk.Button(
+            self._knob_target_row, text=label, font=("Consolas", 8),
+            bg=BUTTON_BG, fg=TEXT_DIM, activebackground=BUTTON_BG_ACTIVE,
+            activeforeground=BUTTON_FG, relief="flat", padx=6, pady=1,
+            highlightthickness=0, borderwidth=0,
+            command=lambda t=target: self._select_knobs(t),
+        )
+        button.pack(side="left", padx=2)
+        self._knob_target_buttons[label] = button
+        self._refresh_knob_target_buttons()
+
+    def _refresh_knob_target_buttons(self) -> None:
+        for label, button in self._knob_target_buttons.items():
+            chosen = (self._knobs is self.show and label == "show") or (
+                self._knobs is not self.show and getattr(self._knobs, "name", None) == label)
+            button.configure(bg=BUTTON_BG_ACTIVE if chosen else BUTTON_BG,
+                             fg=BUTTON_FG if chosen else TEXT_DIM)
+
+    def _select_knobs(self, target) -> None:
+        """Points the knob pane, the curve editor and reset at a look."""
+        if target is self._knobs:
+            return
+        # an audition on the old look's knob must end before the aim moves
+        self.curve_editor.stop_playback()
+        self._knobs = target
+        self._param_revision = target.params_revision
+        self._build_params()
+        self._refresh_curve_targets()
+        self._refresh_look_presets()
+        self._refresh_knob_target_buttons()
+
+    # -- the layers -------------------------------------------------------
+
+    def _refresh_layers(self) -> None:
+        """A row per layer: its name, then one button per state.
+
+        Built when the executable announces a layer, which is after the
+        first frame. Clicking a state cues that layer alone; the show's
+        cues are untouched. Clicking the name points the knob pane at it.
+        """
+        for name, layer in self.show.layers.items():
+            if name in self._layer_buttons:
+                continue
+            row = tk.Frame(self.layer_row, bg=PANEL)
+            row.pack(fill="x")
+            tk.Button(
+                row, text=name, font=("Consolas", 9, "bold"),
+                bg=PANEL, fg=TEXT_DIM, activebackground=PANEL,
+                activeforeground=TEXT, relief="flat", padx=8, pady=3,
+                highlightthickness=0, borderwidth=0,
+                command=lambda t=layer: self._select_knobs(t),
+            ).pack(side="left")
+
+            buttons: Dict[str, tk.Button] = {}
+            for state in layer.state_names:
+                button = tk.Button(
+                    row, text=state.replace("_", " "), font=("Consolas", 9),
+                    bg=BUTTON_BG, fg=BUTTON_FG, activebackground=BUTTON_BG_ACTIVE,
+                    activeforeground=BUTTON_FG, relief="flat", padx=8, pady=3,
+                    highlightthickness=0, borderwidth=0,
+                    command=lambda t=layer, s=state: self._cue_layer(t, s),
+                )
+                button.pack(side="left", padx=3, pady=3)
+                buttons[state] = button
+            self._layer_buttons[name] = buttons
+            self._add_knob_target(name, layer)
+
+        if self._layer_buttons and not self.layer_row.winfo_ismapped():
+            self.layer_row.pack(fill="x", after=self.extra_row)
+            self._resize_split()
+
+    def _refresh_layer_buttons(self) -> None:
+        for name, buttons in self._layer_buttons.items():
+            layer = self.show.layers.get(name)
+            if layer is None:
+                continue
+            for state, button in buttons.items():
+                button.configure(bg=BUTTON_BG_ACTIVE if state == layer.current_state else BUTTON_BG)
+
+    def _cue_layer(self, layer, state: str) -> None:
+        self._guard(lambda: layer.set_state(state), f"layer {layer.name}")
+        self._refresh_layer_buttons()
+        # the layer's knobs changed with its look; if the pane is on it,
+        # follow - the revision check in the pump does the rebuild
+
     def _build_params(self) -> None:
         """Builds a control per property the running look offers.
 
@@ -1306,7 +1415,7 @@ class ViewerApp:
         self._param_widgets = {}
         self._param_sent = {}
 
-        params = list(self.show.params)
+        params = list(self._knobs.params)
         if not params:
             # Said out loud rather than left blank. An empty pane reads as a
             # panel that failed to load; this reads as a look with no knobs,
@@ -1424,7 +1533,7 @@ class ViewerApp:
         right way round: you pick against the rig doing what it is doing, not
         against a frozen window.
         """
-        param = self.show.get_param(name)
+        param = self._knobs.get_param(name)
         current = str(param.value) if param is not None else "#ffffff"
 
         try:
@@ -1440,7 +1549,7 @@ class ViewerApp:
 
     def _apply_param(self, name: str, value: Union[float, str]) -> None:
         self._param_sent[name] = value
-        self._guard(lambda: self.show.set_param(name, value), f"param {name}")
+        self._guard(lambda: self._knobs.set_param(name, value), f"param {name}")
 
         # The executable clamps to the range, snaps a rate to a musical one, and
         # echoes what it landed on - so the widgets follow the look rather than
@@ -1453,7 +1562,7 @@ class ViewerApp:
         self.curve_editor.refresh_live()
 
     def _show_param(self, name: str) -> None:
-        param = self.show.get_param(name)
+        param = self._knobs.get_param(name)
         widgets = self._param_widgets.get(name)
         if param is None or widgets is None:
             return
@@ -1726,18 +1835,18 @@ class ViewerApp:
         self.curve_editor.set_targets(
             [
                 (param.name, param.minimum, param.maximum)
-                for param in self.show.params
+                for param in self._knobs.params
                 if not param.is_bool and not param.is_color
             ],
-            curve_names=list(self.show.curves.keys()),
+            curve_names=list(self._knobs.curves.keys()),
         )
 
     def _push_look_curve(self, name: str, keys) -> None:
         """One edited shape, into the running look's own curve."""
-        self._guard(lambda: self.show.set_curve(name, keys), f"curve {name}")
+        self._guard(lambda: self._knobs.set_curve(name, keys), f"curve {name}")
 
     def _look_curve_keys(self, name: str):
-        return self.show.curves.get(name)
+        return self._knobs.curves.get(name)
 
     def _reset_look(self) -> None:
         """Every knob and curve back to what the cue constructed."""
@@ -1745,7 +1854,7 @@ class ViewerApp:
         # next tick, and then "restore" a pre-reset value on stop
         self.curve_editor.stop_playback()
 
-        self._guard(self.show.reset_look, "reset")
+        self._guard(self._knobs.reset_look, "reset")
 
         # the echoes have landed (reset_look sends synchronously): put every
         # widget and the drawn shape back in step with the look
@@ -1758,6 +1867,10 @@ class ViewerApp:
     def _look_state(self) -> str:
         """Which folder a preset belongs to: the state, or for a plain
         pattern with no states, the pattern itself."""
+        if self._knobs is not self.show:
+            # a layer's presets file under the layer's own state, in the
+            # layer's own folder, so `on` for the UV never meets the show's
+            return f"{self._knobs.name}.{self._knobs.current_state or 'look'}"
         return self.show.current_state or self.current_pattern
 
     def _refresh_look_presets(self) -> None:
@@ -1806,7 +1919,7 @@ class ViewerApp:
 
     def _save_look_preset(self) -> None:
         """Snapshot the running look's values, ask for a name, keep it."""
-        if not self.show.params and not self.show.curves:
+        if not self._knobs.params and not self._knobs.curves:
             self._say("preset: this look has no knobs to keep")
             return
         name = simpledialog.askstring(
@@ -1818,7 +1931,7 @@ class ViewerApp:
         # _look_state, not current_state: a stateless pattern's presets file
         # under the pattern's own name rather than all sharing one folder
         preset = look_presets.snapshot(
-            self.show, name, self.current_pattern, self._look_state())
+            self._knobs, name, self.current_pattern, self._look_state())
         try:
             path = look_presets.save_preset(self._preset_dir, preset)
         except OSError as error:
@@ -1841,7 +1954,7 @@ class ViewerApp:
             if name == "master":
                 self._held_target = ("master", self._master)
             else:
-                param = self.show.get_param(name)
+                param = self._knobs.get_param(name)
                 self._held_target = (name, param.value) if param else None
             return
 
@@ -1854,7 +1967,7 @@ class ViewerApp:
         if held_name == "master":
             self._set_master(value)
         else:
-            self._guard(lambda: self.show.set_param(held_name, value),
+            self._guard(lambda: self._knobs.set_param(held_name, value),
                         f"restore {held_name}")
             self._show_param(held_name)
 
@@ -1863,7 +1976,7 @@ class ViewerApp:
         if name == "master":
             self._set_master(value)
             return
-        self._guard(lambda: self.show.set_param(name, value), f"curve {name}")
+        self._guard(lambda: self._knobs.set_param(name, value), f"curve {name}")
         # the executable's echo drives the knob's own slider, so the panel
         # visibly plays the curve too
         self._show_param(name)
@@ -2120,11 +2233,18 @@ class ViewerApp:
 
         # Same reason, for the knobs: the executable announces a new set on
         # every pattern and state change, and the revision is what says so.
-        if self.show.params_revision != self._param_revision:
-            self._param_revision = self.show.params_revision
+        if self._knobs.params_revision != self._param_revision:
+            self._param_revision = self._knobs.params_revision
             self._build_params()
             self._refresh_curve_targets()
             self._refresh_look_presets()
+
+        # The layers: a row each when they are announced, and their state
+        # buttons following the executable's word on which is showing.
+        if self.show.layers_revision != self._layers_revision:
+            self._layers_revision = self.show.layers_revision
+            self._refresh_layers()
+        self._refresh_layer_buttons()
 
         now = time.monotonic()
         elapsed = now - self._fps_marker

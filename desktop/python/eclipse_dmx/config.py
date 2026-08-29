@@ -82,6 +82,8 @@ PATTERN_NAMES = (
     "obelisk",
     # the show: written for this rig, and beat-driven
     "mythos26",
+    # the UV par's three modes, for a layer over the show
+    "uv",
 )
 
 #: The jacket's looks, in the order its state machine lists them. Must stay in
@@ -146,6 +148,14 @@ OBELISK_STATES = (
     "mono",
 )
 
+#: The UV par's modes, for a layer. Must stay in step with
+#: makeUvStateMachine() in desktop/src/mythos26.cpp.
+UV_STATES = (
+    "off",
+    "flash",
+    "on",
+)
+
 #: Which patterns are state machines, and what states each offers. Used to
 #: check `pattern.state` before a binary is necessarily around.
 STATE_MACHINE_STATES = {
@@ -153,6 +163,7 @@ STATE_MACHINE_STATES = {
     "mythos26": MYTHOS26_STATES,
     "generic": GENERIC_STATES,
     "obelisk": OBELISK_STATES,
+    "uv": UV_STATES,
 }
 
 ADDRESSING_MODES = ("one", "zero")
@@ -776,6 +787,13 @@ class Config:
 
     devices: List[Device] = field(default_factory=lambda: [Device()])
 
+    #: Layers: a second pattern each on a few named fixtures, rendered over
+    #: the show - the UV par with its own off / flash / on machine. Kept as
+    #: the file's own dicts (name, fixtures, pattern, state); the executable
+    #: is the authority on what they mean. See LayerConfig in
+    #: desktop/include/edmx/config.h.
+    layers: List[Dict[str, Any]] = field(default_factory=list)
+
     # -- the single-device view -------------------------------------------
     #
     # Most of this package, and every config written before environments, deals
@@ -1003,6 +1021,8 @@ class Config:
             "midi": self.midi.to_dict(),
             "pattern": self.pattern.to_dict(),
         }
+        if self.layers:
+            show["layers"] = [dict(layer) for layer in self.layers]
 
         # One device round-trips as the single-rig shape, because that is what
         # it is and writing it as an environment would mean emitting a separate
@@ -1247,6 +1267,27 @@ class Config:
             coord_span_x=_optional_float(pattern.get("coord_span_x")),
             coord_span_y=_optional_float(pattern.get("coord_span_y")),
         )
+
+        # Layers, checked for shape only - whether a fixture name resolves is
+        # the executable's call, with the devices in hand.
+        config.layers = []
+        for index, entry in enumerate(data.get("layers", []) or []):
+            if not isinstance(entry, dict):
+                raise ConfigError(f"layers[{index}] must be an object")
+            fixtures = entry.get("fixtures", [])
+            if isinstance(fixtures, str):
+                fixtures = [fixtures]
+            layer = {
+                "name": str(entry.get("name", f"layer_{index}")),
+                "fixtures": [str(name) for name in fixtures],
+                "pattern": str(entry.get("pattern", "")),
+                "state": str(entry.get("state", "")),
+            }
+            if not layer["pattern"]:
+                raise ConfigError(f"layer '{layer['name']}' names no pattern")
+            if not layer["fixtures"]:
+                raise ConfigError(f"layer '{layer['name']}' names no fixtures")
+            config.layers.append(layer)
 
 
         # ---- devices ----------------------------------------------------

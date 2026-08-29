@@ -614,6 +614,86 @@ class TheScannerStage(unittest.TestCase):
         self.assertEqual(self.config.validate(strict_overlap=False), [])
 
 
+class TheUvLayer(unittest.TestCase):
+    """A second pattern on one named fixture, over the show."""
+
+    def test_the_stage_config_declares_it(self):
+        config = Config.load(DESKTOP / "config" / "scanner_stage.json")
+        self.assertEqual(config.layers, [
+            {"name": "uv", "fixtures": ["pars/uv"], "pattern": "uv", "state": "off"}])
+        # and it survives a round trip
+        again = Config.from_dict(config.to_dict())
+        self.assertEqual(again.layers, config.layers)
+
+    def test_a_layer_needs_a_pattern_and_fixtures(self):
+        with self.assertRaises(ConfigError):
+            Config.from_dict({"fixtures": [], "layers": [{"name": "x", "fixtures": ["a"]}]})
+        with self.assertRaises(ConfigError):
+            Config.from_dict({"fixtures": [], "layers": [{"name": "x", "pattern": "uv"}]})
+
+    def test_the_wrapper_reads_a_layers_announcements(self):
+        """The show's own lines, prefixed - read into a LayerView with the
+        same shape the show's look has, and nothing lands on the show's."""
+        show = ShowController(SCANNER, remote="nowhere", autostart=False)
+        for line in [
+            "PARAMS scanner scan_idle",
+            "PARAM cycle_time f 2 0.5 8",
+            "LAYER uv FIXTURES 389",
+            "LAYER uv PATTERN uv",
+            "LAYER uv STATES off flash on",
+            "LAYER uv STATE flash",
+            "LAYER uv PARAMS uv flash",
+            "LAYER uv PARAM decay f 0.3 0.01 3",
+            "LAYER uv CURVE envelope 0:0 0.02:1:7 0.32:0",
+            "READY",
+        ]:
+            show._handle_stdout(line)
+
+        self.assertEqual([p.name for p in show.params], ["cycle_time"])
+        self.assertEqual(show.params_revision, 1)
+
+        uv = show.layers["uv"]
+        self.assertEqual(uv.fixtures, [389])
+        self.assertEqual(uv.pattern_name, "uv")
+        self.assertEqual(uv.state_names, ["off", "flash", "on"])
+        self.assertEqual(uv.current_state, "flash")
+        self.assertEqual([p.name for p in uv.params], ["decay"])
+        self.assertEqual(list(uv.curves), ["envelope"])
+        self.assertEqual(uv.params_revision, 1)
+        self.assertEqual(show.layers_revision, 1)
+
+    def test_it_runs(self):
+        """off is dark, on is white, flash carries the beat pulse's envelope,
+        and the show's knobs are not the layer's."""
+        import time
+
+        executable_or_skip()
+        frames = []
+        show = ShowController(DESKTOP / "config" / "scanner_stage.json", dry_run=True,
+                              on_frame=frames.append, emit_rate=30.0)
+        try:
+            show.set_state("scan_idle")
+            time.sleep(0.8)
+            uv = show.layers["uv"]
+            self.assertEqual(uv.fixtures, [389])
+            self.assertEqual(frames[-1][389], (0, 0, 0))
+
+            uv.set_state("on")
+            time.sleep(0.5)
+            self.assertEqual(frames[-1][389], (255, 255, 255))
+            # the par beside it is still the show's - dark in scan_idle
+            self.assertEqual(frames[-1][388], (0, 0, 0))
+
+            uv.set_state("flash")
+            time.sleep(0.2)
+            self.assertIn("envelope", uv.curves)
+            self.assertIsNotNone(uv.get_param("rate"))
+            self.assertEqual(show.current_state, "scan_idle")
+            self.assertIsNone(show.get_param("rate"))
+        finally:
+            show.stop()
+
+
 class TheStageGeometry(unittest.TestCase):
     """The ring's circle is written in three places and read from one.
 

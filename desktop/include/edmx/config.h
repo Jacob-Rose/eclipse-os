@@ -268,6 +268,27 @@ namespace edmx
     /// Still called Config because it is what a config file loads into, and a
     /// file describing one rig is simply an environment with one device in it -
     /// which is exactly how the legacy single-rig files are read.
+    /// A second pattern on a few named fixtures, run over the show.
+    ///
+    /// One pattern renders the whole stage, and that is right for a show. It
+    /// is wrong for a light that has its own job — the UV par on the truss,
+    /// which wants to be off, or flashing on the beat, or on, whatever the
+    /// rest of the rig is doing. A layer is that: its own pattern (a state
+    /// machine, usually), bound to fixtures by name, rendered after the show
+    /// each frame and written over what the show put there. It is driven
+    /// with `layer <name> state|param|curve ...`, independently of the show's
+    /// own cues.
+    ///
+    /// A fixture is named `device/fixture`, or just `fixture` when only one
+    /// device has one of that name.
+    struct LayerConfig
+    {
+        std::string name;
+        std::vector<std::string> fixtures;
+        std::string pattern;
+        std::string state;   ///< the state to open on, for a state machine
+    };
+
     struct Config
     {
         MasterConfig master;
@@ -275,6 +296,7 @@ namespace edmx
         PatternConfig pattern;
 
         std::vector<Device> devices;
+        std::vector<LayerConfig> layers;
 
         /// Warnings raised during load. Non-fatal: reported, then we light up.
         std::vector<std::string> warnings;

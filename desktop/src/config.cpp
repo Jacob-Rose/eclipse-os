@@ -982,6 +982,48 @@ bool edmx::loadConfig(const std::string& path, Config& outConfig, std::string& o
         }
     }
 
+    // ---- layers -----------------------------------------------------------
+    // A second pattern on a few named fixtures. Whether the names resolve is
+    // checked where the show is built, with the devices in hand; here only
+    // the shape of the entry is.
+    const JsonValue& layers = root["layers"];
+    if (layers.isArray())
+    {
+        for (size_t i = 0; i < layers.size(); ++i)
+        {
+            const JsonValue& entry = layers[i];
+            LayerConfig layer;
+            layer.name = entry["name"].asString("layer_" + std::to_string(i));
+            layer.pattern = entry["pattern"].asString("");
+            layer.state = entry["state"].asString("");
+
+            const JsonValue& fixtures = entry["fixtures"];
+            if (fixtures.isArray())
+            {
+                for (size_t f = 0; f < fixtures.size(); ++f)
+                {
+                    layer.fixtures.push_back(fixtures[f].asString(""));
+                }
+            }
+            else if (fixtures.isString())
+            {
+                layer.fixtures.push_back(fixtures.asString(""));
+            }
+
+            if (layer.pattern.empty())
+            {
+                outError = path + ": layer '" + layer.name + "' names no pattern";
+                return false;
+            }
+            if (layer.fixtures.empty())
+            {
+                outError = path + ": layer '" + layer.name + "' names no fixtures";
+                return false;
+            }
+            config.layers.push_back(std::move(layer));
+        }
+    }
+
     outConfig = config;
     return true;
 }

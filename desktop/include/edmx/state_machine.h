@@ -167,4 +167,10 @@ namespace edmx
 
     /// The obelisk's own ambient looks as one machine.
     std::unique_ptr<StateMachinePattern> makeObeliskStateMachine();
+
+    /// The UV par's own machine, for a layer: `off`, `flash` (a beat pulse
+    /// with its envelope drawable at the desk) and `on`. Three modes for one
+    /// light, run over the show rather than as part of it. In mythos26.cpp,
+    /// beside the beat look it borrows.
+    std::unique_ptr<StateMachinePattern> makeUvStateMachine();
 }

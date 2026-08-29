@@ -646,6 +646,52 @@ from each device's locals before placement, and `edmx::makeStripNode`, which
 both `GeneratorPattern` and the state machine's `HostRelicIO` build their
 nodes through — so a look gets the same answer bare or in a machine.
 
+#### layers: a light with its own job
+
+One pattern across the whole stage is the point of a show. It is the wrong
+shape for a light that has a job of its own — the UV par on the truss, which
+wants to be off, or hitting on the beat, or on, whatever the tower is doing.
+A **layer** is that: its own pattern, bound to fixtures by name, rendered
+after the show each frame and written over what the show put there.
+
+```json
+"layers": [
+  { "name": "uv", "fixtures": ["pars/uv"], "pattern": "uv", "state": "off" }
+]
+```
+
+`config/scanner_stage.json` has exactly that. The `uv` pattern is a machine
+with three states — `off`, `flash` (the show's beat pulse, with its
+envelope drawable at the desk and its `rate` for half or double time) and
+`on` (a `level` knob) — and it is driven independently of the show's cues:
+
+```
+layer uv state flash          layer uv states
+layer uv param decay 0.4      layer uv params [dump]
+layer uv curve envelope 0:0 0.05:1:7 0.4:0
+layers                        everything about every layer, again
+```
+
+Its announcements are the show's own lines with `LAYER uv` in front —
+`LAYER uv STATES off flash on`, `LAYER uv PARAM decay f 0.3 0.01 3`,
+`LAYER uv CURVE envelope …` — so a client that reads the show's reads a
+layer's by stripping the prefix. The wrapper does: `show.layers["uv"]` is a
+`LayerView` with the same `params`, `curves`, `set_state`, `set_param`,
+`set_curve` and `reset_look` the show has.
+
+In the viewer a layer is a row under the pattern buttons — its name, then a
+button per state — and a button beside **look** in the knob pane that points
+the knobs, the curve editor and reset at it. Cue the UV to `flash`, point
+the pane at `uv`, and draw its envelope; the show's own look is not touched.
+
+A fixture is named `device/fixture`, or `fixture` alone while only one device
+has one of that name. A name that resolves to nothing is fatal at startup,
+like a device file that does not exist: a layer quietly bound to nothing
+would be a UV that never comes on with nothing saying why. The UV is a
+fixture of the pars device rather than a device of its own because it is on
+the truss's DMX cable, and a device is a wire — a layer is how it gets its
+own pattern anyway.
+
 Nothing reaches hardware without `--live`. With it, the obelisk device's own
 output drives a plugged-in sculpture exactly as the game does, so a new look
 goes from screen to object with the same file.
@@ -1296,6 +1342,10 @@ midi free-run <on|off>    midi monitor <on|off>  midi list / midi status
 
 link pixels               link cue               link release
 link cmd <text>           link hello
+
+layers                    layer <name> state <s> [seconds]
+layer <name> states       layer <name> params [dump]
+layer <name> param <k> <v>    layer <name> curve <k> <t:v...>
 ```
 
 `state` and `input` need a state machine pattern; the rest work on anything.
