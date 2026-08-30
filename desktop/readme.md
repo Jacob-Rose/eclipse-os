@@ -745,13 +745,14 @@ the whole look: at a lifted `floor` it brings the flash down toward the level
 between hits instead of dimming the rig, so 0 means *no flash*, not no light.
 On `vu_pulse` it is the knob that buys the wash room underneath.
 
-##### half time and double time
+##### half time, quarter time and double time
 
-`rate` is hits per beat, and it takes three values:
+`rate` is hits per beat, and it takes four values:
 
 | `rate` | |
 | --- | --- |
-| `0.5` | half time — one hit every second beat |
+| `0.25` | quarter time — one hit a bar, on the one |
+| `0.5` | half time — the one and the three |
 | `1` | on the beat |
 | `2` | double time — on the beat and between them |
 
@@ -766,19 +767,35 @@ That is the look behaving correctly, and `decay` is right there next to it.
 Half time is the other way round — the fall finally has room, and you see the
 envelope's real shape, often for the first time.
 
-**There used to be a divider here** — `beat div 1 | 2 | 4`, and **on 1 / on 2 /
-on 4** in the viewer. It is not coming back, and half time is not it. The
-divider offered 4, and the clock counts beats with no idea which of them is the
-one, so "on 4" fired at the right *rate* on an arbitrary beat of the bar with
-no fix anyone could use mid-set. A **pair** has one: setting the rate, or
-entering the cue, seats it on the beat you did that on. So half time lands
-where you put it — hit the knob, or the cue button, on the beat you want the
-hit — and if it seats wrong, hit it again. Hunting for the top of a bar four
-beats wide was never that gesture.
+**Where the slow rates land is the clock's bar, not the look's.** Four beats
+from the last downbeat the clock was told about — a MIDI Start, or `midi align`
+— so half time takes the one and the three of that bar and quarter time takes
+the one. Two looks in half time agree with each other, and a look agrees with
+itself an hour later.
 
-On the beat and double time cannot be seated wrong: they land on the same
-instants whatever whole beat they are counted from. Only half time has a choice
-to make.
+The one is an **assumption** until someone declares it. Mixxx sends beats and
+says nothing at all about bars, so out of the box the one is wherever the grid
+happened to start, and it can be a beat, two or three out. The fix is one
+gesture — **`midi align`, on the one** — and it moves every look at once. A
+`beat` tap does *not*: tapping a tempo in means tapping every beat, and a tap
+that declared the bar would leave the slow rates hitting on all of them.
+
+**There used to be a divider here** — `beat div 1 | 2 | 4`, and **on 1 / on 2 /
+on 4** in the viewer. It is not coming back. The rate is per look, which the
+divider was not: one look in half time is a decision, every look in half time
+at once was a mode. But the reason `4` was dropped from it — a clock that
+counted beats with no idea which of them was the one — is exactly what the bar
+above fixes, so once a bar is back, as `rate 0.25`.
+
+A per-look version of that bar came and went in between: setting the rate
+seated half time's pairs on the beat you set it on. It was a gesture that
+worked and a bar that did not, because it could not be shared between looks,
+had to be re-made on every cue change, and was counted off beat messages —
+which Mixxx duplicates and drops, so it wandered on its own between gestures.
+
+On the beat and double time cannot land wrong: they fall on the same instants
+whatever whole beat they are counted from. Only the slow rates have a choice to
+make.
 
 ##### `vu_pulse`
 
@@ -970,7 +987,7 @@ rather than a number that happened to parse.
 Values outside a knob's range are clamped rather than refused — the range is
 what a slider spans, and a number typed slightly past it is a request for the
 end of the slider. Some knobs snap instead: a beat look's `rate` takes the
-nearest of half time, on the beat and double time. Either way, what it landed
+nearest of quarter time, half time, on the beat and double time. Either way, what it landed
 on is echoed back on a `PARAM` line *before* the `OK`, so a client that waits
 for the reply and then reads has the new value and not the old one.
 
@@ -1288,8 +1305,21 @@ converging over tens of them.
 Beat clock gives tempo but not, on its own, *phase* — a 0xF8 stream joined
 halfway through a bar has no marker saying which tick is the beat. Start,
 Continue and Song Position Pointer resolve that. If a source sends none of them,
-`midi align` or a tap puts the downbeat where you say it is. If a source sends
-both notes and clock, notes win, because a note is an explicit downbeat.
+`midi align` puts the one where you say it is and a `beat` tap puts the beat
+there. If a source sends both notes and clock, notes win, because a note is an
+explicit beat.
+
+**A beat message is not taken as a beat.** What arrives on a real cable is not
+one clean beat per beat: Mixxx sends the same beat twice, sends nothing for the
+next one, and puts the other deck's beats over the top of this one's. So each
+message is matched against the grid already running — too soon to be a
+different beat and it is dropped; two beats along and the count moves by two;
+nowhere near the grid and it is ignored, unless a second one agrees with it, at
+which point the music has genuinely moved and the grid follows. None of that
+happens until four beats have agreed that the grid is worth measuring against,
+and a tap never goes through it at all. This is what keeps `rate 0.5` on the
+same half of the pair all night: the slow rates are counted off that number,
+and one beat miscounted moves them for good.
 
 Everything downstream of "which notes arrive" is checked without a device:
 
@@ -1303,12 +1333,13 @@ byte, in synthetic time, and checks the beats and tempo that come out. It is in
 the test suite, and it is what caught the clock tempo being a whole bpm out for
 the first thirty beats.
 
-At the desk: `beat` taps a downbeat, `bpm <n>` sets the tempo outright, and the
-viewer has both on buttons plus `[t]` for the tap. `status` reports what the
-clock thinks:
+At the desk: `beat` taps a beat, `midi align` says which one is the one, `bpm
+<n>` sets the tempo outright, and the viewer has them on buttons plus `[t]` for
+the tap — `tap` for the beat and `the one` for the bar. `status` reports what
+the clock thinks, `bar_beat` counting 1..4 from the last downbeat it was given:
 
 ```
-bpm=128.0 src=midi_note lock=yes free_run=on beat=417
+bpm=128.0 src=midi_note lock=yes free_run=on beat=417 bar_beat=3
 ```
 
 `src` is where the tempo came from and `lock` is whether beats are still
@@ -1426,7 +1457,8 @@ with ShowController("config/mythos26.json", on_beat=print) as show:
     show.wait(seconds=60)
 
     show.set_bpm(128)              # no MIDI? drive it by hand
-    show.tap_beat()                # ...and put the downbeat here
+    show.tap_beat()                # ...and put the beat here
+    show.midi_align()              # and this one is the one
 ```
 
 `show.bpm`, `show.beat`, `show.beat_source` and `show.beat_locked` track what
@@ -1895,12 +1927,12 @@ like from the desk.
   tempo are live over the control protocol.
 - **MIDI out.** Input only, and only tempo off it — no control-change mapping
   to patterns, no faders. `MidiInput::handleMessage` is where that would start.
-- **Bars.** The clock counts beats, not bars, because nothing upstream reliably
-  says where a bar begins. This is why the beat divider was removed rather than
-  fixed: anything that fires less often than every beat has to pick *which*
-  beat, and nothing here knows. Half time survives it only because a pair can
-  be re-seated by hand in one gesture — see [half time and double
-  time](#half-time-and-double-time). Once a bar cannot.
+- **Bars.** The clock keeps a bar, but it is an assumed one: four beats long,
+  starting at the last downbeat it was *told* about, because nothing upstream
+  reliably says where a bar begins. Four is not a knob, and a source in three
+  has no way to say so. `midi align` on the one is the whole of the fix — see
+  [half time, quarter time and double
+  time](#half-time-quarter-time-and-double-time).
 - **Stereo VU.** Only the mono meters are read. The mapping sends left and
   right separately, which a rig split into two halves could use.
 

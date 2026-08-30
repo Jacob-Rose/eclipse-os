@@ -9,6 +9,7 @@
 #include <cmath>
 
 #include "edmx/beat_clock.h"
+#include "edmx/beat_trigger.h"
 
 using namespace edmx;
 
@@ -17,7 +18,7 @@ using namespace edmx;
 // ============================================================================
 
 Pattern_Mythos_BeatPulse::Pattern_Mythos_BeatPulse()
-    : clock(&sharedBeatClock())
+    : triggers(&sharedTriggerRack())
 {
     // RestartHold rather than Restart, because the envelope does not fit
     // between two beats at any tempo this runs at. See the class comment.
@@ -36,19 +37,6 @@ void Pattern_Mythos_BeatPulse::setEnvelope(float inAttackSeconds, float inDecayS
     envelope.curve.addKey(attackSeconds + decaySeconds, 0.0f);
 }
 
-bool Pattern_Mythos_BeatPulse::isHitBeat() const
-{
-    if (pulseRate > kHalfTime)
-    {
-        return true; // on the beat, and double time's on-beat half
-    }
-
-    // Every second beat since the seat. Counted both ways round the seat
-    // because beatsSeen can sit either side of it - see seatHalfTime().
-    const long long since = beatsSeen - seatBeat;
-    return ((since % 2) == 0);
-}
-
 void Pattern_Mythos_BeatPulse::setHoldOnRetrigger(bool bHold)
 {
     bHoldOnRetrigger = bHold;
@@ -58,30 +46,11 @@ void Pattern_Mythos_BeatPulse::setHoldOnRetrigger(bool bHold)
 
 void Pattern_Mythos_BeatPulse::setPulseRate(float pulsesPerBeat)
 {
-    // Snap to the nearest of the three rather than clamping to the range. A
-    // slider spans 0.5..2 and will hand over 1.37 on the way past; the musical
-    // answer to that is one of the ends or the middle, never 1.37.
-    pulseRate = kOnBeat;
-    if (pulsesPerBeat < 0.75f)      pulseRate = kHalfTime;
-    else if (pulsesPerBeat > 1.5f)  pulseRate = kDoubleTime;
-
-    seatHalfTime();
-}
-
-void Pattern_Mythos_BeatPulse::seatHalfTime()
-{
-    // Seat on the *nearest* beat, not the beat in progress.
-    //
-    // Someone reaching for half time does it around a beat, and which side of
-    // it they land on says what they meant. Early in a beat is a reaction to
-    // the one they just heard: that beat is the hit, and they have just seen it
-    // hit, so the next is two away. Late in a beat is aiming at the one coming:
-    // seat there and it hits on the very next beat. Rounding to the current
-    // beat either way would make half the presses feel a beat out.
-    const double position = clock->beatPosition(nowSeconds());
-    const double phase = position - std::floor(position);
-
-    seatBeat = beatsSeen + ((phase >= 0.5) ? 1 : 0);
+    // Snapped, because a slider spanning 0.25..2 will hand over 1.37 on the
+    // way past and 1.37 hits a beat is a rig drifting against the track. The
+    // snap is the rack's, so that the rate this lands on and the trigger it
+    // binds to cannot disagree.
+    pulseRate = snapPulseRate(pulsesPerBeat);
 }
 
 void Pattern_Mythos_BeatPulse::reflect(ecore::PropertyBag& bag)
@@ -92,9 +61,15 @@ void Pattern_Mythos_BeatPulse::reflect(ecore::PropertyBag& bag)
     bag.add("floor", floorLevel, 0.0f, 1.0f);
     bag.add("hold", bHoldOnRetrigger, [this] { setHoldOnRetrigger(bHoldOnRetrigger); });
 
-    // Snapped and re-seated on the way in, so the slider lands on the three
-    // rates and setting the one it is already on moves half time onto this beat.
-    bag.add("rate", pulseRate, kHalfTime, kDoubleTime, [this] { setPulseRate(pulseRate); });
+    // Snapped on the way in, so the slider lands on the four rates rather than
+    // between them. Where the slow ones land is the clock's bar, not this
+    // knob's - see setPulseRate(). It is also which shared trigger this look
+    // fires off, so two looks on the same rate are on the same hits.
+    bag.add("rate", pulseRate, kQuarterTime, kDoubleTime, [this] { setPulseRate(pulseRate); });
+
+    // Whether coming up asks for a hit. On for a cue, which should not open
+    // dark; off for a light joining a grid the rig is already running.
+    bag.add("entry_hit", bHitOnEntry);
 
     bag.add("color", pulseColor);
 }
@@ -111,80 +86,39 @@ void Pattern_Mythos_BeatPulse::reflectCurves(eanim::CurveBag& bag)
 
 void Pattern_Mythos_BeatPulse::init()
 {
-    started = false;
     level = 0.0f;
     envelope.reset();
+    entryPending = false;
+}
 
-    beatsSeen = 0;
-    seatBeat = 0;
-    offbeatFired = false;
+void Pattern_Mythos_BeatPulse::onEnter()
+{
+    // Banked rather than acted on: entry happens between frames, and the rack
+    // is ticked at the top of one. tick() spends it.
+    entryPending = bHitOnEntry;
 }
 
 void Pattern_Mythos_BeatPulse::tick(float deltaTime)
 {
-    const double now = nowSeconds();
-
-    const double position = clock->beatPosition(now);
-    const long long beat = static_cast<long long>(std::floor(position));
-    const double phase = position - std::floor(position);
-
-    // Where in this frame, if anywhere, a hit lands - and how long ago, so the
-    // impulse can be fired at where it actually happened rather than at this
-    // frame's boundary. At 40fps a frame is 25ms and a beat lands anywhere
-    // inside one, so triggering at the boundary would quantise every hit to the
-    // frame grid and put a visible swing on the rig.
-    bool hit = false;
-    float sinceHit = 0.0f;
-
-    if (!started)
+    // A cue coming up asks its trigger to fire, and is served on the next
+    // rack tick - which is the top of the next frame, because the rack runs
+    // before anything ticks. Asking the shared trigger rather than firing
+    // privately is the point: the whole rate comes up together.
+    if (entryPending)
     {
-        // The first tick hits, rather than waiting up to a beat to show
-        // anything - and it is also the seat, so the beat it lands in is a
-        // half-time beat and the pairs run from here.
-        started = true;
-        lastBeat = beat;
-        beatsSeen = 0;
-        seatBeat = 0;
-        offbeatFired = (phase >= 0.5);
-
-        hit = true;
-        sinceHit = clock->timeSinceBeat(now);
-    }
-    else if (beat != lastBeat)
-    {
-        lastBeat = beat;
-
-        // One beat, whatever the *number* did.
-        //
-        // This is counted rather than read off the clock, and that is the whole
-        // difference between half time alternating and half time flickering
-        // between the two beats of the pair. BeatClock guarantees its number
-        // moves forward on a beat, not that it moves by one: a tempo message
-        // re-anchors it to wherever free-run had predicted, and markBeat then
-        // steps past that, so a beat arriving a millisecond off can advance it
-        // by two. Deriving "every second beat" from that number picks a
-        // different member of the pair every time it happens - which reads on a
-        // rig as random skipping, because that is what it is.
-        ++beatsSeen;
-        offbeatFired = false;
-
-        hit = isHitBeat();
-        sinceHit = clock->timeSinceBeat(now);
-    }
-    else if (pulseRate >= kDoubleTime && !offbeatFired && phase >= 0.5)
-    {
-        // Double time's other hit, off the phase inside the beat rather than
-        // off any counting at all, so it cannot drift from the beat it belongs
-        // to. One per beat: the flag is cleared by the beat above.
-        offbeatFired = true;
-
-        hit = true;
-        sinceHit = static_cast<float>((phase - 0.5) * clock->beatSeconds());
+        entryPending = false;
+        triggers->armEntry(triggerNameForRate(pulseRate));
     }
 
-    if (hit)
+    // When a hit lands is not this look's decision. The rack made it once, for
+    // the whole rig, before any of this ran - so two looks on the same rate
+    // fire on the same frame with the same offset instead of each arriving at
+    // an answer of their own. `sinceHit` is how long ago inside this frame, so
+    // the impulse lands where it happened rather than on the frame boundary.
+    const BeatTrigger& trigger = triggers->forRate(pulseRate);
+    if (trigger.fired)
     {
-        envelope.triggerAt(sinceHit);
+        envelope.triggerAt(trigger.sinceHit);
     }
 
     // The trigger reads the curve's peak across the frame rather than its value
@@ -491,6 +425,46 @@ namespace
         return def;
     }
 
+    /// A look that wants to know it has been entered.
+    ///
+    /// The same shape as the scanner's State_ScannerHSV and for the same
+    /// reason: entering is not something a generator can see. A beat look uses
+    /// it to ask its trigger for a hit, so a cue comes up lit instead of dark
+    /// for up to a bar - and asks the *shared* trigger, so everything on that
+    /// rate comes up with it.
+    template <typename PatternT>
+    class State_BeatHSV : public State_GenericHSV
+    {
+    public:
+        State_BeatHSV(const char* stateName, eio::RelicIO* io,
+                      std::shared_ptr<PatternT> inPattern)
+            : State_GenericHSV(stateName, io)
+            , beatPattern(inPattern)
+        {
+            setGenerator(inPattern);
+        }
+
+    protected:
+        virtual void onStateChangeState(StateStatus inStatus) override
+        {
+            // Entered fresh: either the machine is blending toward us, or we
+            // were set active directly from Off. Becoming Active at the end of
+            // a blend also lands here as Active, but from TransitionIn - asking
+            // for a second hit then would fire twice on one cue change.
+            const bool bEntering = inStatus == StateStatus::TransitionIn
+                || (inStatus == StateStatus::Active && GetStatus() == StateStatus::Off);
+
+            State_GenericHSV::onStateChangeState(inStatus);
+
+            if (bEntering && beatPattern)
+            {
+                beatPattern->onEnter();
+            }
+        }
+
+        std::shared_ptr<PatternT> beatPattern;
+    };
+
     /// A look that fires on the beat, with the shape of its hit and how often.
     ///
     /// Attack and decay are what a beat look *is* - a crack and a trail, or a
@@ -502,16 +476,25 @@ namespace
     /// The lambda is where the concrete type is known, which is what keeps the
     /// machine itself from needing to know about any of them.
     template <typename PatternT>
-    StateDef beatLook(const char* name, float attackSeconds, float decaySeconds, float pulseRate)
+    StateDef beatLook(const char* name, float attackSeconds, float decaySeconds, float pulseRate,
+                      bool bHitOnEntry = true)
     {
         StateDef def;
         def.name = name;
-        def.make = [attackSeconds, decaySeconds, pulseRate]() -> std::shared_ptr<eanim::GeneratorHSV> {
+        def.make = [attackSeconds, decaySeconds, pulseRate, bHitOnEntry]()
+            -> std::shared_ptr<eanim::GeneratorHSV> {
             auto pattern = std::make_shared<PatternT>();
             pattern->setEnvelope(attackSeconds, decaySeconds);
             pattern->setPulseRate(pulseRate);
+            pattern->setHitOnEntry(bHitOnEntry);
             pattern->init();
             return pattern;
+        };
+        def.makeState = [](const char* stateName, eio::RelicIO* io,
+                           std::shared_ptr<eanim::GeneratorHSV> generator) {
+            return std::static_pointer_cast<State_GenericHSV>(
+                std::make_shared<State_BeatHSV<PatternT>>(
+                    stateName, io, std::static_pointer_cast<PatternT>(generator)));
         };
         return def;
     }
@@ -582,10 +565,17 @@ std::unique_ptr<StateMachinePattern> edmx::makeUvStateMachine()
     // beat pulse - the same envelope, drawable at the desk, the same rate
     // knob - on a light that is nothing but a level, so the UV hits on the
     // beat while the truss around it follows the scanner.
+    //
+    // It does not hit on entry, which is the one place its cue list differs
+    // from the show's. A cue coming up wants to be seen immediately; the UV is
+    // joining a grid the rig is already running, and a hit at the instant the
+    // operator pressed the button is a flash off the beat - which is precisely
+    // what made it look out of step with the truss. It waits, and lands with
+    // everything else on the `beat` trigger.
     std::vector<StateDef> states = {
         levelLook("off", 0.0f),
-        //                                     attack decay  rate
-        beatLook<Pattern_Mythos_BeatPulse>("flash", 0.02f, 0.30f, 1.0f),
+        //                                     attack decay  rate  entry hit
+        beatLook<Pattern_Mythos_BeatPulse>("flash", 0.02f, 0.30f, 1.0f, false),
         levelLook("on", 1.0f),
     };
 

@@ -12,6 +12,7 @@
 #include "lib/ecore/hsv.h"
 
 #include "edmx/beat_clock.h"
+#include "edmx/beat_trigger.h"
 #include "edmx/state_machine.h"
 
 ///
@@ -56,17 +57,31 @@ namespace edmx
     /// three keys on `envelope.curve`, and any other shape is the same three
     /// calls with different numbers.
     ///
-    /// It is retriggered by polling the clock once a frame rather than by a
-    /// callback from the MIDI thread: the clock predicts between beats, so
-    /// polling is both simpler and immune to a beat that lands mid-render. What
-    /// it watches for is the clock's beat number *changing*, not what it
-    /// changed to — see the note on counting in tick().
+    /// **It does not decide when it hits.** It binds to one of the rig's shared
+    /// triggers — `rate` is which one — and fires its envelope on the frame that
+    /// trigger says a hit landed, at the sub-frame offset the trigger reports.
+    /// Everything about *when* lives in edmx::TriggerRack, and the reason it
+    /// lives there rather than here is that four looks each working it out
+    /// privately is four looks that drift apart. See beat_trigger.h.
     class Pattern_Mythos_BeatPulse : public eanim::GeneratorHSV
     {
     public:
         Pattern_Mythos_BeatPulse();
 
         void init();
+
+        /// The look has been entered — the machine is blending toward it, or it
+        /// was made active outright.
+        ///
+        /// Asks this look's trigger for a hit, if `entry_hit` is set. Called by
+        /// the state wrapper rather than by init(), because entering is a thing
+        /// that happens every visit and init() happens once, when the machine
+        /// is built and nobody is looking.
+        void onEnter();
+
+        /// Whether entering asks for a hit. See bHitOnEntry.
+        void setHitOnEntry(bool bHit) { bHitOnEntry = bHit; }
+        bool getHitOnEntry() const { return bHitOnEntry; }
 
         virtual void tick(float deltaTime) override;
         virtual void render(eio::HSVStripNode* node, ecore::HSV& inOutColor) const override;
@@ -96,44 +111,44 @@ namespace edmx
         float getAttackSeconds() const { return attackSeconds; }
         float getDecaySeconds() const { return decaySeconds; }
 
-        /// The three rates. Named rather than left as loose numbers because
-        /// 1.37 hits per beat is not a thing anyone wants and a slider will
-        /// otherwise hand you one.
-        static constexpr float kHalfTime{0.5f};
-        static constexpr float kOnBeat{1.0f};
-        static constexpr float kDoubleTime{2.0f};
+        /// The four rates, which are also the four triggers — see
+        /// edmx::triggerNameForRate(). Kept spelled here as well because a look
+        /// reads them as its own vocabulary, and they were here first.
+        static constexpr float kQuarterTime{edmx::kQuarterTime};
+        static constexpr float kHalfTime{edmx::kHalfTime};
+        static constexpr float kOnBeat{edmx::kOnBeat};
+        static constexpr float kDoubleTime{edmx::kDoubleTime};
 
-        /// Hits per beat: 0.5 half time, 1 on the beat, 2 double time.
+        /// Hits per beat: 0.25 once a bar, 0.5 half time, 1 on the beat, 2
+        /// double time.
         ///
-        /// Snapped to one of those three, because the useful values are the
+        /// Snapped to one of those four, because the useful values are the
         /// musical ones and everything between them is a rig drifting against
-        /// the track. Set it through setPulseRate(), which is also what re-seats
-        /// half time — see below.
+        /// the track.
         ///
         /// It divides the beat *count*, never the tempo: the point of half time
         /// is the same hit, half as often, and stretching the envelope with the
         /// rate would soften it instead. So double time keeps the envelope it
         /// had, which at the default shape means the fall no longer finishes
         /// between hits and the rig hovers rather than pulses; shorten `decay`
-        /// if that is not the look. Half time gives the fall room it did not
-        /// have and shows the envelope's real shape, often for the first time.
+        /// if that is not the look. Half and quarter time give the fall room it
+        /// did not have and show the envelope's real shape, often for the first
+        /// time.
         float getPulseRate() const { return pulseRate; }
 
-        /// Sets the rate and re-seats half time on the nearest beat.
+        /// Sets the rate, snapped to one of the four.
         ///
-        /// The re-seat is the whole reason a divider was taken out of here once
-        /// and half time is back. The clock counts beats and has no idea which
-        /// of them is the one, so anything slower than the beat has to land on
-        /// an arbitrary member of the group — that is what sank `beat div 4`,
-        /// which fired at the right rate in the wrong place with no usable way
-        /// to move it. Two beats is the one case where there is a usable way:
-        /// the pair re-seats from wherever you set it, so hitting half time (or
-        /// hitting the cue) on the beat you want puts it there. That is a
-        /// gesture someone can make mid-set; hunting for the top of a bar four
-        /// beats wide was not.
-        ///
-        /// Only half time can tell: on the beat and double time land on the
-        /// same instants whatever beat they are counted from.
+        /// Where the slow rates *land* is not set here and is not this look's
+        /// to decide: half time takes the one and the three of the bar, quarter
+        /// time takes the one, and the bar is the clock's — see
+        /// BeatClock::beatInBar(). That is a change from the version of this
+        /// that seated its own pairs off the beat you set the rate on, and the
+        /// reason for it is that a per-look seat is not a bar. It could not be
+        /// shared, so two looks in half time could sit on opposite beats; it
+        /// had to be re-made on every cue change; and it was counted off beat
+        /// messages, which Mixxx duplicates and drops, so it wandered on its
+        /// own between gestures. One bar for the whole rig, wrong until someone
+        /// hits `midi align` on the one, is the better trade.
         void setPulseRate(float pulsesPerBeat);
 
         /// RestartHold when set, Restart when not — the `hold` knob.
@@ -173,39 +188,35 @@ namespace edmx
         float envelopePeak(float from, float to) const { return envelope.curve.peak(from, to); }
 
     private:
-        /// Whether the beat we have just arrived at is one this rate hits on.
-        bool isHitBeat() const;
-
-        /// Puts half time's pairs on the nearest beat. See setPulseRate().
-        void seatHalfTime();
-
-        BeatClock* clock{nullptr};
+        /// Where the hits come from. The clock is not held here any more:
+        /// this look no longer asks where the beat is, only whether its
+        /// trigger fired.
+        TriggerRack* triggers{nullptr};
 
         /// What setEnvelope() was last given. Kept only so the numbers can be
         /// read back; the curve is what actually runs.
         float attackSeconds{0.15f};
         float decaySeconds{0.600f};
 
+        /// Which trigger this look is bound to, as hits per beat. Snapped to
+        /// one of the four; see setPulseRate().
         float pulseRate{kOnBeat};
 
-        /// Beats this look has seen, and the one half time counts its pairs
-        /// from.
+        /// Whether entering this look asks its trigger to fire.
         ///
-        /// Counted here rather than taken from the clock's beat number, which
-        /// is guaranteed to move forward on a beat but *not* to move by one —
-        /// see tick(). Every second beat has to be every second beat that
-        /// actually happened, or it picks a different member of the pair every
-        /// time the number jumps.
-        long long beatsSeen{0};
-        long long seatBeat{0};
+        /// True is what a cue wants: coming up dark for up to a bar reads as a
+        /// cue that did not come up. False is what a light with a job of its
+        /// own wants — the UV told to flash should join the grid the rig is
+        /// already on, not start a new one under the operator's thumb.
+        ///
+        /// Either way the *trigger* fires, not this look privately, so a cue
+        /// coming up lit brings everything on that rate up with it.
+        bool bHitOnEntry{true};
 
-        /// Double time's mid-beat hit, once per beat. Cleared by the beat.
-        bool offbeatFired{false};
-
-        /// Beat we last saw. Starts unset so the first tick hits rather than
-        /// waiting up to a whole beat to show anything.
-        long long lastBeat{0};
-        bool started{false};
+        /// Set by onEnter(), spent on the next tick. Banked rather than acted
+        /// on because entry happens between frames and the rack is ticked at
+        /// the top of one; the ask has to be made from inside tick() to land.
+        bool entryPending{false};
 
         float level{0.0f};
     };
@@ -245,6 +256,11 @@ namespace edmx
 
         /// The flash. Same shape, colour and rate knobs as beat_pulse.
         Pattern_Mythos_BeatPulse pulse;
+
+        /// Entry reaches the flash, the way tick() does. The wash underneath
+        /// has nothing to re-seat: it follows the meter, which is where it was.
+        void onEnter() { pulse.onEnter(); }
+        void setHitOnEntry(bool bHit) { pulse.setHitOnEntry(bHit); }
 
         /// The layer underneath: a backdrop that follows how loud the track is.
         ///

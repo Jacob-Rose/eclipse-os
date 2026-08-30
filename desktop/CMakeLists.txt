@@ -172,6 +172,7 @@ target_compile_definitions(eclipse_core PUBLIC
 # ---------------------------------------------------------------------------
 add_library(edmx STATIC
     src/beat_clock.cpp
+    src/beat_trigger.cpp
     src/config.cpp
     src/dmx_output.cpp
     src/fixture.cpp

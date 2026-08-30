@@ -37,6 +37,16 @@
 /// music, which is a much better failure than a dark stage, and it re-locks the
 /// moment a real beat lands.
 ///
+/// **It counts beats, not messages.** What arrives on the cable is not one
+/// clean beat per beat: Mixxx sends the same beat twice, sends nothing for the
+/// next one, and puts the other deck's beats over the top of this one's. A beat
+/// message is therefore not taken as a beat — it is matched against the grid we
+/// already have, and the count moves by however many beats have actually gone
+/// by, which is two across a dropped message and none across a duplicated one.
+/// Everything slower than the beat is counted off that number, so a message
+/// miscounted is a half-time look moved onto the other half of the pair, where
+/// it stays until the next miscount moves it back. See markBeat().
+///
 
 namespace edmx
 {
@@ -79,6 +89,26 @@ namespace edmx
         /// locked. Two seconds is several beats at any danceable tempo.
         static constexpr double kExternalTimeout = 2.0;
 
+        /// How far off the beat the grid predicted a message may land and still
+        /// be that beat, as a fraction of one beat. Generous, because what it
+        /// is allowing for is a tempo estimate a few percent out; a message
+        /// further away than this is not this grid's beat at all.
+        static constexpr double kSnapWindow = 0.30;
+
+        /// Beats that agree with the grid before it is trusted enough to count
+        /// off. Until then a message is taken as one beat and the tempo is
+        /// learned from it, which is how the grid gets acquired in the first
+        /// place — and is what it always used to do.
+        static constexpr int kSettleBeats = 4;
+
+        /// Beats landing nowhere near the grid, in a row, before we believe
+        /// them. One is a stray or the other deck; two is a track change, and
+        /// the rig has to follow the music rather than argue with it.
+        static constexpr int kRelockBeats = 2;
+
+        /// Beats to the bar. See beatInBar().
+        static constexpr int kBeatsPerBar = 4;
+
         /// Sets the tempo, holding the current phase. Changing tempo should not
         /// move the beat we are in the middle of; it should change how long the
         /// *next* one lasts.
@@ -91,26 +121,74 @@ namespace edmx
         void setBpm(float bpm, BeatSource source = BeatSource::Internal);
         float getBpm() const;
 
-        /// A beat landed at `when` (a nowSeconds() value). Re-anchors the grid
-        /// and learns the tempo from the gap since the last one.
+        /// A beat message landed at `when` (a nowSeconds() value). Re-anchors
+        /// the grid, learns the tempo, and moves the count on by however many
+        /// beats went by — which is the part that is not obvious.
+        ///
+        /// The naive version of this — one message, one beat, always — is what
+        /// was here, and it is wrong in both directions. Mixxx sends a beat
+        /// twice and the count gains one; a message goes missing and the count
+        /// loses one. Either way everything counted in groups off that number
+        /// (half time, a bar) lands on a different member of the group from
+        /// then on, which on a rig reads as a look randomly changing which of
+        /// the beats it hits. So the message is matched to the grid instead:
+        ///
+        ///   - too soon after the last one to be a different beat — it is that
+        ///     beat again, and is dropped whole;
+        ///   - a beat or two or five along the grid, within kSnapWindow — the
+        ///     count moves by that many, so a dropped message costs nothing;
+        ///   - nowhere near the grid — a stray, ignored, unless kRelockBeats of
+        ///     them come in a row, which is the music having genuinely moved.
+        ///
+        /// All of which needs a grid worth matching against, so none of it
+        /// happens until kSettleBeats have agreed with it, and a tap never goes
+        /// through it at all: a person tapping a tempo in *is* a run of beats
+        /// that do not fit the old grid, and does not double-send.
         void markBeat(double when, BeatSource source);
 
-        /// Start the grid over at `when` — the downbeat is here. This is what
-        /// a MIDI Start means, and what a tap means.
+        /// Start the grid over at `when` — the downbeat is here, and this is
+        /// beat one. A MIDI Start means this, and so does `midi align`.
         void restart(double when, BeatSource source);
 
         /// Beat number plus phase, as one continuous value: 12.25 is a quarter
         /// of the way through beat 12. Patterns trigger on the integer part
         /// changing and animate off the fraction.
         ///
-        /// **The integer part is an ordinal, not a count.** It moves forward on
-        /// every beat and never backwards, which is what a pattern watching for
-        /// a change needs — but it can move by more than one, because a tempo
-        /// message re-anchors it to wherever free-run had predicted and
-        /// markBeat then steps past that. Anything that cares *which* beat it
-        /// is on — every second one, say — has to count the changes itself.
-        /// See Pattern_Mythos_BeatPulse::tick.
+        /// **The integer part is a count of beats.** It moves forward on every
+        /// beat and never backwards, which is what a pattern watching for a
+        /// change needs, and it moves by however many beats actually went by —
+        /// two across a message that never arrived, none across one that
+        /// arrived twice. That is what makes it safe to count groups off it:
+        /// every second beat of this number is every second beat of the music.
+        /// It was not always so, and the look that needed it counted the
+        /// changes itself, which is worse — a counter running at frame rate
+        /// sees a jump of two as one. See markBeat() and beatInBar().
         double beatPosition(double now) const;
+
+        /// Beats since the downbeat the grid is counting from.
+        long long beatsSinceDownbeat(double now) const;
+
+        /// Which beat of the bar it is: 0 is the one, 3 is the four.
+        ///
+        /// Two assumptions live in here and both are worth saying out loud. The
+        /// bar is four beats long, because the music this rig plays to is in
+        /// four. And it starts at the last downbeat *declared* — a MIDI Start,
+        /// or `midi align` — which for a source that never says (Mixxx sends
+        /// beats and nothing at all about bars) is wherever the grid happened
+        /// to begin.
+        ///
+        /// So the one can be wrong, by one, two or three beats, and there is
+        /// exactly one gesture that fixes it: `midi align`, on the one. That is
+        /// a much better deal than it sounds, because the alternative is not a
+        /// correct bar — it is no bar at all. The looks that need one used to
+        /// count beats off the wire for themselves, and a wire that duplicates
+        /// and drops beats moved them onto a different beat of the bar every
+        /// few minutes. A bar that is wrong until someone taps it beats one
+        /// that is right on average and never twice in the same place.
+        int beatInBar(double now) const;
+
+        /// The beat the current bar counts from. Moved by restart().
+        long long getDownbeat() const;
 
         /// Seconds since the beat we are in started.
         float timeSinceBeat(double now) const;
@@ -137,7 +215,7 @@ namespace edmx
         /// connected but silent.
         unsigned long long getExternalBeats() const;
 
-        /// `bpm=128.0 src=midi_clock lock=yes beat=417`, for STATUS.
+        /// `bpm=128.0 src=midi_clock lock=yes beat=417 bar_beat=3`, for STATUS.
         std::string describe(double now) const;
 
     private:
@@ -145,9 +223,42 @@ namespace edmx
         /// stalled clock decays to a steady value instead of retriggering.
         static constexpr double kHeldPhase = 0.999;
 
+        /// Folds one measured beat-to-beat gap into the tempo, if it could
+        /// plausibly be one beat. Smoothed, never taken raw.
+        void learnPeriod(double interval);
+
+        /// What a filed beat does about free-run having predicted beats of its
+        /// own since the last one we took.
+        enum class Advance
+        {
+            Grid,  ///< never below the prediction, so the count only goes up
+            Fresh, ///< past it, so a look watching for a change always sees one
+            Exact, ///< what the beats say, prediction or no prediction
+        };
+
+        /// Files a beat as the `steps`-th one after the last we accepted, and
+        /// puts the grid on it.
+        void takeBeat(double when, long long steps, Advance advance = Advance::Grid);
+
         std::atomic<double> period{60.0 / 128.0};
         std::atomic<double> anchor{-1.0}; ///< when the current beat started
         std::atomic<long long> beatNumber{0};
+
+        /// The last beat we *accepted*, and its number.
+        ///
+        /// Separate from the anchor and the beat number above, which setBpm()
+        /// also writes: it re-seats both mid-beat to hold the phase across a
+        /// tempo change, so measuring the gap between beats from them would
+        /// measure the gap since the last tempo message instead — and a Mixxx
+        /// stream sends one of those on every beat. Every judgement markBeat()
+        /// makes is against these two.
+        std::atomic<double> lastBeatAt{-1.0};
+        std::atomic<long long> lastBeatCount{0};
+
+        std::atomic<long long> downbeat{0}; ///< the beat the bar counts from
+        std::atomic<int> settled{0};        ///< agreeing beats, up to kSettleBeats
+        std::atomic<int> strayBeats{0};     ///< off-grid beats in a row
+
         std::atomic<double> lastExternal{-1.0};
         std::atomic<int> source{static_cast<int>(BeatSource::Internal)};
         std::atomic<bool> freeRun{true};

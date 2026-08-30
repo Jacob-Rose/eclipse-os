@@ -43,6 +43,7 @@ SHOW = DESKTOP / "config" / "mythos26.json"
 OBELISK = DESKTOP / "config" / "obelisk.json"
 OBELISK_USB = DESKTOP / "config" / "obelisk_usb.json"
 SCANNER = DESKTOP / "config" / "scanner.json"
+STAGE = DESKTOP / "config" / "scanner_stage.json"
 
 #: The sculpture's own numbers, from src/relics/obelisk/state_obelisk.h and the
 #: eight GenerateAxisRow calls in obelisk.cpp. The config has to agree with
@@ -690,6 +691,153 @@ class TheUvLayer(unittest.TestCase):
             self.assertIsNotNone(uv.get_param("rate"))
             self.assertEqual(show.current_state, "scan_idle")
             self.assertIsNone(show.get_param("rate"))
+        finally:
+            show.stop()
+
+
+class SharedBeatTriggers(unittest.TestCase):
+    """When a hit lands, decided once for the whole rig.
+
+    Every beat look used to work this out privately - read the clock, watch the
+    beat number, check the rate, fire. Four looks meant four answers, and they
+    came apart in three ways that all read on a rig as the UV not being with the
+    show: a look that is not showing is not counting, so it entered cold; entry
+    always fired a hit, at whatever fraction of a beat the operator pressed the
+    button; and a cross-fade ticks both looks, so two envelopes ran at once.
+
+    The decision moved to edmx::TriggerRack, is made once a frame before
+    anything ticks, and is shared. What is tested here is the part that was
+    actually broken: a look entered off the beat joins the grid instead of
+    starting one of its own.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        executable_or_skip()
+
+    def _uv_hits(self, enter_offset, bpm=120.0, settle=2.0):
+        """UV hit instants, and the moment `flash` was asked for.
+
+        The offset puts the entry deliberately off the beat, which is the whole
+        point: at 120bpm a beat is 500ms and 0.13 into one is nowhere near it.
+        """
+        frames = []
+        show = ShowController(STAGE, dry_run=True, midi="", bpm=bpm,
+                              on_frame=lambda f: frames.append((time.time(), f)),
+                              emit_rate=40.0)
+        try:
+            show.set_state("scan_idle")
+            time.sleep(1.0)
+            time.sleep(enter_offset)
+            entered = time.time()
+            show.layers["uv"].set_state("flash")
+            time.sleep(settle)
+        finally:
+            show.stop()
+
+        uv = show.layers["uv"].fixtures[0]
+        levels = [(t, f[uv][0]) for t, f in frames if len(f) > uv]
+        hits = [t for (t, v), (_pt, pv) in zip(levels[1:], levels) if v > pv + 40]
+        return entered, [h for h in hits if h >= entered]
+
+    def test_the_uv_hits_on_the_beat(self):
+        _entered, hits = self._uv_hits(0.0, settle=3.0)
+        self.assertGreaterEqual(len(hits), 4, "the UV did not flash")
+
+        # 500ms apart at 120bpm. Loose enough for a 25ms frame to land either
+        # side of the beat, tight enough that a look on its own count drifts
+        # out of it within a couple of bars.
+        for first, second in zip(hits, hits[1:]):
+            self.assertAlmostEqual(second - first, 0.5, delta=0.06)
+
+    def test_entering_off_the_beat_waits_for_the_grid(self):
+        """The bug this exists for.
+
+        `layer uv state flash` used to fire the envelope on the look's first
+        tick - which is the instant the button was pressed, and is off the beat
+        by construction. So the UV cracked at a time of the operator's choosing
+        and the truss carried on at the music's, and the two never agreed until
+        the next cue change moved it somewhere else.
+
+        Now the entry is not a hit: the look joins the shared trigger, and the
+        first flash lands when the rig's next beat does.
+        """
+        for offset in (0.13, 0.27, 0.41):
+            entered, hits = self._uv_hits(offset)
+            self.assertGreaterEqual(len(hits), 3, f"no flashes after entering at +{offset}")
+
+            # It waited: the first hit is not at the moment of entry.
+            waited = hits[0] - entered
+            self.assertGreater(waited, 0.03,
+                               f"flashed on entry at +{offset}, off the beat")
+
+            # And what it waited for was the grid - the beats after it are
+            # 500ms apart, and the first one is on the same grid, not offset
+            # from it by however late the button was.
+            span = hits[-1] - hits[0]
+            off_grid = min(span % 0.5, 0.5 - (span % 0.5))
+            self.assertLess(off_grid, 0.05,
+                            f"first flash off the grid by {off_grid:.3f}s at +{offset}")
+
+    def test_a_cue_still_comes_up_lit(self):
+        """The other half of the trade, and the reason entry ever fired a hit.
+
+        A show cue must not open dark for up to a bar - that reads as a cue
+        that did not come up. So `entry_hit` stays on for the show's looks and
+        off for the UV, and the two behaviours are one knob rather than one
+        hardcoded compromise.
+        """
+        for offset in (0.13, 0.31):
+            frames = []
+            show = ShowController(SHOW, dry_run=True, midi="", bpm=120.0,
+                                  on_frame=lambda f: frames.append((time.time(), f)),
+                                  emit_rate=40.0)
+            try:
+                show.set_state("tv_static")
+                time.sleep(1.0 + offset)
+                entered = time.time()
+                show.set_state("beat_pulse")
+                time.sleep(1.0)
+            finally:
+                show.stop()
+
+            after = [(t, max(f[0])) for t, f in frames if t >= entered]
+            rising = next((t - entered for (t, v), (_pt, pv) in zip(after[1:], after)
+                           if v > pv + 5), None)
+            self.assertIsNotNone(rising, f"beat_pulse never lit at +{offset}")
+
+            # Sooner than the next beat, which is what "did not wait" means.
+            # It is not instant: a command crosses stdin and the cue cross-fades
+            # in, so this is bounded rather than asserted at zero.
+            self.assertLess(rising, 0.5 - offset,
+                            f"cue waited for the grid at +{offset}")
+
+    def test_entry_hit_is_a_knob_and_the_uv_opens_with_it_off(self):
+        show = ShowController(STAGE, dry_run=True, midi="", bpm=120.0,
+                              on_frame=lambda f: None, emit_rate=20.0)
+        try:
+            time.sleep(0.8)
+            uv = show.layers["uv"]
+            uv.set_state("flash")
+            time.sleep(0.5)
+
+            entry = uv.get_param("entry_hit")
+            self.assertIsNotNone(entry, "the UV flash has no entry_hit knob")
+            self.assertTrue(entry.is_bool)
+            self.assertFalse(entry.value, "the UV should join the grid, not start one")
+
+        finally:
+            show.stop()
+
+        # and the show's own beat look is the other way round - a different
+        # config, because beat_pulse is mythos26's cue and the UV is the
+        # scanner stage's layer
+        show = ShowController(SHOW, dry_run=True, midi="", bpm=120.0,
+                              on_frame=lambda f: None, emit_rate=20.0)
+        try:
+            show.set_state("beat_pulse")
+            time.sleep(0.8)
+            self.assertTrue(show.get_param("entry_hit").value)
         finally:
             show.stop()
 
@@ -1443,13 +1591,20 @@ def _rising_edges(frames, threshold=128):
 class BeatLooks(unittest.TestCase):
     """The looks that fire on the beat: their envelope, and their rate.
 
-    There used to be a divider here - on 1 / on 2 / on 4. It went, because the
-    clock counts beats and has no idea which of them is the one, so "on 4"
-    fired at the right rate on an arbitrary beat of the bar with no usable way
-    to move it. Half time is back as a rate because a pair *has* a usable way:
-    setting the rate, or entering the cue, seats it on the beat you did that
-    on. Double time never had the problem - it lands on the beat and between
-    them, whichever beat it counts from.
+    There used to be a divider here - on 1 / on 2 / on 4 - and it went, because
+    the clock counted beats and had no idea which of them was the one, so "on
+    4" fired at the right rate on an arbitrary beat of the bar with no way to
+    move it. Then half time came back and seated its own pairs off the beat you
+    set the rate on, which was a way to move it but not a bar: two looks in half
+    time could sit on opposite beats, and the seat was counted off beat messages
+    that Mixxx duplicates and drops, so it wandered between gestures.
+
+    The bar is the clock's now - four beats from the last declared downbeat, and
+    `midi align` declares one. So half time takes the one and the three of that
+    bar, quarter time takes the one, and both agree with each other and with
+    themselves an hour later. The one is an assumption until someone aligns it;
+    that is the trade, and it is the right way round. Double time never had the
+    problem - it lands on the beat and between them, whichever beat it is.
     """
 
     @classmethod
@@ -1537,15 +1692,14 @@ class BeatLooks(unittest.TestCase):
         right while the *placement* wanders - so this measures the gaps between
         hits and wants every one of them two beats wide.
 
-        Tapped rather than free-run because that is the path that broke it. A
-        tap goes through `BeatClock::markBeat`, which guarantees the beat number
-        moves forward but not that it moves by one: a beat landing a hair off
-        the predicted one advances it by two, and half time derived from that
-        number changes which beat of the pair it is on every time that happens.
-        Python's timing jitter is the same hair, so the taps below reproduce it
-        without needing Mixxx on the other end of a cable.
+        Tapped rather than free-run because that is the path that broke it.
+        Every tap goes through `BeatClock::markBeat` and has to come out as
+        exactly one beat: one taken twice, or two taken as one, moves half time
+        onto the other beat of the pair and leaves it there. Python's timing
+        jitter is the hair the old version tripped over, so the taps below
+        reproduce it without needing Mixxx on the other end of a cable.
         """
-        period = 0.35
+        period = 0.30
         stamped = []
         show = ShowController(SHOW, dry_run=True, midi="",
                               on_frame=lambda frame: stamped.append(
@@ -1557,12 +1711,15 @@ class BeatLooks(unittest.TestCase):
             show.set_param("decay", 0.12)   # a hit that ends inside one beat
             show.set_param("attack", 0.02)
 
-            for _ in range(16):
+            # Ten to settle the tempo onto the tap - the clock closes a
+            # quarter of the gap per beat, so ten is well inside a percent -
+            # and then twelve to measure the spacing of.
+            for _ in range(10):
                 show.command("beat")
                 time.sleep(period)
             stamped.clear()
 
-            for _ in range(16):
+            for _ in range(12):
                 show.command("beat")
                 time.sleep(period)
         finally:
@@ -1576,6 +1733,72 @@ class BeatLooks(unittest.TestCase):
         for gap in gaps:
             self.assertAlmostEqual(gap, period * 2, delta=period * 0.5,
                                    msg=f"hits {period * 2:.2f}s apart expected, got {gaps}")
+
+    def test_quarter_time_hits_once_a_bar(self):
+        """The rate the divider never got to keep: one hit every four beats.
+
+        Spacing rather than a count, for the same reason as half time above -
+        a look that fires four times in eight seconds is right on average even
+        when it is hitting on 1, 5, 6, 10.
+        """
+        bpm = 200.0
+        beat = 60.0 / bpm      # a bar every 1.2s, so four of them is quick
+        stamped = []
+        show = ShowController(SHOW, dry_run=True, midi="", bpm=bpm,
+                              on_frame=lambda frame: stamped.append(
+                                  (time.monotonic(), max(frame[0]) > 128)),
+                              emit_rate=40.0)
+        try:
+            show.set_state("beat_pulse")
+            show.set_param("rate", 0.25)
+            show.set_param("decay", 0.12)   # a hit that ends inside one beat
+            show.set_param("attack", 0.02)
+            time.sleep(0.5)                 # past the cue's own opening hit
+            stamped.clear()
+            time.sleep(5.0)
+        finally:
+            show.stop()
+
+        edges = [now for index, (now, lit) in enumerate(stamped)
+                 if lit and index > 0 and not stamped[index - 1][1]]
+        self.assertGreaterEqual(len(edges), 3, "too few hits to judge the spacing")
+
+        gaps = [b - a for a, b in zip(edges, edges[1:])]
+        for gap in gaps:
+            self.assertAlmostEqual(gap, beat * 4, delta=beat * 0.75,
+                                   msg=f"hits a bar apart expected, got {gaps}")
+
+    def test_align_says_where_the_one_is(self):
+        """`midi align` is the gesture that moves the slow rates.
+
+        A look on quarter time hits on the one, and the one is wherever the
+        clock was last told it is. So aligning mid-bar should bring the hit
+        forward to now rather than leaving it where the grid happened to start.
+        """
+        bpm = 120.0
+        stamped = []
+        show = ShowController(SHOW, dry_run=True, midi="", bpm=bpm,
+                              on_frame=lambda frame: stamped.append(
+                                  (time.monotonic(), max(frame[0]) > 128)),
+                              emit_rate=40.0)
+        try:
+            show.set_state("beat_pulse")
+            show.set_param("rate", 0.25)
+            show.set_param("decay", 0.12)
+            show.set_param("attack", 0.02)
+            time.sleep(1.4)                 # somewhere mid-bar, hit or not
+            stamped.clear()
+            show.command("midi align")
+            aligned = time.monotonic()
+            time.sleep(0.6)                 # well inside the two-second bar
+        finally:
+            show.stop()
+
+        edges = [now for index, (now, lit) in enumerate(stamped)
+                 if lit and index > 0 and not stamped[index - 1][1]]
+        self.assertTrue(edges, "aligning the one should hit on it")
+        self.assertLess(edges[0] - aligned, 0.3,
+                        "the hit should land on the align, not on the old grid")
 
     def test_the_cue_list_sets_the_rate(self):
         """Both looks open on the beat; the rate is a live knob from there."""
@@ -1595,7 +1818,8 @@ class BeatLooks(unittest.TestCase):
         try:
             show.set_state("beat_pulse")
             time.sleep(0.4)
-            for sent, landed in ((0.5, 0.5), (0.7, 0.5), (0.9, 1.0),
+            for sent, landed in ((0.25, 0.25), (0.3, 0.25), (0.45, 0.5),
+                                 (0.5, 0.5), (0.7, 0.5), (0.9, 1.0),
                                  (1.37, 1.0), (1.6, 2.0), (2.0, 2.0)):
                 show.set_param("rate", sent)
                 self.assertAlmostEqual(show.get_param("rate").value, landed, places=3,
@@ -2053,7 +2277,14 @@ class ViewerOnTheShow(unittest.TestCase):
         self.assertIn("100.0 bpm", self.app.header.cget("text"))
 
     def test_tapping_does_not_error(self):
-        self.settle(0.5)
+        """And the header picks up that the clock is following the tap.
+
+        Settled past a beat rather than half of one: a tap counts as exactly
+        one beat, so a tap landing on the beat free-run had already predicted
+        moves the count no further and emits no line of its own. The source is
+        on every beat line after it, which at 120bpm is 500ms away.
+        """
+        self.settle(0.4)
         self.app._run_button(("beat", ""))
         self.assertEqual(self.app._status, "")
 
@@ -2206,7 +2437,7 @@ class LookParams(unittest.TestCase):
             time.sleep(0.6)
             names = [param.name for param in show.params]
             self.assertEqual(names, ["attack", "decay", "intensity", "floor",
-                                     "hold", "rate", "color"])
+                                     "hold", "rate", "entry_hit", "color"])
 
             attack = show.get_param("attack")
             self.assertEqual(attack.kind, "f")

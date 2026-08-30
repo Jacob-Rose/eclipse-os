@@ -62,7 +62,8 @@ RGB = Tuple[int, int, int]
 #     ("pattern", "obelisk_seasons")   switch the whole pattern
 #     ("input",   "a")            hold one of the two momentary inputs while
 #                                 the button is held down
-#     ("beat",    "")             a downbeat, now - tap it in
+#     ("beat",    "")             a beat, now - tap it in
+#     ("align",   "")             the one is now - where the bar starts
 #     ("bpm",     "128")          set the tempo outright
 #
 # A state the running pattern does not offer is dimmed rather than hidden, so
@@ -171,10 +172,16 @@ PATTERN_BUTTONS: List[Tuple[str, Tuple[str, str]]] = [
     ("identify", ("pattern", "identify")),
 ]
 
-#: Tempo, for when there is no MIDI or the phase has drifted. "tap" is a
-#: downbeat now: hit it on the one and the rig lines up.
+#: Tempo, for when there is no MIDI or the phase has drifted. "tap" is a beat
+#: now - tap it in, or shove a running clock back into time.
+#:
+#: "the one" is the other half, and it is the one to reach for when a look on
+#: half or quarter time is hitting on the wrong beat of the bar: hit it on the
+#: one and every slow rate lines up behind it. Mixxx says nothing about bars,
+#: so until someone does this the rig is assuming.
 TEMPO_BUTTONS: List[Tuple[str, Tuple[str, str]]] = [
     ("tap", ("beat", "")),
+    ("the one", ("align", "")),
     ("100", ("bpm", "100")),
     ("120", ("bpm", "120")),
     ("128", ("bpm", "128")),
@@ -1713,6 +1720,8 @@ class ViewerApp:
                 self.current_pattern = value
             elif kind == "beat":
                 self.show.tap_beat()
+            elif kind == "align":
+                self.show.midi_align()
             elif kind == "bpm":
                 self.show.set_bpm(float(value))
             elif kind == "link":

@@ -153,6 +153,52 @@ of 1, put `"addressing": "zero"` at the top of its config and write the numbers
 the way the fixtures show them. It changes how the *file* is read and nothing
 else; the slots on the wire never move.
 
+### when a hit lands is one decision, not one per look
+
+The UV flashed out of step with the truss, and the reason was not the envelope —
+it was that every beat look worked out its own hits. Each one read the clock,
+watched the beat number, checked its rate and fired, which is four answers to a
+question that has one. They came apart three ways, and all three read on a rig
+as the UV not being with the show:
+
+- **A look that is not showing is not counting.** Only a machine's active state
+  ticks, and the incoming one mid-fade. A look entered cold had stale
+  bookkeeping.
+- **Entry always fired a hit.** Deliberately — a cue that comes up dark reads as
+  a cue that did not come up — but it fired at whatever fraction of a beat the
+  operator pressed the button, which is off the grid by construction. `layer uv
+  state flash` was exactly that gesture, so the UV's first flash was always
+  wrong and everything after it was counted from there.
+- **A cross-fade ticks both looks**, so two envelopes ran for the length of it.
+
+So the decision moved out of the looks and into `edmx::TriggerRack`
+(`include/edmx/beat_trigger.h`), which is ticked **once per frame, before
+anything else ticks** — that ordering is the whole guarantee. Two looks on the
+same rate now read the same answer instead of each computing one, so they fire
+on the same frame with the same sub-frame offset.
+
+**The rate knob is the binding.** There is no string property on a property bag
+and there does not need to be one: the four musical rates are the four triggers
+(`bar`, `half`, `beat`, `double`), and a look's existing `rate` is which of them
+it is on. Half time is now one decision for the rig rather than one per look
+that happened to agree.
+
+**What a look still owns is the shape.** A trigger says *when*; the curve on the
+look says what the light does about it. That split is the point — the UV cracks
+in 20ms and the truss swells over 150ms, on the same beat — and it is what makes
+the curve editor useful on a layer: drawing the UV's envelope changes its shape
+without touching its timing.
+
+**`entry_hit` is the old compromise, made a knob.** On for the show's cues, which
+must not open dark; off for the UV, which is joining a grid the rig is already
+running. And when a cue *does* ask for a hit on entry it asks the shared trigger,
+so everything on that rate comes up with it — a cue change is a rig-wide event
+and now looks like one.
+
+`SharedBeatTriggers` in the test suite covers the part that was actually broken:
+entering `flash` at 0.13, 0.27 and 0.41 of a beat, and checking the first flash
+lands on the grid rather than under the operator's thumb.
+
 ### commissioning
 
 Ten identical pars are indistinguishable from a config file, so:
@@ -260,7 +306,7 @@ is stated in the cue list beside the name — `beat_pulse` opens at 0.15/0.60,
 Attack and decay are what a beat look *is*, so they belong there rather than in
 a constructor; they stay live knobs at the desk once it is running.
 
-**Half time and double time are a `rate` knob** beside them, in hits per beat:
+**How often a look hits is a `rate` knob** beside them, in hits per beat: 0.25,
 0.5, 1 or 2, snapped, because a slider will otherwise hand over 1.37 and 1.37
 hits a beat is a rig drifting against the track. It divides the beat *count*,
 never the tempo — the point of half time is the same hit half as often, and
@@ -268,22 +314,35 @@ stretching the envelope with the rate would soften it instead. So double time
 keeps the 750ms envelope it had inside a 250ms gap and the rig hovers rather
 than pulses; that is correct, and `decay` is the next knob along.
 
-**There used to be a divider** — `beat div 1|2|4`, and on 1 / on 2 / on 4 in the
-viewer. Removed, and half time is not it coming back. The divider offered 4, and
-the clock counts beats with no idea which of them is the one: "on 4" fired at
-the right *rate* on an arbitrary beat of the bar, and a tap to re-seat it is not
-something anyone can use mid-set. A **pair** has a gesture that works — setting
-the rate, or entering the cue, seats the count on the beat you did that on, so
-you hit the knob on the beat you want the hit and hit it again if it lands
-wrong. On the beat and double time cannot land wrong at all; they fall on the
-same instants whatever beat they are counted from. Once a bar still has no
-answer, and is still not offered.
+**Where the slow rates land is the clock's bar.** Four beats from the last
+downbeat it was told about — a MIDI Start, or `midi align` — so half time takes
+the one and the three of that bar, and quarter time takes the one. The one is an
+assumption until someone declares it, because Mixxx sends beats and says nothing
+about bars, and `midi align` on the one is the single gesture that fixes it for
+every look at once. A `beat` tap deliberately is not that gesture: tapping a
+tempo in means tapping every beat.
 
-It is also per look rather than global, which the divider was not. One look in
-half time is a decision; every look in half time at once was a mode. `beat div`
-is rejected outright rather than ignored, because without that the word falls
-through to the tap and an old cue file would shove the downbeat instead — the
-error now points at `param rate 0.5`.
+**There used to be a divider** — `beat div 1|2|4`, and on 1 / on 2 / on 4 in the
+viewer. It is not coming back: the rate is per look, which the divider was not,
+and one look in half time is a decision where every look in half time at once
+was a mode. But the reason `4` was dropped from it — a clock counting beats with
+no idea which of them was the one — is what the bar fixes, so once a bar is back
+as `rate 0.25`. In between there was a per-look version of the bar, seating half
+time's pairs on the beat you set the rate on; it could not be shared between
+looks, had to be re-made on every cue change, and was counted off beat messages,
+so it wandered between gestures. `beat div` is still rejected outright rather
+than ignored, because without that the word falls through to the tap and an old
+cue file would shove the grid instead — the error now points at `param rate`.
+
+**And the count those rates are counted off is now a count of beats, not of
+messages.** A real Mixxx cable sends the same beat twice, sends nothing for the
+next one, and puts the other deck's beats over this one's; every one of those
+moved a half-time look onto the other half of the pair, where it stayed until
+the next one moved it back. `BeatClock::markBeat` matches each message against
+the grid instead — too soon to be a different beat and it is dropped, two beats
+along and the count moves by two, nowhere near the grid and it is ignored unless
+a second agrees with it. `--midi-selftest` replays a stream that does all three
+and checks the bar never moves.
 
 The static looks hash `(frame, fixture index)` rather than keeping a random
 generator, which lets `render()` stay const and stateless and makes any given
@@ -1444,11 +1503,10 @@ listing online.
 - **MIDI out, and MIDI for anything but tempo and loudness** — no
   control-change mapping to patterns, no faders. `MidiInput::handleMessage` is
   where that starts.
-- **Bars** — the clock counts beats, not bars, because nothing upstream reliably
-  says where a bar begins. This is why the beat divider was removed rather than
-  fixed: anything firing less often than every beat has to pick *which* beat,
-  and nothing here knows. Half time survives it only because a pair can be
-  re-seated by hand in one gesture; once a bar cannot, and is not offered.
+- **Bars** — the clock keeps one, but an assumed one: four beats long, starting
+  at the last downbeat it was *told* about, because nothing upstream reliably
+  says where a bar begins. Four is not a knob, and a source in three has no way
+  to say so. `midi align` on the one is the whole of the fix.
 - **Stereo VU** — only the mono signals are read. The mapping sends left and
   right separately, which a rig split into two halves could use.
 - **The viewer draws discs, not beams.** Fixtures with a real position in space

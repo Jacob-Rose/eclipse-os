@@ -42,6 +42,7 @@
 #include "relics/obelisk/obelisk.h"
 
 #include "edmx/beat_clock.h"
+#include "edmx/beat_trigger.h"
 #include "edmx/config.h"
 #include "edmx/dmx_output.h"
 #include "edmx/fixture.h"
@@ -121,11 +122,12 @@ namespace
             "  palette <name|#hex,...>   named palette or an explicit stop list\n"
             "  blackout <on|off>         hold the rig dark without losing the look\n"
             "  bpm <float>               set the tempo by hand\n"
-            "  beat                      a downbeat, now - tap it, or trigger a cue\n"
+            "  beat                      a beat, now - tap the tempo in, or trigger a cue\n"
             "  midi list                 MIDI inputs the machine can see\n"
             "  midi open <spec>          follow tempo from that input\n"
             "  midi close                stop following, keep the tempo\n"
-            "  midi align                the downbeat is now (for clock with no start)\n"
+            "  midi align                the one is now - where the bar starts, for the\n"
+            "                            slow rates and for a clock with no start\n"
             "  midi free-run <on|off>    keep pulsing when the clock stops\n"
             "  midi monitor <on|off>     print every message arriving, to identify a mapping\n"
             "  midi status               port, tempo, lock\n"
@@ -740,6 +742,73 @@ namespace
             // Smoothed, so it converges rather than snapping. 40 beats is a
             // few seconds of music and should be well inside a bpm.
             check("measured.bpm", clock.getBpm(), kBpm, 1.0);
+        }
+
+        // ---- a stream that duplicates, drops and strays ---------------------
+        //
+        // The three things a real Mixxx cable does that a synthetic one does
+        // not, and the reason the clock counts beats rather than messages. What
+        // is being checked is not the tempo - that survives all of this on its
+        // own - but the *count*, because that is what half time and once-a-bar
+        // are counted off. One extra or one missing and the look moves onto
+        // another beat of the bar and stays there.
+        {
+            BeatClock clock;
+            MidiInput midi;
+            midi.setBeatClock(&clock);
+            midi.setBpmNote(-1);
+
+            constexpr double kBpm = 128.0;
+            constexpr double kPeriod = 60.0 / kBpm;
+            constexpr int kBeats = 64;
+
+            clock.setBpm(static_cast<float>(kBpm), BeatSource::Internal, 0.0);
+
+            const double one = 10.0;
+            clock.restart(one, BeatSource::MidiNote); // the one is here
+
+            // Where the bar was, on every beat of the run. Sampled as we go
+            // rather than at the end, because the clock is a live grid and not
+            // a history: it can only answer about the beat it is on.
+            int wrongBar = 0;
+
+            for (int beat = 1; beat <= kBeats; ++beat)
+            {
+                const double at = one + (beat * kPeriod);
+
+                if ((beat % 7) != 0) // ...and when it is, the message never arrives
+                {
+                    midi.handleMessage(0x90, 50, 100, at);
+
+                    if ((beat % 5) == 0)
+                    {
+                        // The same beat, said twice, 3ms apart.
+                        midi.handleMessage(0x90, 50, 100, at + 0.003);
+                    }
+                    if ((beat % 11) == 0)
+                    {
+                        // The other deck, half a beat out of step with this one.
+                        midi.handleMessage(0x90, 50, 100, at + (kPeriod * 0.5));
+                    }
+                }
+
+                if (clock.beatInBar(at + (kPeriod * 0.25)) != (beat % BeatClock::kBeatsPerBar))
+                {
+                    ++wrongBar;
+                }
+            }
+
+            const double end = one + (kBeats * kPeriod) + (kPeriod * 0.25);
+            check("grid.beats", static_cast<double>(clock.beatsSinceDownbeat(end)),
+                  kBeats, 0.0);
+            check("grid.bar_beat", static_cast<double>(clock.beatInBar(end)),
+                  kBeats % BeatClock::kBeatsPerBar, 0.0);
+            check("grid.bpm", clock.getBpm(), kBpm, 1.0);
+
+            // The one is the one for all 64 of them, which is the whole point:
+            // a look on quarter time hits 16 times and every one of them is a
+            // bar apart.
+            check("grid.bar_holds", static_cast<double>(wrongBar), 0.0, 0.0);
         }
 
         // ---- beat clock, for sources that send it --------------------------
@@ -2346,30 +2415,31 @@ namespace
         {
             // `beat div` is gone, and is rejected rather than ignored.
             //
-            // It divided the beat count correctly and still felt wrong on a
-            // rig, because the clock counts beats and has no idea which of them
-            // is the one - so "on 4" fired at the right rate on an arbitrary
-            // beat of the bar. What a look does with the beat is a knob on the
-            // look now: `rate` for how often, attack and decay for the shape.
-            // Nothing global divides the clock, which is the part that was
+            // It divided the beat count globally, which is the part that was
             // wrong - one look in half time is a decision, every look in half
-            // time at once was a mode.
+            // time at once was a mode. What a look does with the beat is a knob
+            // on the look now: `rate` for how often, attack and decay for the
+            // shape. The rate it never had, once a bar, it has: the clock keeps
+            // the bar, and `midi align` says where the one is.
             //
             // Said outright because the alternative is worse: without this the
             // word falls through to the tap below, and an old cue file asking
-            // for `beat div 4` would silently shove the downbeat instead.
+            // for `beat div 4` would silently shove the grid instead.
             if (words.size() >= 2 && (words[1] == "div" || words[1] == "divide"))
             {
                 emit("ERR beat div is gone - it is a knob on the look now:"
-                     " `param rate 0.5` for half time, 2 for double time, and"
-                     " `param attack|decay <n>` for the shape (`params` to see"
-                     " them). there is no once-a-bar; the clock counts beats");
+                     " `param rate 0.25` for once a bar, 0.5 for half time, 2"
+                     " for double time, and `param attack|decay <n>` for the"
+                     " shape (`params` to see them). `midi align` says where"
+                     " the one is");
                 return;
             }
 
-            // A downbeat, now. Two jobs in one: tapping the tempo in when there
-            // is no MIDI, and telling a running clock where the bar starts when
-            // it only sends 0xF8 and never said.
+            // A beat, now: the tempo tapped in when there is no MIDI, and a
+            // shove back into time when there is. Deliberately not the one -
+            // `midi align` is that. Someone tapping a tempo in taps every beat,
+            // and every tap declaring itself the top of the bar would leave the
+            // slow rates hitting on all of them.
             const double when = nowSeconds();
             sharedBeatClock().markBeat(when, BeatSource::Manual);
             show.midi.alignToNow();
@@ -3257,6 +3327,12 @@ int main(int argc, char** argv)
         const auto now = clock::now();
         const float deltaTime = std::chrono::duration<float>(now - lastFrame).count();
         lastFrame = now;
+
+        // Before anything ticks: which of this frame's beats are hits is one
+        // question with one answer, and every look that fires on the beat is
+        // about to read it. Working it out per look is what used to let the UV
+        // and the truss fall out of step - see edmx/beat_trigger.h.
+        sharedTriggerRack().tick(nowSeconds());
 
         show.pattern->tick(deltaTime);
         show.pattern->render(show.context, show.colors);

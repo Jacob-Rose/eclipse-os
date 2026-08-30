@@ -1099,10 +1099,12 @@ class ShowController:
         self.command(f"bpm {value}")
 
     def tap_beat(self) -> None:
-        """A downbeat, now.
+        """A beat, now.
 
-        Two jobs: tapping a tempo in when there is no MIDI, and telling a clock
-        that only sends 0xF8 where the bar actually starts.
+        Tapping a tempo in when there is no MIDI, and shoving a running clock
+        back into time when there is. Deliberately not the *one* — someone
+        tapping a tempo taps every beat, so declaring the bar is midi_align()'s
+        job and not this one's.
         """
         self.command("beat")
 
@@ -1116,7 +1118,13 @@ class ShowController:
         self.command("midi close")
 
     def midi_align(self) -> None:
-        """Declares that now is the downbeat, without changing the tempo."""
+        """Declares that now is the one, without changing the tempo.
+
+        Where the bar starts, which is what the slow rates hit on: a look on
+        half time takes the one and the three of it, and one on quarter time
+        takes the one. Nothing upstream says where a bar begins, so this is how
+        the rig gets told.
+        """
         self.command("midi align")
 
     def set_free_run(self, enable: bool = True) -> None:
