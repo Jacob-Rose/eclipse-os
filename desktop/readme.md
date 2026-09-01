@@ -606,8 +606,8 @@ from (`kStageOriginY` and the `kRing*` constants in
 `src/relics/scanner/scanner_patterns.h`). The spatial looks read
 that space rather than the wiring order — the detected wave and the countdown
 sweep climb the obelisk and pass through the ring on the way, the record comet
-orbits the ring's centre and reads as a sweeping beam on the tower around it —
-which is the point of previewing on this rig rather than a bare strip.
+orbits the ring's centre and gives every side of the tower a climb of its own
+— which is the point of previewing on this rig rather than a bare strip.
 
 #### the objects, beside the stage
 

@@ -394,10 +394,17 @@ namespace scanner
     *
     * The head is an angle around the ring's centre on the stage, not an
     * index along a strip. On the ring that is the python comet unchanged -
-    * 12 pixels a second, an 8 pixel tail, a dim red floor behind it - and on
-    * the obelisk, standing above the orbit, the same pass reads as a beam
-    * sweeping across the tower once per revolution, narrower the higher it
-    * reaches. One clock, both rigs, no per-rig cases.
+    * 12 pixels a second, an 8 pixel tail, a dim red floor behind it.
+    *
+    * The sculpture gets the comet rather than a slice of the ring's. Its
+    * centre sits inside the tower at y=19.5, so reading the stage bearing
+    * up there made the whole obelisk one dial - the pass swept top, down a
+    * flank, along the bottom, back up the other, and no side had a comet of
+    * its own. Every side now runs the whole comet instead, the head
+    * climbing the face once per revolution and the tail behind it, all four
+    * in step: the head leaves the floor as the ring's own head crosses its
+    * top pixel. The orbit is the one clock; only what it means to a node
+    * changes with the object it is on.
     */
     class Pattern_Scanner_RecordComet : public PatternScanner
     {
@@ -405,7 +412,9 @@ namespace scanner
         // CRGB(1.0, 0.05, 0.05)
         HSV cometColor = HSV(0.0f, 0.95f, 1.0f);
         float revsPerSecond = 12.0f / 35.0f;
-        /// the tail, as a fraction of a revolution
+        /// the tail, as a fraction of a revolution - on the ring that is how
+        /// far behind the head it reaches round the circle, on a side of the
+        /// obelisk how far down the face
         float tailFraction = 8.0f / 35.0f;
 
         virtual void render(HSVStripNode* inNode, HSV& inOutColor) const override;

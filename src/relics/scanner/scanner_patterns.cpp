@@ -367,19 +367,30 @@ void Pattern_Scanner_SinePulse::reflect(ecore::PropertyBag& bag)
 
 void Pattern_Scanner_RecordComet::render(HSVStripNode* inNode, HSV& inOutColor) const
 {
-    const float headAlpha = std::fmod(timeActive * revsPerSecond, 1.0f);
+    const float headAlpha = frac(timeActive * revsPerSecond);
 
-    // the node's bearing around the orbit's centre, as a fraction of a turn.
-    // atan2(dx, dy) puts zero at the top of the ring and turns the way the
-    // pixels are numbered, so on the ring this *is* the old strip walk - and
-    // a node above the orbit still has a bearing, which is what sweeps the
-    // beam across the obelisk.
+    // Where the node sits in the revolution, 0 as the head reaches it.
+    //
+    // On the ring that is its bearing around the orbit's centre, as a
+    // fraction of a turn: atan2(dx, dy) puts zero at the top and turns the
+    // way the pixels are numbered, so this *is* the old strip walk.
     const Coordinate at = nodeCoord(inNode);
-    const float bearing = std::atan2(at.x - kRingCenterX, at.y - kRingCenterY) / (2.0f * kPi);
+    float place = std::atan2(at.x - kRingCenterX, at.y - kRingCenterY) / (2.0f * kPi);
 
-    // how far behind the head this bearing sits, wrapped around the turn
-    float distance = headAlpha - bearing;
-    distance -= std::floor(distance);
+    const HSVStripNode_Space* spaced = eio::spaceOf(inNode);
+    if (spaced != nullptr && spaced->space == NodeSpace::Obelisk)
+    {
+        // On the sculpture it is how far up the face the node is, so each
+        // side runs the whole comet - the head climbing it once per
+        // revolution - rather than the tower reading one bearing between
+        // them all. The orbit's centre is *inside* the obelisk at y=19.5,
+        // which is what made that one dial out of the whole thing. Every
+        // side answers with the same height, so the four climb in step.
+        place = spaced->v;
+    }
+
+    // how far behind the head this place sits, wrapped around the turn
+    const float distance = frac(headAlpha - place);
 
     // the python's clamp(1 - distance/8, 0.05, 1): a linear tail, and a 0.05
     // floor so the rest of the rig glows dim red rather than going out
