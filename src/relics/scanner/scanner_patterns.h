@@ -151,9 +151,9 @@ namespace scanner
     };
 
 
-    /* @brief scan_idle: the ring breathes cyan on a 2 second heartbeat, a
-    * beam of the same cyan goes round the obelisk side by side, and the
-    * truss stays dark (a scanner along it is there behind a knob).
+    /* @brief scan_idle: the ring breathes cyan on a 2 second heartbeat, the
+    * same breath goes round the obelisk side by side, and the truss stays
+    * dark (a scanner along it is there behind a knob).
     *
     * The first look to read the objects rather than the stage: each node
     * says which space it is in (eio::spaceOf), and the look renders each
@@ -163,6 +163,16 @@ namespace scanner
     * before. The breath is an AutomationCurve on the normalized cycle, like
     * the boot swell - the python table's run of trailing zeros collapses to
     * its two endpoint keys.
+    *
+    * One clock runs the ring and the sculpture. The obelisk's sides are the
+    * *same breath curve* handed to each side a lap-share later than the
+    * last, so the side the lap starts on breathes with the ring - same
+    * shape, same phase, however the curve is drawn - and the ones after it
+    * follow it round. It used to be a beam on a free-running rotation, and
+    * two clocks that never agreed: a 2.5s lap against a 2s breath lined up
+    * once every ten seconds, and a 1.5 strip beam crossing side centres two
+    * strips apart dipped almost dark between them - the sculpture flashing
+    * four times a lap on a beat of its own.
     */
     class Pattern_Scanner_ScanIdle : public PatternScanner
     {
@@ -173,14 +183,16 @@ namespace scanner
         HSV scanColor = HSV(202.5f, 0.8f, 1.0f);
         float cycleTime = 2.0f;
 
-        /// on the normalized 0..1 cycle clock
+        /// on the normalized 0..1 cycle clock: the ring's heartbeat, and
+        /// each of the obelisk's sides in turn
         eanim::AutomationCurve breathCurve;
 
-        /// the obelisk's beam: turns per second around the tower, how many
-        /// strips wide it is, and whether a side lights as one (both strips
-        /// together, stepping side to side) or strip by strip
-        float rotateRate = 0.4f;
-        float beamWidth = 1.5f;
+        /// the obelisk's lap: how many breath cycles the breath takes to
+        /// travel all the way round the tower, and whether a side takes it
+        /// as one (both strips together) or strip by strip. One lap to the
+        /// cycle fits every side inside a single heartbeat; four gives each
+        /// side a heartbeat of its own, the first still on the ring's.
+        float cyclesPerTurn = 1.0f;
         bool bySide = true;
 
         /// the truss: dark while the tower idles unless trussScan is on -
@@ -190,7 +202,7 @@ namespace scanner
         float sweepRate = 0.6f;
         float sweepWidth = 0.25f;
 
-        /// how much of the breath the beam and the scanner leave behind them,
+        /// how much of the breath the lap and the scanner leave behind them,
         /// so the objects never go fully dark between passes
         float floorLevel = 0.15f;
 

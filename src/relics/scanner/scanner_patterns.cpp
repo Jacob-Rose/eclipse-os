@@ -22,6 +22,12 @@ namespace
     {
         return std::clamp(v, 0.0f, 1.0f);
     }
+
+    /// the fractional part, always 0..1 - a phase, wrapped
+    float frac(float v)
+    {
+        return v - std::floor(v);
+    }
 }
 
 float PatternScanner::stripAlpha(const HSVStripNode* node)
@@ -140,8 +146,10 @@ Pattern_Scanner_ScanIdle::Pattern_Scanner_ScanIdle()
 
 void Pattern_Scanner_ScanIdle::render(HSVStripNode* inNode, HSV& inOutColor) const
 {
-    const float cycleAlpha = std::fmod(timeActive, cycleTime) / cycleTime;
-    const float breath = breathCurve.evaluate(cycleAlpha);
+    // One clock for the whole look, counted in breath cycles: the ring rides
+    // the front of it and everything else is a delay behind it.
+    const float cycles = timeActive / std::max(cycleTime, 0.01f);
+    const float breath = breathCurve.evaluate(frac(cycles));
 
     // the ring, and anything that never said what it is: the breath
     float brightness = breath;
@@ -149,24 +157,27 @@ void Pattern_Scanner_ScanIdle::render(HSVStripNode* inNode, HSV& inOutColor) con
     const HSVStripNode_Space* spaced = eio::spaceOf(inNode);
     if (spaced != nullptr && spaced->space == NodeSpace::Obelisk)
     {
-        // A beam going round the tower. The obelisk's own x is its strip,
-        // 0..7 around four sides, column 7 beside column 0 - so a strip's
-        // place is a fraction of a turn, the beam is another, and the
-        // distance between them is taken the short way round. By side, a
-        // strip answers with its side's centre, so both strips of a side
-        // light together and the beam steps side to side.
-        const float strips = static_cast<float>(kStageColumns);
-        float here = spaced->local.x + 0.5f;
-        if (bySide)
-        {
-            here = std::floor(spaced->local.x / 2.0f) * 2.0f + 1.0f;
-        }
-        const float at = std::fmod(here, strips) / strips;
-        const float beam = timeActive * rotateRate - std::floor(timeActive * rotateRate);
-        float away = std::fabs(at - beam);
-        away = std::min(away, 1.0f - away) * strips;   // in strips, the short way
-        const float lit = clamp01(1.0f - away / std::max(beamWidth, 0.01f));
-        brightness = std::max(floorLevel * breath, lit * lit);
+        // The breath going round the tower. The obelisk's own x is its
+        // strip, 0..7 around four sides, column 7 beside column 0 - so a
+        // strip is one place on a closed loop, and by side its two strips
+        // answer as one place, four in all.
+        //
+        // A place's share of the lap is how far behind the ring it breathes:
+        // place 0 *is* the ring, the same curve at the same phase, and each
+        // one after it takes the same breath a lap-share later. That is the
+        // sync - one clock, one shape - rather than a second rotation of its
+        // own that has to be talked into agreeing with the first.
+        const float places = bySide ? kStageColumns / 2.0f : static_cast<float>(kStageColumns);
+        const float place = bySide ? std::floor(spaced->local.x / 2.0f) : std::floor(spaced->local.x);
+        const float lap = std::max(cyclesPerTurn, 0.01f);
+        const float share = std::fmod(place, places) / places;
+
+        // how long ago the lap reached this place, in cycles: 0 as it
+        // arrives, counting up to a whole lap. The curve's last key is the
+        // end of the breath, and evaluate holds it past there, so a place
+        // simply sits dark until its turn comes round again.
+        const float since = frac(cycles / lap - share) * lap;
+        brightness = std::max(floorLevel * breath, breathCurve.evaluate(since));
     }
     else if (spaced != nullptr && spaced->space == NodeSpace::Truss)
     {
@@ -190,8 +201,7 @@ void Pattern_Scanner_ScanIdle::render(HSVStripNode* inNode, HSV& inOutColor) con
 void Pattern_Scanner_ScanIdle::reflect(ecore::PropertyBag& bag)
 {
     bag.add("cycle_time", cycleTime, 0.5f, 8.0f);
-    bag.add("rotate_rate", rotateRate, 0.0f, 2.0f);
-    bag.add("beam_width", beamWidth, 0.5f, 4.0f);
+    bag.add("cycles_per_turn", cyclesPerTurn, 0.25f, 8.0f);
     bag.add("by_side", bySide);
     bag.add("truss_scan", trussScan);
     bag.add("sweep_rate", sweepRate, 0.0f, 3.0f);
