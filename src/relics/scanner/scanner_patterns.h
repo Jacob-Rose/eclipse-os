@@ -151,9 +151,9 @@ namespace scanner
     };
 
 
-    /* @brief scan_idle: the ring breathes cyan on a 2 second heartbeat, the
-    * same breath goes round the obelisk side by side, and the truss stays
-    * dark (a scanner along it is there behind a knob).
+    /* @brief scan_idle: the ring breathes cyan on a 2 second heartbeat, each
+    * flash sends a pulse up the obelisk from its foot to its tip, and the
+    * truss stays dark (a scanner along it is there behind a knob).
     *
     * The first look to read the objects rather than the stage: each node
     * says which space it is in (eio::spaceOf), and the look renders each
@@ -164,15 +164,13 @@ namespace scanner
     * the boot swell - the python table's run of trailing zeros collapses to
     * its two endpoint keys.
     *
-    * One clock runs the ring and the sculpture. The obelisk's sides are the
-    * *same breath curve* handed to each side a lap-share later than the
-    * last, so the side the lap starts on breathes with the ring - same
-    * shape, same phase, however the curve is drawn - and the ones after it
-    * follow it round. It used to be a beam on a free-running rotation, and
-    * two clocks that never agreed: a 2.5s lap against a 2s breath lined up
-    * once every ten seconds, and a 1.5 strip beam crossing side centres two
-    * strips apart dipped almost dark between them - the sculpture flashing
-    * four times a lap on a beat of its own.
+    * One clock runs the ring and the sculpture. The ring plays the breath
+    * curve; the obelisk plays the pulse curve, and a row's height delays its
+    * read into it - the sweep record_countdown does - so the pulse leaves
+    * the foot as the ring flashes and reaches the tip riseCycles later, every
+    * side at once, one band climbing the tower. It used to be the breath
+    * itself going round the sides a lap-share at a time, and before that a
+    * beam on a rotation of its own that never agreed with the heartbeat.
     */
     class Pattern_Scanner_ScanIdle : public PatternScanner
     {
@@ -183,17 +181,22 @@ namespace scanner
         HSV scanColor = HSV(202.5f, 0.8f, 1.0f);
         float cycleTime = 2.0f;
 
-        /// on the normalized 0..1 cycle clock: the ring's heartbeat, and
-        /// each of the obelisk's sides in turn
+        /// on the normalized 0..1 cycle clock: the ring's heartbeat
         eanim::AutomationCurve breathCurve;
 
-        /// the obelisk's lap: how many breath cycles the breath takes to
-        /// travel all the way round the tower, and whether a side takes it
-        /// as one (both strips together) or strip by strip. One lap to the
-        /// cycle fits every side inside a single heartbeat; four gives each
-        /// side a heartbeat of its own, the first still on the ring's.
-        float cyclesPerTurn = 1.0f;
-        bool bySide = true;
+        /// the obelisk's pulse, on the same clock: what one row of the tower
+        /// shows from the moment the pulse reaches it. Its first key is the
+        /// dark a row sits in before its turn, its last the dark after.
+        eanim::AutomationCurve pulseCurve;
+
+        /// when in the cycle the pulse leaves the foot - the breath curve's
+        /// peak, so it leaves as the ring flashes
+        float flashPhase = 1.0f / 9.0f;
+
+        /// how much of the cycle the pulse takes to climb foot to tip. With
+        /// the pulse curve's length that has to fit inside one cycle, or the
+        /// tip is still lit when the next pulse leaves the foot.
+        float riseCycles = 0.5f;
 
         /// the truss: dark while the tower idles unless trussScan is on -
         /// then a scanner along it, at sweeps per second end to end and

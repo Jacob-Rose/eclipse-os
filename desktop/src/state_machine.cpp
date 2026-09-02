@@ -267,10 +267,11 @@ bool StateMachinePattern::setState(const std::string& stateName, std::string& ou
     if (target == activeIndex)
     {
         // Not a no-op: naming the showing state again restarts it. The game
-        // rewinds a look by transitioning to it, and the machine also starts
-        // in state 0 at process launch - so a boot's first `state power_up`
-        // arrives with power_up already active and its fill animation long
-        // finished. Without this the boot look was over before anyone saw it.
+        // rewinds a look by transitioning to it. (State 0, what the machine
+        // shows from process launch, used to be power_up - so a boot's first
+        // `state power_up` landed on a look already played out, and this
+        // restart was what made it visible. The scanner's state 0 is `none`
+        // now, dark, and the first power_up is a real change.)
         if (machine && target < instances.size())
         {
             machine->restartState(instances[target]);
@@ -480,6 +481,11 @@ std::unique_ptr<StateMachinePattern> edmx::makeScannerStateMachine()
     // (emergency lock, broken device, discovery, seed verdict) are their own
     // tags - only the game knows the save, it just names the look it wants.
     std::vector<StateDef> states = {
+        // State 0 is what the machine shows from process launch until the
+        // game's first `state` line, and it is nothing: dark. It used to be
+        // power_up, so the boot look played once on its own while the game
+        // was still loading and again when the game asked for it.
+        scannerSolid("none", HSV(0.0f, 0.0f, 0.0f)),
         scannerLook<Pattern_Scanner_PowerUp>("power_up"),
         scannerLook<Pattern_Scanner_Boot>("boot"),
         scannerLook<Pattern_Scanner_ScanIdle>("scan_idle"),

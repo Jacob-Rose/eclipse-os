@@ -142,6 +142,13 @@ Pattern_Scanner_ScanIdle::Pattern_Scanner_ScanIdle()
     breathCurve.addKey(3.0f / 9.0f, 0.2f);
     breathCurve.addKey(4.0f / 9.0f, 0.0f);
     breathCurve.addKey(1.0f,        0.0f);
+
+    // one row's share of the pulse: snap on as it arrives, fall away behind
+    // it. Its length against riseCycles is the band's height on the tower -
+    // a quarter cycle over a half-cycle climb is a band half the obelisk tall
+    pulseCurve.addKey(0.00f, 0.0f);
+    pulseCurve.addKey(0.04f, 1.0f, easing_functions::EaseOutCubic);
+    pulseCurve.addKey(0.25f, 0.0f);
 }
 
 void Pattern_Scanner_ScanIdle::render(HSVStripNode* inNode, HSV& inOutColor) const
@@ -157,27 +164,20 @@ void Pattern_Scanner_ScanIdle::render(HSVStripNode* inNode, HSV& inOutColor) con
     const HSVStripNode_Space* spaced = eio::spaceOf(inNode);
     if (spaced != nullptr && spaced->space == NodeSpace::Obelisk)
     {
-        // The breath going round the tower. The obelisk's own x is its
-        // strip, 0..7 around four sides, column 7 beside column 0 - so a
-        // strip is one place on a closed loop, and by side its two strips
-        // answer as one place, four in all.
+        // A pulse up the tower on every flash. The obelisk's own v is its
+        // height, 0 at the foot and 1 at the tip whichever side the node is
+        // on - so every side climbs together, one band round the sculpture.
         //
-        // A place's share of the lap is how far behind the ring it breathes:
-        // place 0 *is* the ring, the same curve at the same phase, and each
-        // one after it takes the same breath a lap-share later. That is the
-        // sync - one clock, one shape - rather than a second rotation of its
-        // own that has to be talked into agreeing with the first.
-        const float places = bySide ? kStageColumns / 2.0f : static_cast<float>(kStageColumns);
-        const float place = bySide ? std::floor(spaced->local.x / 2.0f) : std::floor(spaced->local.x);
-        const float lap = std::max(cyclesPerTurn, 0.01f);
-        const float share = std::fmod(place, places) / places;
-
-        // how long ago the lap reached this place, in cycles: 0 as it
-        // arrives, counting up to a whole lap. The curve's last key is the
-        // end of the breath, and evaluate holds it past there, so a place
-        // simply sits dark until its turn comes round again.
-        const float since = frac(cycles / lap - share) * lap;
-        brightness = std::max(floorLevel * breath, breathCurve.evaluate(since));
+        // Height delays the read into the pulse curve, the countdown's
+        // sweep: the foot reads the curve the moment the pulse leaves, the
+        // tip reads it riseCycles later. A row the pulse has not reached
+        // reads before the first key and a row it has passed reads after
+        // the last, and evaluate holds both ends - dark. The clock counts
+        // from the flash, so the pulse leaves the foot at the top of the
+        // ring's breath and each row sees exactly one pulse a cycle.
+        const float sinceFlash = frac(cycles - flashPhase);
+        const float delay = spaced->v * riseCycles;
+        brightness = std::max(floorLevel * breath, pulseCurve.evaluate(sinceFlash - delay));
     }
     else if (spaced != nullptr && spaced->space == NodeSpace::Truss)
     {
@@ -201,8 +201,8 @@ void Pattern_Scanner_ScanIdle::render(HSVStripNode* inNode, HSV& inOutColor) con
 void Pattern_Scanner_ScanIdle::reflect(ecore::PropertyBag& bag)
 {
     bag.add("cycle_time", cycleTime, 0.5f, 8.0f);
-    bag.add("cycles_per_turn", cyclesPerTurn, 0.25f, 8.0f);
-    bag.add("by_side", bySide);
+    bag.add("flash_phase", flashPhase, 0.0f, 1.0f);
+    bag.add("rise", riseCycles, 0.05f, 1.0f);
     bag.add("truss_scan", trussScan);
     bag.add("sweep_rate", sweepRate, 0.0f, 3.0f);
     bag.add("sweep_width", sweepWidth, 0.05f, 1.0f);
@@ -212,6 +212,7 @@ void Pattern_Scanner_ScanIdle::reflect(ecore::PropertyBag& bag)
 void Pattern_Scanner_ScanIdle::reflectCurves(eanim::CurveBag& bag)
 {
     bag.add("breath", breathCurve);
+    bag.add("pulse", pulseCurve);
 }
 
 void Pattern_Scanner_Emergency::render(HSVStripNode* inNode, HSV& inOutColor) const

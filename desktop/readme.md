@@ -635,13 +635,14 @@ over the object's extent (`u`, `v`).
 A look asks with `eio::spaceOf(node)` and branches; a node with no space —
 a bare strip, a file that never said — comes back null and the look falls
 through to the stage, so a look written for the objects still runs on
-anything. `scan_idle` is the first: the ring breathes as it always did, the
-obelisk takes that same breath round its sides a lap-share at a time
-(`cycles_per_turn`, `by_side`), and the truss stays dark — `truss_scan` turns
-on a scanner running its length (`sweep_rate`, `sweep_width`) — with `floor`
-for how much of the breath is left behind them. One curve on one clock: the
-side the lap starts on breathes *with* the ring, which a beam on a rotation
-of its own never did.
+anything. `scan_idle` is the first: the ring breathes as it always did, each
+flash sends a pulse up the obelisk from foot to tip — its own `pulse` curve,
+read by every row a little later the higher it stands (`rise`, the climb as a
+share of the cycle; `flash_phase`, where in the breath it leaves) — and the
+truss stays dark — `truss_scan` turns on a scanner running its length
+(`sweep_rate`, `sweep_width`) — with `floor` for how much of the breath is
+left behind them. One clock: the pulse leaves the foot *on* the ring's flash,
+which a beam on a rotation of its own never did.
 
 The plumbing is `PatternContext::nodeMappings`, filled beside `nodeCoords`
 from each device's locals before placement, and `edmx::makeStripNode`, which

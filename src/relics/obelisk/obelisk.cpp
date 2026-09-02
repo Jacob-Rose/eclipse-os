@@ -125,6 +125,7 @@ ObeliskCore::ObeliskCore() : RelicCore()
 
     using namespace scanner;
 
+    addScannerState("none",                            make_shared<Pattern_Scanner_Solid>(HSV(0.0f, 0.0f, 0.0f)));
     addScannerState("power_up",                        make_shared<Pattern_Scanner_PowerUp>());
     addScannerState("boot",                            make_shared<Pattern_Scanner_Boot>());
     addScannerState("scan_idle",                       make_shared<Pattern_Scanner_ScanIdle>());
