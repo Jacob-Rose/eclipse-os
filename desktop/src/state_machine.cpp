@@ -482,6 +482,22 @@ namespace
     /// A look that is a plain GeneratorHSV, not a PatternScanner - no clock
     /// to rewind, so the default State_GenericHSV wrapper is the right one.
     /// The obelisk's ambient looks are these.
+    /// The same def, with the look leaving the obelisk to the underlay -
+    /// for the states that are the ring's alone. The make is wrapped rather
+    /// than the class changed because `none` is a Solid the success and
+    /// failure states also are, and those do paint the tower.
+    StateDef overUnderlay(StateDef def)
+    {
+        auto inner = def.make;
+        def.make = [inner]() {
+            std::shared_ptr<eanim::GeneratorHSV> look = inner();
+            // scannerLook / scannerSolid only ever build PatternScanners
+            static_cast<scanner::PatternScanner*>(look.get())->leaveObeliskToUnderlay = true;
+            return look;
+        };
+        return def;
+    }
+
     template <typename PatternT>
     StateDef plainLook(const char* name)
     {
@@ -509,9 +525,13 @@ std::unique_ptr<StateMachinePattern> edmx::makeScannerStateMachine()
         // game's first `state` line, and it is nothing: dark. It used to be
         // power_up, so the boot look played once on its own while the game
         // was still loading and again when the game asked for it.
-        scannerSolid("none", HSV(0.0f, 0.0f, 0.0f)),
-        scannerLook<Pattern_Scanner_PowerUp>("power_up"),
-        scannerLook<Pattern_Scanner_Boot>("boot"),
+        // over an underlay (the obelisk's own look, shadowed on the desk)
+        // these three leave the tower alone: the boot is the ring's, and
+        // the dark of `none` is the ring's - a take or a cross-fade through
+        // them then changes nothing on the sculpture
+        overUnderlay(scannerSolid("none", HSV(0.0f, 0.0f, 0.0f))),
+        overUnderlay(scannerLook<Pattern_Scanner_PowerUp>("power_up")),
+        overUnderlay(scannerLook<Pattern_Scanner_Boot>("boot")),
         scannerLook<Pattern_Scanner_ScanIdle>("scan_idle"),
         scannerLook<Pattern_Scanner_Emergency>("scan_idle_emergency"),
         scannerSolid("scan_idle_broken", HSV(0.0f, 0.0f, 0.0f)),

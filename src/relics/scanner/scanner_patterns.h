@@ -88,6 +88,17 @@ namespace scanner
         /// (particles, a pool) adds its own on top.
         virtual void reflectState(ecore::PropertyBag& bag) override { bag.addState("time", timeActive); }
 
+        /// Set on the looks that have nothing to say about the obelisk - the
+        /// boot animations, the dark `none` - so over an underlay the tower
+        /// keeps its own picture through them instead of going black. See
+        /// GeneratorHSV::leavesToUnderlay.
+        bool leaveObeliskToUnderlay{false};
+
+        virtual bool leavesToUnderlay(const HSVStripNode* node) const override
+        {
+            return leaveObeliskToUnderlay && eio::nodeSpace(node) == NodeSpace::Obelisk;
+        }
+
     protected:
         /* @brief Where this node sits along its strip, 0..1.
         *

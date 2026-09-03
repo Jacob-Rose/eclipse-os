@@ -300,6 +300,7 @@ namespace
     // pattern side maps it (eio::nodeSpaceFromName) and an unknown word is
     // simply "the stage", so a file that never says loses nothing.
     device.space = root["space"].asString("");
+    device.gamma = root["gamma"].asFloat(device.gamma);
 
     // ---- device -------------------------------------------------------
     {
@@ -921,6 +922,10 @@ bool edmx::loadConfig(const std::string& path, Config& outConfig, std::string& o
             }
 
             device.brightness = std::clamp(entry["brightness"].asFloat(1.0f), 0.0f, 1.0f);
+            if (entry["gamma"].isNumber())
+            {
+                device.gamma = entry["gamma"].asFloat(device.gamma);
+            }
 
             // ---- overrides ---------------------------------------------
             // A device file says what a sculpture *is*; where it is plugged in

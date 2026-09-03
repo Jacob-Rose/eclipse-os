@@ -116,6 +116,18 @@ namespace eanim
         void setUnderlay(const Underlay* inUnderlay) { underlay = inUnderlay; }
         const Underlay* getUnderlay() const { return underlay; }
 
+        /* @brief Whether this look leaves `node` to the underlay entirely.
+        *
+        * The renderer samples the underlay in place of calling render() for
+        * such a node, so a look that has nothing to say about an object - a
+        * boot animation on the ring, a dark idle - shows what is underneath
+        * it rather than painting it black. It is what makes a takeover, or
+        * a cross-fade into such a look, invisible on the sculpture. Only
+        * consulted while an underlay is set; false by default, which is
+        * "this look paints everything it is given".
+        */
+        virtual bool leavesToUnderlay(const HSVStripNode* /*node*/) const { return false; }
+
     protected:
         const Underlay* underlay{nullptr};
 

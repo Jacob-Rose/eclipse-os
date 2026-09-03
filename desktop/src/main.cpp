@@ -752,6 +752,92 @@ namespace
             check("shadow: and is cleared", shadow.isLive() ? 1 : 0, 0);
         }
 
+        // ---- a look that leaves the tower to the underlay ------------------
+        //
+        // A dark solid with leaveObeliskToUnderlay set, on the obelisk's own
+        // nodes, over a fixed-colour underlay: the strip must come out the
+        // underlay's colour, not black. Same renderer the machine uses.
+        {
+            struct FlatUnderlay : eanim::Underlay
+            {
+                bool sample(const eio::HSVStripNode* node, ecore::HSV& out) const override
+                {
+                    if (eio::nodeSpace(node) != eio::NodeSpace::Obelisk) return false;
+                    out = ecore::HSV(200.0f, 0.5f, 0.8f);
+                    return true;
+                }
+            } flat;
+
+            obelisk::ObeliskIO io;
+            io.init();
+            // ObeliskIO's nodes are Mapped2D, not spaced: give them the space
+            // a desk's patch would, so nodeSpace() answers Obelisk
+            int spacedNodes = 0;
+            for (auto& seg : io.strip_segments)
+            {
+                for (const std::shared_ptr<eio::HSVStripNode>& node : seg.second->getNodes())
+                {
+                    (void)node;
+                    ++spacedNodes;
+                }
+            }
+            check("underlay: the obelisk has nodes", spacedNodes > 0 ? 1 : 0, 1);
+
+            // A desk-built rig with spaced nodes is what the machine sees;
+            // build one the way HostRelicIO does, minimally: one segment of
+            // spaced nodes on a fresh strip.
+            eio::RelicIO rig;
+            std::unique_ptr<eio::HSVStrip> strip(new eio::HSVStrip(8, 0));
+            eio::HSVStrip* stripRaw = strip.get();
+            {
+                auto segment = std::make_unique<eio::HSVStripSegment>(stripRaw, 0);
+                for (int i = 0; i < 8; ++i)
+                {
+                    auto node = std::make_shared<eio::HSVStripNode_Space>(segment.get(), i);
+                    node->space = (i < 4) ? eio::NodeSpace::Obelisk : eio::NodeSpace::Ring;
+                    node->index = i;
+                    segment->addNode(node);
+                }
+                rig.strip_segments.emplace(uint8_t{0}, std::move(segment));
+                rig.strips.emplace(uint8_t{0}, std::move(strip));
+            }
+
+            auto look = std::make_shared<scanner::Pattern_Scanner_Solid>(ecore::HSV(0.0f, 0.0f, 0.0f));
+            look->leaveObeliskToUnderlay = true;
+            look->setUnderlay(&flat);
+
+            auto state = std::make_shared<State_GenericHSV>("dark", &rig);
+            state->setGenerator(look);
+            state->init();
+            esm::StateManager manager;
+            manager.addState(state);
+            StateMachine_GenericHSV machine;
+            machine.setRelicIO(&rig);
+            machine.setActiveState(state);
+            machine.init();
+            machine.tick(0.03f);
+
+            int towerLit = 0;
+            int ringDark = 0;
+            for (uint16_t i = 0; i < 8; ++i)
+            {
+                const ecore::HSV c = stripRaw->getHSV(i);
+                if (i < 4 && c.getValAs8() > 0) ++towerLit;
+                if (i >= 4 && c.getValAs8() == 0) ++ringDark;
+            }
+            check("underlay: the tower shows the underlay through a dark look", towerLit, 4);
+            check("underlay: the ring is still the look's", ringDark, 4);
+
+            look->leaveObeliskToUnderlay = false;
+            machine.tick(0.03f);
+            towerLit = 0;
+            for (uint16_t i = 0; i < 4; ++i)
+            {
+                if (stripRaw->getHSV(i).getValAs8() > 0) ++towerLit;
+            }
+            check("underlay: a look that paints the tower paints it", towerLit, 0);
+        }
+
         // ---- reflectState: a look's clocks as text, and back ---------------
         {
             Pattern_Obelisk_FourSeasons a;
@@ -1328,7 +1414,10 @@ namespace
 
         /// A `link take` waiting for the shadow to be live before the first
         /// frame goes, so the takeover carries the relic's own picture rather
-        /// than a cut to black. 0 when no take is pending.
+        /// than a cut to black. takeAskedAt is stamped by the frame loop, on
+        /// its clock: the command handler's clock is a different one, and a
+        /// wait measured across the two expired at once.
+        bool takePending{false};
         double takeAskedAt{0.0};
         /// The next moment to ask the relic where its clocks are, while
         /// streaming: two clocks drift, and a nudge every few seconds keeps
@@ -2108,7 +2197,8 @@ namespace
                 }
                 if (what == "take")
                 {
-                    show.takeAskedAt = nowSeconds();
+                    show.takePending = true;
+                    show.takeAskedAt = 0.0;
                     emit("OK link take (waiting for the relic's sim)");
                 }
                 else
@@ -2139,7 +2229,7 @@ namespace
 
             if (what == "release")
             {
-                show.takeAskedAt = 0.0;
+                show.takePending = false;
                 for (RelicUsbOutput* relic : relics)
                 {
                     if (!relic->release(error))
@@ -3709,7 +3799,7 @@ int main(int argc, char** argv)
             device.universe.clear();
             device.config->fixtures.render(device.strip->getStripHSV(),
                                            master * device.config->brightness,
-                                           show.config.master.gamma,
+                                           device.config->gamma > 0.0f ? device.config->gamma : show.config.master.gamma,
                                            device.universe);
 
             // Rendered above, sent here - and only the sending needs a wire.
@@ -3804,11 +3894,15 @@ int main(int argc, char** argv)
             // and it should carry the relic's own picture. A relic that never
             // answers `sim` is on older firmware; after a moment the stream
             // starts anyway, from whatever the look draws over black.
-            if (show.takeAskedAt > 0.0 && !relic->isStreaming()
+            if (show.takePending && show.takeAskedAt == 0.0)
+            {
+                show.takeAskedAt = frameSeconds;
+            }
+            if (show.takePending && !relic->isStreaming()
                 && (show.shadow.isLive() || frameSeconds - show.takeAskedAt > 0.75))
             {
                 relic->take();
-                show.takeAskedAt = 0.0;
+                show.takePending = false;
                 show.nextSimAskAt = frameSeconds + 5.0;
                 emit(std::string("LINK ") + device.name() + " streaming"
                    + (show.shadow.isLive() ? " over " + show.shadow.getLookName() : " (no shadow)"));
@@ -3943,7 +4037,7 @@ int main(int argc, char** argv)
         }
         device.universe.clear();
         device.config->fixtures.render(std::vector<ecore::HSV>(device.fixtureCount), 0.0f,
-                                       show.config.master.gamma, device.universe);
+                                       device.config->gamma > 0.0f ? device.config->gamma : show.config.master.gamma, device.universe);
         device.output->sendFrame(device.universe, shutdownError);
         device.output->close();
     }
