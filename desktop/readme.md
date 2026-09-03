@@ -253,12 +253,160 @@ That is why `--test`, which sweeps a hue with no show and no hardware, is the
 first thing to run: it separates "the app is not listening" from "the show is
 not producing a colour", and from across a room those look identical.
 
+#### naming the machine instead of its address
+
+The visualiser is often not on this laptop, and on a network that hands out
+addresses by DHCP the one it had last week is not the one it has tonight. So
+`--address` takes a name:
+
+```sh
+python -m eclipse_dmx osc config/mythos26.json --device synesthesia \
+    --address mac-mini.local:6000
+python -m eclipse_dmx view config/mythos26.json --live \
+    --osc mac-mini.local:6000 --osc-device synesthesia
+```
+
+**The name is looked up again while the set runs** — every 15s, or
+`--resolve-every` (`--osc-resolve-every` on the viewer; `0` resolves once, as
+before). If the answer moves, the socket is re-pointed and the change is
+printed. This is the whole reason to name a machine rather than an address:
+the failure it avoids is invisible from this end. A connected UDP socket keeps
+sending to the address it was given, a machine that took a new lease is not at
+that address any more, and nothing anywhere reports it — the counter still
+climbs, the report still says everything went out, and the visuals sit dark.
+
+A failed look-up is not a re-point: the address in hand is kept. One name going
+quiet for a moment is a wifi hiccup far more often than it is a machine that
+moved, and going dark over it would turn a blip into an unlit visualiser for
+the rest of the set.
+
+**A name that does not resolve at startup no longer stops the show.** The
+machine being asleep at soundcheck is normal; the rig runs, the link has
+nowhere to send, and it picks the machine up when it appears. Only an IP
+address that will not connect is still fatal, because that is a typo.
+
+`.local` is mDNS, and it needs both ends: the machine has to be announcing, and
+this one has to be able to ask. On Debian and Ubuntu asking usually means
+`avahi-daemon` plus `libnss-mdns`; on a systemd-resolved machine it means
+`MulticastDNS` on for the link. The sender tells the two apart rather than
+printing one "cannot resolve":
+
+```sh
+avahi-resolve-host-name -4 mac-mini.local   # is it announcing?
+resolvectl mdns                             # can we ask, on this link?
+```
+
+An IPv6 literal needs its brackets — `[fe80::1%wlan0]:6000` — because an
+address full of colons has no last one to split a port off. Where a name
+answers with both families the IPv4 answer is taken: an OSC input bound to
+`0.0.0.0`, which is the usual thing, cannot be reached over v6 at all, and
+being sent to the wrong family is exactly the silent failure above. A v6-only
+name still resolves; that is a preference, not a filter.
+
 Two more flags exist for one failure each. `--separate` sends r, g and b as
 three messages instead of one with three floats, for a build of the app that
 wants them that way. `--control` takes an address: the default
 `/controls/global/color/1` is **positional** — the first colour control in the
 order the running scene declares them — and `/controls/scene/<name>` is the
 stable alternative, at one address per scene.
+
+### back the other way — the visualiser's audio engine
+
+The wire goes both ways. Synesthesia Pro can send its **audio analysis** out
+over OSC, and this takes it in and binds it to the rig's own knobs:
+
+```sh
+python -m eclipse_dmx view config/mythos26.json --live --osc-in 7000
+python -m eclipse_dmx run  config/mythos26.json --osc-in            # port 7000
+./launch-mythos-set.sh                                              # on by default
+```
+
+**Why take audio from a visualiser.** Because it is already being computed, by
+something with a better view of the music than this program has. eclipse-dmx
+hears nothing — its beat arrives as MIDI notes from Mixxx, which is a beat grid
+and a VU meter and nothing else. Synesthesia is running a real FFT on the same
+music and publishing forty-odd derived values a frame: `syn_BassLevel`,
+`syn_Hits`, `syn_Presence`, `syn_OnBeat`, `syn_BPM` and the rest, split into
+bass / mid / midhigh / high. Those are the numbers a look wants and the ones
+this rig has no way to compute.
+
+**Switching it on**, in the app: **Settings → OSC**, turn *OUTPUT* on, tick
+**Output Audio Variables**, set the output IP to the machine running the rig
+and the output port to `7000`. Two settings, both off out of the box, and off
+looks exactly like every other failure here.
+
+#### which addresses — the one thing that has to be looked at
+
+**Synesthesia's docs name the uniforms but not the OSC addresses they arrive
+on**, and v1.20 renamed them ("more nested and readable"). So there is no
+honest way to write a binding except to look at what this build sends:
+
+```sh
+python -m eclipse_dmx osc-watch --port 7000     # play a track for 15s
+```
+
+```
+180 packets, 3 addresses:
+  /syn/BassLevel                       x60     0.021..0.964
+  /syn/OnBeat                          x60     0.000..1.000
+  /syn/BPM                             x60     127.996..128.004
+```
+
+That is the same move `midi-watch` makes for Mixxx's notes and it is here for
+the same reason: every step of wiring this up is verifiable except the last
+one. It needs no show and no rig — the app sends whether or not anything here
+is running — but it cannot run *while* a show holds the port, because a UDP
+port has one owner.
+
+#### the bindings
+
+`config/oscmaps/synesthesia.json`, found by name beside the config, or named
+with `--oscmap`. A binding is a pattern, a mode and an action:
+
+| | |
+| --- | --- |
+| `pattern` | a **glob** against the address, so `*bass*level*` survives the app renaming what is around it |
+| `exclude` | globs that veto a match — `*level*` minus `*bass*`/`*mid*`/`*high*` is how "the whole spectrum" is said, since a glob cannot say "not" |
+| `mode` | `value` (every message, scaled) or `trigger` (once, on the way up through `threshold`) |
+| `range` | the incoming range mapped onto 0..1 — `syn_BPM` arrives at 50..220 |
+| `limit` | the least interval and the least change worth sending |
+| `action` | **the same registry the MIDI mappings use** — a pad and a bass drum can do the same things |
+
+What ships, on the mythos26 knobs:
+
+| binding | |
+| --- | --- |
+| `syn_Level` → master 0.55..1 | the room breathes with the track |
+| `syn_BassLevel` → `floor` 0..0.35 | the rig glows under the beat flashes |
+| `syn_HighLevel` → `intensity` 0.55..1 | hats and cymbals sharpen the hit |
+| `syn_BassPresence` → `base_gain` | *off* — `vu_pulse`'s red wash, that look only |
+| `syn_BPM` → the rig's clock | *off* — Mixxx is the tempo source; two disagreeing is worse than either |
+| `syn_OnBeat` → `tv_static` | *off* — an example of a `trigger` |
+
+Three actions were added for this and work from a MIDI fader too: **`param`**
+(a knob on the running look, or on a named layer's), **`master`**, and
+**`bpm`**.
+
+#### rate, which is not a detail
+
+Audio uniforms arrive at frame rate — sixty a second, per uniform, forever.
+Every one turned into a protocol line would be thousands a minute down the pipe
+the cues also use. So a `value` binding is limited two ways, both per binding:
+a minimum interval between sends (default 1/30s) and a minimum change worth
+sending (default 0.01), the second being why a level that is holding still says
+nothing at all. A `trigger` is limited by neither — dropping a beat is the one
+thing that mode exists not to do.
+
+Streamed values go down the protocol **without waiting for the reply**
+(`ShowController.set_param(..., wait=False)`). A round trip per value would
+serialise the sender against the show's own loop, and there is nothing to do
+with the answer; the reply is still parsed on the reader thread, so the
+recorded knob values catch up either way.
+
+Nothing here is fatal. No map file, a map that will not parse, a port already
+held, a binding aimed at a knob the running look does not have: each is a line
+in the status area and the show carries on. The rig is the show; this drives
+knobs on top of it.
 
 ## Run it for real
 
@@ -1116,6 +1264,42 @@ MIDI-STATUS port="eclipse-dmx IN (128:0), listening" ... ticks=0 beats=16
 mapping's note 50 doing it rather than an interval we guessed. `port=` naming
 *us* rather than a source is not a fault on this platform — it is the normal
 state, and it stays that way after Mixxx connects.
+
+###### the whole set, in one command
+
+`launch-mythos-set.sh` is that sequence with the preflight this machine needs:
+the show, the viewer, the wire and the colour out to Synesthesia, off
+`config/mythos26.json`.
+
+```sh
+./launch-mythos-set.sh              # the set: live rig, viewer, OSC
+./launch-mythos-set.sh --bench      # the same look, nothing on the wire
+./launch-mythos-set.sh --headless   # no window - over ssh, or no tkinter
+```
+
+It also opens the audio link back from the visualiser — `--osc-in 7000`, the
+map beside the config — which `--no-osc-in` turns off and `--osc-in PORT` (or
+`ECLIPSE_OSC_IN_PORT`) moves. See [back the other way](#back-the-other-way--the-visualisers-audio-engine).
+
+It checks what only fails at the venue: that the binary is built, that this
+python has tkinter, which serial ports are visible, whether a `/dev/tty*` we
+would fall back to is one this user cannot open, and whether QLC+ is running
+and already holding the widget. Then it prints the Mixxx reminder above and
+execs the wrapper, so Ctrl-C reaches the show and the rig is put dark on the
+way out. `--bpm`, `--state`, `--config` and `--osc` are the knobs worth having
+at a venue; anything after `--` goes to `eclipse_dmx` untouched.
+
+The visualiser defaults to **the mac mini** — `Jakes-Mac-mini.local:6000`, the
+machine Synesthesia runs on — named rather than addressed, so it survives a new
+DHCP lease (see [naming the machine instead of its
+address](#naming-the-machine-instead-of-its-address)). `--osc` takes anything
+else, and `ECLIPSE_OSC_ADDRESS` in the show laptop's environment moves the
+default without editing the script. The name is resolved once before anything
+opens, so it prints as an address in the preflight; it is not waited out if it
+is not up, because the link keeps looking on its own.
+
+`start.bat` at the top of the checkout is the Windows counterpart, minus the
+preflight - nothing there is a Windows problem.
 
 ###### rewiring it without restarting anything
 

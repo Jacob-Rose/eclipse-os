@@ -35,6 +35,7 @@ from .config import RELIC_TYPES, Config
 from .controller import Frame, ShowController, ShowError
 from .curve_editor import CurveEditor
 from .midi_map import ActionContext, Dispatcher, MappingSet, parse_midi_line
+from .osc_input import DEFAULT_INPUT_PORT
 from .midi_panel import MidiMapPanel
 from .patterns import list_patterns
 
@@ -724,6 +725,8 @@ class ViewerApp:
         osc_device: Optional[str] = None,
         osc_fixture: int = 0,
         midimap: Optional[Union[str, Path]] = None,
+        oscmap: Optional[Union[str, Path]] = None,
+        osc_in: Optional[int] = None,
         host: Optional[str] = None,
         remote_command: Optional[str] = None,
         # Wide enough for the whole cue band - every family of a 26-state
@@ -888,6 +891,17 @@ class ViewerApp:
         self._dispatcher = Dispatcher(self._midimap, ActionContext(
             show=self.show, osc_factory=self._map_osc, say=self._say))
 
+        # The other input: a visualiser's audio analysis, bound to the same
+        # actions the pads use. Built here and opened after the show starts -
+        # a binding that fires before there is anything to fire at would be a
+        # refusal in the status line on the first bass note.
+        self._osc_in_port = osc_in
+        self._oscmap_path = (Path(oscmap) if oscmap
+                             else self.config_path.parent / "oscmaps" / "synesthesia.json")
+        self._oscmap_wanted = bool(osc_in is not None or oscmap)
+        self._osc_listener = None
+        self._osc_dispatcher = None
+
         #: Whose knobs the right-hand pane shows and the curve editor drives:
         #: the show's look, or one of its layers'. Both offer the same calls
         #: (params, curves, get/set_param, set_curve, reset_look, a revision),
@@ -908,8 +922,6 @@ class ViewerApp:
             self.show.midi_monitor(True)
         except ShowError:
             pass
-        if self._midimap_note:
-            self._say(self._midimap_note)
         if pattern:
             self.show.set_pattern(pattern)
             self.current_pattern = pattern
@@ -920,6 +932,15 @@ class ViewerApp:
             # Not fatal if it does not take: a bad name should leave a working
             # window with a message, not refuse to open.
             self._guard(lambda: self.show.set_state(state), "state")
+
+        # Both of these speak, and _say draws the header - which reads
+        # `current_pattern`, so neither can happen before the cue above has set
+        # it. Starting the OSC input here also means a binding cannot be
+        # outrun by the state it is aimed at.
+        if self._midimap_note:
+            self._say(self._midimap_note)
+        if self._oscmap_wanted:
+            self._start_osc_input()
 
         self._refresh_header()
         self._refresh_link_buttons()
@@ -2483,6 +2504,50 @@ class ViewerApp:
             pass
         self.root.destroy()
 
+    def _start_osc_input(self) -> None:
+        """Opens the OSC input port and binds it to this show.
+
+        Never fatal, on any of its three failures - no map file, a map that
+        will not parse, a port already held. Each is said in the status line
+        and the window carries on: the rig is the show and this drives knobs
+        on top of it.
+        """
+        from .osc_input import BindingSet, Dispatcher as OscDispatcher, OscListener
+
+        bindings = BindingSet()
+        if self._oscmap_path.exists():
+            try:
+                bindings = BindingSet.load(self._oscmap_path)
+            except (OSError, ValueError) as error:
+                self._say(f"osc map: {error}")
+        else:
+            self._say(f"osc map: no {self._oscmap_path.name}; listening with no bindings")
+
+        self._osc_dispatcher = OscDispatcher(
+            bindings, ActionContext(show=self.show, osc_factory=self._map_osc,
+                                    say=self._say))
+
+        port = self._osc_in_port or DEFAULT_INPUT_PORT
+        try:
+            self._osc_listener = OscListener(port, on_message=self._on_osc_in)
+        except OSError as error:
+            self._say(f"osc in: cannot listen on {port}: {error}")
+            return
+
+        live = sum(1 for one in bindings.bindings if one.enabled)
+        self._say(f"osc in: port {port}, {live} of {len(bindings.bindings)} bindings live")
+
+    def _on_osc_in(self, address: str, arguments) -> None:
+        """Called on the listener's thread. Touches no widget.
+
+        `_say` is the one thing it does reach for, and that is already what
+        the reader thread uses for the same reason - see _send_osc.
+        """
+        if self._osc_dispatcher is None:
+            return
+        for line in self._osc_dispatcher.handle(address, arguments):
+            self._say(line)
+
     def run(self) -> int:
         try:
             self.root.mainloop()
@@ -2501,6 +2566,11 @@ class ViewerApp:
                     self._map_link.close()
                 except Exception:
                     pass
+            if self._osc_listener is not None:
+                try:
+                    self._osc_listener.close()
+                except Exception:
+                    pass
         return 0
 
 
@@ -2517,6 +2587,8 @@ def view(
     osc_device: Optional[str] = None,
     osc_fixture: int = 0,
     midimap: Optional[Union[str, Path]] = None,
+    oscmap: Optional[Union[str, Path]] = None,
+    osc_in: Optional[int] = None,
     host: Optional[str] = None,
     remote_command: Optional[str] = None,
 ) -> int:
@@ -2534,6 +2606,8 @@ def view(
         osc_device=osc_device,
         osc_fixture=osc_fixture,
         midimap=midimap,
+        oscmap=oscmap,
+        osc_in=osc_in,
         host=host,
         remote_command=remote_command,
     )

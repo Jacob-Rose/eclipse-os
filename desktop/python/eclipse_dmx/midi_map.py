@@ -239,6 +239,79 @@ def _run_pattern(context, params, value):
     return f"pattern {name}"
 
 
+def _run_param(context, params, value):
+    """A knob on the running look, turned by a fader or by the audio engine.
+
+    The one action that closes the loop with `osc_input`: Synesthesia's bass
+    level arrives, is scaled here into the knob's own range, and goes down the
+    protocol without waiting for the reply - see ShowController.set_param, and
+    the note on rate in osc_input.
+
+    `layer` aims it at a layer's look instead of the show's, because a rig
+    where the UV par runs its own pattern is a rig where "intensity" is two
+    different knobs.
+    """
+    name = str(params.get("name", "")).strip()
+    if not name:
+        return "param: no knob named"
+    if context.show is None:
+        return "param: no show"
+
+    low = float(params.get("low", 0.0))
+    high = float(params.get("high", 1.0))
+    scaled = low + (high - low) * value
+
+    layer = str(params.get("layer", "")).strip()
+    target = context.show
+    if layer:
+        target = context.show.layers.get(layer)
+        if target is None:
+            # Named outright and not there: a typo, or a config whose layer was
+            # renamed. Said rather than silently dropped, because a binding
+            # aimed at nothing looks exactly like a binding that never fires.
+            return f"param: no layer '{layer}'"
+
+    # Checked here rather than left to the executable, because a streamed knob
+    # does not wait for the reply - so an ERR for a knob this look has never
+    # had would be drained unread, and a binding aimed at nothing would look
+    # exactly like a binding that is working. `params` is what the look
+    # announced on the last cue; empty means it has not announced yet, and
+    # refusing then would refuse every binding for the first frames of a show.
+    if target.params and target.get_param(name) is None:
+        return f"param: the look has no '{name}'"
+
+    target.set_param(name, scaled, wait=False)
+    return None  # streamed; narrating every value would bury the header
+
+
+def _run_master(context, params, value):
+    """Rig-wide brightness. The bluntest audio binding there is, and the one
+    worth having: the whole room breathing with the track."""
+    if context.show is None:
+        return "master: no show"
+    low = float(params.get("low", 0.0))
+    high = float(params.get("high", 1.0))
+    context.show.set_master(low + (high - low) * value, wait=False)
+    return None
+
+
+def _run_bpm(context, params, value):
+    """Tempo, from a value rather than a fixed line.
+
+    Which makes Synesthesia's beat detector usable as this rig's clock: bind
+    `syn_BPM` here, with the range it arrives in, and the desk takes its tempo
+    from the audio engine instead of from Mixxx's note 50. Off by default in
+    the shipped map, because two tempo sources disagreeing is worse than
+    either alone - see osc_input and `midi status`.
+    """
+    if context.show is None:
+        return "bpm: no show"
+    low = float(params.get("low", 50.0))
+    high = float(params.get("high", 220.0))
+    context.show.command(f"bpm {low + (high - low) * value:.2f}", expect_reply=False)
+    return None
+
+
 def _run_command(context, params, value):
     line = str(params.get("line", "")).strip()
     if not line:
@@ -296,6 +369,35 @@ register_action(ActionSpec(
     key="pattern", label="rig: pattern",
     fields=[FieldSpec("name", "pattern")],
     run=_run_pattern,
+))
+
+register_action(ActionSpec(
+    key="param", label="rig: look knob (value)",
+    fields=[
+        FieldSpec("name", "knob", hint="a knob on the running look, e.g. intensity"),
+        FieldSpec("low", "low", kind="float", default=0.0, hint="value at 0"),
+        FieldSpec("high", "high", kind="float", default=1.0, hint="value at 1"),
+        FieldSpec("layer", "layer", hint="optional: a layer's look instead of the show's"),
+    ],
+    run=_run_param,
+))
+
+register_action(ActionSpec(
+    key="master", label="rig: master brightness (value)",
+    fields=[
+        FieldSpec("low", "low", kind="float", default=0.0),
+        FieldSpec("high", "high", kind="float", default=1.0),
+    ],
+    run=_run_master,
+))
+
+register_action(ActionSpec(
+    key="bpm", label="rig: tempo (value)",
+    fields=[
+        FieldSpec("low", "low", kind="float", default=50.0, hint="bpm at 0"),
+        FieldSpec("high", "high", kind="float", default=220.0, hint="bpm at 1"),
+    ],
+    run=_run_bpm,
 ))
 
 register_action(ActionSpec(

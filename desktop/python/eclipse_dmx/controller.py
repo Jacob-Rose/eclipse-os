@@ -265,10 +265,11 @@ class LayerView:
         self.show.command(f"layer {self.name} state {name}")
         self.current_state = name
 
-    def set_param(self, name: str, value: Union[float, bool, str]) -> None:
+    def set_param(self, name: str, value: Union[float, bool, str],
+                  wait: bool = True) -> None:
         if isinstance(value, bool):
             value = 1 if value else 0
-        self.show.command(f"layer {self.name} param {name} {value}")
+        self.show.command(f"layer {self.name} param {name} {value}", expect_reply=wait)
 
     def get_param(self, name: str) -> Optional[Param]:
         return next((param for param in self.params if param.name == name), None)
@@ -992,7 +993,8 @@ class ShowController:
         """
         self.command(f"input {channel} {'on' if down else 'off'}")
 
-    def set_param(self, name: str, value: Union[float, bool, str]) -> None:
+    def set_param(self, name: str, value: Union[float, bool, str],
+                  wait: bool = True) -> None:
         """Turns one of the running look's knobs.
 
         A colour goes as `"#rrggbb"`; everything else as a number.
@@ -1001,10 +1003,17 @@ class ShowController:
         rate snaps to the nearest musical one, so what you sent and what the
         look took are not always the same thing. The executable echoes back what
         it landed on, which is why `self.params` is right afterwards either way.
+
+        `wait=False` sends without waiting for the reply, for a knob being
+        *streamed* - by a fader, or by Synesthesia's audio analysis at frame
+        rate. A round trip per value would serialise the sender against the
+        show's own loop, and there is nothing to do with the answer. The reply
+        still arrives and is still parsed on the reader thread, so `self.params`
+        catches up either way; only the blocking is skipped.
         """
         if isinstance(value, bool):
             value = 1 if value else 0
-        self.command(f"param {name} {value}")
+        self.command(f"param {name} {value}", expect_reply=wait)
 
     def get_param(self, name: str) -> Optional[Param]:
         """The named knob on the running look, or None if it has no such one."""
@@ -1065,13 +1074,13 @@ class ShowController:
     def set_width(self, value: float) -> None:
         self.command(f"width {value}")
 
-    def set_brightness(self, value: float) -> None:
-        """Pattern brightness, 0..1."""
-        self.command(f"brightness {value}")
+    def set_brightness(self, value: float, wait: bool = True) -> None:
+        """Pattern brightness, 0..1. `wait=False` streams; see set_param."""
+        self.command(f"brightness {value}", expect_reply=wait)
 
-    def set_master(self, value: float) -> None:
-        """Rig-wide brightness, 0..1."""
-        self.command(f"master {value}")
+    def set_master(self, value: float, wait: bool = True) -> None:
+        """Rig-wide brightness, 0..1. `wait=False` streams; see set_param."""
+        self.command(f"master {value}", expect_reply=wait)
 
     def set_color(self, color: Color) -> None:
         """Colour for solid and pulse. Hex string, or an (h, s, v) triple."""

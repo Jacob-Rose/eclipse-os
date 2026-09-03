@@ -1,0 +1,165 @@
+{
+  "version": 1,
+  "bindings": [
+    {
+      "label": "level -> master: the room breathes with the track",
+      "trigger": {
+        "pattern": "*level*",
+        "exclude": [
+          "*bass*",
+          "*mid*",
+          "*high*"
+        ],
+        "argument": 0
+      },
+      "mode": "value",
+      "range": {
+        "low": 0.0,
+        "high": 1.0,
+        "threshold": 0.5
+      },
+      "limit": {
+        "interval": 0.03333333333333333,
+        "change": 0.02
+      },
+      "action": "master",
+      "params": {
+        "low": 0.55,
+        "high": 1.0
+      },
+      "enabled": true
+    },
+    {
+      "label": "bass -> floor: the rig glows under the beat flashes",
+      "trigger": {
+        "pattern": "*bass*level*",
+        "exclude": [],
+        "argument": 0
+      },
+      "mode": "value",
+      "range": {
+        "low": 0.0,
+        "high": 1.0,
+        "threshold": 0.5
+      },
+      "limit": {
+        "interval": 0.03333333333333333,
+        "change": 0.02
+      },
+      "action": "param",
+      "params": {
+        "name": "floor",
+        "low": 0.0,
+        "high": 0.35,
+        "layer": ""
+      },
+      "enabled": true
+    },
+    {
+      "label": "high -> intensity: hats and cymbals sharpen the hit",
+      "trigger": {
+        "pattern": "*high*level*",
+        "exclude": [
+          "*midhigh*"
+        ],
+        "argument": 0
+      },
+      "mode": "value",
+      "range": {
+        "low": 0.0,
+        "high": 1.0,
+        "threshold": 0.5
+      },
+      "limit": {
+        "interval": 0.03333333333333333,
+        "change": 0.02
+      },
+      "action": "param",
+      "params": {
+        "name": "intensity",
+        "low": 0.55,
+        "high": 1.0,
+        "layer": ""
+      },
+      "enabled": true
+    },
+    {
+      "label": "bass presence -> vu_pulse's red wash (that look only)",
+      "trigger": {
+        "pattern": "*bass*presence*",
+        "exclude": [],
+        "argument": 0
+      },
+      "mode": "value",
+      "range": {
+        "low": 0.0,
+        "high": 1.0,
+        "threshold": 0.5
+      },
+      "limit": {
+        "interval": 0.03333333333333333,
+        "change": 0.02
+      },
+      "action": "param",
+      "params": {
+        "name": "base_gain",
+        "low": 0.3,
+        "high": 1.0,
+        "layer": ""
+      },
+      "enabled": false
+    },
+    {
+      "label": "syn_BPM -> the rig's clock (OFF: Mixxx is the tempo source)",
+      "trigger": {
+        "pattern": "*bpm",
+        "exclude": [
+          "*confidence*",
+          "*sin*",
+          "*tri*",
+          "*twitcher*"
+        ],
+        "argument": 0
+      },
+      "mode": "value",
+      "range": {
+        "low": 50.0,
+        "high": 220.0,
+        "threshold": 0.5
+      },
+      "limit": {
+        "interval": 2.0,
+        "change": 0.01
+      },
+      "action": "bpm",
+      "params": {
+        "low": 50.0,
+        "high": 220.0
+      },
+      "enabled": false
+    },
+    {
+      "label": "onbeat -> tv_static as a stab (OFF: an example of a trigger)",
+      "trigger": {
+        "pattern": "*onbeat*",
+        "exclude": [],
+        "argument": 0
+      },
+      "mode": "trigger",
+      "range": {
+        "low": 0.0,
+        "high": 1.0,
+        "threshold": 0.5
+      },
+      "limit": {
+        "interval": 0.03333333333333333,
+        "change": 0.01
+      },
+      "action": "state",
+      "params": {
+        "name": "tv_static"
+      },
+      "enabled": false
+    }
+  ]
+}

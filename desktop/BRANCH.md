@@ -986,6 +986,53 @@ truss is grey every time, and a primary colour that is always grey is worse than
 no feature. `devices/synesthesia.json` is a probe: one fixture, no wire, placed
 by the environment, whose only destination is the `F` line on stdout.
 
+**The endpoint can be a name**, and that is not a convenience. `--address
+mac-mini.local:6000` is looked up again every 15s while the set runs, and the
+socket re-pointed if the machine moved. Connected UDP resolves once, at
+connect, which is what makes the send path cheap — and on a DHCP network it is
+also what aims the rest of a set at an address nobody is at, with the sent
+counter still climbing and no error anywhere on either end. A failed look-up
+keeps the address in hand rather than tearing a working link down over a wifi
+blip, and a name that has not resolved at startup no longer refuses to run the
+show: the machine is asleep, the rig is not. IPv4 wins where a name answers
+with both, because an OSC input bound to `0.0.0.0` cannot be reached over v6
+and that failure is invisible from here too.
+
+### and the audio engine, back the other way
+
+The same wire, inbound: Synesthesia Pro sends its `syn_*` audio uniforms over
+OSC, and `osc_input.py` binds them to this rig's knobs. `--osc-in 7000` on
+`run`, `osc` and `view`; `config/oscmaps/synesthesia.json` beside the config;
+`osc-watch` to see what is arriving.
+
+The reason to want it is that **eclipse-dmx hears nothing**. Its beat is MIDI
+notes from Mixxx — a grid and a VU meter. Synesthesia is doing a real FFT on
+the same music and publishing bass/mid/midhigh/high levels, transients,
+presence, a beat detector and a BPM estimate, forty-odd values a frame. None of
+that is computable here and all of it is already on the network.
+
+Three decisions in it are load-bearing:
+
+**The bindings match on a glob, not an address.** Synesthesia documents the
+uniforms by name and does not document the OSC addresses they arrive on, and
+v1.20 renamed them. So `*bass*level*` is the binding and `osc-watch` is how you
+find out what to write — the same shape as `midi-watch` for Mixxx's notes, for
+the same reason. `exclude` exists because the useful patterns overlap: without
+it, a binding meant for `syn_Level` silently also takes the four band levels
+and one knob has four sources.
+
+**The actions are the MIDI mappings' actions.** Same registry, same
+`ActionContext`, same files-are-presets shape — a pad and a bass drum should be
+able to do the same things. Three new ones (`param`, `master`, `bpm`) serve
+both sides, and nothing in either dispatcher knows the other exists.
+
+**Rate is part of the binding.** Sixty values a second per uniform, down the
+pipe the cues use, is the failure mode. A `value` binding has a minimum
+interval and a minimum change; a `trigger` has neither, because dropping a beat
+is what that mode exists not to do. Streamed knobs go out with
+`expect_reply=False` — a round trip per value would serialise the sender
+against the show's loop.
+
 **It is python and not C++** because the whole feature is "read a colour that is
 already arriving, and put it in a UDP packet". `--emit-frames` already streams
 it; `ShowController` already parses it. No build, no new transport in the show

@@ -6,14 +6,17 @@ Thin on purpose. This is the "does my rig work" tool, not a console.
 from __future__ import annotations
 
 import argparse
+import errno
 import sys
+import time
 from pathlib import Path
 from typing import List, Optional
 
 from .binary import BinaryNotFoundError, find_executable
 from .config import BUILTIN_PALETTES, BUILTIN_PROFILES, PATTERN_NAMES, Config, ConfigError
 from .controller import ShowController, ShowError
-from .osc import DEFAULT_ADDRESS, DEFAULT_CONTROL
+from .osc import DEFAULT_ADDRESS, DEFAULT_CONTROL, RESOLVE_INTERVAL
+from .osc_input import DEFAULT_BIND, DEFAULT_INPUT_PORT
 from .ports import list_midi_ports, list_ports
 
 
@@ -113,6 +116,155 @@ def _cmd_midi_watch(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_osc_watch(args: argparse.Namespace) -> int:
+    """Prints what is actually arriving on the OSC input port.
+
+    The setup tool, and the twin of `midi-watch`. Synesthesia's audio
+    variables are documented by *name* - syn_BassLevel and forty others - but
+    the OSC addresses they arrive on are not, and they were renamed once
+    already. So there is no honest way to write a binding except to look, and
+    this is looking.
+
+    Needs no show, no executable and no rig: the visualiser sends whether or
+    not anything here is running, and the socket is python's.
+    """
+    from .osc_input import OscListener
+
+    seen: dict = {}
+
+    def message(address: str, arguments) -> None:
+        number = next((float(a) for a in arguments
+                       if isinstance(a, (int, float)) and not isinstance(a, bool)), None)
+        entry = seen.get(address)
+        if entry is None:
+            entry = seen[address] = {"count": 0, "low": number, "high": number,
+                                     "last": arguments}
+        entry["count"] += 1
+        entry["last"] = arguments
+        if number is not None:
+            entry["low"] = number if entry["low"] is None else min(entry["low"], number)
+            entry["high"] = number if entry["high"] is None else max(entry["high"], number)
+        if args.verbose:
+            print(f"{address} {list(arguments)}")
+
+    try:
+        listener = OscListener(args.port, args.bind, on_message=message)
+    except OSError as error:
+        print(f"error: cannot listen on {args.bind}:{args.port}: {error}", file=sys.stderr)
+        if getattr(error, "errno", None) == errno.EADDRINUSE:
+            # Worth naming: the show itself binds this port when it is running
+            # with --osc-in, and one port has one owner.
+            print("  something already has that port - a running show with "
+                  "--osc-in, or another copy of this.", file=sys.stderr)
+        return 1
+
+    with listener:
+        print(f"{listener.describe()}; play something for {args.seconds:.0f}s...",
+              file=sys.stderr)
+        _wait_out(args.seconds)
+        packets, undecodable = listener.packets, listener.undecodable
+
+    print()
+    if not seen:
+        print("nothing arrived.", file=sys.stderr)
+        print(
+            "  - Synesthesia: Settings > OSC. Is OUTPUT on, and is\n"
+            "    'Output Audio Variables' ticked? Both are needed and both ship off.\n"
+            f"  - does its output port say {args.port}, and its output IP name this\n"
+            "    machine? Broadcast (255.255.255.255) reaches it too.\n"
+            "  - OSC is a Pro feature.\n"
+            "  - is a firewall holding UDP on this port?",
+            file=sys.stderr,
+        )
+        return 1
+
+    print(f"{packets} packets, {len(seen)} addresses:")
+    for address, entry in sorted(seen.items(), key=lambda kv: -kv[1]["count"]):
+        span = ""
+        if entry["low"] is not None:
+            span = f"  {entry['low']:.3f}..{entry['high']:.3f}"
+        print(f"  {address:<44} x{entry['count']:<6}{span}")
+
+    if undecodable:
+        print(f"\n{undecodable} packets were not OSC this understood.", file=sys.stderr)
+
+    print("\nBind one of these in an OSC map - the pattern is a glob, so\n"
+          "'*bass*level*' survives the app renaming what is around it.",
+          file=sys.stderr)
+    return 0
+
+
+def _wait_out(seconds: float) -> None:
+    """Sleeps, but wakes for Ctrl-C the way the rest of this CLI does."""
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        time.sleep(min(0.2, deadline - time.monotonic()))
+
+
+def _add_osc_input_args(parser: argparse.ArgumentParser) -> None:
+    """--osc-in and --oscmap, on every subcommand that runs a show."""
+    parser.add_argument("--osc-in", nargs="?", type=int, const=DEFAULT_INPUT_PORT,
+                        default=None, metavar="PORT",
+                        help="take a visualiser's audio analysis in as OSC and let it "
+                             f"drive the rig (default port {DEFAULT_INPUT_PORT}; it must match "
+                             "Synesthesia's OSC *output* port). `osc-watch` shows what arrives.")
+    parser.add_argument("--oscmap", metavar="FILE",
+                        help="which OSC bindings to load (default: oscmaps/synesthesia.json "
+                             "beside the config, if present)")
+
+
+def _osc_input_for(args, show, say=None):
+    """The listener and dispatcher for a show, or None if not asked for.
+
+    Returns the listener so the caller can close it; it holds a socket and a
+    thread, and both outlive the show if nobody does.
+    """
+    from .osc_input import BindingSet, Dispatcher as OscDispatcher, OscListener
+    from .midi_map import ActionContext
+
+    port = getattr(args, "osc_in", None)
+    chosen = getattr(args, "oscmap", None)
+    if port is None and not chosen:
+        return None
+    port = port or DEFAULT_INPUT_PORT
+
+    say = say or (lambda line: print(line, file=sys.stderr))
+
+    config = getattr(args, "config", None)
+    path = (Path(chosen) if chosen
+            else Path(config or ".").parent / "oscmaps" / "synesthesia.json")
+    if path.exists():
+        try:
+            bindings = BindingSet.load(path)
+        except (OSError, ValueError) as error:
+            say(f"osc map: {error}")
+            bindings = BindingSet()
+    elif chosen:
+        say(f"osc map: {path} not found; listening with no bindings")
+        bindings = BindingSet()
+    else:
+        # No map beside the config and none named: the port is still opened,
+        # because `osc-watch` cannot run while a show holds it and "what is
+        # arriving" is the question this is usually opened to answer.
+        say(f"osc map: no {path.name} beside the config; listening with no bindings")
+        bindings = BindingSet()
+
+    dispatcher = OscDispatcher(bindings, ActionContext(show=show, say=say))
+
+    try:
+        listener = OscListener(port, on_message=lambda address, arguments: [
+            say(line) for line in dispatcher.handle(address, arguments)])
+    except OSError as error:
+        # Not fatal. The rig is the show; the audio bindings are a layer on
+        # top of it, and a port already taken must not cost a set.
+        say(f"osc in: cannot listen on {port}: {error}")
+        return None
+
+    live = sum(1 for one in bindings.bindings if one.enabled)
+    say(f"osc in: {listener.describe()}, {live} of {len(bindings.bindings)} bindings live")
+    return listener
+
+
 def _cmd_validate(args: argparse.Namespace) -> int:
     config = Config.load(args.config)
     warnings = config.validate(strict_overlap=not args.allow_overlap)
@@ -209,9 +361,15 @@ def _cmd_run(args: argparse.Namespace) -> int:
         if args.brightness is not None:
             show.set_master(args.brightness)
 
-        print(f"running: {show.status()}", file=sys.stderr)
-
-        code = show.wait(args.seconds)
+        # After the cue overrides, so a binding cannot be outrun by the state
+        # it is aimed at; before the wait, so it is live for the whole set.
+        listener = _osc_input_for(args, show)
+        try:
+            print(f"running: {show.status()}", file=sys.stderr)
+            code = show.wait(args.seconds)
+        finally:
+            if listener is not None:
+                listener.close()
         return 0 if code is None else code
 
 
@@ -236,24 +394,36 @@ def _cmd_osc(args: argparse.Namespace) -> int:
     if ungamma is None:
         ungamma = Config.load(args.config).master.gamma if args.config else 0.0
 
+    def resolved(address: str) -> None:
+        # Said out loud because it is the one thing that changes where a whole
+        # set is being sent, and it happens with no other symptom.
+        print(f"{args.address} now resolves to {address}", file=sys.stderr)
+
     try:
         link = SynesthesiaLink(
             args.address,
             args.control,
             separate=args.separate,
             gamma=0.0 if args.no_ungamma else ungamma,
+            resolve_every=args.resolve_every,
+            on_resolve=resolved,
         )
     except (OSError, ValueError) as error:
-        # ValueError is a host:port that is not one; OSError is a name that
-        # does not resolve or a route that does not exist. Between them they
-        # are the only send-side failure that gets reported at all — see the
-        # note at the end of osc.py — so they are worth a sentence each rather
-        # than a traceback.
+        # ValueError is a host:port that is not one; OSError is now only an
+        # *address* that cannot be connected to, which is a typo — a name that
+        # does not resolve is tolerated and retried inside the link. Between
+        # them they are the only send-side failure that gets reported at all —
+        # see the note at the end of osc.py — so they are worth a sentence each
+        # rather than a traceback.
         print(f"error: cannot send to '{args.address}': {error}", file=sys.stderr)
         return 1
 
     with link:
         print(f"sending to {link.describe()}", file=sys.stderr)
+        if link.is_name and link.address is None:
+            print(f"warning: {link.last_error}", file=sys.stderr)
+            print("the show runs anyway; the name is looked up again every "
+                  f"{args.resolve_every:g}s.", file=sys.stderr)
 
         if args.test:
             return _osc_test(link, args)
@@ -331,8 +501,13 @@ def _cmd_osc(args: argparse.Namespace) -> int:
                 if args.state:
                     show.set_state(args.state)
 
-                print(f"running: {show.status()}", file=sys.stderr)
-                code = show.wait(args.seconds)
+                listener = _osc_input_for(args, show)
+                try:
+                    print(f"running: {show.status()}", file=sys.stderr)
+                    code = show.wait(args.seconds)
+                finally:
+                    if listener is not None:
+                        listener.close()
         finally:
             _osc_report(link)
 
@@ -376,11 +551,38 @@ def _osc_report(link) -> None:
     against a listening visualiser. Saying "88 sent, 0 dropped" and stopping
     would read as confirmation of the one thing this cannot confirm.
     """
-    print(f"\n{link.sent} messages sent to {link.host}:{link.port}"
+    # One line of it, because the full version was printed when the link was
+    # made and a report that repeats it buries the counts it exists to give.
+    lines = (link.last_error or "").splitlines()
+    reason = lines[0] if lines else ""
+
+    where = f"{link.host}:{link.port}"
+    if link.is_name and link.address:
+        where += f" ({link.address})"
+
+    print(f"\n{link.sent} messages sent to {where}"
           + (f", {link.dropped} refused" if link.dropped else ""), file=sys.stderr)
 
+    if link.is_name and link.address is None:
+        # Nothing was sent and nothing could have been. Said here and returned,
+        # rather than letting the advice below send them into Synesthesia's
+        # settings for a problem that never got off this machine.
+        print(f"  '{link.host}' never resolved, so there was nowhere to send.\n"
+              f"  {reason}", file=sys.stderr)
+        return
+
+    if link.rebinds:
+        # A machine that moved is the ordinary reason and no cause for alarm -
+        # but a laptop hopping between wifi and ethernet mid-set is not, and
+        # neither is two machines answering to one name. Worth a line either way.
+        print(f"  '{link.host}' moved {link.rebinds} time(s); "
+              f"now {link.address}", file=sys.stderr)
+    if link.lookups_failed:
+        print(f"  {link.lookups_failed} look-up(s) of '{link.host}' failed; "
+              "the address in hand was kept", file=sys.stderr)
     if link.dropped:
-        print(f"  last error: {link.last_error}", file=sys.stderr)
+        print(f"  last error: {reason}", file=sys.stderr)
+
     if not link.sent:
         print("  nothing was sent - either no frame arrived, or the fixture "
               "being sampled is not in it.", file=sys.stderr)
@@ -425,12 +627,20 @@ def _cmd_view(args: argparse.Namespace) -> int:
                 args.osc,
                 args.osc_control,
                 gamma=Config.load(args.config).master.gamma,
+                resolve_every=args.osc_resolve_every,
+                on_resolve=lambda address: print(
+                    f"{args.osc} now resolves to {address}", file=sys.stderr),
             )
         except (OSError, ValueError) as error:
             print(f"error: cannot send to '{args.osc}': {error}", file=sys.stderr)
             return 1
 
         print(f"sending to {link.describe()}", file=sys.stderr)
+        if link.is_name and link.address is None:
+            # Not fatal: the window opens, the rig runs, and the name is looked
+            # up again on its interval. A visualiser that is not up yet must not
+            # be able to stop a show from starting.
+            print(f"warning: {link.last_error}", file=sys.stderr)
 
     return view(
         args.config,
@@ -445,6 +655,8 @@ def _cmd_view(args: argparse.Namespace) -> int:
         osc_device=args.osc_device,
         osc_fixture=args.osc_fixture,
         midimap=args.midimap,
+        oscmap=args.oscmap,
+        osc_in=args.osc_in,
         host=args.host,
         remote_command=args.remote_command,
     )
@@ -538,6 +750,20 @@ def build_parser() -> argparse.ArgumentParser:
     listing = subparsers.add_parser("list", help="list available patterns and palettes")
     listing.set_defaults(func=_cmd_list)
 
+    osc_watch = subparsers.add_parser(
+        "osc-watch",
+        help="print what a visualiser is sending on the OSC input port")
+    osc_watch.add_argument("--port", type=int, default=DEFAULT_INPUT_PORT,
+                           help=f"port to listen on (default {DEFAULT_INPUT_PORT}; it must "
+                                "match Synesthesia's OSC *output* port)")
+    osc_watch.add_argument("--bind", default=DEFAULT_BIND,
+                           help=f"interface to listen on (default {DEFAULT_BIND}, everything)")
+    osc_watch.add_argument("--seconds", type=float, default=15.0,
+                           help="how long to listen (default 15)")
+    osc_watch.add_argument("--verbose", "-v", action="store_true",
+                           help="print every message as it arrives, not just the summary")
+    osc_watch.set_defaults(func=_cmd_osc_watch)
+
     validate = subparsers.add_parser("validate", help="check a config without touching hardware")
     validate.add_argument("config")
     validate.add_argument("--allow-overlap", action="store_true",
@@ -578,6 +804,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--verbose", "-v", action="store_true", help="echo the executable's logs")
     _add_tempo_args(run)
     _add_remote_args(run)
+    _add_osc_input_args(run)
     run.set_defaults(func=_cmd_run)
 
     osc = subparsers.add_parser(
@@ -608,6 +835,11 @@ def build_parser() -> argparse.ArgumentParser:
                           "master.gamma, because a screen corrects again)")
     osc.add_argument("--no-ungamma", action="store_true",
                      help="send the frame's bytes as they are")
+    osc.add_argument("--resolve-every", type=float, default=RESOLVE_INTERVAL,
+                     metavar="SECONDS",
+                     help="how often to look a hostname up again while running, so a "
+                          f"machine that changes address is followed (default {RESOLVE_INTERVAL:g}; "
+                          "0 to resolve once). Ignored for an IP address.")
     osc.add_argument("--rate", type=float, default=30.0,
                      help="messages a second (default 30)")
     osc.add_argument("--seconds", type=float,
@@ -618,6 +850,7 @@ def build_parser() -> argparse.ArgumentParser:
                      help="render without driving hardware; the OSC still goes out")
     osc.add_argument("--verbose", "-v", action="store_true", help="echo the executable's logs")
     _add_tempo_args(osc)
+    _add_osc_input_args(osc)
     osc.set_defaults(func=_cmd_osc)
 
     viewer = subparsers.add_parser(
@@ -637,6 +870,10 @@ def build_parser() -> argparse.ArgumentParser:
                         help="sample that device's first fixture (default: fixture 0)")
     viewer.add_argument("--osc-fixture", type=int, default=0, metavar="N",
                         help="which fixture to send, indexed across every device")
+    viewer.add_argument("--osc-resolve-every", type=float, default=RESOLVE_INTERVAL,
+                        metavar="SECONDS",
+                        help="how often to look an --osc hostname up again while running "
+                             f"(default {RESOLVE_INTERVAL:g}; 0 to resolve once)")
     viewer.add_argument("--osc-control", default=DEFAULT_CONTROL,
                         help=f"OSC address of the colour control (default {DEFAULT_CONTROL})")
     viewer.add_argument("--midimap", metavar="FILE",
@@ -644,6 +881,7 @@ def build_parser() -> argparse.ArgumentParser:
                              "(default: midimaps/default.json beside the config, if present)")
     _add_tempo_args(viewer)
     _add_remote_args(viewer)
+    _add_osc_input_args(viewer)
     viewer.set_defaults(func=_cmd_view)
 
     return parser
