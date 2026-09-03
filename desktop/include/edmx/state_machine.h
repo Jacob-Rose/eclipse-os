@@ -98,6 +98,9 @@ namespace edmx
         void reflect(ecore::PropertyBag& bag) override;
         void reflectCurves(eanim::CurveBag& bag) override;
 
+        /// To the look that is showing, same as the knobs.
+        bool trigger(const ecore::GameplayTag& tag) override;
+
         /// Every state, in table order. This is what a UI builds buttons from.
         std::vector<std::string> stateNames() const;
 

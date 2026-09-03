@@ -151,11 +151,38 @@ Pattern_Scanner_ScanIdle::Pattern_Scanner_ScanIdle()
     pulseCurve.addKey(0.25f, 0.0f);
 }
 
+void Pattern_Scanner_ScanIdle::reset()
+{
+    PatternScanner::reset();
+    cued = false;
+}
+
+bool Pattern_Scanner_ScanIdle::onTrigger(const GameplayTag& tag)
+{
+    if (tag != scanner_tags::Ping)
+    {
+        return false;
+    }
+
+    // The ping's transient is at its very start, so the cycle is wound to
+    // the flash: the ring is at the top of its breath this frame and the
+    // pulse leaves the obelisk's foot with it.
+    timeActive = flashPhase * cycleTime;
+    cued = true;
+    return true;
+}
+
 void Pattern_Scanner_ScanIdle::render(HSVStripNode* inNode, HSV& inOutColor) const
 {
     // One clock for the whole look, counted in breath cycles: the ring rides
-    // the front of it and everything else is a delay behind it.
-    const float cycles = timeActive / std::max(cycleTime, 0.01f);
+    // the front of it and everything else is a delay behind it. Once a ping
+    // has cued it the cycle stops just short of wrapping - dark, the pulse
+    // spent - and the next ping winds it again; see onTrigger.
+    float cycles = timeActive / std::max(cycleTime, 0.01f);
+    if (cued)
+    {
+        cycles = std::min(cycles, 1.0f - 1e-3f);
+    }
     const float breath = breathCurve.evaluate(frac(cycles));
 
     // the ring, and anything that never said what it is: the breath

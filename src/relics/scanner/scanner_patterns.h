@@ -19,6 +19,15 @@ using namespace ecore;
 using namespace eanim;
 using namespace esm;
 
+/// The triggers the scanner's looks answer to - the tags afterglow sends
+/// with `trigger <tag>` as it plays the sound each one stands for. Declared
+/// here, once, so the look and anything that fires it agree on the spelling.
+namespace scanner_tags
+{
+    /// the scan ping sounded: scan_idle flashes and sends the pulse up
+    inline const GameplayTag Ping{"scanner.ping"};
+}
+
 ///
 /// The scanner's looks, ported from afterglow (main-py/game/game.py).
 ///
@@ -171,11 +180,23 @@ namespace scanner
     * side at once, one band climbing the tower. It used to be the breath
     * itself going round the sides a lap-share at a time, and before that a
     * beam on a rotation of its own that never agreed with the heartbeat.
+    *
+    * The clock is the game's when the game is there. Each time afterglow
+    * plays the scan ping it sends `trigger scanner.ping`, and the look re-anchors
+    * its cycle so the flash lands on the ping's transient - then holds at
+    * the end of that cycle, dark, until the next one, so a ping longer than
+    * cycleTime never gets a second, unheard flash. Before the first ping
+    * (a desk viewer, no game) the clock free-runs as it always did.
     */
     class Pattern_Scanner_ScanIdle : public PatternScanner
     {
     public:
         Pattern_Scanner_ScanIdle();
+
+        virtual void reset() override;
+
+        /// scanner_tags::Ping: the scan ping just sounded - flash now, pulse now
+        virtual bool onTrigger(const GameplayTag& tag) override;
 
         // CRGB(0.2, 0.7, 1.0)
         HSV scanColor = HSV(202.5f, 0.8f, 1.0f);
@@ -212,6 +233,11 @@ namespace scanner
         virtual void render(HSVStripNode* inNode, HSV& inOutColor) const override;
         virtual void reflect(ecore::PropertyBag& bag) override;
         virtual void reflectCurves(eanim::CurveBag& bag) override;
+
+    private:
+        /// a ping has landed since entry: the cycle is the game's, and it
+        /// waits at its end for the next one instead of wrapping
+        bool cued{false};
     };
 
 

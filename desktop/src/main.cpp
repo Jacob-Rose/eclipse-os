@@ -113,6 +113,8 @@ namespace
             "  pattern <name>            switch pattern\n"
             "  state <name>              switch a state machine to one of its looks\n"
             "  states                    list the running pattern's looks\n"
+            "  trigger <tag>             an impulse to the running look, as the thing it\n"
+            "                            stands for happens (a sound plays); a dotted tag\n"
             "  input <a|b> <on|off>      the two momentary inputs a relic look reads\n"
             "  speed <float>             pattern speed\n"
             "  width <float>             pattern width\n"
@@ -1614,6 +1616,18 @@ namespace
         return out.str();
     }
 
+    /// "look 'scan_idle'" on a state machine, "pattern 'solid'" otherwise -
+    /// the thing a trigger or a knob was aimed at, for an ERR.
+    std::string describeLook(Pattern& pattern)
+    {
+        StateMachinePattern* machine = pattern.asStateMachine();
+        if (machine != nullptr)
+        {
+            return "look '" + machine->currentStateName() + "'";
+        }
+        return "pattern '" + std::string(pattern.getName()) + "'";
+    }
+
     /// `param <name> <value>` against one pattern.
     ///
     /// Looks the knob up before reading the value, because what the value
@@ -2223,6 +2237,37 @@ namespace
             return;
         }
 
+        if (command == "trigger")
+        {
+            // `trigger scanner.ping` - an impulse to the running look, sent at the
+            // moment the thing it stands for happened: afterglow sends it as
+            // it plays a sound, so the light is tied to the sound rather than
+            // pacing beside it. A look that does not answer to the name is an
+            // ERR, not a no-op, so a cue list naming a trigger the look lost
+            // finds out.
+            if (words.size() < 2)
+            {
+                emit("ERR trigger needs a name");
+                return;
+            }
+
+            if (!show.pattern)
+            {
+                emit("ERR no pattern");
+                return;
+            }
+
+            const ecore::GameplayTag tag(words[1]);
+            if (!show.pattern->trigger(tag))
+            {
+                emit("ERR no trigger '" + tag.getText() + "' on " + describeLook(*show.pattern));
+                return;
+            }
+
+            emit("OK trigger " + words[1]);
+            return;
+        }
+
         if (command == "layers")
         {
             // Everything about every layer, for a client that attached late
@@ -2246,7 +2291,7 @@ namespace
             // a command is one at a time.
             if (words.size() < 3)
             {
-                emit("ERR layer needs a name and a command (state, states, params, param, curve)");
+                emit("ERR layer needs a name and a command (state, states, params, param, curve, trigger)");
                 return;
             }
 
@@ -2347,7 +2392,24 @@ namespace
                 return;
             }
 
-            emit("ERR layer: unknown command '" + sub + "' (state, states, params, param, curve)");
+            if (sub == "trigger")
+            {
+                if (words.size() < 4)
+                {
+                    emit("ERR layer trigger needs a name");
+                    return;
+                }
+                const ecore::GameplayTag tag(words[3]);
+                if (!pattern.trigger(tag))
+                {
+                    emit("ERR no trigger '" + tag.getText() + "' on " + describeLook(pattern));
+                    return;
+                }
+                emit("OK layer " + layer->name + " trigger " + words[3]);
+                return;
+            }
+
+            emit("ERR layer: unknown command '" + sub + "' (state, states, params, param, curve, trigger)");
             return;
         }
 

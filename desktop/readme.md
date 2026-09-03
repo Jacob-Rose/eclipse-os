@@ -997,6 +997,28 @@ for the reply and then reads has the new value and not the old one.
 Tuning is **live only**. Nothing is written to a config file behind you:
 `params dump` is how a session that found something is kept.
 
+**Triggers** are the third surface, after the knobs and the shapes: an impulse
+by tag, sent at the moment the thing it stands for happens.
+
+```
+trigger <tag>               the running look's trigger, now
+```
+
+A tag is a gameplay tag (`ecore::GameplayTag`): dotted text, `scanner.ping`,
+compared by hash, with the dots as a hierarchy so a handler can take
+`scanner` and get the family. The tags a look answers to are declared once
+beside it - `scanner_tags` in scanner_patterns.h - and the game sends the
+same spelling.
+
+A look that answers overrides `onTrigger` and does whatever an impulse means
+to it - restarts an envelope, winds its clock to the hit. The scanner's
+`scan_idle` answers to `scanner.ping`: afterglow sends it as it plays the
+scan ping, so the ring's flash and the obelisk's pulse land on the sound's
+transient instead of pacing beside it on a clock of their own, and the look
+then holds at the end of that cycle until the next ping. A tag the look does
+not answer to is an `ERR`, so a cue list naming a trigger the look lost finds
+out.
+
 ```python
 show.set_param("decay", 0.9)
 show.set_param("color", "#0040ff")
@@ -1369,6 +1391,7 @@ quit
 
 state <name>              states                 input <a|b> <on|off>
 params                    params dump            param <name> <value>
+trigger <tag>
 
 bpm <float>               beat
 midi open <spec>          midi close             midi align
@@ -1380,6 +1403,7 @@ link cmd <text>           link hello
 layers                    layer <name> state <s> [seconds]
 layer <name> states       layer <name> params [dump]
 layer <name> param <k> <v>    layer <name> curve <k> <t:v...>
+layer <name> trigger <tag>
 ```
 
 `state` and `input` need a state machine pattern; the rest work on anything.

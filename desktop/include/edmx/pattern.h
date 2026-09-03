@@ -157,6 +157,12 @@ namespace edmx
         /// patterns have no live shape worth handing to a curve editor.
         virtual void reflectCurves(eanim::CurveBag& /*bag*/) {}
 
+        /// An impulse, by tag - `trigger <tag>` on the protocol. True if the
+        /// running look answered to it; false, the default, is "no such
+        /// trigger" and the desk says so. See eanim::GeneratorHSV::onTrigger
+        /// for the look's side, and ecore::GameplayTag for what a tag is.
+        virtual bool trigger(const ecore::GameplayTag& /*tag*/) { return false; }
+
         /// Live control, driven by the stdin protocol. Values are applied
         /// immediately so the python wrapper can nudge a running show.
         virtual void setSpeed(float value) { speed = value; }

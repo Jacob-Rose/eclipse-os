@@ -241,6 +241,17 @@ void StateMachinePattern::reflectCurves(eanim::CurveBag& bag)
     }
 }
 
+bool StateMachinePattern::trigger(const ecore::GameplayTag& tag)
+{
+    // The showing look's, like reflect(): a ping lands on what is lit. The
+    // outgoing look of a cross-fade is not told - it is on its way out.
+    if (activeIndex < generators.size() && generators[activeIndex])
+    {
+        return generators[activeIndex]->onTrigger(tag);
+    }
+    return false;
+}
+
 bool StateMachinePattern::setState(const std::string& stateName, std::string& outError)
 {
     size_t target = states.size();

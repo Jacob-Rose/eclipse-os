@@ -11,6 +11,7 @@
 
 #include "../ecore/core.h"
 #include "../ecore/hsv.h"
+#include "../ecore/gameplay_tag.h"
 #include "../ecore/property.h"
 #include "../ecore/tickable.h"
 
@@ -63,6 +64,31 @@ namespace eanim
         * @see eanim::CurveBag
         */
         virtual void reflectCurves(class CurveBag& /*bag*/) {}
+
+        /* @brief Something happened, now - a sound played, a tag landed.
+        *
+        * The third surface after the knobs and the shapes: an impulse, by
+        * tag. The desk sends `trigger <tag>` at the moment the game plays
+        * a sound, and a look that answers to that tag does its thing off
+        * it - restarts an envelope, re-anchors a clock - so the light is
+        * *tied* to the sound rather than running beside it on a clock of
+        * its own that happens to agree. False, the default, means this look
+        * has no such trigger, which the desk reports rather than swallows.
+        *
+        * The tag is a GameplayTag - dotted text compared by hash - and the
+        * ones a look answers to are declared once beside it, not spelled at
+        * the compare site:
+        *
+        *     namespace my_tags { inline const GameplayTag Hit{"my.hit"}; }
+        *
+        *     bool MyLook::onTrigger(const GameplayTag& tag)
+        *     {
+        *         if (tag != my_tags::Hit) return false;
+        *         envelope.trigger();
+        *         return true;
+        *     }
+        */
+        virtual bool onTrigger(const GameplayTag& /*tag*/) { return false; }
     };
 
 
