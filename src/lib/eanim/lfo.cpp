@@ -19,7 +19,12 @@ LFO::LFO(float inSpeed, float inWidth) : speed(inSpeed), width(inWidth)
 
 }
 
-void LFO::tick(float deltaTime) 
+void LFO::reflectState(ecore::PropertyBag& bag, const std::string& prefix)
+{
+    bag.addState((prefix + "offset").c_str(), currentOffset);
+}
+
+void LFO::tick(float deltaTime)
 {
     currentOffset += deltaTime * speed;
 }

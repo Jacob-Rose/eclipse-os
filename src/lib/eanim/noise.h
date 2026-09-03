@@ -5,6 +5,10 @@
 
 #pragma once
 
+#include <string>
+
+#include "../ecore/property.h"
+
 #include <list>
 
 #include "../external/FastNoiseLite.h"
@@ -42,7 +46,23 @@ namespace eanim
         float timeScale = 1.0f;
 
         FastNoiseLite noise;
+
+        /// What makes this field this field: its seed, drawn at random when
+        /// it was built, and its clock - as `<prefix>seed` and `<prefix>time`,
+        /// so a copy of the look elsewhere can be put at the same picture.
+        /// The rest (frequency, type, scale) is the look's own constants and
+        /// travels in its code. @see eanim::GeneratorHSV::reflectState
+        void reflectState(ecore::PropertyBag& bag, const std::string& prefix);
+
+        void setSeed(int inSeed);
+        int getSeed() const { return seed; }
+        float getCurrentTime() const { return currentTime; }
+
     private:
         float currentTime;
+        int seed{0};
+        /// the seed as the bag sees it: a float, applied back through
+        /// setSeed when a state lands. rand() fits a float exactly.
+        float seedState{0.0f};
     };
 }

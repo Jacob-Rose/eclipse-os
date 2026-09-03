@@ -54,9 +54,26 @@ namespace obelisk
         virtual void tick(float deltaTime) override;
         virtual bool handleCommand(string msg) override;
 
+        /// Under a desk's takeover the showing look keeps time without
+        /// drawing: the desk is simulating it from a `sim` answer, and a
+        /// handback should land on the picture the desk was showing, not on
+        /// the frame the look was paused at. See State_GenericHSV::tickClocks.
+        virtual void tickWhileLinked(float deltaTime) override;
+
+        /// The look that is showing, by the name a `state` or `sim` line
+        /// uses. Empty between states.
+        std::string activeLookName() const;
+        State_GenericHSV* activeLook() const;
+
     protected:
         /// A line back to whoever is on the other end of the link.
         void say(const string& line);
+
+        /// Every state by its cue name - the ambient looks under their
+        /// aliases, the scanner looks under afterglow's tags - and the
+        /// reverse for naming the active one. What `state`, `states` and
+        /// `sim` all read.
+        std::map<std::string, shared_ptr<State_GenericHSV>> looksByName;
 
         std::unique_ptr<StateMachine_GenericHSV> stateMachine{ nullptr };
         std::unique_ptr<StateManager> stateManager{ nullptr };

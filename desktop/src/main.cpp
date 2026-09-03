@@ -40,11 +40,13 @@
 // The relic's own device layer, built for the host so --link-selftest can drive
 // the code the sculpture actually runs. Nothing else here touches it.
 #include "relics/obelisk/obelisk.h"
+#include "relics/obelisk/state_obelisk.h"
 
 #include "edmx/beat_clock.h"
 #include "edmx/beat_trigger.h"
 #include "edmx/config.h"
 #include "edmx/dmx_output.h"
+#include "edmx/relic_shadow.h"
 #include "edmx/fixture.h"
 #if !defined(_WIN32)
 #  include "edmx/ftdi_dmx.h"
@@ -638,6 +640,145 @@ namespace
                 }
                 check("firmware: its own look is running again", lit > 0 ? 1 : 0, 1);
             }
+
+        }
+
+        // ---- the shadow: the relic's look, re-run here from its answer -----
+        //
+        // `sim` names the look and its clocks; a RelicShadow spawns the same
+        // class, applies them, and draws. Pixel for pixel the same picture is
+        // the whole promise - it is what lets a desk compose over the
+        // sculpture without a pixel coming back up the cable. A fresh core:
+        // the one above was cued to theater and is mid cross-fade, and a
+        // blend of two looks is not what `sim` describes.
+        {
+            obelisk::ObeliskCore core;
+            LoopbackTransport wire;
+            core.getLink().setTransport(&wire);
+            core.runTick();
+            core.runTick();
+
+            constexpr uint16_t kObelisk = 344;
+            const eio::HSVStrip* strip = nullptr;
+            if (core.getIO())
+            {
+                auto found = core.getIO()->strips.find(0);
+                if (found != core.getIO()->strips.end())
+                {
+                    strip = found->second.get();
+                }
+            }
+
+            wire.said.clear();
+            core.handleCommand("sim");
+            std::string simLine;
+            for (const std::string& said : wire.said)
+            {
+                if (said.rfind("EOSLINK sim ", 0) == 0)
+                {
+                    simLine = said;
+                }
+            }
+            check("sim: the relic answered", simLine.empty() ? 0 : 1, 1);
+            check("sim: it names seasons", simLine.rfind("EOSLINK sim seasons noise.seed=", 0) == 0 ? 1 : 0, 1);
+            check("sim: with its clock", simLine.find(" noise.time=") != std::string::npos ? 1 : 0, 1);
+
+            RelicShadow shadow;
+            std::string shadowError;
+            check("shadow: nothing without a profile",
+                  shadow.applySim("seasons noise.time=1", shadowError) ? 1 : 0, 0);
+            check("shadow: the obelisk has one", findShadowProfile("obelisk") != nullptr ? 1 : 0, 1);
+            check("shadow: a stranger does not", findShadowProfile("whiteboard") != nullptr ? 1 : 0, 0);
+            shadow.setProfile(findShadowProfile("obelisk"));
+            check("shadow: spawned from the answer",
+                  shadow.applySim(simLine.substr(std::string("EOSLINK sim ").size()), shadowError) ? 1 : 0, 1);
+            check("shadow: is seasons", shadow.getLookName() == "seasons" ? 1 : 0, 1);
+            check("shadow: is the obelisk's length", shadow.pixelCount(), kObelisk);
+
+            if (strip)
+            {
+                int different = 0;
+                const std::vector<ecore::HSV>& theirs = const_cast<eio::HSVStrip*>(strip)->getStripHSV();
+                for (uint16_t i = 0; i < kObelisk && i < theirs.size(); ++i)
+                {
+                    const ecore::HSV mine = shadow.colorAt(i);
+                    if (mine.getHueAs16() != theirs[i].getHueAs16()
+                        || mine.getSatAs8() != theirs[i].getSatAs8()
+                        || mine.getValAs8() != theirs[i].getValAs8())
+                    {
+                        ++different;
+                    }
+                }
+                check("shadow: every pixel matches the relic", different, 0);
+            }
+
+            // Both tick the same synthetic delta and still agree: the parity
+            // is in the code, not in the moment of the answer.
+            {
+                State_GenericHSV* relicLook = core.activeLook();
+                check("sim: the relic knows its active look", relicLook ? 1 : 0, 1);
+                if (relicLook)
+                {
+                    relicLook->tickClocks(1.5f);
+                }
+                shadow.tick(1.5f);
+                ecore::PropertyBag theirs;
+                if (relicLook)
+                {
+                    relicLook->reflectState(theirs);
+                }
+                check("sim: clocks agree after a tick",
+                      ecore::serializeState(theirs) == shadow.describeState() ? 1 : 0, 1);
+            }
+
+            // `sim <look> k=v` the other way: the desk puts the relic where
+            // its copy is.
+            wire.said.clear();
+            core.handleCommand("sim theater lfo.offset=2.5 palette.offset=0.25");
+            check("sim: set switched the look", core.activeLookName() == "theater" ? 1 : 0, 1);
+            {
+                ecore::PropertyBag bag;
+                if (State_GenericHSV* look = core.activeLook())
+                {
+                    look->reflectState(bag);
+                }
+                check("sim: set landed the clocks",
+                      ecore::serializeState(bag) == "lfo.offset=2.5 palette.offset=0.25" ? 1 : 0, 1);
+            }
+
+            // A look this desk cannot build is reported, not guessed at.
+            check("shadow: refuses a scanner tag",
+                  shadow.applySim("scan_idle time=1.0", shadowError) ? 1 : 0, 0);
+            check("shadow: and is cleared", shadow.isLive() ? 1 : 0, 0);
+        }
+
+        // ---- reflectState: a look's clocks as text, and back ---------------
+        {
+            Pattern_Obelisk_FourSeasons a;
+            a.tick(3.25f);
+            ecore::PropertyBag bagA;
+            a.reflectState(bagA);
+            const std::string text = ecore::serializeState(bagA);
+            check("reflect: seasons names its seed and clock",
+                  (text.rfind("noise.seed=", 0) == 0 && text.find(" noise.time=") != std::string::npos) ? 1 : 0, 1);
+
+            Pattern_Obelisk_FourSeasons b;
+            ecore::PropertyBag bagB;
+            b.reflectState(bagB);
+            check("reflect: both values applied", ecore::applyState(bagB, text), 2);
+            check("reflect: the seed landed", a.coreNoise.getSeed() == b.coreNoise.getSeed() ? 1 : 0, 1);
+            check("reflect: the clock landed",
+                  std::fabs(a.coreNoise.getCurrentTime() - b.coreNoise.getCurrentTime()) < 1e-3f ? 1 : 0, 1);
+
+            // unknown names and junk are skipped, the rest lands
+            check("reflect: junk skipped", ecore::applyState(bagB, "nope=1 noise.time=x noise.time=7.5 =3"), 1);
+            check("reflect: last value wins", std::fabs(b.coreNoise.getCurrentTime() - 7.5f) < 1e-3f ? 1 : 0, 1);
+
+            // a look with no clocks says nothing
+            scanner::Pattern_Scanner_Solid solid(ecore::HSV(0.0f, 0.0f, 0.0f));
+            ecore::PropertyBag empty;
+            solid.reflectState(empty);
+            check("reflect: a scanner look has its one clock", static_cast<long long>(empty.size()), 1);
         }
 
         emit(failures == 0 ? "SELFTEST PASS" : "SELFTEST FAILURES " + std::to_string(failures));
@@ -1177,6 +1318,22 @@ namespace
         /// sculpture plugged in mid-show joins the show at its current look
         /// instead of sitting in its own idle until the next transition.
         std::string lastCue;
+
+        /// The linked relic's own look, running here in step with it - what
+        /// a look that joins the sculpture composes over. Spawned from the
+        /// relic's answer to `sim`; see edmx::RelicShadow. One, because the
+        /// show has one sculpture with a look of its own; a second would
+        /// want a shadow per relic device.
+        RelicShadow shadow;
+
+        /// A `link take` waiting for the shadow to be live before the first
+        /// frame goes, so the takeover carries the relic's own picture rather
+        /// than a cut to black. 0 when no take is pending.
+        double takeAskedAt{0.0};
+        /// The next moment to ask the relic where its clocks are, while
+        /// streaming: two clocks drift, and a nudge every few seconds keeps
+        /// the shadow within a frame of the sculpture.
+        double nextSimAskAt{0.0};
 
         /// A second pattern on a few named fixtures, rendered over the show
         /// each frame - the UV par with its own off / flash / on machine
@@ -1923,12 +2080,43 @@ namespace
 
             if (words.size() < 2)
             {
-                emit("ERR link needs pixels, cue, release, hello, cmd or bootsel");
+                emit("ERR link needs pixels, cue, take, release, sim, hello, cmd or bootsel");
                 return;
             }
 
             std::string error;
             const std::string& what = words[1];
+
+            // `link take`: ask the relic where its look is, and start the
+            // stream once the shadow of it is live (or has had its chance) -
+            // the frame loop finishes this. `link sim` asks on its own, to
+            // spawn or re-sync the shadow.
+            if (what == "take" || what == "sim")
+            {
+                for (RelicUsbOutput* relic : relics)
+                {
+                    if (what == "take" && relic->getMode() == RelicUsbOutput::Mode::Cue)
+                    {
+                        emit("ERR link take: the relic is in cue mode; `link pixels` first");
+                        return;
+                    }
+                    if (!relic->sendCommand("sim", error))
+                    {
+                        emit("ERR link " + error);
+                        return;
+                    }
+                }
+                if (what == "take")
+                {
+                    show.takeAskedAt = nowSeconds();
+                    emit("OK link take (waiting for the relic's sim)");
+                }
+                else
+                {
+                    emit("OK link sim");
+                }
+                return;
+            }
 
             if (what == "pixels" || what == "cue")
             {
@@ -1951,6 +2139,7 @@ namespace
 
             if (what == "release")
             {
+                show.takeAskedAt = 0.0;
                 for (RelicUsbOutput* relic : relics)
                 {
                     if (!relic->release(error))
@@ -3105,6 +3294,10 @@ int main(int argc, char** argv)
         if (device.output)
         {
             device.output->setUniverseLength(config.fixtures.highestChannel());
+            if (RelicUsbOutput* relic = device.output->asRelicLink())
+            {
+                relic->setStartReleased(config.output.start == "released");
+            }
             if (!device.output->open(error))
             {
                 device.output.reset();
@@ -3396,6 +3589,12 @@ int main(int argc, char** argv)
         // and the truss fall out of step - see edmx/beat_trigger.h.
         sharedTriggerRack().tick(nowSeconds());
 
+        // The sculpture's own look, beside the show, for the looks that
+        // compose over it. Ticked first so a sample this frame is this
+        // frame's picture.
+        show.shadow.tick(deltaTime);
+        show.pattern->setUnderlay(show.shadow.isLive() ? &show.shadow : nullptr);
+
         show.pattern->tick(deltaTime);
         show.pattern->render(show.context, show.colors);
 
@@ -3560,6 +3759,66 @@ int main(int argc, char** argv)
             {
                 // Named, because two sculptures on two cables both talk.
                 emit("RELIC " + device.name() + " " + said);
+
+                // Who it is decides what can be shadowed: the profile is
+                // picked from the Hello, and a relic with none is said so
+                // once, here, rather than at every take.
+                static const std::string kHello = "EOSLINK hello ";
+                if (said.compare(0, kHello.size(), kHello) == 0)
+                {
+                    std::string identity = said.substr(kHello.size());
+                    const size_t space = identity.find(' ');
+                    if (space != std::string::npos)
+                    {
+                        identity = identity.substr(0, space);
+                    }
+                    const RelicShadowProfile* profile = findShadowProfile(identity);
+                    show.shadow.setProfile(profile);
+                    if (profile == nullptr)
+                    {
+                        emit("WARN shadow: no profile for a relic called '" + identity
+                           + "'; a take will stream over black");
+                    }
+                }
+
+                // Its look and its clocks: the shadow spawns or re-syncs.
+                // Said once when the look changes; a re-sync is silent.
+                static const std::string kSim = "EOSLINK sim ";
+                if (said.compare(0, kSim.size(), kSim) == 0)
+                {
+                    const std::string before = show.shadow.getLookName();
+                    std::string error;
+                    if (!show.shadow.applySim(said.substr(kSim.size()), error))
+                    {
+                        emit("WARN shadow: " + error);
+                    }
+                    else if (show.shadow.getLookName() != before)
+                    {
+                        emit("SHADOW " + device.name() + " " + show.shadow.getLookName()
+                           + " " + show.shadow.describeState());
+                    }
+                }
+            }
+
+            // A take waiting on the shadow: the first frame is the takeover,
+            // and it should carry the relic's own picture. A relic that never
+            // answers `sim` is on older firmware; after a moment the stream
+            // starts anyway, from whatever the look draws over black.
+            if (show.takeAskedAt > 0.0 && !relic->isStreaming()
+                && (show.shadow.isLive() || frameSeconds - show.takeAskedAt > 0.75))
+            {
+                relic->take();
+                show.takeAskedAt = 0.0;
+                show.nextSimAskAt = frameSeconds + 5.0;
+                emit(std::string("LINK ") + device.name() + " streaming"
+                   + (show.shadow.isLive() ? " over " + show.shadow.getLookName() : " (no shadow)"));
+            }
+
+            if (relic->isStreaming() && show.shadow.isLive() && frameSeconds >= show.nextSimAskAt)
+            {
+                std::string ignored;
+                relic->sendCommand("sim", ignored);
+                show.nextSimAskAt = frameSeconds + 5.0;
             }
         }
 

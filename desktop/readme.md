@@ -1397,8 +1397,9 @@ bpm <float>               beat
 midi open <spec>          midi close             midi align
 midi free-run <on|off>    midi monitor <on|off>  midi list / midi status
 
-link pixels               link cue               link release
-link cmd <text>           link hello
+link pixels               link cue               link take
+link release              link sim               link cmd <text>
+link hello
 
 layers                    layer <name> state <s> [seconds]
 layer <name> states       layer <name> params [dump]
@@ -1645,6 +1646,8 @@ claim the rig is a DMX one.
 
 **relic_usb** (`"type": "relic_usb"`, or `relic_usb_cue`) is not a widget at all
 — it is an eclipse-os relic on its own USB cable. See [over usb](#over-usb).
+`"start": "released"` opens the cable but leaves the sculpture on its own looks
+until a `link take`; the default, `"streaming"`, takes it on the first frame.
 
 ## Over USB
 
@@ -1714,7 +1717,62 @@ that ends should end, not fade out on a timeout.
 
 While the desk owns the pixels the relic skips its own rendering entirely rather
 than computing a look and overwriting it. On a 344-pixel relic that look is a
-Perlin field per pixel per frame, which is the expensive half of a tick.
+Perlin field per pixel per frame, which is the expensive half of a tick. Its
+*clocks* keep moving, though (`ObeliskCore::tickWhileLinked`) — see below for
+why that matters.
+
+### joining rather than seizing: the shadow
+
+A takeover has two edges, and left to themselves both are cuts: the sculpture
+snaps from its own look to the desk's on the first frame, and back on the
+release. Sending the sculpture's picture back up the cable to blend against
+would cost more than the picture going down it. So instead the desk asks the
+relic *what it is doing* and runs the same thing itself.
+
+```
+link take            # -> sim, then the stream starts once the shadow is live
+RELIC obelisk EOSLINK sim seasons noise.seed=41 noise.time=812.4
+SHADOW obelisk seasons noise.seed=41 noise.time=812.4
+LINK obelisk streaming over seasons
+```
+
+Three pieces:
+
+- **`reflectState`.** Beside `reflect` (the knobs) and `reflectCurves` (the
+  shapes), a look can hand out its *clocks*: `GeneratorHSV::reflectState`
+  registers them with `PropertyBag::addState`, and `ecore::serializeState` /
+  `applyState` turn the bag into `name=value` text and back. The primitives
+  do the work — a `PerlinNoiseGenerator2D` names its seed and its time, an
+  `LFO` its phase — so a look is one line per field. Optional: a look with no
+  clocks says nothing, and one that has clocks and says nothing simply cannot
+  be shadowed.
+- **`sim`.** A relic command. Bare, it answers `EOSLINK sim <look> <state>`
+  for whatever is showing. `sim <look> k=v ...` sets it, with no blend — the
+  desk putting the sculpture where its own copy is.
+- **`RelicShadow`.** On the desk: spawns the named look on the relic's own IO
+  layer (the same `ObeliskIO` the firmware builds, compiled for the host, so
+  the geometry is the sculpture's and not the show's patch of it), applies
+  the state, and ticks it beside the show. It is an `eanim::Underlay`: any
+  look that wants to compose over the sculpture samples it by node. Which
+  relics can be shadowed is a `RelicShadowProfile` each — identity, node
+  space, an IO factory, a look factory — registered in
+  `relic_shadow_profiles.cpp`; the profile is picked from the relic's Hello.
+  The obelisk has one; a stranger gets a `WARN` and a take from black.
+
+`link take` sends `sim` and waits for the shadow before the first frame, so
+the takeover *is* the sculpture's own picture; then it is the showing look's
+business what happens. The scanner's idle look composes over the underlay:
+each ping's pulse claims the tower row by row as it climbs (its `wake` curve),
+the claim eases off as the next ping comes due, and when the pings stop the
+tower is the sculpture's own again — at which point `link release` is a
+handback nobody sees, because the relic's clocks kept time underneath and
+its next frame is the one the desk just sent. Every five seconds while
+streaming the desk re-asks `sim` and nudges the shadow, since two clocks are
+two clocks.
+
+Parity — the shadow drawing the same pixel as the relic, given the same
+answer — is checked by `--link-selftest` against the real `ObeliskCore`, pixel
+for pixel.
 
 ### the wire
 

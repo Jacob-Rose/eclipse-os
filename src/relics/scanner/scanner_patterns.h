@@ -84,6 +84,10 @@ namespace scanner
         virtual void reset() { timeActive = 0.0f; }
         virtual void tick(float deltaTime) override { timeActive += deltaTime; }
 
+        /// Every scanner look runs on this one clock; a look with more
+        /// (particles, a pool) adds its own on top.
+        virtual void reflectState(ecore::PropertyBag& bag) override { bag.addState("time", timeActive); }
+
     protected:
         /* @brief Where this node sits along its strip, 0..1.
         *
@@ -209,6 +213,20 @@ namespace scanner
         /// shows from the moment the pulse reaches it. Its first key is the
         /// dark a row sits in before its turn, its last the dark after.
         eanim::AutomationCurve pulseCurve;
+
+        /// how much of the tower this look *claims*, on the cycle clock: 1
+        /// while the pulse is fresh, easing back to 0 as the next ping comes
+        /// due. A row only counts once the pulse has reached it. So over an
+        /// underlay (the obelisk's own look, simulated on the desk - see
+        /// eanim::Underlay) the first ping takes the tower row by row as the
+        /// band climbs, the look gives way again before each ping, and when
+        /// the pings stop the tower is the sculpture's own again. Without
+        /// an underlay it changes nothing: the look is over black.
+        eanim::AutomationCurve wakeCurve;
+
+        /// how far into a cycle a row has been claimed by, once the pulse
+        /// has arrived - the leading edge of the wake, in cycles
+        float wakeRise = 0.04f;
 
         /// when in the cycle the pulse leaves the foot - the breath curve's
         /// peak, so it leaves as the ring flashes

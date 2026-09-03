@@ -63,6 +63,7 @@ public:
 
     virtual void tick(float deltaTime) override;
     virtual void render(HSVStripNode* inNode, HSV& inOutColor) const override;
+    virtual void reflectState(ecore::PropertyBag& bag) override;
 };
 
 
@@ -104,6 +105,7 @@ public:
     virtual void tick(float deltaTime) override;
     virtual void render(HSVStripNode* inNode, HSV& inOutColor) const override;
     virtual void reflect(ecore::PropertyBag& bag) override;
+    virtual void reflectState(ecore::PropertyBag& bag) override;
 };
 
 class Pattern_Obelisk_Theater : public GeneratorHSV 
@@ -119,4 +121,5 @@ public:
 
     virtual void tick(float deltaTIme) override;
     virtual void render(HSVStripNode* inNode, HSV& inOutColor) const override;
+    virtual void reflectState(ecore::PropertyBag& bag) override;
 };

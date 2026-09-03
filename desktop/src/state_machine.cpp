@@ -141,6 +141,7 @@ void StateMachinePattern::ensureBuilt(const PatternContext& context)
         manager->addState(state);
         instances.push_back(state);
         generators.push_back(generator);
+        generator->setUnderlay(underlay);
     }
 
     if (!instances.empty())
@@ -151,6 +152,18 @@ void StateMachinePattern::ensureBuilt(const PatternContext& context)
         // StateMachine::tick dereferences the active state unconditionally.
         machine->setActiveState(instances[activeIndex]);
         machine->init();
+    }
+}
+
+void StateMachinePattern::setUnderlay(const eanim::Underlay* inUnderlay)
+{
+    underlay = inUnderlay;
+    for (const std::shared_ptr<eanim::GeneratorHSV>& generator : generators)
+    {
+        if (generator)
+        {
+            generator->setUnderlay(underlay);
+        }
     }
 }
 
@@ -579,6 +592,15 @@ std::unique_ptr<StateMachinePattern> edmx::makeGenericStateMachine()
     CoordFrame frame;
     return std::unique_ptr<StateMachinePattern>(new StateMachinePattern(
         "generic", std::move(states), 0, frame, 0.5f));
+}
+
+std::shared_ptr<eanim::GeneratorHSV> edmx::makeObeliskLook(const std::string& name)
+{
+    if (name == "seasons" || name == "main") return std::make_shared<Pattern_Obelisk_FourSeasons>();
+    if (name == "theater")                   return std::make_shared<Pattern_Obelisk_Theater>();
+    if (name == "mono" || name == "test")    return std::make_shared<Pattern_Obelisk_Monocolor>();
+    if (name == "blobs")                     return std::make_shared<Pattern_Obelisk_Blobs>();
+    return nullptr;
 }
 
 std::unique_ptr<StateMachinePattern> edmx::makeObeliskStateMachine()

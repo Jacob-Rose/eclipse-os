@@ -121,7 +121,14 @@ ObeliskCore::ObeliskCore() : RelicCore()
         state->init();
         stateManager->addState(state);
         scannerStates[name] = state;
+        looksByName[name] = state;
     };
+
+    // The ambient looks under the names a cue uses for them; `state` also
+    // takes the aliases (main, test) below.
+    looksByName["seasons"] = mainPatternState;
+    looksByName["theater"] = theaterPatternState;
+    looksByName["mono"]    = testPatternState;
 
     using namespace scanner;
 
@@ -191,6 +198,49 @@ void obelisk::ObeliskCore::tick(float deltaTime)
     stateMachine->tick(deltaTime);
 
     stateChangeTimer.tick(deltaTime);
+}
+
+void obelisk::ObeliskCore::tickWhileLinked(float deltaTime)
+{
+    // Clocks only. The nodes are the desk's for now, and a look rendered
+    // here would be overwritten by its next frame - but the look's *time*
+    // must keep moving, or the desk's copy runs ahead of it and the handback
+    // jumps. One generator tick: the noise field adds to its clock and that
+    // is all.
+    if (State_GenericHSV* look = activeLook())
+    {
+        look->tickClocks(deltaTime);
+    }
+}
+
+State_GenericHSV* obelisk::ObeliskCore::activeLook() const
+{
+    const shared_ptr<State> active = stateMachine ? stateMachine->getActiveState() : nullptr;
+    if (!active)
+    {
+        return nullptr;
+    }
+    for (const auto& entry : looksByName)
+    {
+        if (entry.second == active)
+        {
+            return entry.second.get();
+        }
+    }
+    return nullptr;
+}
+
+std::string obelisk::ObeliskCore::activeLookName() const
+{
+    const shared_ptr<State> active = stateMachine ? stateMachine->getActiveState() : nullptr;
+    for (const auto& entry : looksByName)
+    {
+        if (entry.second == active)
+        {
+            return entry.first;
+        }
+    }
+    return std::string();
 }
 
 void obelisk::ObeliskCore::say(const string& line)
@@ -271,6 +321,59 @@ bool obelisk::ObeliskCore::handleCommand(string msg)
         }
 
         say("EOSLINK unknown state " + wanted);
+        return true;
+    }
+
+    // `sim` - what is showing and where its clocks are, as one line a desk
+    // can spawn a copy from:
+    //
+    //   EOSLINK sim seasons noise.time=812.4000
+    //
+    // and `sim <name> [k=v ...]` sets it: that look, at that state, with no
+    // blend - the desk putting the sculpture where its own copy is. Either
+    // way the answer is the state as it now stands. See
+    // GeneratorHSV::reflectState for what a look puts in it.
+    if (msg == "sim" || msg.rfind("sim ", 0) == 0)
+    {
+        if (msg.size() > 4)
+        {
+            string wanted = msg.substr(4);
+            string values;
+            const size_t space = wanted.find(' ');
+            if (space != string::npos)
+            {
+                values = wanted.substr(space + 1);
+                wanted = wanted.substr(0, space);
+            }
+            if (wanted == "main") wanted = "seasons";
+            if (wanted == "test") wanted = "mono";
+
+            auto it = looksByName.find(wanted);
+            if (it == looksByName.end())
+            {
+                say("EOSLINK unknown state " + wanted);
+                return true;
+            }
+            if (it->second != stateMachine->getActiveState())
+            {
+                stateMachine->setActiveState(it->second);
+            }
+            if (!values.empty())
+            {
+                ecore::PropertyBag bag;
+                it->second->reflectState(bag);
+                ecore::applyState(bag, values);
+            }
+        }
+
+        State_GenericHSV* look = activeLook();
+        ecore::PropertyBag bag;
+        if (look)
+        {
+            look->reflectState(bag);
+        }
+        const std::string state = ecore::serializeState(bag);
+        say("EOSLINK sim " + activeLookName() + (state.empty() ? "" : " " + state));
         return true;
     }
 

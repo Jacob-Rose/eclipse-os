@@ -44,6 +44,12 @@ namespace edmx
         int baud{115200};
         float fps{40.0f};               ///< DMX refresh rate; 40 is the spec's max
         int consoleChannels{12};        ///< how many channels the console output prints
+
+        /// relic_usb only: "streaming" (the default) takes the relic's pixels
+        /// on the first frame; "released" opens the cable but leaves the
+        /// sculpture on its own looks until a `link take`. For a show that
+        /// wants to join the sculpture rather than seize it.
+        std::string start{"streaming"};
     };
 
     struct MasterConfig

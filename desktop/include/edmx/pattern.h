@@ -140,6 +140,12 @@ namespace edmx
         /// there is no reason for the two to diverge.
         virtual class StateMachinePattern* asStateMachine() { return nullptr; }
 
+        /// What is showing underneath, on a relic the show has taken over -
+        /// see eanim::Underlay. Null when nothing is. A pattern that composes
+        /// looks hands it to them; the default keeps nothing, for a pattern
+        /// with no looks that could use it.
+        virtual void setUnderlay(const eanim::Underlay* /*underlay*/) {}
+
         /// The knobs this pattern offers, gathered fresh on every call.
         ///
         /// Fresh, and never cached, because a PropertyBag holds pointers into
