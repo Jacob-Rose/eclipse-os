@@ -218,8 +218,9 @@ namespace scanner
         /// while the pulse is fresh, easing back to 0 as the next ping comes
         /// due. A row only counts once the pulse has reached it. So over an
         /// underlay (the obelisk's own look, simulated on the desk - see
-        /// eanim::Underlay) the first ping takes the tower row by row as the
-        /// band climbs, the look gives way again before each ping, and when
+        /// eanim::Underlay) the scan line climbs the tower leaving darkness
+        /// behind it, as if it took the energy out of the sculpture's own
+        /// colour, which then slowly comes back - until the next ping. When
         /// the pings stop the tower is the sculpture's own again. Without
         /// an underlay it changes nothing: the look is over black.
         eanim::AutomationCurve wakeCurve;

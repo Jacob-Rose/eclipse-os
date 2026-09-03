@@ -155,7 +155,7 @@ Pattern_Scanner_ScanIdle::Pattern_Scanner_ScanIdle()
     // where the clock waits for it (see render): the underneath is fully
     // back at exactly the moment a new pulse would start claiming again
     wakeCurve.addKey(0.0f,  1.0f);
-    wakeCurve.addKey(0.55f, 1.0f);
+    wakeCurve.addKey(0.3f,  1.0f);
     wakeCurve.addKey(1.0f,  0.0f, easing_functions::EaseInOutSine);
 }
 
@@ -214,12 +214,14 @@ void Pattern_Scanner_ScanIdle::render(HSVStripNode* inNode, HSV& inOutColor) con
         const float delay = spaced->v * riseCycles;
         brightness = std::max(floorLevel * breath, pulseCurve.evaluate(sinceFlash - delay));
 
-        // Over an underlay, the look only owns what the pulse has claimed.
+        // Over an underlay the scan takes energy from the tower: the line
+        // itself is the bright band, and where it has passed the row goes
+        // dark - no idle floor here, that is the tower's own colour's job -
+        // then the claim eases off (wake curve) and the sculpture's own
+        // picture comes back, until the next ping flashes it dark again.
         // `arrived` is the band reaching this row (0 before, 1 wakeRise
-        // cycles after); the wake curve is the claim easing off toward the
-        // next ping. Their product is how much of the row is ours; the rest
-        // is the sculpture's own picture, blended in the colour space the
-        // looks already cross-fade in.
+        // cycles after); the product with the wake is how much of the row
+        // is ours, blended in the colour space the looks cross-fade in.
         HSV under;
         if (underlay != nullptr && underlay->sample(inNode, under))
         {
@@ -227,7 +229,7 @@ void Pattern_Scanner_ScanIdle::render(HSVStripNode* inNode, HSV& inOutColor) con
             const float claim = arrived * wakeCurve.evaluate(clamp01(cycles));
 
             HSV look = scanColor;
-            look.setBrightnessAlpha(scanColor.getValFloat() * brightness);
+            look.setBrightnessAlpha(scanColor.getValFloat() * pulseCurve.evaluate(sinceFlash - delay));
             inOutColor = HSV::blend(under, look, claim);
             return;
         }
