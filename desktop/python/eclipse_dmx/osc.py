@@ -38,7 +38,7 @@ from __future__ import annotations
 
 import socket
 import struct
-from typing import Optional, Sequence, Tuple
+from typing import Optional, Sequence, Tuple, Union
 
 #: Where Synesthesia listens, unless its settings say otherwise.
 #:
