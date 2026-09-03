@@ -200,8 +200,11 @@ namespace scanner
     * plays the scan ping it sends `trigger scanner.ping`, and the look re-anchors
     * its cycle so the flash lands on the ping's transient - then holds at
     * the end of that cycle, dark, until the next one, so a ping longer than
-    * cycleTime never gets a second, unheard flash. Before the first ping
-    * (a desk viewer, no game) the clock free-runs as it always did.
+    * cycleTime never gets a second, unheard flash. Until the first ping it
+    * waits at that same dark end of the cycle, so entering the look never
+    * flashes on its own: the first flash is the first ping's. `wait_for_ping
+    * off` frees the clock to run from entry as it used to, for a desk with
+    * no game behind it sending pings.
     */
     class Pattern_Scanner_ScanIdle : public PatternScanner
     {
@@ -248,6 +251,12 @@ namespace scanner
         /// the pulse curve's length that has to fit inside one cycle, or the
         /// tip is still lit when the next pulse leaves the foot.
         float riseCycles = 0.5f;
+
+        /// hold dark until the first ping cues the clock: an entry is silent,
+        /// so the look shows nothing until a flash has a sound to land on.
+        /// Off, the clock runs from entry and the breath is free - a desk
+        /// with no game behind it.
+        bool waitForPing = true;
 
         /// the truss: dark while the tower idles unless trussScan is on -
         /// then a scanner along it, at sweeps per second end to end and

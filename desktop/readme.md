@@ -1015,9 +1015,11 @@ to it - restarts an envelope, winds its clock to the hit. The scanner's
 `scan_idle` answers to `scanner.ping`: afterglow sends it as it plays the
 scan ping, so the ring's flash and the obelisk's pulse land on the sound's
 transient instead of pacing beside it on a clock of their own, and the look
-then holds at the end of that cycle until the next ping. A tag the look does
-not answer to is an `ERR`, so a cue list naming a trigger the look lost finds
-out.
+then holds at the end of that cycle until the next ping. Until the first
+ping it waits at that same dark end, so entering the look never flashes on
+its own; `wait_for_ping off` frees its clock for a desk with no game behind
+it. A tag the look does not answer to is an `ERR`, so a cue list naming a
+trigger the look lost finds out.
 
 ```python
 show.set_param("decay", 0.9)

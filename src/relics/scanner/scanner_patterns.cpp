@@ -185,11 +185,17 @@ void Pattern_Scanner_ScanIdle::render(HSVStripNode* inNode, HSV& inOutColor) con
     // One clock for the whole look, counted in breath cycles: the ring rides
     // the front of it and everything else is a delay behind it. Once a ping
     // has cued it the cycle stops just short of wrapping - dark, the pulse
-    // spent - and the next ping winds it again; see onTrigger.
+    // spent - and the next ping winds it again; see onTrigger. Until the
+    // first ping it waits at that same end: an entry is silent, and the
+    // first flash is the first ping's.
     float cycles = timeActive / std::max(cycleTime, 0.01f);
     if (cued)
     {
         cycles = std::min(cycles, 1.0f - 1e-3f);
+    }
+    else if (waitForPing)
+    {
+        cycles = 1.0f - 1e-3f;
     }
     const float breath = breathCurve.evaluate(frac(cycles));
 
@@ -262,6 +268,7 @@ void Pattern_Scanner_ScanIdle::reflect(ecore::PropertyBag& bag)
     bag.add("cycle_time", cycleTime, 0.5f, 8.0f);
     bag.add("flash_phase", flashPhase, 0.0f, 1.0f);
     bag.add("rise", riseCycles, 0.05f, 1.0f);
+    bag.add("wait_for_ping", waitForPing);
     bag.add("truss_scan", trussScan);
     bag.add("sweep_rate", sweepRate, 0.0f, 3.0f);
     bag.add("sweep_width", sweepWidth, 0.05f, 1.0f);
