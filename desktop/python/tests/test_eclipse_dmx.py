@@ -1457,8 +1457,15 @@ class Mythos26(unittest.TestCase):
             for red, green, blue in frame:
                 self.assertEqual((red, green, blue), (red, red, red))
 
-        # The whole rig hits together.
-        for frame in peaks:
+        # The whole rig hits together. Checked on the full-white frames: a
+        # device renders on its own gamma when its file says so (the obelisk,
+        # at NeoPixel's 2.6, sits in this rig beside pars at the master's
+        # 2.2), and only at full white do every curve's bytes agree. A hit
+        # is full white by the look's design, so a beat with no such frame
+        # would be a beat the rig missed.
+        full = [f for f in peaks if max(f[0]) == 255]
+        self.assertTrue(full, "no frame reached full white")
+        for frame in full:
             self.assertEqual(len(set(frame)), 1)
 
         # And it comes back down in between, rather than sitting lit.
