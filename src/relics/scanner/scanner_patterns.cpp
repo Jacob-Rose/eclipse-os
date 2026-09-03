@@ -225,7 +225,11 @@ void Pattern_Scanner_ScanIdle::render(HSVStripNode* inNode, HSV& inOutColor) con
         HSV under;
         if (underlay != nullptr && underlay->sample(inNode, under))
         {
-            const float arrived = clamp01((sinceFlash - delay) / std::max(wakeRise, 1e-3f));
+            // Nothing until a ping has actually landed: before the first cue
+            // the clock free-runs and the pulse climbs on its own, and a
+            // take that arrives mid-climb would cut half the tower dark. The
+            // game fires the first ping once the obelisk is in the show.
+            const float arrived = cued ? clamp01((sinceFlash - delay) / std::max(wakeRise, 1e-3f)) : 0.0f;
             const float claim = arrived * wakeCurve.evaluate(clamp01(cycles));
 
             HSV look = scanColor;
