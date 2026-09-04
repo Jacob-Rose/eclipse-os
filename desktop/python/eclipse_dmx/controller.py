@@ -1097,6 +1097,39 @@ class ShowController:
         else:
             self.command("palette " + ",".join(palette))
 
+    # -- lamps out ---------------------------------------------------------
+    #
+    # The executable owns the port and knows nothing about what the bytes
+    # mean; see eclipse_dmx/launchpad.py for the other half. Kept this thin on
+    # purpose - a second make of controller is a new module up there and
+    # nothing at all down here.
+
+    def midi_out_open(self, spec: str) -> str:
+        """Opens a MIDI output to light a controller. Returns the port name.
+
+        Raises ShowError if there is no such port, which is the caller's cue
+        to carry on without lamps rather than to stop: a controller left in
+        the flight case must not be the reason a set does not run.
+        """
+        reply = self.command(f"midi out {spec}")
+        return reply[len("OK midi out "):].strip() if reply.startswith("OK midi out ") else ""
+
+    def midi_out_close(self) -> None:
+        self.command("midi out close")
+
+    def midi_send(self, message: Sequence[int]) -> None:
+        """One MIDI message, as bytes.
+
+        The reply is waited for. A repaint is a message or two on a state
+        change, not a per-frame stream, so there is nothing to be gained by
+        firing and forgetting - and an ERR drained unread is how a surface
+        that has quietly stopped lighting looks exactly like one that is
+        working.
+        """
+        if not message:
+            return
+        self.command("midi send " + " ".join(f"{byte & 0xFF:02X}" for byte in message))
+
     # -- tempo ------------------------------------------------------------
     #
     # The beat clock is process-wide rather than owned by a pattern, so these

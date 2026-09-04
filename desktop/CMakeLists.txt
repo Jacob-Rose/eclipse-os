@@ -178,6 +178,7 @@ add_library(edmx STATIC
     src/fixture.cpp
     src/json.cpp
     src/midi_input.cpp
+    src/midi_output.cpp
     src/mythos26.cpp
     src/pattern.cpp
     src/serial_port.cpp

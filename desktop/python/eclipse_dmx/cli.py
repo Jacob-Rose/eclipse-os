@@ -655,6 +655,7 @@ def _cmd_view(args: argparse.Namespace) -> int:
         osc_device=args.osc_device,
         osc_fixture=args.osc_fixture,
         midimap=args.midimap,
+        midi_out=args.midi_out,
         oscmap=args.oscmap,
         osc_in=args.osc_in,
         host=args.host,
@@ -879,6 +880,11 @@ def build_parser() -> argparse.ArgumentParser:
     viewer.add_argument("--midimap", metavar="FILE",
                         help="load this midi mapping file into the [m] panel "
                              "(default: midimaps/default.json beside the config, if present)")
+    viewer.add_argument("--midi-out", metavar="SPEC", dest="midi_out",
+                        help="light a controller's pads from the map: a MIDI output "
+                             "name, a fragment of one, an index or hw:C,D,S. "
+                             "`--list-midi` shows what is here. Off when not given, "
+                             "and never fatal - no controller is a set without lamps")
     _add_tempo_args(viewer)
     _add_remote_args(viewer)
     _add_osc_input_args(viewer)

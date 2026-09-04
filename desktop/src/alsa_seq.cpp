@@ -75,6 +75,54 @@ namespace
 
         return ok;
     }
+
+    /// The rawmidi table, bound out of the same library on the same terms:
+    /// all of it or none of it.
+    bool bindAllRawMidi(void* library, AlsaRawMidi& api)
+    {
+        bool ok = true;
+
+        const auto bind = [&library, &ok](auto& slot, const char* name) {
+            void* symbol = dlsym(library, name);
+            if (symbol == nullptr)
+            {
+                ok = false;
+                return;
+            }
+            slot = reinterpret_cast<typename std::remove_reference<decltype(slot)>::type>(symbol);
+        };
+
+        bind(api.open,                   "snd_rawmidi_open");
+        bind(api.close,                  "snd_rawmidi_close");
+        bind(api.write,                  "snd_rawmidi_write");
+        bind(api.drain,                  "snd_rawmidi_drain");
+        bind(api.strerror,               "snd_strerror");
+
+        bind(api.cardNext,               "snd_card_next");
+        bind(api.ctlOpen,                "snd_ctl_open");
+        bind(api.ctlClose,               "snd_ctl_close");
+        bind(api.ctlRawMidiNextDevice,   "snd_ctl_rawmidi_next_device");
+        bind(api.ctlRawMidiInfo,         "snd_ctl_rawmidi_info");
+
+        bind(api.infoMalloc,             "snd_rawmidi_info_malloc");
+        bind(api.infoFree,               "snd_rawmidi_info_free");
+        bind(api.infoSetDevice,          "snd_rawmidi_info_set_device");
+        bind(api.infoSetSubdevice,       "snd_rawmidi_info_set_subdevice");
+        bind(api.infoSetStream,          "snd_rawmidi_info_set_stream");
+        bind(api.infoGetSubdevicesCount, "snd_rawmidi_info_get_subdevices_count");
+        bind(api.infoGetName,            "snd_rawmidi_info_get_name");
+        bind(api.infoGetSubdeviceName,   "snd_rawmidi_info_get_subdevice_name");
+
+        return ok;
+    }
+
+    /// Opened once and shared by both tables. Never dlclose'd, for the reason
+    /// in AlsaSeq::get().
+    void* libraryHandle()
+    {
+        static void* library = dlopen(kLibrary, RTLD_LAZY | RTLD_LOCAL);
+        return library;
+    }
 }
 
 const AlsaSeq* AlsaSeq::get()
@@ -84,7 +132,7 @@ const AlsaSeq* AlsaSeq::get()
     // thread might still be parked inside is a crash, and the process is going
     // away anyway.
     static const AlsaSeq* loaded = []() -> const AlsaSeq* {
-        void* library = dlopen(kLibrary, RTLD_LAZY | RTLD_LOCAL);
+        void* library = libraryHandle();
         if (library == nullptr)
         {
             return nullptr;
@@ -92,6 +140,26 @@ const AlsaSeq* AlsaSeq::get()
 
         static AlsaSeq api{};
         if (!bindAll(library, api))
+        {
+            return nullptr;
+        }
+        return &api;
+    }();
+
+    return loaded;
+}
+
+const AlsaRawMidi* AlsaRawMidi::get()
+{
+    static const AlsaRawMidi* loaded = []() -> const AlsaRawMidi* {
+        void* library = libraryHandle();
+        if (library == nullptr)
+        {
+            return nullptr;
+        }
+
+        static AlsaRawMidi api{};
+        if (!bindAllRawMidi(library, api))
         {
             return nullptr;
         }

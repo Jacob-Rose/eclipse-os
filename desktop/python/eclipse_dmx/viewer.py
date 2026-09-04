@@ -36,6 +36,7 @@ from .controller import Frame, ShowController, ShowError
 from .curve_editor import CurveEditor
 from .midi_map import ActionContext, Dispatcher, MappingSet, parse_midi_line
 from .osc_input import DEFAULT_INPUT_PORT
+from .launchpad import LampPainter, programmer_mode, clear as lamp_clear
 from .midi_panel import MidiMapPanel
 from .patterns import list_patterns
 
@@ -725,6 +726,7 @@ class ViewerApp:
         osc_device: Optional[str] = None,
         osc_fixture: int = 0,
         midimap: Optional[Union[str, Path]] = None,
+        midi_out: Optional[str] = None,
         oscmap: Optional[Union[str, Path]] = None,
         osc_in: Optional[int] = None,
         host: Optional[str] = None,
@@ -856,6 +858,13 @@ class ViewerApp:
                 self._midimap_note = f"midi map: {error}"
         elif midimap:
             self._midimap_note = f"midi map: {midimap_path.name} not found; starting empty"
+        #: The lamps, when there is a controller to light. Built whatever
+        #: happens - it costs nothing without a port, and the panel edits the
+        #: same MappingSet it paints, so it must exist before the panel does.
+        self._lamps = LampPainter(self._midimap)
+        self._midi_out_wanted = (midi_out or "").strip()
+        self._lamps_open = False
+
         #: where the panel saves without asking. A --midimap that does not
         #: exist yet is still the place its mappings should land.
         self._midimap_path: Optional[Path] = (
@@ -939,6 +948,8 @@ class ViewerApp:
         # outrun by the state it is aimed at.
         if self._midimap_note:
             self._say(self._midimap_note)
+        if self._midi_out_wanted:
+            self._open_lamps(self._midi_out_wanted)
         if self._oscmap_wanted:
             self._start_osc_input()
 
@@ -2253,6 +2264,13 @@ class ViewerApp:
             self._refresh_buttons()
             self._refresh_header()
 
+        # The lamps follow the same truth as the cue buttons, from the same
+        # place - so a state changed by a pad, by a click, by a shortcut or by
+        # an OSC binding all move the surface. Called every tick rather than
+        # only on the signature above, because the map itself changes under
+        # the editor too; the painter diffs, so an unchanged surface is free.
+        self._paint_lamps()
+
         # A relic says when a takeover starts or lapses, and the note beside the
         # link buttons is where that belongs - the alternative is watching a
         # sculpture to find out whether it is still listening.
@@ -2486,6 +2504,9 @@ class ViewerApp:
         except Exception:
             pass
 
+        # Before the show goes down: the lamps talk through it.
+        self._close_lamps()
+
         # Cancel the pending redraw first. destroy() does not drop queued
         # `after` callbacks, so one would fire into a dead interpreter and
         # print a Tcl error over the top of a clean exit.
@@ -2503,6 +2524,81 @@ class ViewerApp:
         except Exception:
             pass
         self.root.destroy()
+
+    # -- lamps -------------------------------------------------------------
+
+    def _open_lamps(self, spec: str) -> None:
+        """Opens the controller's output and takes the surface.
+
+        Never fatal. A controller that is not there, a build with no libasound,
+        a port another program already holds - each of those is a set that runs
+        without lamps, which is a set that runs. The reason is said once and
+        then dropped.
+        """
+        try:
+            port = self.show.midi_out_open(spec)
+        except ShowError as error:
+            self._say(f"lamps: {error}")
+            return
+
+        try:
+            # Live mode does not accept host LED messages - see launchpad.py.
+            # Everything after this would half-work without it, which is worse
+            # than not working: it looks like a failing cable.
+            self.show.midi_send(programmer_mode(True))
+            for message in lamp_clear():
+                self.show.midi_send(message)
+        except ShowError as error:
+            self._say(f"lamps: {error}")
+            self._guard_quiet(self.show.midi_out_close)
+            return
+
+        self._lamps_open = True
+        self._lamps.forget()
+        self._say(f"lamps: {port or spec}")
+        self._paint_lamps()
+
+    def _paint_lamps(self) -> None:
+        """The surface, brought up to date. Cheap when nothing changed: the
+        painter diffs and returns no messages, so this is safe to call from
+        the pump."""
+        if not self._lamps_open:
+            return
+        try:
+            for message in self._lamps.frame(self.show.current_state):
+                self.show.midi_send(message)
+        except ShowError as error:
+            # One failed repaint closes the lamps rather than retrying thirty
+            # times a second down the wire the beat arrives on. The map still
+            # fires; only the picture of it is gone.
+            self._lamps_open = False
+            self._say(f"lamps: {error}; lamps off")
+
+    def _close_lamps(self) -> None:
+        """Dark, and back to Live mode.
+
+        The mode matters more than the darkness: Programmer mode disables the
+        controller's own Setup button, so a desk that exits without putting it
+        back leaves the box in a state its front panel cannot leave.
+        """
+        if not self._lamps_open:
+            return
+        self._lamps_open = False
+        for send in (
+            lambda: [self.show.midi_send(m) for m in lamp_clear()],
+            lambda: self.show.midi_send(programmer_mode(False)),
+            self.show.midi_out_close,
+        ):
+            self._guard_quiet(send)
+
+    @staticmethod
+    def _guard_quiet(action) -> None:
+        """Run it, and let it fail. For the way out, where the show is already
+        going down and there is nobody left to tell."""
+        try:
+            action()
+        except Exception:
+            pass
 
     def _start_osc_input(self) -> None:
         """Opens the OSC input port and binds it to this show.
@@ -2587,6 +2683,7 @@ def view(
     osc_device: Optional[str] = None,
     osc_fixture: int = 0,
     midimap: Optional[Union[str, Path]] = None,
+    midi_out: Optional[str] = None,
     oscmap: Optional[Union[str, Path]] = None,
     osc_in: Optional[int] = None,
     host: Optional[str] = None,
@@ -2606,6 +2703,7 @@ def view(
         osc_device=osc_device,
         osc_fixture=osc_fixture,
         midimap=midimap,
+        midi_out=midi_out,
         oscmap=oscmap,
         osc_in=osc_in,
         host=host,

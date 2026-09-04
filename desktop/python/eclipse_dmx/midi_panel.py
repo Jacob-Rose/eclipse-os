@@ -25,6 +25,7 @@ from typing import Callable, Dict, List, Optional
 
 from .midi_map import (
     ACTIONS,
+    Action,
     MODES,
     TRIGGER_KINDS,
     FieldSpec,
@@ -56,6 +57,22 @@ def _button(parent, text, command, **kw) -> tk.Button:
         bg=BUTTON_BG, fg=BUTTON_FG, activebackground=BUTTON_BG_ACTIVE,
         activeforeground=BUTTON_FG, relief="flat", padx=6, pady=2,
         highlightthickness=0, borderwidth=0, **kw)
+
+
+class _ActionRow:
+    """The widgets for one action block, in the order the editor drew them.
+
+    Only the variables are kept: the frames are owned by `_actions_frame` and
+    destroyed wholesale on the next rebuild, so holding them would be holding
+    references to widgets that are already gone.
+    """
+
+    __slots__ = ("action_var", "param_vars")
+
+    def __init__(self, action_var: tk.StringVar,
+                 param_vars: Dict[str, tk.StringVar]) -> None:
+        self.action_var = action_var
+        self.param_vars = param_vars
 
 
 class MidiMapPanel:
@@ -163,9 +180,9 @@ class MidiMapPanel:
             widget.bind("<Return>", lambda e: self._commit())
             return widget
 
-        def option(parent, var, choices) -> tk.OptionMenu:
+        def option(parent, var, choices, command=None) -> tk.OptionMenu:
             widget = tk.OptionMenu(parent, var, *choices,
-                                   command=lambda _v: self._commit())
+                                   command=command or (lambda _v: self._commit()))
             widget.configure(bg=BUTTON_BG, fg=BUTTON_FG, font=FONT,
                              activebackground=BUTTON_BG_ACTIVE, relief="flat",
                              highlightthickness=0, borderwidth=0, indicatoron=False,
@@ -187,6 +204,14 @@ class MidiMapPanel:
             activebackground=PANEL, activeforeground=TEXT,
             highlightthickness=0).pack(side="left", padx=4)
 
+        # The pad's colour, for a controller with lamps. A palette index
+        # rather than a swatch: the numbers are the controller's own, printed
+        # in its manual, and a colour picker here would be this desk inventing
+        # a second name for something the hardware has already named.
+        dim_label(row, "lamp").pack(side="left", padx=(6, 0))
+        self._colour_var = tk.StringVar(value="41")
+        entry(row, self._colour_var, width=4).pack(side="left", padx=2)
+
         # the trigger
         row = tk.Frame(self._editor, bg=PANEL)
         row.pack(fill="x", pady=1)
@@ -207,20 +232,21 @@ class MidiMapPanel:
         self._mode_var = tk.StringVar(value="press")
         option(row, self._mode_var, MODES).pack(side="left")
 
-        # the action, and the form it asks for
-        row = tk.Frame(self._editor, bg=PANEL)
-        row.pack(fill="x", pady=(6, 1))
-        dim_label(row, "do    ").pack(side="left")
+        # the actions, and the form each one asks for. A frame rather than a
+        # fixed row: a mapping holds a list, and the editor grows a block per
+        # entry - see _rebuild_actions.
         self._action_labels = {spec.label: key for key, spec in ACTIONS.items()}
-        self._action_var = tk.StringVar()
-        option(row, self._action_var, list(self._action_labels)).pack(side="left")
+        self._actions_frame = tk.Frame(self._editor, bg=PANEL)
+        self._actions_frame.pack(fill="x", pady=(6, 1))
+        self._action_rows: List[_ActionRow] = []
 
-        self._params_frame = tk.Frame(self._editor, bg=PANEL)
-        self._params_frame.pack(fill="x", pady=(2, 4))
-        self._param_vars: Dict[str, tk.StringVar] = {}
-        self._params_built_for: Optional[str] = None
+        row = tk.Frame(self._editor, bg=PANEL)
+        row.pack(fill="x", pady=(0, 4))
+        self._add_action_button = _button(row, "+ do", self._add_action)
+        self._add_action_button.pack(side="left")
 
         self._entry_factory = entry
+        self._option_factory = option
         self._dim_label = dim_label
 
     def _build_footer(self) -> None:
@@ -239,27 +265,64 @@ class MidiMapPanel:
                              font=FONT_SMALL, anchor="w", justify="left")
         self._did.pack(fill="x", padx=8, pady=(0, 6))
 
-    # -- the params form, drawn from the spec ------------------------------
+    # -- the action blocks, drawn from the specs ---------------------------
 
-    def _rebuild_params(self, action_key: str) -> None:
-        """One row per field the action declares. This is what makes a new
-        action registered in midi_map editable here with no edit here."""
-        for child in self._params_frame.winfo_children():
+    def _rebuild_actions(self) -> None:
+        """One block per action on the selected mapping: a chooser, the form
+        that action declares, and a way to take it off the row.
+
+        Rebuilt whole whenever the *shape* changes - an action added, removed
+        or switched to another kind - and left alone while text is typed into
+        it. Cheap enough at this size, and it means there is one code path
+        that turns a list of actions into widgets rather than one for each
+        way the list can change.
+        """
+        for child in self._actions_frame.winfo_children():
             child.destroy()
-        self._param_vars = {}
-        self._params_built_for = action_key
+        self._action_rows = []
 
-        spec = ACTIONS.get(action_key)
-        if spec is None:
+        mapping = self._selected
+        if mapping is None:
             return
-        for fld in spec.fields:
-            row = tk.Frame(self._params_frame, bg=PANEL)
-            row.pack(fill="x", pady=1)
-            self._dim_label(row, f"  {fld.label:<7}").pack(side="left")
-            var = tk.StringVar()
-            self._param_vars[fld.name] = var
-            width = 6 if fld.kind in ("int", "float") else 22
-            self._entry_factory(row, var, width=width).pack(side="left")
+
+        removable = len(mapping.actions) > 1
+        for index, action in enumerate(mapping.actions):
+            block = tk.Frame(self._actions_frame, bg=PANEL)
+            block.pack(fill="x", pady=(0, 2))
+
+            head = tk.Frame(block, bg=PANEL)
+            head.pack(fill="x", pady=1)
+            # "do" on the first, "and" on the rest: the list reads as a
+            # sentence, and the eye can find where one action stops.
+            self._dim_label(head, "do    " if index == 0 else "and   ").pack(side="left")
+
+            action_var = tk.StringVar()
+            spec = action.spec
+            action_var.set(spec.label if spec is not None else action.key)
+            self._option_factory(
+                head, action_var, list(self._action_labels),
+                command=lambda _v, i=index: self._on_action_kind(i)).pack(side="left")
+
+            if removable:
+                # Never offered on the last one. A mapping with no actions is
+                # a trigger that does nothing, which the file format does not
+                # have a way to spell - and `del` already removes the row.
+                _button(head, "−",
+                        lambda i=index: self._remove_action(i)).pack(side="right", padx=2)
+
+            param_vars: Dict[str, tk.StringVar] = {}
+            if spec is not None:
+                for fld in spec.fields:
+                    row = tk.Frame(block, bg=PANEL)
+                    row.pack(fill="x", pady=1)
+                    self._dim_label(row, f"  {fld.label:<7}").pack(side="left")
+                    var = tk.StringVar()
+                    var.set(str(action.params.get(fld.name, fld.default)))
+                    param_vars[fld.name] = var
+                    width = 6 if fld.kind in ("int", "float") else 22
+                    self._entry_factory(row, var, width=width).pack(side="left")
+
+            self._action_rows.append(_ActionRow(action_var, param_vars))
 
     # -- selection ---------------------------------------------------------
 
@@ -304,11 +367,8 @@ class MidiMapPanel:
             self._number_var.set(str(mapping.number))
             self._channel_var.set(str(mapping.channel))
             self._mode_var.set(mapping.mode)
-            spec = ACTIONS.get(mapping.action)
-            self._action_var.set(spec.label if spec else mapping.action)
-            self._rebuild_params(mapping.action)
-            for name, var in self._param_vars.items():
-                var.set(str(mapping.params.get(name, "")))
+            self._colour_var.set(str(mapping.colour))
+            self._rebuild_actions()
         finally:
             self._writing = False
 
@@ -327,24 +387,66 @@ class MidiMapPanel:
         mapping.number = self._int_of(self._number_var, mapping.number, 0, 127)
         mapping.channel = self._int_of(self._channel_var, mapping.channel, 0, 16)
         mapping.mode = self._mode_var.get()
+        mapping.colour = self._int_of(self._colour_var, mapping.colour, 0, 127)
 
-        action_key = self._action_labels.get(self._action_var.get(), mapping.action)
-        if action_key != mapping.action:
-            mapping.action = action_key
-            mapping.params = {}
-            self._rebuild_params(action_key)
-            spec = ACTIONS.get(action_key)
-            if spec is not None:
-                self._writing = True
-                try:
-                    for fld in spec.fields:
-                        self._param_vars[fld.name].set(str(fld.default))
-                finally:
-                    self._writing = False
-        for name, var in self._param_vars.items():
-            mapping.params[name] = var.get()
+        # The action blocks, back onto the row. Zipped rather than indexed
+        # because a commit can arrive from a focus-out *while* the editor is
+        # being rebuilt for another mapping - one field's worth of a stale
+        # form written into a shorter list would otherwise be an IndexError
+        # at the desk.
+        for action, row in zip(mapping.actions, self._action_rows):
+            for name, var in row.param_vars.items():
+                action.params[name] = var.get()
 
         self._mark_dirty()
+        self._refresh_list(keep_selection=True)
+
+    # -- the action list ---------------------------------------------------
+
+    def _on_action_kind(self, index: int) -> None:
+        """Another kind chosen in block `index`: a fresh action, with that
+        kind's defaults. The old parameters are dropped rather than carried,
+        because they named fields the new action does not have."""
+        mapping = self._selected
+        if mapping is None or index >= len(mapping.actions):
+            return
+        self._commit()
+        key = self._action_labels.get(self._action_rows[index].action_var.get())
+        if key is None or key == mapping.actions[index].key:
+            return
+        spec = ACTIONS.get(key)
+        defaults = {fld.name: fld.default for fld in spec.fields} if spec else {}
+        mapping.actions[index] = Action(key=key, params=defaults)
+        self._mark_dirty()
+        self._load_editor()
+        self._refresh_list(keep_selection=True)
+
+    def _add_action(self) -> None:
+        """Another thing this pad does. The whole point of the list: a cue is
+        usually a scene on the visualiser and a state on the rig."""
+        mapping = self._selected
+        if mapping is None:
+            self._say("midi map: nothing selected")
+            return
+        self._commit()
+        # `state` rather than another of whatever is already there: a second
+        # action is nearly always the other half of the desk, and a duplicate
+        # of the first is the one thing it is never going to be.
+        spec = ACTIONS.get("state")
+        defaults = {fld.name: fld.default for fld in spec.fields} if spec else {}
+        mapping.actions.append(Action(key="state", params=defaults))
+        self._mark_dirty()
+        self._load_editor()
+        self._refresh_list(keep_selection=True)
+
+    def _remove_action(self, index: int) -> None:
+        mapping = self._selected
+        if mapping is None or len(mapping.actions) <= 1:
+            return
+        self._commit()
+        del mapping.actions[index]
+        self._mark_dirty()
+        self._load_editor()
         self._refresh_list(keep_selection=True)
 
     @staticmethod
@@ -387,8 +489,14 @@ class MidiMapPanel:
         self._list.delete(0, "end")
         for mapping in self.mappings.mappings:
             dot = "●" if mapping.enabled else "○"
+            # Trigger *and* what it does: the label is whatever was typed,
+            # the trigger is the thing that cannot be seen anywhere else at a
+            # glance, and the action count is how a row that grew a second
+            # half announces itself without opening the editor.
             self._list.insert(
-                "end", f" {dot} {mapping.label}  ({mapping.describe_trigger()})")
+                "end",
+                f" {dot} {mapping.label}  {mapping.describe_trigger()}"
+                f" · {mapping.describe_actions()}")
         if keep_selection and selection:
             self._list.selection_set(selection[0])
 

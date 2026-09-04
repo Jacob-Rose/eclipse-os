@@ -199,9 +199,18 @@ binary will actually play.
 
 `[m]`, or the **midi** button, unfolds a band down the right: a list of
 bindings and a form for the selected one. A binding is a trigger, a mode and
-an action, and the action list is a registry — `syn: scene`, `rig: state`,
-`rig: look knob`, `rig: protocol line` and the rest — so a pad on a
-controller and a bass drum arriving over OSC can do the same things.
+**a list of actions**, and the actions are a registry — `syn: scene`,
+`rig: state`, `rig: look knob`, `rig: protocol line` and the rest — so a pad
+on a controller and a bass drum arriving over OSC can do the same things.
+
+**One pad does as many things as you like.** Press **+ do** and the row grows
+another action; the list runs in order, which is worth relying on — a `state`
+followed by a `param` is a knob turned on the look that state just brought
+up. This is the shape a cue actually has: the visualiser moves to a scene
+*and* the rig moves to a state, and to whoever hit the pad that is one thing,
+so it is one row rather than two bound to the same note. The **−** beside an
+action removes it; the last one stays, because a trigger that does nothing has
+no spelling in the file (use **del** to remove the row).
 
 **Nothing has to be typed to bind a pad.** Press **+ learn**, hit the pad,
 and the trigger is filled in from what arrived; then say what it should do.
@@ -221,8 +230,43 @@ Three details that are the point of it:
 
 The map is `midimaps/default.json` beside the config, or `--midimap FILE`, and
 an evening's bindings are saved on the way out rather than asked about — a set
-is not the time for a dialog. There is no shipped default: the first binding
-you learn is the file.
+is not the time for a dialog.
+
+### lighting the pads
+
+`--midi-out SPEC` names a MIDI **output** and the surface starts showing the
+map: every bound pad lit in its own colour, and the pad for the state the rig
+is actually in **pulsing**. The **lamp** box in the editor is that colour, as
+a palette index — the controller's own numbering, out of its manual, rather
+than this desk inventing a second name for a colour the hardware has named.
+
+It follows the rig, not the pad you pressed. The lamp moves off `STATE`, the
+same announcement the cue buttons follow, so a state changed from a pad, a
+click, a keyboard shortcut or an OSC binding all move it. The Synesthesia half
+has no equivalent and does not pretend to one: the visualiser never says what
+scene it is on, so a scene-only pad is lit as bound and never pulses.
+
+Three things worth knowing before switching it on:
+
+- **A Launchpad X has to be in Programmer mode to take LED messages at all.**
+  Its manual is explicit — colours are accepted "in Lighting Custom Modes (and
+  Programmer mode)" — and in Session or Note mode a host LED message is not
+  refused so much as unreliable: some pads light, some do not, which reads
+  exactly like a failing cable. The desk sends the mode SysEx on the way in.
+- **Programmer mode changes what the pads send.** The grid becomes notes
+  11–88, the top row and right column become control changes. Bindings learned
+  in a custom mode were learned against other numbers, so they will need
+  learning again — which is what **+ learn** is for.
+- **It puts the controller back on the way out.** Programmer mode disables the
+  Launchpad's own Setup button, so a desk that exited without restoring Live
+  mode would leave the box somewhere its front panel cannot get out of.
+
+Underneath, the executable knows nothing about any of this. It grew one
+generic verb — `midi out <spec>` opens a port and `midi send F0 00 20 ...`
+puts bytes on it — and every Launchpad-shaped decision lives in
+`eclipse_dmx/launchpad.py`, where it is tested with no controller plugged in.
+A second make of controller is a new module there and no C++ at all.
+`--list-midi` now lists outputs (`MIDI-OUT`) beside inputs.
 
 ### the frame stream
 
@@ -1315,6 +1359,12 @@ in, because a named port that is missing is fatal at startup and a controller
 left in the flight case must not be the reason a set does not run. Unplugged,
 the beat still arrives on `eclipse-dmx IN` exactly as before. `--midi SPEC` or
 `ECLIPSE_MIDI_PORT` moves it, `--midi ""` opens none.
+
+It names the **lamps** the same way — `--midi-out SPEC` or
+`ECLIPSE_MIDI_OUT`, defaulting to the Launchpad's *MIDI Out* port (not "MIDI
+In", which is what the device listens on). Viewer only: the pads are painted
+from the midi map and `--headless` has no map to paint from. See
+[lighting the pads](#lighting-the-pads).
 
 It also opens the audio link back from the visualiser — `--osc-in 7000`, the
 map beside the config — which `--no-osc-in` turns off and `--osc-in PORT` (or

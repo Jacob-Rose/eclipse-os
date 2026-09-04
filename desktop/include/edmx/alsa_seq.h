@@ -101,6 +101,61 @@ namespace edmx
         static const AlsaSeq* get();
     };
 
+    /// The rawmidi half of alsa-lib, loaded the same way and out of the same
+    /// library handle.
+    ///
+    /// Separate from AlsaSeq because it is a separate API answering a separate
+    /// question: the sequencer is where *applications* meet, rawmidi is where
+    /// the hardware is. Output uses this one - see midi_output.h for why - and
+    /// a machine can perfectly well have one working and not the other, so
+    /// they are refused independently rather than as one table.
+    struct AlsaRawMidi
+    {
+        // -- the connection -------------------------------------------------
+        //
+        // `in` and `out` are both out-parameters and either may be null: this
+        // rig only ever asks for the output half.
+        int  (*open)(void** in, void** out, const char* name, int mode);
+        int  (*close)(void* handle);
+        long (*write)(void* handle, const void* buffer, size_t size);
+        int  (*drain)(void* handle);
+        const char* (*strerror)(int code);
+
+        // -- enumeration -----------------------------------------------------
+        //
+        // Walked card by card, then device by device, then subdevice by
+        // subdevice - which is how a Launchpad ends up as two ports on one
+        // device, its DAW port and its MIDI port, distinguishable only by
+        // subdevice name.
+        int  (*cardNext)(int* card);
+        int  (*ctlOpen)(void** ctl, const char* name, int mode);
+        int  (*ctlClose)(void* ctl);
+        int  (*ctlRawMidiNextDevice)(void* ctl, int* device);
+        int  (*ctlRawMidiInfo)(void* ctl, void* info);
+
+        int  (*infoMalloc)(void** info);
+        void (*infoFree)(void* info);
+        void (*infoSetDevice)(void* info, unsigned int device);
+        void (*infoSetSubdevice)(void* info, unsigned int subdevice);
+        void (*infoSetStream)(void* info, int stream);
+        unsigned int (*infoGetSubdevicesCount)(const void* info);
+        const char* (*infoGetName)(const void* info);
+        const char* (*infoGetSubdeviceName)(const void* info);
+
+        /// The library, or null on a machine without it.
+        static const AlsaRawMidi* get();
+    };
+
+    namespace alsarawmidi
+    {
+        /// snd_rawmidi_stream_t. ABI, like the sequencer's constants.
+        constexpr int kStreamOutput = 1;
+
+        /// Blocking, which is what we want: a lamp repaint is a handful of
+        /// bytes and the caller is not in the render loop.
+        constexpr int kModeBlocking = 0;
+    }
+
     // alsa's own constants, restated so this compiles with no alsa headers
     // installed. They are ABI, not preference: they travel over the kernel
     // interface and cannot change.

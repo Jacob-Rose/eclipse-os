@@ -21,6 +21,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cctype>
 #include <cstring>
 #include <iostream>
 #include <memory>
@@ -50,6 +51,7 @@
 #  include "edmx/ftdi_dmx.h"
 #endif
 #include "edmx/midi_input.h"
+#include "edmx/midi_output.h"
 #include "edmx/pattern.h"
 #include "edmx/serial_port.h"
 #include "edmx/state_machine.h"
@@ -130,6 +132,8 @@ namespace
             "                            slow rates and for a clock with no start\n"
             "  midi free-run <on|off>    keep pulsing when the clock stops\n"
             "  midi monitor <on|off>     print every message arriving, to identify a mapping\n"
+            "  midi out <spec|close>     open a MIDI output to light a controller\n"
+            "  midi send <hex> [hex...]  raw bytes down it, e.g. `midi send 90 0B 05`\n"
             "  midi status               port, tempo, lock\n"
             "  link pixels               drive the relic's LEDs from here\n"
             "  link cue                  give them back; the relic runs its own looks\n"
@@ -951,6 +955,26 @@ namespace
         return words;
     }
 
+    /// Everything from `first` on, back as one space-separated string.
+    ///
+    /// Port names have spaces in them - "Launchpad X LPX MIDI Out" is four
+    /// words - and a spec taken as `words[2]` is the word "Launchpad", which
+    /// then matches two ports and refuses. Anything whose argument is a name
+    /// rather than a token wants this instead of an index into `words`.
+    std::string joinFrom(const std::vector<std::string>& words, size_t first)
+    {
+        std::string joined;
+        for (size_t index = first; index < words.size(); ++index)
+        {
+            if (!joined.empty())
+            {
+                joined += ' ';
+            }
+            joined += words[index];
+        }
+        return joined;
+    }
+
     bool parseFloatArg(const std::string& text, float& outValue)
     {
         try
@@ -1169,6 +1193,13 @@ namespace
         /// sharedBeatClock(), which is what patterns read; this is only the
         /// device feeding it.
         MidiInput midi;
+
+        /// Lamps out, when there is a controller to light. Nothing in here
+        /// knows what a pad means - see midi_output.h: the desk decides which
+        /// bytes, this only carries them. Independent of `midi` on purpose,
+        /// because they are usually not the same port and a controller with no
+        /// lamps must not cost us the beat.
+        MidiOutput midiOut;
 
         /// The last accepted `state ...` line, verbatim - blend seconds and
         /// all. Replayed to a cue-mode relic the moment it comes online, so a
@@ -1780,7 +1811,20 @@ namespace
                + (address.empty() ? "" : ("\t" + address))
                + (MidiInput::isIgnored(port.name, ignore) ? "\tignored" : ""));
         }
-        emit("OK " + std::to_string(ports.size()) + " midi inputs");
+
+        // Outputs too, on their own prefix. A separate list with its own
+        // indices, because they are a separate namespace - "0" as an input is
+        // not "0" as an output - and one list of both would invite exactly
+        // that confusion at a load-in.
+        const std::vector<MidiOutPortInfo> outs = MidiOutput::enumeratePorts();
+        for (const MidiOutPortInfo& port : outs)
+        {
+            emit("MIDI-OUT " + std::to_string(port.index) + "\t" + port.name
+               + "\t" + port.address);
+        }
+
+        emit("OK " + std::to_string(ports.size()) + " midi inputs, "
+           + std::to_string(outs.size()) + " outputs");
     }
 
     /// Everything the config says about how to read the cable, in one place.
@@ -2462,6 +2506,7 @@ namespace
                 emit("MIDI-STATUS " + show.midi.describe() + " "
                    + sharedBeatClock().describe(nowSeconds()) + " "
                    + sharedAudioLevel().describe(nowSeconds()));
+                emit("MIDI-OUT-STATUS " + show.midiOut.describe());
                 emit("OK midi status");
                 return;
             }
@@ -2477,7 +2522,7 @@ namespace
 
             if (action == "open")
             {
-                const std::string spec = (words.size() >= 3) ? words[2] : "auto";
+                const std::string spec = (words.size() >= 3) ? joinFrom(words, 2) : "auto";
 
                 std::string midiError;
                 if (!show.midi.open(spec, show.config.midi.ignore, &sharedBeatClock(), midiError))
@@ -2501,6 +2546,101 @@ namespace
                 return;
             }
 
+            if (action == "out")
+            {
+                // `midi out <spec>` opens, `midi out close` shuts, bare
+                // `midi out` says where it is pointed.
+                const std::string spec = (words.size() >= 3) ? joinFrom(words, 2) : "";
+
+                if (spec.empty())
+                {
+                    emit("MIDI-OUT-STATUS " + show.midiOut.describe());
+                    emit("OK midi out");
+                    return;
+                }
+
+                if (spec == "close")
+                {
+                    show.midiOut.close();
+                    emit("OK midi out close");
+                    return;
+                }
+
+                std::string outError;
+                if (!show.midiOut.open(spec, outError))
+                {
+                    emit("ERR " + outError);
+                    return;
+                }
+                emit("OK midi out " + show.midiOut.getPortName());
+                return;
+            }
+
+            if (action == "send")
+            {
+                // Bytes, in hex, one word each: `midi send F0 00 20 29 ... F7`.
+                //
+                // Hex rather than decimal because every controller's reference
+                // manual is written in it, so a message can be typed straight
+                // off the page and read back against it. Whitespace-separated
+                // rather than one long string for the same reason - the manual
+                // groups them that way.
+                if (!show.midiOut.isOpen())
+                {
+                    emit("ERR midi send: no output open (midi out <spec>)");
+                    return;
+                }
+                if (words.size() < 3)
+                {
+                    emit("ERR midi send: no bytes");
+                    return;
+                }
+
+                std::vector<unsigned char> bytes;
+                bytes.reserve(words.size() - 2);
+                for (size_t index = 2; index < words.size(); ++index)
+                {
+                    const std::string& word = words[index];
+                    if (word.empty() || word.size() > 2)
+                    {
+                        emit("ERR midi send: '" + word + "' is not a hex byte");
+                        return;
+                    }
+
+                    unsigned int value = 0;
+                    bool valid = true;
+                    for (const char digit : word)
+                    {
+                        const int nibble = std::isxdigit(static_cast<unsigned char>(digit))
+                            ? (std::isdigit(static_cast<unsigned char>(digit))
+                                ? digit - '0'
+                                : (std::tolower(static_cast<unsigned char>(digit)) - 'a' + 10))
+                            : -1;
+                        if (nibble < 0)
+                        {
+                            valid = false;
+                            break;
+                        }
+                        value = (value << 4) | static_cast<unsigned int>(nibble);
+                    }
+                    if (!valid)
+                    {
+                        emit("ERR midi send: '" + word + "' is not a hex byte");
+                        return;
+                    }
+                    bytes.push_back(static_cast<unsigned char>(value & 0xFF));
+                }
+
+                std::string outError;
+                if (!show.midiOut.send(bytes.data(), bytes.size(), outError))
+                {
+                    emit("ERR " + outError);
+                    return;
+                }
+                emit("OK midi send " + std::to_string(bytes.size()) + " bytes");
+                return;
+            }
+
             if (action == "align")
             {
                 sharedBeatClock().restart(nowSeconds(), BeatSource::Manual);
@@ -2518,8 +2658,8 @@ namespace
                 return;
             }
 
-            emit("ERR midi: expected list, open, close, align, free-run, monitor or status, "
-                 "got '" + action + "'");
+            emit("ERR midi: expected list, open, close, out, send, align, free-run, "
+                 "monitor or status, got '" + action + "'");
             return;
         }
 

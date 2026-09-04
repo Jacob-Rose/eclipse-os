@@ -38,7 +38,7 @@ from eclipse_dmx.curves import (  # noqa: E402
     apply_easing,
     example_hit,
 )
-from eclipse_dmx import look_presets, midi_map, osc, osc_input  # noqa: E402
+from eclipse_dmx import launchpad, look_presets, midi_map, osc, osc_input  # noqa: E402
 
 RIG = DESKTOP / "config" / "uking_par36_x10.json"
 SHOW = DESKTOP / "config" / "mythos26.json"
@@ -2917,6 +2917,142 @@ class MidiLearn(unittest.TestCase):
         self.assertEqual(reloaded.mappings[-1].number, 36)
 
 
+class MidiMapEditorActions(unittest.TestCase):
+    """A mapping that does several things, driven through the editor.
+
+    The list is the point of the shape - one pad, a scene on the visualiser
+    and a state on this rig - so the tests that matter are the ones about a
+    second block: that it lands on the second action rather than the first,
+    that removing it puts the row back, and that the last one cannot go.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        executable_or_skip()
+        try:
+            import tkinter
+        except ImportError as error:
+            raise unittest.SkipTest(f"no tkinter: {error}")
+        try:
+            tkinter.Tk().destroy()
+        except Exception as error:
+            raise unittest.SkipTest(f"no display: {error}")
+
+    def setUp(self):
+        import tempfile
+        from eclipse_dmx.viewer import ViewerApp
+
+        self.scratch = tempfile.TemporaryDirectory()
+        self.app = ViewerApp(SHOW, midi="", bpm=120.0,
+                             midimap=Path(self.scratch.name) / "default.json")
+        self.panel = self.app.midi_panel
+        self.panel.path = None
+        self.panel.default_dir = Path(self.scratch.name)
+
+        self.settle(0.5)
+        self.panel._add()
+        self.settle(0.2)
+        self.mapping = self.panel.mappings.mappings[-1]
+
+    def tearDown(self):
+        self.app._quit()
+        self.scratch.cleanup()
+
+    def settle(self, seconds=0.3):
+        end = time.monotonic() + seconds
+        while time.monotonic() < end:
+            self.app.root.update()
+            time.sleep(0.02)
+
+    def block(self, index):
+        return self.panel._action_rows[index]
+
+    def test_a_fresh_mapping_has_exactly_one_action(self):
+        self.assertEqual(len(self.mapping.actions), 1)
+        self.assertEqual(len(self.panel._action_rows), 1)
+
+    def test_a_second_action_is_the_other_half_of_the_desk(self):
+        # + do offers `state` rather than a copy of the first, because the
+        # second half of a cue is nearly always the rig.
+        self.panel._add_action()
+        self.settle(0.2)
+        self.assertEqual([a.key for a in self.mapping.actions],
+                         ["syn_scene", "state"])
+        self.assertEqual(len(self.panel._action_rows), 2)
+
+    def test_typing_in_the_second_block_lands_on_the_second_action(self):
+        # The cross-copy risk: two blocks with fields of the same name - both
+        # `state` actions have `name` - written back onto the wrong action.
+        self.panel._add_action()
+        self.settle(0.2)
+        self.block(0).param_vars["scene"].set("Neon Grid")
+        self.block(1).param_vars["name"].set("tv_static")
+        self.panel._commit()
+
+        self.assertEqual(self.mapping.actions[0].params["scene"], "Neon Grid")
+        self.assertEqual(self.mapping.actions[1].params["name"], "tv_static")
+
+    def test_a_removed_action_takes_its_block_with_it(self):
+        self.panel._add_action()
+        self.settle(0.2)
+        self.block(1).param_vars["name"].set("tv_static")
+        self.panel._commit()
+
+        self.panel._remove_action(1)
+        self.settle(0.2)
+
+        self.assertEqual([a.key for a in self.mapping.actions], ["syn_scene"])
+        self.assertEqual(len(self.panel._action_rows), 1)
+
+    def test_the_last_action_cannot_be_removed(self):
+        # A trigger that does nothing has no spelling in the file format, and
+        # `del` is what removes a row.
+        self.panel._remove_action(0)
+        self.settle(0.2)
+        self.assertEqual(len(self.mapping.actions), 1)
+
+    def test_changing_a_kind_takes_that_kind_s_defaults(self):
+        # The old parameters named fields the new action does not have, so
+        # they are dropped rather than carried across.
+        self.block(0).param_vars["scene"].set("Neon Grid")
+        self.panel._commit()
+
+        self.block(0).action_var.set(midi_map.ACTIONS["syn_favslot"].label)
+        self.panel._on_action_kind(0)
+        self.settle(0.2)
+
+        self.assertEqual(self.mapping.actions[0].key, "syn_favslot")
+        self.assertEqual(self.mapping.actions[0].params, {"slot": 1})
+        self.assertNotIn("scene", self.mapping.actions[0].params)
+
+    def test_both_halves_fire_from_one_pad(self):
+        # End to end: the row the editor built, down the path a pad takes.
+        # Through the form, not onto the mapping - while a row is selected the
+        # form is what a commit writes back, so an assignment behind it would
+        # be undone by the next one.
+        self.panel._kind_var.set("note")
+        self.panel._channel_var.set("1")
+        self.panel._number_var.set("41")
+        self.panel._mode_var.set("press")
+        self.panel._add_action()
+        self.settle(0.2)
+        self.block(0).param_vars["scene"].set("Neon Grid")
+        self.block(1).param_vars["name"].set(self.app.show.state_names[-1])
+        self.panel._commit()
+        self.settle(0.2)
+
+        self.app._on_midi_line("ch=1 note_on 41 100")
+        self.settle(0.5)
+
+        self.assertEqual(self.app.show.current_state, self.app.show.state_names[-1])
+
+    def test_the_list_line_says_a_row_grew(self):
+        self.panel._add_action()
+        self.settle(0.2)
+        line = self.panel._list.get(self.panel.mappings.mappings.index(self.mapping))
+        self.assertIn("2 actions", line)
+
+
 class ViewerOnTheShow(unittest.TestCase):
     """The tempo controls, driven the way a click drives them."""
 
@@ -3803,6 +3939,28 @@ class _RecorderLink:
         self.calls.append(("raw", address) + values)
 
 
+class _RecorderRig:
+    """Stands in for ShowController on the rig side of an action: remembers
+    the calls, in the order they arrived, so ordering can be asserted."""
+
+    def __init__(self):
+        self.log = []
+        self.params = []
+
+    @property
+    def states(self):
+        return [line.split(" ", 1)[1] for line in self.log if line.startswith("state ")]
+
+    def set_state(self, name):
+        self.log.append(f"state {name}")
+
+    def set_pattern(self, name):
+        self.log.append(f"pattern {name}")
+
+    def command(self, line, expect_reply=True):
+        self.log.append(f"command {line}")
+
+
 class TheMidiMap(unittest.TestCase):
     """The mapping model: what a monitor line becomes, and what it fires."""
 
@@ -3810,6 +3968,12 @@ class TheMidiMap(unittest.TestCase):
         link = _RecorderLink()
         context = midi_map.ActionContext(show=None, osc_factory=lambda: link)
         return midi_map.Dispatcher(midi_map.MappingSet(mappings), context), link
+
+    def _rig_dispatcher(self, mappings):
+        """A dispatcher with both halves of the desk wired to recorders."""
+        rig, link = _RecorderRig(), _RecorderLink()
+        context = midi_map.ActionContext(show=rig, osc_factory=lambda: link)
+        return midi_map.Dispatcher(midi_map.MappingSet(mappings), context), rig, link
 
     def test_a_monitor_line_parses(self):
         event = midi_map.parse_midi_line("ch=1 cc 40 127")
@@ -3912,7 +4076,262 @@ class TheMidiMap(unittest.TestCase):
         data = {"mappings": [{"trigger": {"kind": "note", "channel": 0, "number": 36},
                               "action": "syn_favslot", "params": {"slot": "4"}}]}
         back = midi_map.MappingSet.from_dict(data).mappings[0]
-        self.assertEqual(back.params["slot"], 4)
+        self.assertEqual(back.actions[0].params["slot"], 4)
+
+    # -- a row that does several things ------------------------------------
+
+    def test_one_pad_sets_a_scene_and_a_state(self):
+        # The reason actions are a list: a cue is both halves of the desk, and
+        # to whoever hits the pad that is one thing.
+        dispatcher, rig, link = self._rig_dispatcher([
+            midi_map.Mapping(label="cue A", kind="note", number=41, actions=[
+                midi_map.Action("syn_scene", {"scene": "Neon Grid", "preset": ""}),
+                midi_map.Action("state", {"name": "tv_static"}),
+            ]),
+        ])
+
+        said = dispatcher.handle(midi_map.parse_midi_line("ch=1 note_on 41 100"))
+
+        self.assertEqual(link.calls, [("scene", "Neon Grid", None)])
+        self.assertEqual(rig.states, ["tv_static"])
+        self.assertEqual(len(said), 2)
+
+    def test_the_actions_run_in_the_order_written(self):
+        # A state then a knob is a knob turned on the look the state just
+        # brought up, so the order in the file is not decoration.
+        dispatcher, rig, _link = self._rig_dispatcher([
+            midi_map.Mapping(kind="note", number=41, actions=[
+                midi_map.Action("state", {"name": "tv_static"}),
+                midi_map.Action("command", {"line": "bpm 128"}),
+            ]),
+        ])
+
+        dispatcher.handle(midi_map.parse_midi_line("ch=1 note_on 41 100"))
+
+        self.assertEqual(rig.log, ["state tv_static", "command bpm 128"])
+
+    def test_one_broken_action_does_not_stop_its_neighbours(self):
+        # Same argument as across rows, one level down: a dead visualiser must
+        # not cost the rig the half of the cue that was going to work.
+        dispatcher, rig, _link = self._rig_dispatcher([
+            midi_map.Mapping(label="cue", kind="note", number=41, actions=[
+                midi_map.Action("warp_core", {}),
+                midi_map.Action("state", {"name": "tv_static"}),
+            ]),
+        ])
+
+        said = dispatcher.handle(midi_map.parse_midi_line("ch=1 note_on 41 100"))
+
+        self.assertEqual(rig.states, ["tv_static"], "the good half still ran")
+        self.assertIn("warp_core", said[0])
+
+    def test_a_version_1_file_still_opens(self):
+        # Maps written before actions were a list. Read, not migrated on disk:
+        # they only take the new shape when something saves them.
+        data = {"version": 1, "mappings": [
+            {"label": "drop", "trigger": {"kind": "note", "channel": 3, "number": 41},
+             "mode": "press", "action": "syn_scene",
+             "params": {"scene": "Neon Grid", "preset": "Deep"}, "enabled": True}]}
+        back = midi_map.MappingSet.from_dict(data).mappings[0]
+
+        self.assertEqual(len(back.actions), 1)
+        self.assertEqual(back.actions[0].key, "syn_scene")
+        self.assertEqual(back.actions[0].params["scene"], "Neon Grid")
+        self.assertEqual(back.number, 41)
+        # and saving it writes the new shape
+        self.assertEqual(midi_map.MappingSet([back]).to_dict()["version"], 2)
+
+    def test_a_row_with_no_actions_still_has_one(self):
+        # A trigger that does nothing is not something the editor can draw a
+        # form for, so the file format does not have a way to spell it.
+        back = midi_map.MappingSet.from_dict(
+            {"version": 2, "mappings": [{"label": "empty", "actions": []}]}).mappings[0]
+        self.assertEqual(len(back.actions), 1)
+
+    def test_the_old_single_action_spelling_is_gone_not_silent(self):
+        # `mapping.params` used to be a dict. Answering None would be the one
+        # wrong answer worth guarding: it reads as "no parameters".
+        mapping = midi_map.Mapping(kind="note", number=41, action="state",
+                                   params={"name": "tv_static"})
+        self.assertEqual(mapping.actions[0].params, {"name": "tv_static"})
+        with self.assertRaises(AttributeError):
+            mapping.params
+        with self.assertRaises(AttributeError):
+            mapping.action
+
+
+class TheLaunchpad(unittest.TestCase):
+    """The lamp protocol, byte for byte against the manual.
+
+    Every one of these runs with no controller plugged in, which is the point
+    of keeping the protocol here rather than in the executable: the device is
+    the part you cannot rely on having in front of you.
+    """
+
+    def test_programmer_mode_is_the_manual_s_bytes(self):
+        # F0 00 20 29 02 0C 0E <mode> F7, mode 1 for Programmer, 0 for Live.
+        self.assertEqual(launchpad.programmer_mode(True),
+                         [0xF0, 0x00, 0x20, 0x29, 0x02, 0x0C, 0x0E, 0x01, 0xF7])
+        self.assertEqual(launchpad.programmer_mode(False),
+                         [0xF0, 0x00, 0x20, 0x29, 0x02, 0x0C, 0x0E, 0x00, 0xF7])
+
+    def test_the_manuals_own_example_message(self):
+        # Straight off the page: "sets up the bottom left pad to static
+        # yellow, the pad next to it to flashing green, and the pad next to
+        # that pulsing turquoise". If the byte layout here is wrong, this is
+        # what catches it.
+        message = launchpad._bulk([
+            (launchpad.STATIC, 11, (13,)),
+            (launchpad.FLASHING, 12, (21, 23)),
+            (launchpad.PULSING, 13, (37,)),
+        ])
+        self.assertEqual(len(message), 1)
+        self.assertEqual(
+            launchpad.as_hex(message[0]),
+            "F0 00 20 29 02 0C 03 00 0B 0D 01 0C 15 17 02 0D 25 F7")
+
+    def test_the_grid_is_row_times_ten_plus_column(self):
+        self.assertEqual(launchpad.pad(1, 1), 11)    # bottom left
+        self.assertEqual(launchpad.pad(8, 8), 88)    # top right
+        for bad in [(0, 1), (9, 1), (1, 0), (1, 9)]:
+            with self.assertRaises(ValueError):
+                launchpad.pad(*bad)
+
+    def test_an_index_with_no_lamp_is_dropped(self):
+        # A mapping learned in another layout can carry a number this surface
+        # has nowhere to put. The device answers one with silence, so sending
+        # it would only make a real fault harder to see.
+        self.assertFalse(launchpad.is_lightable(0))
+        self.assertFalse(launchpad.is_lightable(10))     # column 0
+        self.assertFalse(launchpad.is_lightable(90))     # row 9, not a pad
+        self.assertTrue(launchpad.is_lightable(99))      # the logo is
+        self.assertEqual(launchpad.light([(200, 5)]), [])
+
+    def test_a_full_surface_is_one_message(self):
+        # 81 is the manual's cap, and the whole surface is exactly 81 lamps -
+        # so a full repaint must not split, or the device sees two messages
+        # and the seam shows.
+        self.assertEqual(len(launchpad.ALL_LEDS), 81)
+        messages = launchpad.light([(index, 5) for index in launchpad.ALL_LEDS])
+        self.assertEqual(len(messages), 1)
+        self.assertEqual(messages[0][0], 0xF0)
+        self.assertEqual(messages[0][-1], 0xF7)
+
+    def test_more_than_the_cap_splits(self):
+        specs = [(index, 5) for index in launchpad.ALL_LEDS] * 2
+        self.assertEqual(len(launchpad.light(specs)), 2)
+
+
+class TheLampPainter(unittest.TestCase):
+    """Which pads are lit, and which one is live."""
+
+    def _map(self, *rows):
+        return midi_map.MappingSet(list(rows))
+
+    def _cue(self, number, state, colour=41, **kw):
+        return midi_map.Mapping(label=state, kind="note", number=number,
+                                colour=colour, action="state",
+                                params={"name": state}, **kw)
+
+    def test_a_bound_pad_is_lit_and_the_live_one_pulses(self):
+        painter = launchpad.LampPainter(
+            self._map(self._cue(11, "tv_static"), self._cue(12, "beat_pulse")))
+
+        surface = painter.wanted("tv_static")
+
+        self.assertEqual(surface[11], (launchpad.PULSING, 41))
+        self.assertEqual(surface[12], (launchpad.STATIC, 41))
+
+    def test_the_live_pad_follows_the_rig_not_the_pad_that_was_pressed(self):
+        # The whole reason this reads current_state rather than remembering
+        # the last press: a state changed from the desk or from OSC has to
+        # move the lamp too.
+        painter = launchpad.LampPainter(
+            self._map(self._cue(11, "tv_static"), self._cue(12, "beat_pulse")))
+
+        self.assertEqual(painter.wanted("beat_pulse")[12][0], launchpad.PULSING)
+        self.assertEqual(painter.wanted("beat_pulse")[11][0], launchpad.STATIC)
+
+    def test_a_scene_only_pad_is_lit_but_never_pulses(self):
+        # Synesthesia never reports back what it is showing, so a lamp that
+        # claimed to know would be wrong the first time a scene was changed
+        # in its own window.
+        painter = launchpad.LampPainter(self._map(
+            midi_map.Mapping(kind="note", number=11, colour=53,
+                             action="syn_scene", params={"scene": "Neon Grid"})))
+
+        surface = painter.wanted("tv_static")
+        self.assertEqual(surface[11], (launchpad.STATIC, 53))
+
+    def test_a_disabled_mapping_is_dark(self):
+        painter = launchpad.LampPainter(
+            self._map(self._cue(11, "tv_static", enabled=False)))
+        self.assertEqual(painter.wanted("tv_static"), {})
+
+    def test_a_pad_off_this_surface_is_skipped(self):
+        painter = launchpad.LampPainter(self._map(self._cue(60, "tv_static")))
+        self.assertEqual(painter.wanted("tv_static"), {})
+
+    def test_repainting_the_same_picture_sends_nothing(self):
+        # The wire is shared with the beat; a repaint every tick would not be.
+        painter = launchpad.LampPainter(
+            self._map(self._cue(11, "tv_static"), self._cue(12, "beat_pulse")))
+
+        self.assertTrue(painter.frame("tv_static"))
+        self.assertEqual(painter.frame("tv_static"), [])
+        self.assertEqual(painter.frame("tv_static"), [])
+
+    def test_only_the_pads_that_changed_are_sent(self):
+        mappings = self._map(self._cue(11, "tv_static"), self._cue(12, "beat_pulse"),
+                             self._cue(13, "vu_pulse"))
+        painter = launchpad.LampPainter(mappings)
+        painter.frame("tv_static")
+
+        messages = painter.frame("beat_pulse")
+
+        self.assertEqual(len(messages), 1)
+        # header + command + two specs of three bytes + F7
+        self.assertEqual(len(messages[0]), 6 + 1 + (2 * 3) + 1)
+
+    def test_a_pad_that_lost_its_binding_goes_out(self):
+        mappings = self._map(self._cue(11, "tv_static"), self._cue(12, "beat_pulse"))
+        painter = launchpad.LampPainter(mappings)
+        painter.frame("tv_static")
+
+        del mappings.mappings[1]
+        messages = painter.frame("tv_static")
+
+        self.assertEqual(len(messages), 1)
+        # static, pad 12, colour 0 - the only change
+        self.assertEqual(messages[0][7:10], [launchpad.STATIC, 12, launchpad.Colour.OFF])
+
+    def test_forget_makes_the_next_frame_a_full_repaint(self):
+        # For after a mode switch, when the device has forgotten what it was
+        # showing but the painter has not.
+        painter = launchpad.LampPainter(self._map(self._cue(11, "tv_static")))
+        painter.frame("tv_static")
+        self.assertEqual(painter.frame("tv_static"), [])
+
+        painter.forget()
+        self.assertTrue(painter.frame("tv_static"))
+
+    def test_the_live_pad_wins_when_two_bindings_share_it(self):
+        # Old maps did this before actions were a list, and still load.
+        painter = launchpad.LampPainter(self._map(
+            self._cue(11, "tv_static"),
+            midi_map.Mapping(kind="cc", number=11, mode="value", colour=9,
+                             action="master", params={"low": 0.0, "high": 1.0})))
+
+        self.assertEqual(painter.wanted("tv_static")[11][0], launchpad.PULSING)
+
+    def test_the_colour_is_the_mapping_s_own(self):
+        painter = launchpad.LampPainter(self._map(
+            self._cue(11, "tv_static", colour=launchpad.Colour.AMBER),
+            self._cue(12, "beat_pulse", colour=launchpad.Colour.PINK)))
+
+        surface = painter.wanted("")
+        self.assertEqual(surface[11][1], launchpad.Colour.AMBER)
+        self.assertEqual(surface[12][1], launchpad.Colour.PINK)
 
 
 class _RecorderShow:

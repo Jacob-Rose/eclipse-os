@@ -71,6 +71,20 @@ OSC_IN_PORT="${ECLIPSE_OSC_IN_PORT:-7000}"
 # or VU. Move the controller's custom mode to another channel if they collide.
 MIDI_PORT="${ECLIPSE_MIDI_PORT:-Launchpad X LPX MIDI In}"
 
+# The other direction down the same cable: the pads, lit from the map.
+#
+# A different port from the one above, and not optional to get right - "MIDI
+# In" is what the Launchpad listens on, "MIDI Out" is what it sends. Naming
+# the input here would open a port that never lights anything.
+#
+# Worth knowing before it is switched on: lighting a Launchpad X means putting
+# it into Programmer mode, because Live mode does not accept host LED messages
+# at all (see the readme, and eclipse_dmx/launchpad.py). Programmer mode also
+# changes what the pads *send* - the grid becomes notes 11-88 - so bindings
+# learned in a custom mode will need learning again. Empty string lights
+# nothing and leaves the controller alone.
+MIDI_OUT="${ECLIPSE_MIDI_OUT:-Launchpad X LPX MIDI Out}"
+
 live=1
 viewer=1
 osc=1
@@ -95,6 +109,9 @@ launch-mythos-set.sh - the mythos26 set, on this machine
   --midi SPEC          controller to take pads from (default the Launchpad,
                        or $ECLIPSE_MIDI_PORT). Empty string opens none and
                        leaves the config's "auto" to publish for Mixxx.
+  --midi-out SPEC      controller to light from the map (default the
+                       Launchpad, or $ECLIPSE_MIDI_OUT). Empty string lights
+                       nothing. Puts the pad grid into Programmer mode.
   --config PATH        a different show (default config/mythos26.json)
   --bpm N              opening tempo, and the fallback if the beat goes quiet
   --state NAME         the look to open on (beat_pulse, vu_pulse, tv_static...)
@@ -115,6 +132,7 @@ while [ $# -gt 0 ]; do
         --osc)             OSC_ADDRESS="${2:?--osc needs HOST:PORT}"; shift ;;
         --config)          CONFIG="${2:?--config needs a path}"; shift ;;
         --midi)            MIDI_PORT="${2-}"; shift ;;
+        --midi-out)        MIDI_OUT="${2-}"; shift ;;
         --bpm)             extra+=(--bpm "${2:?--bpm needs a number}"); shift ;;
         --state)           extra+=(--state "${2:?--state needs a name}"); shift ;;
         --)                shift; extra+=("$@"); break ;;
@@ -191,13 +209,30 @@ if [ "$live" = 1 ]; then
     fi
 fi
 
+# What the machine can hear and light, read once and held.
+#
+# Held rather than piped straight into grep, and that is not tidiness: this
+# script runs under `set -o pipefail`, and `grep -q` exits the moment it
+# matches, which hands the still-writing executable a SIGPIPE and poisons the
+# pipeline's status. The test then fails *because* the port was found, as long
+# as it was found before the last line - which is why naming the input port
+# silently did nothing while the output port, last in the list, worked.
+midi_ports=""
+if [ -n "$MIDI_PORT" ] || [ -n "$MIDI_OUT" ]; then
+    midi_ports="$("$EXE" --list-midi 2>/dev/null || true)"
+fi
+
+has_midi_port() {
+    [ -n "$midi_ports" ] && printf '%s\n' "$midi_ports" | grep -Fq "$1"
+}
+
 if [ -n "$MIDI_PORT" ]; then
     # Only if it is actually plugged in. A *named* port that is not there is
     # fatal at startup - deliberately, since naming one means you meant it -
     # and a controller left in the flight case must not be the reason a set
     # does not run. Unplugged, the config's "auto" publishes for Mixxx exactly
     # as it did before, and the cue pads are simply not there tonight.
-    if "$EXE" --list-midi 2>/dev/null | grep -Fq "$MIDI_PORT"; then
+    if has_midi_port "$MIDI_PORT"; then
         # Into its own array rather than `extra`, so it goes on the command
         # line *before* anything passed after `--` - argparse takes the last
         # of a repeated option, and a --midi typed at the prompt has to beat
@@ -208,6 +243,23 @@ if [ -n "$MIDI_PORT" ]; then
         echo "warning: no '$MIDI_PORT' on this machine - no cue pads tonight." >&2
         echo "         the beat still arrives on 'eclipse-dmx IN'." >&2
         echo "         --list-midi shows what is here." >&2
+    fi
+fi
+
+# Lamps are the viewer's job: they are painted from the midi map, and `run`
+# has no map to paint from. Headless is a set with no window and no pads lit,
+# which is what it already was.
+if [ -n "$MIDI_OUT" ] && [ "$viewer" = 1 ]; then
+    # Same rule as the input: only when it is actually here. Never fatal in
+    # the viewer either - a lamp that cannot be lit is a set without lamps -
+    # but checking here means the reason is printed next to the rest of the
+    # load-in rather than said once in a status line nobody was watching.
+    if has_midi_port "$MIDI_OUT"; then
+        midi_args+=(--midi-out "$MIDI_OUT")
+        echo "lamps: $MIDI_OUT"
+    else
+        echo "warning: no '$MIDI_OUT' on this machine - the pads stay dark." >&2
+        echo "         everything else runs; only the picture of the map is gone." >&2
     fi
 fi
 

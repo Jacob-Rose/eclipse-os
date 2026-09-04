@@ -8,7 +8,7 @@ pad means what, and what "what" is allowed to be.
 
 The shape of a binding
 ----------------------
-A `Mapping` is a trigger, a mode, and an action:
+A `Mapping` is a trigger, a mode, and a list of actions:
 
     trigger   which messages this mapping listens for - kind (note / cc /
               program), channel (0 = any), and the note or controller number
@@ -16,7 +16,18 @@ A `Mapping` is a trigger, a mode, and an action:
               release fire when it comes back up
               value   fire on every message, carrying the 0..1 value - for
                       faders aimed at a control rather than pads aimed at a cue
-    action    a key into ACTIONS, plus that action's own parameters
+    actions   any number of them, run in order. Each is a key into ACTIONS
+              plus that action's own parameters.
+
+The list is the shape a cue actually has. One pad is usually both halves of
+the desk at once - Synesthesia moves to a scene *and* this rig moves to a
+state - and to whoever hits the pad that is one thing, so it is one row. It
+also gives the lamp side something to point at: a pad is lit as "live" when
+the rig is in a state one of its actions sets, which only has an answer if
+the pad owns both halves.
+
+Order is honoured, and worth relying on: a `state` followed by a `param` is
+a knob turned on the look that state just brought up.
 
 Actions are a registry, not an enum, and that is the scalable part: an
 `ActionSpec` names its parameters (so an editor can draw a form for any
@@ -37,7 +48,7 @@ a mapping file is a named preset for a controller layout.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import InitVar, dataclass, field
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Union
 
@@ -433,17 +444,85 @@ def coerce_params(spec: ActionSpec, params: Dict[str, object]) -> Dict[str, obje
 # ---------------------------------------------------------------------------
 
 @dataclass
+class Action:
+    """One thing a mapping does: a key into ACTIONS, and that action's own
+    parameters.
+
+    Split out from `Mapping` so one pad can do several things. A cue is
+    usually both halves of the desk at once - the visualiser moves to a scene
+    *and* this rig moves to a state - and that is one thing to whoever hits
+    the pad, so it is one row here rather than two bound to the same note.
+
+    The list is ordered and runs in order, which is worth relying on: a state
+    followed by a knob is a knob turned on the look the state just brought up.
+    """
+
+    key: str = "syn_scene"
+    params: Dict[str, object] = field(default_factory=dict)
+
+    @property
+    def spec(self) -> Optional[ActionSpec]:
+        """The registry entry, or None for an action this build has never
+        heard of - a map written by a newer desk, or a typo in a hand-edited
+        file. Kept as data either way; see Dispatcher.handle."""
+        return ACTIONS.get(self.key)
+
+    def label(self) -> str:
+        spec = self.spec
+        return spec.label if spec is not None else self.key
+
+    def to_dict(self) -> Dict[str, object]:
+        return {"action": self.key, "params": dict(self.params)}
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, object]) -> "Action":
+        if not isinstance(data, dict):
+            return cls()
+        action = cls(key=str(data.get("action", "syn_scene")),
+                     params=dict(data.get("params", {})))
+        spec = action.spec
+        if spec is not None:
+            action.params = coerce_params(spec, action.params)
+        return action
+
+
+@dataclass
 class Mapping:
-    """One pad, bound to one action."""
+    """One trigger, and the list of things it does."""
 
     label: str = "mapping"
     kind: str = "note"      # note / cc / program
     channel: int = 0        # 0 = any
     number: int = 60        # note, controller or program number
     mode: str = "press"     # press / release / value
-    action: str = "syn_scene"
-    params: Dict[str, object] = field(default_factory=dict)
+    actions: List[Action] = field(default_factory=list)
     enabled: bool = True
+
+    #: The colour this pad is lit, as a palette index the controller knows
+    #: (0..127; see launchpad.Colour). One number rather than two, because the
+    #: lit and live states are the same colour in different lighting types -
+    #: static when the pad is merely bound, pulsing when the rig is in a state
+    #: it sets. Ignored entirely by rigs with no lamps, which is most of them.
+    colour: int = 41
+
+    #: The one-action shorthand: `Mapping(action="state", params={...})`.
+    #: Most mappings do one thing, and spelling `actions=[Action(...)]` at
+    #: every such call site is noise. An InitVar rather than a field on
+    #: purpose - it is folded into `actions` and then gone, so the actions
+    #: live in exactly one place with no alias to drift out of step.
+    action: InitVar[Optional[str]] = None
+    params: InitVar[Optional[Dict[str, object]]] = None
+
+    def __post_init__(self, action: Optional[str],
+                      params: Optional[Dict[str, object]]) -> None:
+        if action is not None or params is not None:
+            self.actions = list(self.actions) + [
+                Action(key=action or "syn_scene", params=dict(params or {}))]
+        if not self.actions:
+            # A mapping always does at least one thing, even if that thing has
+            # not been chosen yet: the editor draws a form per action, and a
+            # row with none would offer nowhere to start.
+            self.actions = [Action()]
 
     # -- matching ----------------------------------------------------------
 
@@ -481,36 +560,79 @@ class Mapping:
             "label": self.label,
             "trigger": {"kind": self.kind, "channel": self.channel, "number": self.number},
             "mode": self.mode,
-            "action": self.action,
-            "params": dict(self.params),
+            "actions": [action.to_dict() for action in self.actions],
             "enabled": self.enabled,
+            "colour": self.colour,
         }
 
     @classmethod
     def from_dict(cls, data: Dict[str, object]) -> "Mapping":
         trigger = data.get("trigger", {})
+
+        entries = data.get("actions")
+        if entries is None:
+            # A version 1 mapping: one action, spelled inline beside the
+            # trigger. Read rather than migrated on disk - a map written
+            # before actions were a list still opens, and is only rewritten
+            # in the new shape once something saves it.
+            entries = [{"action": data.get("action", "syn_scene"),
+                        "params": data.get("params", {})}]
+        elif not isinstance(entries, list):
+            entries = []
+
         mapping = cls(
             label=str(data.get("label", "mapping")),
             kind=str(trigger.get("kind", "note")),
             channel=int(trigger.get("channel", 0)),
             number=int(trigger.get("number", 60)),
             mode=str(data.get("mode", "press")),
-            action=str(data.get("action", "syn_scene")),
-            params=dict(data.get("params", {})),
+            actions=[Action.from_dict(entry) for entry in entries],
             enabled=bool(data.get("enabled", True)),
+            colour=int(data.get("colour", 41)),
         )
         if mapping.kind not in TRIGGER_KINDS:
             mapping.kind = "note"
         if mapping.mode not in MODES:
             mapping.mode = "press"
-        spec = ACTIONS.get(mapping.action)
-        if spec is not None:
-            mapping.params = coerce_params(spec, mapping.params)
+        mapping.colour = max(0, min(127, mapping.colour))
         return mapping
 
     def describe_trigger(self) -> str:
         channel = "any" if self.channel == 0 else str(self.channel)
         return f"{self.kind} {self.number} ch {channel}"
+
+    def describe_actions(self) -> str:
+        """What the row does, short enough for the list. One action reads as
+        itself; several are counted, because four labels in a 330px band
+        would push the trigger off the end."""
+        if len(self.actions) == 1:
+            return self.actions[0].label()
+        return f"{len(self.actions)} actions"
+
+    def state_names(self) -> List[str]:
+        """Every state this mapping would put the rig into.
+
+        The lamp side of the map reads this: a pad is "the live one" when the
+        rig is in a state it sets. A list because a mapping may hold several
+        actions and more than one of them may be a state - unusual, and not
+        worth forbidding.
+        """
+        names = []
+        for action in self.actions:
+            if action.key == "state":
+                name = str(action.params.get("name", "")).strip()
+                if name:
+                    names.append(name)
+        return names
+
+
+# An InitVar with a default leaves that default sitting on the class, so
+# `mapping.params` would answer None rather than raising - and None read as
+# "no parameters" is exactly the silent wrong answer this shape exists to
+# avoid. The generated __init__ has already captured both defaults, so taking
+# them off the class costs nothing and makes the old spelling say so out loud.
+del Mapping.action
+del Mapping.params
 
 
 class MappingSet:
@@ -524,8 +646,13 @@ class MappingSet:
     def __init__(self, mappings: Optional[List[Mapping]] = None) -> None:
         self.mappings: List[Mapping] = mappings or []
 
+    #: Bumped when `actions` became a list. Version 1 files still load - see
+    #: Mapping.from_dict - and are rewritten in this shape when next saved.
+    VERSION = 2
+
     def to_dict(self) -> Dict[str, object]:
-        return {"version": 1, "mappings": [m.to_dict() for m in self.mappings]}
+        return {"version": self.VERSION,
+                "mappings": [m.to_dict() for m in self.mappings]}
 
     @classmethod
     def from_dict(cls, data: Dict[str, object]) -> "MappingSet":
@@ -566,15 +693,22 @@ class Dispatcher:
             value = mapping.fires_on(event)
             if value is None:
                 continue
-            spec = ACTIONS.get(mapping.action)
-            if spec is None:
-                said.append(f"{mapping.label}: unknown action '{mapping.action}'")
-                continue
-            try:
-                line = spec.run(self.context, coerce_params(spec, mapping.params), value)
-            except Exception as error:  # fenced on purpose; see class docstring
-                said.append(f"{mapping.label}: {error}")
-                continue
-            if line:
-                said.append(line)
+            # Each action of the row is fenced separately, not just each row.
+            # A pad that sets a scene and a state is one press to the person
+            # who hit it, and half of it landing beats none of it: a dead
+            # visualiser must not cost the rig its cue, which is the same
+            # argument as the one across rows, one level down.
+            for action in mapping.actions:
+                spec = action.spec
+                if spec is None:
+                    said.append(f"{mapping.label}: unknown action '{action.key}'")
+                    continue
+                try:
+                    line = spec.run(self.context,
+                                    coerce_params(spec, action.params), value)
+                except Exception as error:  # fenced on purpose; see class docstring
+                    said.append(f"{mapping.label}: {error}")
+                    continue
+                if line:
+                    said.append(line)
         return said
