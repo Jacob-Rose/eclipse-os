@@ -12,6 +12,7 @@
 #include "../../lib/ecore/logging.h"
 
 #include "state_obelisk.h"
+#include "../scanner/recording_patterns.h"
 
 using namespace obelisk;
 using namespace ecore;
@@ -107,9 +108,17 @@ ObeliskCore::ObeliskCore() : RelicCore()
     testPatternState->setGenerator(std::make_shared<Pattern_Obelisk_Monocolor>());
     testPatternState->init();
 
+    // the default: what the sculpture shows on its own, and what the desk
+    // shadows under the scanner's looks (see relic_shadow.cpp) - the idle
+    // scan line, the countdown's flashes and the arm's fire all land on it
+    blobsPatternState = std::make_shared<State_GenericHSV>("blobsState", coreIO.get());
+    blobsPatternState->setGenerator(std::make_shared<Pattern_Obelisk_Blobs>());
+    blobsPatternState->init();
+
     mainPatternId = stateManager->addState(mainPatternState);
     theaterPatternId = stateManager->addState(theaterPatternState);
     testPatternId = stateManager->addState(testPatternState);
+    blobsPatternId = stateManager->addState(blobsPatternState);
 
     // The scanner's looks, one state per afterglow state tag. The variants the
     // python picks with save-file flags (emergency lock, broken device, newly
@@ -121,10 +130,19 @@ ObeliskCore::ObeliskCore() : RelicCore()
         state->init();
         stateManager->addState(state);
         scannerStates[name] = state;
+        looksByName[name] = state;
     };
+
+    // The ambient looks under the names a cue uses for them; `state` also
+    // takes the aliases (main, test) below.
+    looksByName["seasons"] = mainPatternState;
+    looksByName["theater"] = theaterPatternState;
+    looksByName["mono"]    = testPatternState;
+    looksByName["blobs"]   = blobsPatternState;
 
     using namespace scanner;
 
+    addScannerState("none",                            make_shared<Pattern_Scanner_Solid>(HSV(0.0f, 0.0f, 0.0f)));
     addScannerState("power_up",                        make_shared<Pattern_Scanner_PowerUp>());
     addScannerState("boot",                            make_shared<Pattern_Scanner_Boot>());
     addScannerState("scan_idle",                       make_shared<Pattern_Scanner_ScanIdle>());
@@ -148,7 +166,8 @@ ObeliskCore::ObeliskCore() : RelicCore()
     // The recording flow and the void stone - same table as
     // makeScannerStateMachine() in the desktop build, kept in step so a cue
     // works wherever it lands.
-    addScannerState("record_arm",                      make_shared<Pattern_Scanner_SinePulse>(HSV(45.0f, 1.0f, 1.0f), 4.0f, 0.15f, 0.5f));   // CRGB(1.0, 0.75, 0.0)
+    // the amber breath, fading into the tower's own picture by height
+    addScannerState("record_arm",                      make_shared<Pattern_Scanner_SinePulse>(HSV(45.0f, 1.0f, 1.0f), 4.0f, 0.15f, 0.5f, 1.0f));   // CRGB(1.0, 0.75, 0.0)
     addScannerState("record_countdown",                make_shared<Pattern_Scanner_RecordCountdown>());
     addScannerState("record_active",                   make_shared<Pattern_Scanner_RecordComet>());
     addScannerState("record_saved",                    make_shared<Pattern_Scanner_SinePulse>(HSV(132.0f, 1.0f, 1.0f), 6.0f, 0.4f, 0.6f));   // CRGB(0.0, 1.0, 0.2)
@@ -156,9 +175,13 @@ ObeliskCore::ObeliskCore() : RelicCore()
     addScannerState("scan_item_detected_recording",    make_shared<Pattern_Scanner_DetectedWave>(HSV(33.3f, 0.9f, 1.0f)));                   // CRGB(1.0, 0.6, 0.1)
     addScannerState("audio_playback_recording",        make_shared<Pattern_Scanner_DetectedWave>(HSV(33.3f, 0.9f, 1.0f)));
     addScannerState("void",                            make_shared<Pattern_Scanner_SinePulse>(HSV(282.0f, 1.0f, 0.5f), 2.0f, 0.0f, 0.6f));   // CRGB(0.35, 0.0, 0.5)
+    // the cleanse: the fire over the tower's own picture, doused on the
+    // game's cue as the rock lands; done is a cool breath
+    addScannerState("cleanse_arm",                     make_shared<Pattern_Scanner_CleanseFire>());
+    addScannerState("cleanse_done",                    make_shared<Pattern_Scanner_SinePulse>(HSV(200.0f, 0.6f, 1.0f), 6.0f, 0.4f, 0.6f));
 
-    // Start State Machine
-    stateMachine->setActiveState(mainPatternState);
+    // Start State Machine, on the blobs
+    stateMachine->setActiveState(blobsPatternState);
     stateMachine->init();
 
 #if 0
@@ -190,6 +213,49 @@ void obelisk::ObeliskCore::tick(float deltaTime)
     stateMachine->tick(deltaTime);
 
     stateChangeTimer.tick(deltaTime);
+}
+
+void obelisk::ObeliskCore::tickWhileLinked(float deltaTime)
+{
+    // Clocks only. The nodes are the desk's for now, and a look rendered
+    // here would be overwritten by its next frame - but the look's *time*
+    // must keep moving, or the desk's copy runs ahead of it and the handback
+    // jumps. One generator tick: the noise field adds to its clock and that
+    // is all.
+    if (State_GenericHSV* look = activeLook())
+    {
+        look->tickClocks(deltaTime);
+    }
+}
+
+State_GenericHSV* obelisk::ObeliskCore::activeLook() const
+{
+    const shared_ptr<State> active = stateMachine ? stateMachine->getActiveState() : nullptr;
+    if (!active)
+    {
+        return nullptr;
+    }
+    for (const auto& entry : looksByName)
+    {
+        if (entry.second == active)
+        {
+            return entry.second.get();
+        }
+    }
+    return nullptr;
+}
+
+std::string obelisk::ObeliskCore::activeLookName() const
+{
+    const shared_ptr<State> active = stateMachine ? stateMachine->getActiveState() : nullptr;
+    for (const auto& entry : looksByName)
+    {
+        if (entry.second == active)
+        {
+            return entry.first;
+        }
+    }
+    return std::string();
 }
 
 void obelisk::ObeliskCore::say(const string& line)
@@ -248,6 +314,7 @@ bool obelisk::ObeliskCore::handleCommand(string msg)
         if (wanted == "seasons" || wanted == "main")   target = mainPatternState;
         else if (wanted == "theater")                  target = theaterPatternState;
         else if (wanted == "mono" || wanted == "test") target = testPatternState;
+        else if (wanted == "blobs")                    target = blobsPatternState;
         else
         {
             auto it = scannerStates.find(wanted);
@@ -273,9 +340,62 @@ bool obelisk::ObeliskCore::handleCommand(string msg)
         return true;
     }
 
+    // `sim` - what is showing and where its clocks are, as one line a desk
+    // can spawn a copy from:
+    //
+    //   EOSLINK sim seasons noise.time=812.4000
+    //
+    // and `sim <name> [k=v ...]` sets it: that look, at that state, with no
+    // blend - the desk putting the sculpture where its own copy is. Either
+    // way the answer is the state as it now stands. See
+    // GeneratorHSV::reflectState for what a look puts in it.
+    if (msg == "sim" || msg.rfind("sim ", 0) == 0)
+    {
+        if (msg.size() > 4)
+        {
+            string wanted = msg.substr(4);
+            string values;
+            const size_t space = wanted.find(' ');
+            if (space != string::npos)
+            {
+                values = wanted.substr(space + 1);
+                wanted = wanted.substr(0, space);
+            }
+            if (wanted == "main") wanted = "seasons";
+            if (wanted == "test") wanted = "mono";
+
+            auto it = looksByName.find(wanted);
+            if (it == looksByName.end())
+            {
+                say("EOSLINK unknown state " + wanted);
+                return true;
+            }
+            if (it->second != stateMachine->getActiveState())
+            {
+                stateMachine->setActiveState(it->second);
+            }
+            if (!values.empty())
+            {
+                ecore::PropertyBag bag;
+                it->second->reflectState(bag);
+                ecore::applyState(bag, values);
+            }
+        }
+
+        State_GenericHSV* look = activeLook();
+        ecore::PropertyBag bag;
+        if (look)
+        {
+            look->reflectState(bag);
+        }
+        const std::string state = ecore::serializeState(bag);
+        say("EOSLINK sim " + activeLookName() + (state.empty() ? "" : " " + state));
+        return true;
+    }
+
     if (msg == "states")
     {
-        string reply = "EOSLINK states seasons theater mono";
+        string reply = "EOSLINK states blobs seasons theater mono";
         for (const auto& entry : scannerStates)
         {
             reply += " " + entry.first;

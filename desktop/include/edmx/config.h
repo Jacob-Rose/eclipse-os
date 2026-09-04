@@ -44,6 +44,12 @@ namespace edmx
         int baud{115200};
         float fps{40.0f};               ///< DMX refresh rate; 40 is the spec's max
         int consoleChannels{12};        ///< how many channels the console output prints
+
+        /// relic_usb only: "streaming" (the default) takes the relic's pixels
+        /// on the first frame; "released" opens the cable but leaves the
+        /// sculpture on its own looks until a `link take`. For a show that
+        /// wants to join the sculpture rather than seize it.
+        std::string start{"streaming"};
     };
 
     struct MasterConfig
@@ -261,6 +267,14 @@ namespace edmx
 
         /// Per-device trim, on top of the show's master.
         float brightness{1.0f};
+
+        /// This device's gamma, or 0 for the master's. A relic driven in
+        /// pixel mode lights what it is sent straight, and lights its *own*
+        /// looks through its NeoPixel gamma (2.6) - so a desk that wants its
+        /// picture of the sculpture to match the sculpture's, at a takeover
+        /// or under a look composing over it, renders that device at 2.6
+        /// whatever the rest of the show uses.
+        float gamma{0.0f};
     };
 
     /// An environment: the devices in a room, and the show running on them.

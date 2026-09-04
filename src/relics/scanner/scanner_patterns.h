@@ -19,6 +19,15 @@ using namespace ecore;
 using namespace eanim;
 using namespace esm;
 
+/// The triggers the scanner's looks answer to - the tags afterglow sends
+/// with `trigger <tag>` as it plays the sound each one stands for. Declared
+/// here, once, so the look and anything that fires it agree on the spelling.
+namespace scanner_tags
+{
+    /// the scan ping sounded: scan_idle flashes and sends the pulse up
+    inline const GameplayTag Ping{"scanner.ping"};
+}
+
 ///
 /// The scanner's looks, ported from afterglow (main-py/game/game.py).
 ///
@@ -74,6 +83,21 @@ namespace scanner
     public:
         virtual void reset() { timeActive = 0.0f; }
         virtual void tick(float deltaTime) override { timeActive += deltaTime; }
+
+        /// Every scanner look runs on this one clock; a look with more
+        /// (particles, a pool) adds its own on top.
+        virtual void reflectState(ecore::PropertyBag& bag) override { bag.addState("time", timeActive); }
+
+        /// Set on the looks that have nothing to say about the obelisk - the
+        /// boot animations, the dark `none` - so over an underlay the tower
+        /// keeps its own picture through them instead of going black. See
+        /// GeneratorHSV::leavesToUnderlay.
+        bool leaveObeliskToUnderlay{false};
+
+        virtual bool leavesToUnderlay(const HSVStripNode* node) const override
+        {
+            return leaveObeliskToUnderlay && eio::nodeSpace(node) == NodeSpace::Obelisk;
+        }
 
     protected:
         /* @brief Where this node sits along its strip, 0..1.
@@ -151,9 +175,9 @@ namespace scanner
     };
 
 
-    /* @brief scan_idle: the ring breathes cyan on a 2 second heartbeat, the
-    * same breath goes round the obelisk side by side, and the truss stays
-    * dark (a scanner along it is there behind a knob).
+    /* @brief scan_idle: the ring breathes cyan on a 2 second heartbeat, each
+    * flash sends a pulse up the obelisk from its foot to its tip, and the
+    * truss stays dark (a scanner along it is there behind a knob).
     *
     * The first look to read the objects rather than the stage: each node
     * says which space it is in (eio::spaceOf), and the look renders each
@@ -164,36 +188,75 @@ namespace scanner
     * the boot swell - the python table's run of trailing zeros collapses to
     * its two endpoint keys.
     *
-    * One clock runs the ring and the sculpture. The obelisk's sides are the
-    * *same breath curve* handed to each side a lap-share later than the
-    * last, so the side the lap starts on breathes with the ring - same
-    * shape, same phase, however the curve is drawn - and the ones after it
-    * follow it round. It used to be a beam on a free-running rotation, and
-    * two clocks that never agreed: a 2.5s lap against a 2s breath lined up
-    * once every ten seconds, and a 1.5 strip beam crossing side centres two
-    * strips apart dipped almost dark between them - the sculpture flashing
-    * four times a lap on a beat of its own.
+    * One clock runs the ring and the sculpture. The ring plays the breath
+    * curve; the obelisk plays the pulse curve, and a row's height delays its
+    * read into it - the sweep record_countdown does - so the pulse leaves
+    * the foot as the ring flashes and reaches the tip riseCycles later, every
+    * side at once, one band climbing the tower. It used to be the breath
+    * itself going round the sides a lap-share at a time, and before that a
+    * beam on a rotation of its own that never agreed with the heartbeat.
+    *
+    * The clock is the game's when the game is there. Each time afterglow
+    * plays the scan ping it sends `trigger scanner.ping`, and the look re-anchors
+    * its cycle so the flash lands on the ping's transient - then holds at
+    * the end of that cycle, dark, until the next one, so a ping longer than
+    * cycleTime never gets a second, unheard flash. Until the first ping it
+    * waits at that same dark end of the cycle, so entering the look never
+    * flashes on its own: the first flash is the first ping's. `wait_for_ping
+    * off` frees the clock to run from entry as it used to, for a desk with
+    * no game behind it sending pings.
     */
     class Pattern_Scanner_ScanIdle : public PatternScanner
     {
     public:
         Pattern_Scanner_ScanIdle();
 
+        virtual void reset() override;
+
+        /// scanner_tags::Ping: the scan ping just sounded - flash now, pulse now
+        virtual bool onTrigger(const GameplayTag& tag) override;
+
         // CRGB(0.2, 0.7, 1.0)
         HSV scanColor = HSV(202.5f, 0.8f, 1.0f);
         float cycleTime = 2.0f;
 
-        /// on the normalized 0..1 cycle clock: the ring's heartbeat, and
-        /// each of the obelisk's sides in turn
+        /// on the normalized 0..1 cycle clock: the ring's heartbeat
         eanim::AutomationCurve breathCurve;
 
-        /// the obelisk's lap: how many breath cycles the breath takes to
-        /// travel all the way round the tower, and whether a side takes it
-        /// as one (both strips together) or strip by strip. One lap to the
-        /// cycle fits every side inside a single heartbeat; four gives each
-        /// side a heartbeat of its own, the first still on the ring's.
-        float cyclesPerTurn = 1.0f;
-        bool bySide = true;
+        /// the obelisk's pulse, on the same clock: what one row of the tower
+        /// shows from the moment the pulse reaches it. Its first key is the
+        /// dark a row sits in before its turn, its last the dark after.
+        eanim::AutomationCurve pulseCurve;
+
+        /// how much of the tower this look *claims*, on the cycle clock: 1
+        /// while the pulse is fresh, easing back to 0 as the next ping comes
+        /// due. A row only counts once the pulse has reached it. So over an
+        /// underlay (the obelisk's own look, simulated on the desk - see
+        /// eanim::Underlay) the scan line climbs the tower leaving darkness
+        /// behind it, as if it took the energy out of the sculpture's own
+        /// colour, which then slowly comes back - until the next ping. When
+        /// the pings stop the tower is the sculpture's own again. Without
+        /// an underlay it changes nothing: the look is over black.
+        eanim::AutomationCurve wakeCurve;
+
+        /// how far into a cycle a row has been claimed by, once the pulse
+        /// has arrived - the leading edge of the wake, in cycles
+        float wakeRise = 0.04f;
+
+        /// when in the cycle the pulse leaves the foot - the breath curve's
+        /// peak, so it leaves as the ring flashes
+        float flashPhase = 1.0f / 9.0f;
+
+        /// how much of the cycle the pulse takes to climb foot to tip. With
+        /// the pulse curve's length that has to fit inside one cycle, or the
+        /// tip is still lit when the next pulse leaves the foot.
+        float riseCycles = 0.5f;
+
+        /// hold dark until the first ping cues the clock: an entry is silent,
+        /// so the look shows nothing until a flash has a sound to land on.
+        /// Off, the clock runs from entry and the breath is free - a desk
+        /// with no game behind it.
+        bool waitForPing = true;
 
         /// the truss: dark while the tower idles unless trussScan is on -
         /// then a scanner along it, at sweeps per second end to end and
@@ -209,6 +272,11 @@ namespace scanner
         virtual void render(HSVStripNode* inNode, HSV& inOutColor) const override;
         virtual void reflect(ecore::PropertyBag& bag) override;
         virtual void reflectCurves(eanim::CurveBag& bag) override;
+
+    private:
+        /// a ping has landed since entry: the cycle is the game's, and it
+        /// waits at its end for the next one instead of wrapping
+        bool cued{false};
     };
 
 
@@ -367,44 +435,52 @@ namespace scanner
 
     /* @brief The whole ring breathing one colour on a sine.
     *
-    * The shape three of the recording-flow states share, differing only in
-    * their numbers: brightness runs floorLevel..floorLevel+gain as the sine
+    * The shape the recording-flow states share, differing only in their
+    * numbers: brightness runs floorLevel..floorLevel+gain as the sine
     * swings, at rate radians per second.
     *   record_arm    amber, quick and shallow, waiting for the rock
     *   record_saved  green, faster and brighter, the take is on disk
     *   void          purple from black, the empty stone's slow breath
+    *   cleanse_done  a cool breath, the rock void again
+    *
+    * Over an underlay (the obelisk's own look, shadowed on the desk; see
+    * eanim::Underlay) the pulse can give the tower back by height:
+    * shadowFade 1 is the pulse whole at the foot fading out to the
+    * sculpture's own picture at the tip, which is record_arm's setting. 0
+    * paints the whole tower, and is what the others do.
     */
     class Pattern_Scanner_SinePulse : public PatternScanner
     {
     public:
-        Pattern_Scanner_SinePulse(const HSV& inColor, float inRate, float inFloor, float inGain)
-            : color(inColor), rate(inRate), floorLevel(inFloor), gain(inGain) {}
+        Pattern_Scanner_SinePulse(const HSV& inColor, float inRate, float inFloor, float inGain, float inShadowFade = 0.0f)
+            : color(inColor), rate(inRate), floorLevel(inFloor), gain(inGain), shadowFade(inShadowFade) {}
 
         HSV color;
         float rate;
         float floorLevel;
         float gain;
+        float shadowFade;
 
         virtual void render(HSVStripNode* inNode, HSV& inOutColor) const override;
         virtual void reflect(ecore::PropertyBag& bag) override;
     };
 
 
-    /* @brief record_active: a red comet orbiting the ring while tape rolls.
+    /* @brief record_active: a red comet orbiting the ring while tape rolls,
+    * and the same orbit on every face of the tower.
     *
     * The head is an angle around the ring's centre on the stage, not an
     * index along a strip. On the ring that is the python comet unchanged -
     * 12 pixels a second, an 8 pixel tail, a dim red floor behind it.
     *
-    * The sculpture gets the comet rather than a slice of the ring's. Its
-    * centre sits inside the tower at y=19.5, so reading the stage bearing
-    * up there made the whole obelisk one dial - the pass swept top, down a
-    * flank, along the bottom, back up the other, and no side had a comet of
-    * its own. Every side now runs the whole comet instead, the head
-    * climbing the face once per revolution and the tail behind it, all four
-    * in step: the head leaves the floor as the ring's own head crosses its
-    * top pixel. The orbit is the one clock; only what it means to a node
-    * changes with the object it is on.
+    * The obelisk is four faces of two runs each, up and down (ObeliskIO::init:
+    * an even column is a side's up run, the odd one beside it its down run).
+    * Each face is its own loop: the comet climbs the up run and comes back
+    * down the down run, one lap per revolution of the ring, every face in
+    * step - four radars turning together round the sculpture. It used to be
+    * one beam sweeping across the whole tower by bearing, which read as a
+    * shadow passing rather than a spin. The truss still gets that bearing
+    * sweep: it has no loop to run.
     */
     class Pattern_Scanner_RecordComet : public PatternScanner
     {
@@ -422,14 +498,23 @@ namespace scanner
     };
 
 
-    /* @brief record_countdown: three white pulses - 3, 2, 1 - before the tape
-    * rolls, so a take does not start abruptly out of the arm state.
+    /* @brief record_countdown: the ring fills round as a circle - 3, 2, 1 -
+    * and each count flashes the tower white over the sculpture's own
+    * picture, before the tape rolls.
+    *
+    * The ring is the clock a visitor can read: white from the top pixel
+    * round the way the pixels run, full at the end of the last count, which
+    * is when the take starts. A soft leading edge grows it rather than
+    * stepping it a pixel at a time.
     *
     * Each count fires an AutomationCurveTrigger whose curve is one quick
-    * white pulse. A node's height on the stage delays its read into that
-    * curve, which is the whole sweep: the count lands at the bottom of the
-    * ring and runs to the top of the obelisk in sweepSeconds, so the pulse
-    * crosses the ring before it climbs the sculpture.
+    * white pulse. On the tower a row's height delays its read into it - the
+    * sweep scan_idle's pulse makes - so the count leaves the foot and runs
+    * to the tip in sweepSeconds. Over an underlay (the obelisk's own look,
+    * shadowed on the desk; see eanim::Underlay) the flash is blended over
+    * it by its own brightness: between counts the tower is the sculpture's
+    * own picture and the flash lands on top of it, as scan_idle's scan line
+    * does. Without one it is the flash over black, which it always was.
     */
     class Pattern_Scanner_RecordCountdown : public PatternScanner
     {
@@ -441,18 +526,30 @@ namespace scanner
         virtual void render(HSVStripNode* inNode, HSV& inOutColor) const override;
         virtual void reflect(ecore::PropertyBag& bag) override;
 
-        /// counts fire at 0, 1 and 2 seconds; the game holds the state for 3.
-        /// Not reflected: the count is the game's choreography, and a desk
-        /// retiming it here would desync the lights from the display and the
-        /// take.
+        /// counts fire at 0, 1 and 2 seconds; the game holds the state for 3,
+        /// and the ring is full at that 3. Not reflected: the count is the
+        /// game's choreography, and a desk retiming it here would desync the
+        /// lights from the display and the take.
         float secondsPerCount = 1.0f;
         int totalCounts = 3;
 
-        /// how long a pulse takes to climb the whole stage, kStageBottom to
+        /// how long a flash takes to climb the whole stage, kStageBottom to
         /// kStageTop
         float sweepSeconds = 0.25f;
 
+        /// the fill's leading edge, as a fraction of the ring
+        float edgeWidth = 0.08f;
+
+        /// what the unfilled ring shows, so it reads as a ring waiting to
+        /// fill rather than as nothing
+        float floorLevel = 0.05f;
+
     private:
+        /// where a node sits round the ring, 0 at the top pixel and on round
+        /// the way the pixels are numbered - a bare strip answers with its
+        /// place along itself
+        static float ringAlpha(const HSVStripNode* node);
+
         eanim::AutomationCurveTrigger pulse;
         int firedCount{0};
     };

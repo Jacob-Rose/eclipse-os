@@ -29,6 +29,12 @@
   // eio::NodeSpace in src/lib/eio/strip_projection.h.
   "space": "obelisk",
 
+  // The curve the sculpture lights its own looks through: NeoPixel's gamma32
+  // table. Pixels a desk sends go to the LEDs straight, so the desk applies
+  // this in their place - and a picture of the obelisk's own look rendered
+  // here then matches the obelisk's, which is what makes a takeover invisible.
+  "gamma": 2.6,
+
   "output": {
     "type": "relic_usb",
     "port": "auto",

@@ -38,6 +38,10 @@ namespace ecore
             Color,
         };
 
+        /// The bounds addState() uses. Wide on purpose: a clock is not a slider.
+        static constexpr float STATE_MIN = -1.0e9f;
+        static constexpr float STATE_MAX = 1.0e9f;
+
         std::string name;
         Type type{Type::Float};
 
@@ -115,6 +119,15 @@ namespace ecore
         /// Sets by name. False if there is no property called that.
         bool set(const std::string& name, float value);
 
+        /* @brief A clock or a phase rather than a knob: no range worth a slider.
+        *
+        * reflectState() registers with this - the noise field's time, an LFO's
+        * offset - so the same bag type carries a look's running state as
+        * carries its tuning, and the same set() writes it back. The bounds
+        * are wide enough that nothing a clock reaches is clamped.
+        */
+        void addState(const char* name, float& value, std::function<void()> onChanged = {});
+
         /// The same for a colour. False if there is no property called that,
         /// *or* if the one there is is not a colour - a swatch dropped onto an
         /// attack time is a mistake, not a conversion.
@@ -123,4 +136,42 @@ namespace ecore
     private:
         std::vector<Property> properties;
     };
+
+
+    /* @brief A bag's values as text, `name=value` pairs separated by spaces,
+    * in registration order - and the way back.
+    *
+    * This is how a relic's running state crosses a cable: the desk asks, the
+    * relic answers with serializeState() of its reflectState() bag, the desk
+    * spawns the same look and applyState()s the answer into it, and from then
+    * on the two run in step. Floats only; a bool is 0/1 and a colour is
+    * skipped, because neither is a clock.
+    *
+    * applyState() ignores names the bag does not have and text it cannot read,
+    * and returns how many values landed - a relic on newer firmware than the
+    * desk may name a clock the desk's copy of the look does not have yet, and
+    * that is a value to skip, not a reason to refuse the rest.
+    */
+    std::string serializeState(const PropertyBag& bag);
+    int applyState(PropertyBag& bag, const std::string& text);
+
+
+
+    /* @brief A bag's values as text, `name=value` pairs separated by spaces,
+    * in registration order - and the way back.
+    *
+    * This is how a relic's running state crosses a cable: the desk asks, the
+    * relic answers with serializeState() of its reflectState() bag, the desk
+    * spawns the same look and applyState()s the answer into it, and from then
+    * on the two run in step. Floats only; a bool is 0/1 and a colour is
+    * skipped, because neither is a clock.
+    *
+    * applyState() ignores names the bag does not have and text it cannot read,
+    * and returns how many values landed - a relic on newer firmware than the
+    * desk may name a clock the desk's copy of the look does not have yet, and
+    * that is a value to skip, not a reason to refuse the rest.
+    */
+    std::string serializeState(const PropertyBag& bag);
+    int applyState(PropertyBag& bag, const std::string& text);
+
 }

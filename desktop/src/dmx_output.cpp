@@ -545,6 +545,13 @@ bool RelicUsbOutput::sendFrame(const DmxUniverse& universe, std::string& outErro
         return true;
     }
 
+    if (!streaming)
+    {
+        // Opened, rendering, and deliberately silent: the sculpture is on its
+        // own looks until a take. Frames dropped here are the point.
+        return true;
+    }
+
     if (pixelCount <= 0)
     {
         outError = "relic link has no pixels to send (patch resolves to " + std::to_string(pixelCount) + ")";
@@ -580,6 +587,7 @@ bool RelicUsbOutput::sendCommand(const std::string& text, std::string& outError)
 
 bool RelicUsbOutput::release(std::string& outError)
 {
+    streaming = false;
     return sendRaw(nullptr, 0, static_cast<uint8_t>(elink::FrameType::Release), outError);
 }
 
@@ -644,7 +652,8 @@ std::string RelicUsbOutput::describe() const
 {
     return std::string("relic_usb on ") + port + ", "
          + (mode == Mode::Cue ? "cue" : "pixel") + " mode, "
-         + std::to_string(pixelCount) + " pixels";
+         + std::to_string(pixelCount) + " pixels"
+         + (mode == Mode::Pixels && !streaming ? ", released" : "");
 }
 
 // ============================================================================

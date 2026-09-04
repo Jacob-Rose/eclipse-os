@@ -52,7 +52,15 @@ void State_GenericHSV::tick(float deltaTime)
                 }
 #endif
                 HSV color = node->getStripSegment()->getParentStrip()->getHSV(node->getStripIdx());
-                generator->render(node.get(), color);
+
+                // A node the look leaves to what is underneath it is the
+                // underlay's to paint, not the look's - see
+                // GeneratorHSV::leavesToUnderlay. Anything else renders.
+                const eanim::Underlay* underlay = generator->getUnderlay();
+                if(!(underlay && generator->leavesToUnderlay(node.get()) && underlay->sample(node.get(), color)))
+                {
+                    generator->render(node.get(), color);
+                }
                 if(GetStatus() == StateStatus::TransitionIn || GetStatus() == StateStatus::TransitionOut)
                 {
                     node->setBuffer(getStateID(), color);

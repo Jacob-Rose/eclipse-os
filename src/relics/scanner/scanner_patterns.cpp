@@ -142,13 +142,61 @@ Pattern_Scanner_ScanIdle::Pattern_Scanner_ScanIdle()
     breathCurve.addKey(3.0f / 9.0f, 0.2f);
     breathCurve.addKey(4.0f / 9.0f, 0.0f);
     breathCurve.addKey(1.0f,        0.0f);
+
+    // one row's share of the pulse: snap on as it arrives, fall away behind
+    // it. Its length against riseCycles is the band's height on the tower -
+    // a quarter cycle over a half-cycle climb is a band half the obelisk tall
+    pulseCurve.addKey(0.00f, 0.0f);
+    pulseCurve.addKey(0.04f, 1.0f, easing_functions::EaseOutCubic);
+    pulseCurve.addKey(0.25f, 0.0f);
+
+    // the claim holds through the front of the cycle and lets go over the
+    // back of it, gone by the end - which is when the next ping is due and
+    // where the clock waits for it (see render): the underneath is fully
+    // back at exactly the moment a new pulse would start claiming again
+    wakeCurve.addKey(0.0f,  1.0f);
+    wakeCurve.addKey(0.3f,  1.0f);
+    wakeCurve.addKey(1.0f,  0.0f, easing_functions::EaseInOutSine);
+}
+
+void Pattern_Scanner_ScanIdle::reset()
+{
+    PatternScanner::reset();
+    cued = false;
+}
+
+bool Pattern_Scanner_ScanIdle::onTrigger(const GameplayTag& tag)
+{
+    if (tag != scanner_tags::Ping)
+    {
+        return false;
+    }
+
+    // The ping's transient is at its very start, so the cycle is wound to
+    // the flash: the ring is at the top of its breath this frame and the
+    // pulse leaves the obelisk's foot with it.
+    timeActive = flashPhase * cycleTime;
+    cued = true;
+    return true;
 }
 
 void Pattern_Scanner_ScanIdle::render(HSVStripNode* inNode, HSV& inOutColor) const
 {
     // One clock for the whole look, counted in breath cycles: the ring rides
-    // the front of it and everything else is a delay behind it.
-    const float cycles = timeActive / std::max(cycleTime, 0.01f);
+    // the front of it and everything else is a delay behind it. Once a ping
+    // has cued it the cycle stops just short of wrapping - dark, the pulse
+    // spent - and the next ping winds it again; see onTrigger. Until the
+    // first ping it waits at that same end: an entry is silent, and the
+    // first flash is the first ping's.
+    float cycles = timeActive / std::max(cycleTime, 0.01f);
+    if (cued)
+    {
+        cycles = std::min(cycles, 1.0f - 1e-3f);
+    }
+    else if (waitForPing)
+    {
+        cycles = 1.0f - 1e-3f;
+    }
     const float breath = breathCurve.evaluate(frac(cycles));
 
     // the ring, and anything that never said what it is: the breath
@@ -157,27 +205,44 @@ void Pattern_Scanner_ScanIdle::render(HSVStripNode* inNode, HSV& inOutColor) con
     const HSVStripNode_Space* spaced = eio::spaceOf(inNode);
     if (spaced != nullptr && spaced->space == NodeSpace::Obelisk)
     {
-        // The breath going round the tower. The obelisk's own x is its
-        // strip, 0..7 around four sides, column 7 beside column 0 - so a
-        // strip is one place on a closed loop, and by side its two strips
-        // answer as one place, four in all.
+        // A pulse up the tower on every flash. The obelisk's own v is its
+        // height, 0 at the foot and 1 at the tip whichever side the node is
+        // on - so every side climbs together, one band round the sculpture.
         //
-        // A place's share of the lap is how far behind the ring it breathes:
-        // place 0 *is* the ring, the same curve at the same phase, and each
-        // one after it takes the same breath a lap-share later. That is the
-        // sync - one clock, one shape - rather than a second rotation of its
-        // own that has to be talked into agreeing with the first.
-        const float places = bySide ? kStageColumns / 2.0f : static_cast<float>(kStageColumns);
-        const float place = bySide ? std::floor(spaced->local.x / 2.0f) : std::floor(spaced->local.x);
-        const float lap = std::max(cyclesPerTurn, 0.01f);
-        const float share = std::fmod(place, places) / places;
+        // Height delays the read into the pulse curve, the countdown's
+        // sweep: the foot reads the curve the moment the pulse leaves, the
+        // tip reads it riseCycles later. A row the pulse has not reached
+        // reads before the first key and a row it has passed reads after
+        // the last, and evaluate holds both ends - dark. The clock counts
+        // from the flash, so the pulse leaves the foot at the top of the
+        // ring's breath and each row sees exactly one pulse a cycle.
+        const float sinceFlash = frac(cycles - flashPhase);
+        const float delay = spaced->v * riseCycles;
+        brightness = std::max(floorLevel * breath, pulseCurve.evaluate(sinceFlash - delay));
 
-        // how long ago the lap reached this place, in cycles: 0 as it
-        // arrives, counting up to a whole lap. The curve's last key is the
-        // end of the breath, and evaluate holds it past there, so a place
-        // simply sits dark until its turn comes round again.
-        const float since = frac(cycles / lap - share) * lap;
-        brightness = std::max(floorLevel * breath, breathCurve.evaluate(since));
+        // Over an underlay the scan takes energy from the tower: the line
+        // itself is the bright band, and where it has passed the row goes
+        // dark - no idle floor here, that is the tower's own colour's job -
+        // then the claim eases off (wake curve) and the sculpture's own
+        // picture comes back, until the next ping flashes it dark again.
+        // `arrived` is the band reaching this row (0 before, 1 wakeRise
+        // cycles after); the product with the wake is how much of the row
+        // is ours, blended in the colour space the looks cross-fade in.
+        HSV under;
+        if (underlay != nullptr && underlay->sample(inNode, under))
+        {
+            // Nothing until a ping has actually landed: before the first cue
+            // the clock free-runs and the pulse climbs on its own, and a
+            // take that arrives mid-climb would cut half the tower dark. The
+            // game fires the first ping once the obelisk is in the show.
+            const float arrived = cued ? clamp01((sinceFlash - delay) / std::max(wakeRise, 1e-3f)) : 0.0f;
+            const float claim = arrived * wakeCurve.evaluate(clamp01(cycles));
+
+            HSV look = scanColor;
+            look.setBrightnessAlpha(scanColor.getValFloat() * pulseCurve.evaluate(sinceFlash - delay));
+            inOutColor = HSV::blend(under, look, claim);
+            return;
+        }
     }
     else if (spaced != nullptr && spaced->space == NodeSpace::Truss)
     {
@@ -201,8 +266,9 @@ void Pattern_Scanner_ScanIdle::render(HSVStripNode* inNode, HSV& inOutColor) con
 void Pattern_Scanner_ScanIdle::reflect(ecore::PropertyBag& bag)
 {
     bag.add("cycle_time", cycleTime, 0.5f, 8.0f);
-    bag.add("cycles_per_turn", cyclesPerTurn, 0.25f, 8.0f);
-    bag.add("by_side", bySide);
+    bag.add("flash_phase", flashPhase, 0.0f, 1.0f);
+    bag.add("rise", riseCycles, 0.05f, 1.0f);
+    bag.add("wait_for_ping", waitForPing);
     bag.add("truss_scan", trussScan);
     bag.add("sweep_rate", sweepRate, 0.0f, 3.0f);
     bag.add("sweep_width", sweepWidth, 0.05f, 1.0f);
@@ -212,6 +278,8 @@ void Pattern_Scanner_ScanIdle::reflect(ecore::PropertyBag& bag)
 void Pattern_Scanner_ScanIdle::reflectCurves(eanim::CurveBag& bag)
 {
     bag.add("breath", breathCurve);
+    bag.add("pulse", pulseCurve);
+    bag.add("wake", wakeCurve);
 }
 
 void Pattern_Scanner_Emergency::render(HSVStripNode* inNode, HSV& inOutColor) const
@@ -347,50 +415,71 @@ void Pattern_Scanner_PlaybackGeneric::reflect(ecore::PropertyBag& bag)
 
 void Pattern_Scanner_SinePulse::render(HSVStripNode* inNode, HSV& inOutColor) const
 {
-    (void)inNode;
-
     const float pulse = (std::sin(timeActive * rate) + 1.0f) * 0.5f;
 
     inOutColor = color;
     inOutColor.setBrightnessAlpha(color.getValFloat() * (floorLevel + pulse * gain));
+
+    // over the sculpture's own picture, the foot ours and the tip its own:
+    // the claim runs 1 at the foot down to 1 - shadowFade at the tip
+    if (shadowFade > 0.0f)
+    {
+        const HSVStripNode_Space* spaced = eio::spaceOf(inNode);
+        if (spaced != nullptr && spaced->space == NodeSpace::Obelisk)
+        {
+            HSV under;
+            if (underlay != nullptr && underlay->sample(inNode, under))
+            {
+                const float claim = 1.0f - clamp01(spaced->v * shadowFade);
+                inOutColor = HSV::blend(under, inOutColor, claim);
+            }
+        }
+    }
 }
 
 void Pattern_Scanner_SinePulse::reflect(ecore::PropertyBag& bag)
 {
-    // The breath's three independent handles - the states that share this
-    // class (record_arm, record_saved, void) differ only in these numbers and
-    // the colour, so the knobs *are* the state's identity, worth curves each.
+    // The breath's independent handles - the states that share this class
+    // (record_arm, record_saved, void, cleanse_done) differ only in these
+    // numbers and the colour, so the knobs *are* the state's identity,
+    // worth curves each. The shadow fade is the tower's alone.
     bag.add("rate", rate, 0.5f, 12.0f);
     bag.add("floor", floorLevel, 0.0f, 1.0f);
     bag.add("gain", gain, 0.0f, 1.0f);
+    bag.add("shadow", shadowFade, 0.0f, 1.0f);
 }
 
 void Pattern_Scanner_RecordComet::render(HSVStripNode* inNode, HSV& inOutColor) const
 {
-    const float headAlpha = frac(timeActive * revsPerSecond);
-
-    // Where the node sits in the revolution, 0 as the head reaches it.
-    //
-    // On the ring that is its bearing around the orbit's centre, as a
-    // fraction of a turn: atan2(dx, dy) puts zero at the top and turns the
-    // way the pixels are numbered, so this *is* the old strip walk.
+    const float headAlpha = std::fmod(timeActive * revsPerSecond, 1.0f);
     const Coordinate at = nodeCoord(inNode);
-    float place = std::atan2(at.x - kRingCenterX, at.y - kRingCenterY) / (2.0f * kPi);
 
+    // where this node sits on its orbit, as a fraction of a turn
+    float orbit;
     const HSVStripNode_Space* spaced = eio::spaceOf(inNode);
     if (spaced != nullptr && spaced->space == NodeSpace::Obelisk)
     {
-        // On the sculpture it is how far up the face the node is, so each
-        // side runs the whole comet - the head climbing it once per
-        // revolution - rather than the tower reading one bearing between
-        // them all. The orbit's centre is *inside* the obelisk at y=19.5,
-        // which is what made that one dial out of the whole thing. Every
-        // side answers with the same height, so the four climb in step.
-        place = spaced->v;
+        // a face's loop: up its even column - the up run, foot at 0 and
+        // tip at a half turn - and down the odd one beside it, back to the
+        // foot at a full turn. Every face reads the same loop, so the four
+        // comets climb and fall together.
+        const int column = static_cast<int>(std::lround(at.x));
+        const float height = clamp01((at.y - kStageBottom) / (kStageTop - kStageBottom));
+        orbit = (column % 2 == 0) ? height * 0.5f : 1.0f - height * 0.5f;
+    }
+    else
+    {
+        // the node's bearing around the ring's centre. atan2(dx, dy) puts
+        // zero at the top of the ring and turns the way the pixels are
+        // numbered, so on the ring this *is* the old strip walk - and the
+        // truss, standing off the orbit, still has a bearing, which sweeps
+        // the beam along it once a turn.
+        orbit = std::atan2(at.x - kRingCenterX, at.y - kRingCenterY) / (2.0f * kPi);
     }
 
-    // how far behind the head this place sits, wrapped around the turn
-    const float distance = frac(headAlpha - place);
+    // how far behind the head this node sits, wrapped around the turn
+    float distance = headAlpha - orbit;
+    distance -= std::floor(distance);
 
     // the python's clamp(1 - distance/8, 0.05, 1): a linear tail, and a 0.05
     // floor so the rest of the rig glows dim red rather than going out
@@ -440,27 +529,68 @@ void Pattern_Scanner_RecordCountdown::tick(float deltaTime)
     pulse.tick(deltaTime);
 }
 
+float Pattern_Scanner_RecordCountdown::ringAlpha(const HSVStripNode* node)
+{
+    if (node->GetStripNodeType() != StripNodeType::MAPPED2D)
+    {
+        return stripAlpha(node);
+    }
+
+    // the bearing round the ring's centre, as a fraction of a turn:
+    // atan2(dx, dy) is zero at the top and turns the way the pixels are
+    // numbered - the comet's walk, see Pattern_Scanner_RecordComet
+    const Coordinate at = nodeCoord(node);
+    return frac(std::atan2(at.x - kRingCenterX, at.y - kRingCenterY) / (2.0f * kPi));
+}
+
 void Pattern_Scanner_RecordCountdown::render(HSVStripNode* inNode, HSV& inOutColor) const
 {
-    const float sinceCount = pulse.getTimeSinceTrigger();
-    if (sinceCount < 0.0f)
+    // the ring, and a bare strip standing in for it: the fill. The stage's
+    // objects - the tower, the truss - get the flash below.
+    const HSVStripNode_Space* spaced = eio::spaceOf(inNode);
+    if (spaced == nullptr || spaced->space == NodeSpace::Ring)
     {
-        inOutColor = HSV(0.0f, 0.0f, 0.0f);
+        // the fill runs one edge past full, so the last pixel before the
+        // top is all the way up when the count is - a soft edge that stopped
+        // at 1.0 would leave it at a fraction
+        const float total = secondsPerCount * static_cast<float>(totalCounts);
+        const float fill = clamp01(timeActive / std::max(total, 0.01f)) * (1.0f + edgeWidth);
+        const float lit = clamp01((fill - ringAlpha(inNode)) / std::max(edgeWidth, 1e-3f));
+        inOutColor = HSV(0.0f, 0.0f, std::max(floorLevel, lit));
         return;
     }
 
     // height on the stage delays the read into the pulse's curve, which is
-    // the sweep: the count lands at the bottom of the ring and the top of the
-    // obelisk sees it sweepSeconds later.
-    const float delay = stageAlpha(inNode) * sweepSeconds;
-    inOutColor = HSV(0.0f, 0.0f, pulse.curve.evaluate(sinceCount - delay));
+    // the sweep: the count leaves the foot and the top of the obelisk sees
+    // it sweepSeconds later. Before the first count, or between them, the
+    // curve holds at its dark ends.
+    float flash = 0.0f;
+    const float sinceCount = pulse.getTimeSinceTrigger();
+    if (sinceCount >= 0.0f)
+    {
+        const float delay = stageAlpha(inNode) * sweepSeconds;
+        flash = pulse.curve.evaluate(sinceCount - delay);
+    }
+
+    // over the sculpture's own picture where there is one, by the flash's
+    // own brightness: none of it between counts, all of it at the peak
+    HSV under;
+    if (underlay != nullptr && underlay->sample(inNode, under))
+    {
+        inOutColor = HSV::blend(under, HSV(0.0f, 0.0f, 1.0f), flash);
+        return;
+    }
+
+    inOutColor = HSV(0.0f, 0.0f, flash);
 }
 
 void Pattern_Scanner_RecordCountdown::reflect(ecore::PropertyBag& bag)
 {
-    // only the sweep: the count's timing belongs to the game - see the
+    // the shapes, not the count: its timing belongs to the game - see the
     // header on secondsPerCount
     bag.add("sweep", sweepSeconds, 0.0f, 1.0f);
+    bag.add("edge", edgeWidth, 0.01f, 0.5f);
+    bag.add("floor", floorLevel, 0.0f, 0.5f);
 }
 
 void Pattern_Scanner_Solid::render(HSVStripNode* inNode, HSV& inOutColor) const

@@ -95,6 +95,10 @@ set(ECLIPSE_RELIC_SOURCES
     # from WLED. Same stage, free-standing.
     ${ECLIPSE_SRC}/relics/scanner/generic_patterns.cpp
 
+    # The recording flow's looks that build on a generic one (cleanse_arm is
+    # the fire, with a cue to answer and a picture to sit over).
+    ${ECLIPSE_SRC}/relics/scanner/recording_patterns.cpp
+
     # The jacket's looks. Its State_* wrappers reach into JacketIO for physical
     # buttons, so the desktop drives the Pattern_* generators inside them
     # directly, through esm's own State_GenericHSV - the state machine is real,
@@ -175,6 +179,8 @@ add_library(edmx STATIC
     src/beat_trigger.cpp
     src/config.cpp
     src/dmx_output.cpp
+    src/relic_shadow.cpp
+    src/relic_shadow_profiles.cpp
     src/fixture.cpp
     src/json.cpp
     src/midi_input.cpp
@@ -190,6 +196,9 @@ target_include_directories(edmx PUBLIC
 )
 
 target_link_libraries(edmx PUBLIC eclipse_core)
+# the shadow spawns the sculpture's own IO layer (ObeliskIO, for its
+# geometry) - the firmware, built for the host, same as --link-selftest
+target_link_libraries(edmx PUBLIC eclipse_relic_firmware)
 
 # ---------------------------------------------------------------------------
 # the executable

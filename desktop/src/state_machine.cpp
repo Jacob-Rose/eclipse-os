@@ -29,6 +29,8 @@
 
 // The generic looks - free-standing stage patterns, grouped as a machine.
 #include "relics/scanner/generic_patterns.h"
+// the recording flow's looks built on a generic one: cleanse_arm's fire
+#include "relics/scanner/recording_patterns.h"
 
 // The obelisk's own looks, for their machine and a borrowed generic cue.
 #include "relics/obelisk/state_obelisk.h"
@@ -141,6 +143,7 @@ void StateMachinePattern::ensureBuilt(const PatternContext& context)
         manager->addState(state);
         instances.push_back(state);
         generators.push_back(generator);
+        generator->setUnderlay(underlay);
     }
 
     if (!instances.empty())
@@ -151,6 +154,18 @@ void StateMachinePattern::ensureBuilt(const PatternContext& context)
         // StateMachine::tick dereferences the active state unconditionally.
         machine->setActiveState(instances[activeIndex]);
         machine->init();
+    }
+}
+
+void StateMachinePattern::setUnderlay(const eanim::Underlay* inUnderlay)
+{
+    underlay = inUnderlay;
+    for (const std::shared_ptr<eanim::GeneratorHSV>& generator : generators)
+    {
+        if (generator)
+        {
+            generator->setUnderlay(underlay);
+        }
     }
 }
 
@@ -241,6 +256,17 @@ void StateMachinePattern::reflectCurves(eanim::CurveBag& bag)
     }
 }
 
+bool StateMachinePattern::trigger(const ecore::GameplayTag& tag)
+{
+    // The showing look's, like reflect(): a ping lands on what is lit. The
+    // outgoing look of a cross-fade is not told - it is on its way out.
+    if (activeIndex < generators.size() && generators[activeIndex])
+    {
+        return generators[activeIndex]->onTrigger(tag);
+    }
+    return false;
+}
+
 bool StateMachinePattern::setState(const std::string& stateName, std::string& outError)
 {
     size_t target = states.size();
@@ -267,10 +293,11 @@ bool StateMachinePattern::setState(const std::string& stateName, std::string& ou
     if (target == activeIndex)
     {
         // Not a no-op: naming the showing state again restarts it. The game
-        // rewinds a look by transitioning to it, and the machine also starts
-        // in state 0 at process launch - so a boot's first `state power_up`
-        // arrives with power_up already active and its fill animation long
-        // finished. Without this the boot look was over before anyone saw it.
+        // rewinds a look by transitioning to it. (State 0, what the machine
+        // shows from process launch, used to be power_up - so a boot's first
+        // `state power_up` landed on a look already played out, and this
+        // restart was what made it visible. The scanner's state 0 is `none`
+        // now, dark, and the first power_up is a real change.)
         if (machine && target < instances.size())
         {
             machine->restartState(instances[target]);
@@ -457,6 +484,22 @@ namespace
     /// A look that is a plain GeneratorHSV, not a PatternScanner - no clock
     /// to rewind, so the default State_GenericHSV wrapper is the right one.
     /// The obelisk's ambient looks are these.
+    /// The same def, with the look leaving the obelisk to the underlay -
+    /// for the states that are the ring's alone. The make is wrapped rather
+    /// than the class changed because `none` is a Solid the success and
+    /// failure states also are, and those do paint the tower.
+    StateDef overUnderlay(StateDef def)
+    {
+        auto inner = def.make;
+        def.make = [inner]() {
+            std::shared_ptr<eanim::GeneratorHSV> look = inner();
+            // scannerLook / scannerSolid only ever build PatternScanners
+            static_cast<scanner::PatternScanner*>(look.get())->leaveObeliskToUnderlay = true;
+            return look;
+        };
+        return def;
+    }
+
     template <typename PatternT>
     StateDef plainLook(const char* name)
     {
@@ -480,8 +523,17 @@ std::unique_ptr<StateMachinePattern> edmx::makeScannerStateMachine()
     // (emergency lock, broken device, discovery, seed verdict) are their own
     // tags - only the game knows the save, it just names the look it wants.
     std::vector<StateDef> states = {
-        scannerLook<Pattern_Scanner_PowerUp>("power_up"),
-        scannerLook<Pattern_Scanner_Boot>("boot"),
+        // State 0 is what the machine shows from process launch until the
+        // game's first `state` line, and it is nothing: dark. It used to be
+        // power_up, so the boot look played once on its own while the game
+        // was still loading and again when the game asked for it.
+        // over an underlay (the obelisk's own look, shadowed on the desk)
+        // these three leave the tower alone: the boot is the ring's, and
+        // the dark of `none` is the ring's - a take or a cross-fade through
+        // them then changes nothing on the sculpture
+        overUnderlay(scannerSolid("none", HSV(0.0f, 0.0f, 0.0f))),
+        overUnderlay(scannerLook<Pattern_Scanner_PowerUp>("power_up")),
+        overUnderlay(scannerLook<Pattern_Scanner_Boot>("boot")),
         scannerLook<Pattern_Scanner_ScanIdle>("scan_idle"),
         scannerLook<Pattern_Scanner_Emergency>("scan_idle_emergency"),
         scannerSolid("scan_idle_broken", HSV(0.0f, 0.0f, 0.0f)),
@@ -502,8 +554,10 @@ std::unique_ptr<StateMachinePattern> edmx::makeScannerStateMachine()
 
         // The recording flow and the void stone - the last looks the game
         // rendered in python, so every state the scanner has is now here.
+        // waiting for the rock: the amber breath, whole at the foot of the
+        // tower and fading out to the sculpture's own picture at the tip
         scannerLookWith<Pattern_Scanner_SinePulse>("record_arm",
-            HSV(45.0f, 1.0f, 1.0f), 4.0f, 0.15f, 0.5f),                 // CRGB(1.0, 0.75, 0.0)
+            HSV(45.0f, 1.0f, 1.0f), 4.0f, 0.15f, 0.5f, 1.0f),           // CRGB(1.0, 0.75, 0.0)
         scannerLook<Pattern_Scanner_RecordCountdown>("record_countdown"),
         scannerLook<Pattern_Scanner_RecordComet>("record_active"),
         scannerLookWith<Pattern_Scanner_SinePulse>("record_saved",
@@ -518,6 +572,14 @@ std::unique_ptr<StateMachinePattern> edmx::makeScannerStateMachine()
             HSV(33.3f, 0.9f, 1.0f)),
         scannerLookWith<Pattern_Scanner_SinePulse>("void",
             HSV(282.0f, 1.0f, 0.5f), 2.0f, 0.0f, 0.6f),                 // CRGB(0.35, 0.0, 0.5)
+
+        // The cleanse: a rock shown to an armed cleanse loses its take. The
+        // fire burns over the tower's own picture while it waits, doused on
+        // the game's cue as the rock lands (scanner.cleanse.douse); done is
+        // a cool breath, the rock void again.
+        scannerLook<Pattern_Scanner_CleanseFire>("cleanse_arm"),
+        scannerLookWith<Pattern_Scanner_SinePulse>("cleanse_done",
+            HSV(200.0f, 0.6f, 1.0f), 6.0f, 0.4f, 0.6f),
     };
 
     // The looks read the strip index, not coordinates, so the frame is the
@@ -562,6 +624,15 @@ std::unique_ptr<StateMachinePattern> edmx::makeGenericStateMachine()
     CoordFrame frame;
     return std::unique_ptr<StateMachinePattern>(new StateMachinePattern(
         "generic", std::move(states), 0, frame, 0.5f));
+}
+
+std::shared_ptr<eanim::GeneratorHSV> edmx::makeObeliskLook(const std::string& name)
+{
+    if (name == "seasons" || name == "main") return std::make_shared<Pattern_Obelisk_FourSeasons>();
+    if (name == "theater")                   return std::make_shared<Pattern_Obelisk_Theater>();
+    if (name == "mono" || name == "test")    return std::make_shared<Pattern_Obelisk_Monocolor>();
+    if (name == "blobs")                     return std::make_shared<Pattern_Obelisk_Blobs>();
+    return nullptr;
 }
 
 std::unique_ptr<StateMachinePattern> edmx::makeObeliskStateMachine()

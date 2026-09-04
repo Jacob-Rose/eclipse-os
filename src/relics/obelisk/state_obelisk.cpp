@@ -51,6 +51,12 @@ void Pattern_Obelisk_FourSeasons::tick(float deltaTime)
     coreNoise.tick(deltaTime);
 }
 
+void Pattern_Obelisk_FourSeasons::reflectState(ecore::PropertyBag& bag)
+{
+    // The whole look is the field's clock: same time, same picture.
+    coreNoise.reflectState(bag, "noise.");
+}
+
 void Pattern_Obelisk_FourSeasons::render(HSVStripNode* inNode, HSV& inOutColor) const
 {
 #if OBELISK_DEBUG_ENABLED
@@ -89,6 +95,12 @@ Pattern_Obelisk_Theater::Pattern_Obelisk_Theater()
 
     paletteLFO.speed = 0.1f;
 
+}
+
+void Pattern_Obelisk_Theater::reflectState(ecore::PropertyBag& bag)
+{
+    lfo.reflectState(bag, "lfo.");
+    paletteLFO.reflectState(bag, "palette.");
 }
 
 void Pattern_Obelisk_Theater::tick(float deltaTime)
@@ -133,6 +145,11 @@ Pattern_Obelisk_Blobs::Pattern_Obelisk_Blobs()
     noise.timeScale = 0.33f;
     noise.imageScaleX = 1.0f;
     noise.imageScaleY = 1.0f;
+}
+
+void Pattern_Obelisk_Blobs::reflectState(ecore::PropertyBag& bag)
+{
+    noise.reflectState(bag, "noise.");
 }
 
 void Pattern_Obelisk_Blobs::tick(float deltaTime)

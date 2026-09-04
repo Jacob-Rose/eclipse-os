@@ -277,6 +277,9 @@ class LayerView:
     def set_curve(self, name: str, keys: Sequence[CurveKeyTuple]) -> None:
         self.show.command(f"layer {self.name} curve {name} " + " ".join(_curve_tokens(keys)))
 
+    def trigger(self, name: str) -> None:
+        self.show.command(f"layer {self.name} trigger {name}")
+
     def reset_look(self) -> None:
         defaults = self._look_defaults.get(self._look_key)
         if defaults is None:
@@ -1013,6 +1016,18 @@ class ShowController:
         stays expressive on a rig that has none.
         """
         self.command(f"input {channel} {'on' if down else 'off'}")
+
+    def trigger(self, name: str) -> None:
+        """Fires one of the running look's triggers - an impulse, by tag.
+
+        A tag is dotted text, `scanner.ping`, spelled the way the look
+        declares it (scanner_tags in scanner_patterns.h).
+
+        Send it as the thing happens: afterglow calls this as it plays a
+        sound, and the look ties its flash to that moment. Raises ShowError
+        if the running look does not answer to the name.
+        """
+        self.command(f"trigger {name}")
 
     def set_param(self, name: str, value: Union[float, bool, str],
                   wait: bool = True) -> None:

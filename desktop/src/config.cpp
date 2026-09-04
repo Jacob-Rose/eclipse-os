@@ -300,6 +300,7 @@ namespace
     // pattern side maps it (eio::nodeSpaceFromName) and an unknown word is
     // simply "the stage", so a file that never says loses nothing.
     device.space = root["space"].asString("");
+    device.gamma = root["gamma"].asFloat(device.gamma);
 
     // ---- device -------------------------------------------------------
     {
@@ -311,6 +312,14 @@ namespace
         device.output.baud            = output["baud"].asInt(device.output.baud);
         device.output.fps             = output["fps"].asFloat(device.output.fps);
         device.output.consoleChannels = output["console_channels"].asInt(device.output.consoleChannels);
+        device.output.start           = output["start"].asString(device.output.start);
+
+        if (device.output.start != "streaming" && device.output.start != "released")
+        {
+            warnings.push_back("output.start of '" + device.output.start
+                                    + "' is not streaming or released; using streaming");
+            device.output.start = "streaming";
+        }
 
         if (device.output.fps <= 0.0f || device.output.fps > 200.0f)
         {
@@ -913,6 +922,10 @@ bool edmx::loadConfig(const std::string& path, Config& outConfig, std::string& o
             }
 
             device.brightness = std::clamp(entry["brightness"].asFloat(1.0f), 0.0f, 1.0f);
+            if (entry["gamma"].isNumber())
+            {
+                device.gamma = entry["gamma"].asFloat(device.gamma);
+            }
 
             // ---- overrides ---------------------------------------------
             // A device file says what a sculpture *is*; where it is plugged in
@@ -925,6 +938,14 @@ bool edmx::loadConfig(const std::string& path, Config& outConfig, std::string& o
                 device.output.baud            = output["baud"].asInt(device.output.baud);
                 device.output.fps             = output["fps"].asFloat(device.output.fps);
                 device.output.consoleChannels = output["console_channels"].asInt(device.output.consoleChannels);
+                device.output.start           = output["start"].asString(device.output.start);
+
+                if (device.output.start != "streaming" && device.output.start != "released")
+                {
+                    config.warnings.push_back("output.start of '" + device.output.start
+                                              + "' is not streaming or released; using streaming");
+                    device.output.start = "streaming";
+                }
             }
             if (entry["port"].isString())
             {

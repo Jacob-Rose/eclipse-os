@@ -98,6 +98,9 @@ namespace edmx
         void reflect(ecore::PropertyBag& bag) override;
         void reflectCurves(eanim::CurveBag& bag) override;
 
+        /// To the look that is showing, same as the knobs.
+        bool trigger(const ecore::GameplayTag& tag) override;
+
         /// Every state, in table order. This is what a UI builds buttons from.
         std::vector<std::string> stateNames() const;
 
@@ -117,8 +120,15 @@ namespace edmx
         /// are remote buttons; here they are whatever the UI wires them to.
         void setInput(bool inputA, bool inputB);
 
+        /// To every look in the machine, not only the showing one: a
+        /// cross-fade renders two, and the one arriving should already see
+        /// what it is arriving over.
+        void setUnderlay(const eanim::Underlay* underlay) override;
+
     private:
         void ensureBuilt(const PatternContext& context);
+
+        const eanim::Underlay* underlay{nullptr};
 
         std::string name;
         std::vector<StateDef> states;
@@ -167,6 +177,13 @@ namespace edmx
 
     /// The obelisk's own ambient looks as one machine.
     std::unique_ptr<StateMachinePattern> makeObeliskStateMachine();
+
+    /// One of the obelisk's own looks, by the name its firmware answers a
+    /// `sim` with (seasons, theater, mono, blobs). Null for a name that is
+    /// not one of them - a scanner tag, say - which a shadow reports rather
+    /// than guesses at. The same classes ObeliskCore instantiates, so a copy
+    /// spawned here and put at the same state draws the same pixels.
+    std::shared_ptr<eanim::GeneratorHSV> makeObeliskLook(const std::string& name);
 
     /// The UV par's own machine, for a layer: `off`, `flash` (a beat pulse
     /// with its envelope drawable at the desk) and `on`. Three modes for one

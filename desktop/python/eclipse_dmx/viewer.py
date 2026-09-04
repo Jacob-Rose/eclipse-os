@@ -105,6 +105,7 @@ STATE_GROUPS: List[Tuple[str, List[Tuple[str, Tuple[str, str]]]]] = [
 #: today; a machine this table has never heard of still gets every button,
 #: just less tidily sorted.
 GENERATED_STATE_GROUPS: List[Tuple[str, str]] = [
+    ("boot", "none"),
     ("boot", "power_up"),
     ("boot", "boot"),
     ("idle", "scan_idle"),

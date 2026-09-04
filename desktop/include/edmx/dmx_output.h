@@ -264,7 +264,21 @@ namespace edmx
         bool sendCommand(const std::string& text, std::string& outError);
 
         /// Hands the pixels back now, rather than letting the relic time out.
+        /// The stream stays off afterwards until take().
         bool release(std::string& outError);
+
+        /// Starts sending frames again after a release, or after opening
+        /// released. The takeover is the first frame; what that frame
+        /// carries is the show's business - see edmx::RelicShadow for how a
+        /// look makes it the relic's own picture.
+        void take() { streaming = true; }
+
+        /// True while pixel frames go out. Cue mode never streams.
+        bool isStreaming() const { return mode == Mode::Pixels && streaming; }
+
+        /// Whether the stream begins on the first frame (the default) or
+        /// waits for take(). Set before open().
+        void setStartReleased(bool released) { streaming = !released; }
 
         /// Reboots the relic into its USB bootloader so it can be reflashed.
         /// The relic does not come back; the port disappears.
@@ -288,6 +302,7 @@ namespace edmx
         std::string port;
         int baud;
         Mode mode;
+        bool streaming{true};
         int pixelCount{0};
         int consecutiveFailures{0};
         SerialPort serial;

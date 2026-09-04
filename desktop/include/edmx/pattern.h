@@ -140,6 +140,12 @@ namespace edmx
         /// there is no reason for the two to diverge.
         virtual class StateMachinePattern* asStateMachine() { return nullptr; }
 
+        /// What is showing underneath, on a relic the show has taken over -
+        /// see eanim::Underlay. Null when nothing is. A pattern that composes
+        /// looks hands it to them; the default keeps nothing, for a pattern
+        /// with no looks that could use it.
+        virtual void setUnderlay(const eanim::Underlay* /*underlay*/) {}
+
         /// The knobs this pattern offers, gathered fresh on every call.
         ///
         /// Fresh, and never cached, because a PropertyBag holds pointers into
@@ -156,6 +162,12 @@ namespace edmx
         /// AutomationCurves. Same freshness rules. Empty by default: most
         /// patterns have no live shape worth handing to a curve editor.
         virtual void reflectCurves(eanim::CurveBag& /*bag*/) {}
+
+        /// An impulse, by tag - `trigger <tag>` on the protocol. True if the
+        /// running look answered to it; false, the default, is "no such
+        /// trigger" and the desk says so. See eanim::GeneratorHSV::onTrigger
+        /// for the look's side, and ecore::GameplayTag for what a tag is.
+        virtual bool trigger(const ecore::GameplayTag& /*tag*/) { return false; }
 
         /// Live control, driven by the stdin protocol. Values are applied
         /// immediately so the python wrapper can nudge a running show.

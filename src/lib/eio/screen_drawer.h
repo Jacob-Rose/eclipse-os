@@ -27,6 +27,7 @@ class Adafruit_GC9A01A;
 #include <memory>
 #include <chrono>
 #include <ctime>
+#include <vector>
 
 #include "../ecore/tickable.h"
 

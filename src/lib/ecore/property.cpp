@@ -5,6 +5,9 @@
 
 #include "property.h"
 
+#include <cstdio>
+#include <cstdlib>
+
 #include <algorithm>
 
 using namespace ecore;
@@ -76,6 +79,70 @@ void Property::setColor(const HSV& color)
     }
 }
 
+
+void PropertyBag::addState(const char* name, float& value, std::function<void()> onChanged)
+{
+    add(name, value, Property::STATE_MIN, Property::STATE_MAX, std::move(onChanged));
+}
+
+std::string ecore::serializeState(const PropertyBag& bag)
+{
+    std::string out;
+    char number[32];
+    for (const Property& property : bag.all())
+    {
+        if (property.type == Property::Type::Color)
+        {
+            continue;
+        }
+        // %.9g: every float round-trips exactly, so a copy put at this
+        // state draws the same pixel, not one a rounding away from it
+        std::snprintf(number, sizeof(number), "%.9g", property.get());
+        if (!out.empty())
+        {
+            out.push_back(' ');
+        }
+        out += property.name;
+        out.push_back('=');
+        out += number;
+    }
+    return out;
+}
+
+int ecore::applyState(PropertyBag& bag, const std::string& text)
+{
+    int applied = 0;
+    size_t at = 0;
+    while (at < text.size())
+    {
+        // one `name=value` token, however much whitespace is around it
+        while (at < text.size() && (text[at] == ' ' || text[at] == '\t'))
+        {
+            ++at;
+        }
+        size_t end = at;
+        while (end < text.size() && text[end] != ' ' && text[end] != '\t')
+        {
+            ++end;
+        }
+        if (end > at)
+        {
+            const std::string token = text.substr(at, end - at);
+            const size_t eq = token.find('=');
+            if (eq != std::string::npos && eq > 0)
+            {
+                char* stop = nullptr;
+                const float value = std::strtof(token.c_str() + eq + 1, &stop);
+                if (stop != token.c_str() + eq + 1 && bag.set(token.substr(0, eq), value))
+                {
+                    ++applied;
+                }
+            }
+        }
+        at = end;
+    }
+    return applied;
+}
 
 void PropertyBag::add(const char* name, float& value, float minValue, float maxValue,
                       std::function<void()> onChanged)

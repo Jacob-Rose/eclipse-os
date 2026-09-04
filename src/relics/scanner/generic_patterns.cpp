@@ -247,7 +247,7 @@ void Pattern_Generic_Fire2012::tick(float deltaTime)
 
     // ignition: a rate, not a per-frame coin flip, so the fire's density
     // does not depend on the frame rate
-    spawnDebt += deltaTime * sparking * 40.0f;
+    spawnDebt += deltaTime * sparking * std::max(emitter, 0.0f) * 40.0f;
     while (spawnDebt >= 1.0f)
     {
         spawnDebt -= 1.0f;
@@ -361,6 +361,7 @@ void Pattern_Generic_Fire2012::reflect(ecore::PropertyBag& bag)
     bag.add("sparking", sparking, 0.0f, 1.0f);
     bag.add("spread", spread, 0.0f, 0.5f);
     bag.add("rise", riseSpeed, 4.0f, 30.0f);
+    bag.add("emitter", emitter, 0.0f, 2.0f);
 }
 
 // ============================================================================
