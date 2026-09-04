@@ -195,6 +195,35 @@ evaluate — including two accidents the vendored easing library ships with
 calling the *int* `abs`), mirrored on purpose so the editor draws what the
 binary will actually play.
 
+### binding a pad — the MIDI map
+
+`[m]`, or the **midi** button, unfolds a band down the right: a list of
+bindings and a form for the selected one. A binding is a trigger, a mode and
+an action, and the action list is a registry — `syn: scene`, `rig: state`,
+`rig: look knob`, `rig: protocol line` and the rest — so a pad on a
+controller and a bass drum arriving over OSC can do the same things.
+
+**Nothing has to be typed to bind a pad.** Press **+ learn**, hit the pad,
+and the trigger is filled in from what arrived; then say what it should do.
+The editor's own **learn** button does the same for the binding already
+selected, which is how a pad gets moved without touching the numbers. Both
+disarm as soon as one message lands.
+
+Three details that are the point of it:
+
+- **The pad being learned does not also fire.** The event is offered to learn
+  before the dispatcher sees it and eaten when taken — otherwise binding a pad
+  to a cue would launch that cue in front of the room.
+- **The release is not a second binding.** A pad speaks twice, down and up;
+  learn takes the press and swallows the up-stroke that follows.
+- **A knob binds as a `cc`** and a pad as a `note`, off the message itself,
+  so nothing depends on reading a controller's chart.
+
+The map is `midimaps/default.json` beside the config, or `--midimap FILE`, and
+an evening's bindings are saved on the way out rather than asked about — a set
+is not the time for a dialog. There is no shipped default: the first binding
+you learn is the file.
+
 ### the frame stream
 
 The viewer is a client of a flag anything can use:
@@ -1276,6 +1305,16 @@ the show, the viewer, the wire and the colour out to Synesthesia, off
 ./launch-mythos-set.sh --bench      # the same look, nothing on the wire
 ./launch-mythos-set.sh --headless   # no window - over ssh, or no tkinter
 ```
+
+It names the **controller**, because the config cannot: `midi.port` is `auto`,
+and auto will not open a box of buttons (see [binding a pad](#binding-a-pad--the-midi-map)
+and the note on `midi.ignore`) — so without this the Launchpad is never
+subscribed and the cue pads do nothing. Named, not addressed, since `20:1` is
+an enumeration order rather than a fact; and only when it is actually plugged
+in, because a named port that is missing is fatal at startup and a controller
+left in the flight case must not be the reason a set does not run. Unplugged,
+the beat still arrives on `eclipse-dmx IN` exactly as before. `--midi SPEC` or
+`ECLIPSE_MIDI_PORT` moves it, `--midi ""` opens none.
 
 It also opens the audio link back from the visualiser — `--osc-in 7000`, the
 map beside the config — which `--no-osc-in` turns off and `--osc-in PORT` (or

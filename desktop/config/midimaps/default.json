@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "mappings": [
+    {
+      "label": "map 1",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 64
+      },
+      "mode": "press",
+      "action": "syn_scene",
+      "params": {
+        "scene": "rearranged",
+        "preset": ""
+      },
+      "enabled": true
+    }
+  ]
+}

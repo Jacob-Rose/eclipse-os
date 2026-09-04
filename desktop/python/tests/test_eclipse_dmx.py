@@ -2774,6 +2774,149 @@ class ViewerOnARelic(unittest.TestCase):
         self.assertEqual(self.app._link_buttons["release"]["bg"], BUTTON_BG)
 
 
+class MidiLearn(unittest.TestCase):
+    """Binding a pad by hitting it, down the path a real pad takes.
+
+    Events are fed as monitor lines rather than as MidiEvents, because that is
+    what arrives: the executable prints `MIDI-IN ch=1 note_on 41 100`, the
+    reader thread queues it, and the pump offers it to learn before the
+    mappings. A test that skipped to take_learn would not cover the half of
+    this that has ever been wrong.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        executable_or_skip()
+        try:
+            import tkinter
+        except ImportError as error:
+            raise unittest.SkipTest(f"no tkinter: {error}")
+        try:
+            tkinter.Tk().destroy()
+        except Exception as error:
+            raise unittest.SkipTest(f"no display: {error}")
+
+    def setUp(self):
+        import tempfile
+        from eclipse_dmx.viewer import ViewerApp
+
+        # Made before the viewer, because the map is loaded in the constructor
+        # from config/midimaps/default.json - the checkout's own, which is a
+        # real file on a machine that has ever run a set. These tests start
+        # from an empty map, so the viewer is pointed at a path in here that
+        # does not exist yet rather than at whatever is bound tonight.
+        self.scratch = tempfile.TemporaryDirectory()
+        scratch_map = Path(self.scratch.name) / "default.json"
+
+        self.app = ViewerApp(SHOW, midi="", bpm=120.0, midimap=scratch_map)
+
+        # The panel saves on the way out when it is dirty, and learning makes
+        # it dirty. `path` cleared so the save goes through default_dir, which
+        # is what a first-run map does and is the path the last test checks -
+        # proving the directory is the one the viewer handed it rather than a
+        # hardcoded one.
+        self.panel = self.app.midi_panel
+        self.panel.path = None
+        self.panel.default_dir = Path(self.scratch.name)
+
+    def tearDown(self):
+        self.app._quit()
+        self.scratch.cleanup()
+
+    def settle(self, seconds=0.5):
+        end = time.monotonic() + seconds
+        while time.monotonic() < end:
+            self.app.root.update()
+            time.sleep(0.02)
+
+    def hit(self, *lines):
+        for line in lines:
+            self.app._on_midi_line(line)
+        self.settle(0.3)
+
+    def test_learn_from_an_empty_map_needs_no_typing(self):
+        # The first-run flow: nothing bound, nothing selected, and the editor
+        # (with its own learn button) is not even on screen yet.
+        self.settle(0.6)
+        self.assertEqual(self.panel.mappings.mappings, [])
+
+        self.panel._add_and_learn()
+        self.settle(0.2)
+        self.assertTrue(self.panel._learning)
+
+        self.hit("ch=3 note_on 41 100", "ch=3 note_off 41 0")
+
+        bound = self.panel.mappings.mappings[-1]
+        self.assertEqual((bound.kind, bound.channel, bound.number), ("note", 3, 41))
+        self.assertFalse(self.panel._learning, "one pad, then disarmed")
+
+    def test_the_pad_being_learned_does_not_also_fire(self):
+        # Hitting a pad to bind it must not launch the cue it is being bound
+        # to - the point of taking the event before the dispatcher sees it.
+        from eclipse_dmx.midi_map import Mapping
+
+        self.panel.mappings.mappings.append(
+            Mapping(label="cue", kind="note", channel=3, number=41,
+                    action="state", params={"name": "tv_static"}))
+        self.panel._refresh_list()
+        self.panel._select_index(0)
+        self.settle(0.4)
+        opened = self.app.show.current_state
+
+        self.panel._toggle_learn()
+        self.hit("ch=3 note_on 41 100", "ch=3 note_off 41 0")
+
+        self.assertEqual(self.app.show.current_state, opened)
+
+    def test_the_release_is_not_a_second_binding(self):
+        # A pad speaks twice. Learning the up-stroke would bind the release
+        # and the next thing touched would land on the wrong mapping.
+        self.settle(0.6)
+        self.panel._add_and_learn()
+        self.hit("ch=1 note_on 60 100")
+        self.assertFalse(self.panel._learning)
+        first = self.panel.mappings.mappings[-1].number
+
+        self.hit("ch=1 note_off 60 0")           # arrives after learn ended
+        self.assertEqual(self.panel.mappings.mappings[-1].number, first)
+        self.assertEqual(len(self.panel.mappings.mappings), 1)
+
+    def test_a_knob_binds_as_a_cc(self):
+        self.settle(0.6)
+        self.panel._add_and_learn()
+        self.hit("ch=1 cc 74 64")
+        bound = self.panel.mappings.mappings[-1]
+        self.assertEqual((bound.kind, bound.channel, bound.number), ("cc", 1, 74))
+
+    def test_selecting_another_mapping_cancels_the_arm(self):
+        # Otherwise the next pad binds to whatever was clicked, which is not
+        # what the click meant.
+        self.settle(0.6)
+        self.panel._add()
+        self.panel._add()
+        self.panel._toggle_learn()
+        self.assertTrue(self.panel._learning)
+
+        self.panel._list.selection_clear(0, "end")
+        self.panel._list.selection_set(0)
+        self.panel._on_select()
+        self.settle(0.2)
+
+        self.assertFalse(self.panel._learning)
+
+    def test_an_evenings_bindings_survive_the_window_closing(self):
+        # save_if_dirty on the way out, into the directory the viewer named.
+        self.settle(0.6)
+        self.panel._add_and_learn()
+        self.hit("ch=2 note_on 36 100")
+        self.app._quit()
+
+        written = Path(self.scratch.name) / "default.json"
+        self.assertTrue(written.exists(), "learned bindings were not kept")
+        reloaded = midi_map.MappingSet.load(written)
+        self.assertEqual(reloaded.mappings[-1].number, 36)
+
+
 class ViewerOnTheShow(unittest.TestCase):
     """The tempo controls, driven the way a click drives them."""
 

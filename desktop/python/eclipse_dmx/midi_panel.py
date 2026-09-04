@@ -138,6 +138,14 @@ class MidiMapPanel:
         _button(row, "dup", self._duplicate).pack(side="left", padx=2)
         _button(row, "del", self._delete).pack(side="left", padx=2)
 
+        # The way in from an empty map. The editor's own learn button rebinds
+        # the mapping already selected, and it lives *in* the editor - which is
+        # hidden when nothing is selected, so on a map with no mappings yet
+        # there was no learn button on screen at all. This one is always there
+        # and makes the mapping it is about to bind.
+        self._add_learn_button = _button(row, "+ learn", self._add_and_learn)
+        self._add_learn_button.pack(side="right", padx=2)
+
     def _build_editor(self) -> None:
         self._editor = tk.Frame(self.frame, bg=PANEL)
         self._editor.pack(fill="x", padx=6)
@@ -256,6 +264,13 @@ class MidiMapPanel:
     # -- selection ---------------------------------------------------------
 
     def _on_select(self) -> None:
+        # Clicking another row while armed would bind the next pad to whatever
+        # was clicked, which is not what the click meant. Disarmed here rather
+        # than carried, because a learn aimed at the wrong mapping is worse
+        # than one that has to be asked for twice.
+        if self._learning:
+            self._stop_learn()
+            self._say("midi learn: cancelled")
         selection = self._list.curselection()
         self._select_index(selection[0] if selection else None, from_list=True)
 
@@ -380,13 +395,37 @@ class MidiMapPanel:
     # -- learn -------------------------------------------------------------
 
     def _toggle_learn(self) -> None:
+        """The editor's button: rebind the mapping already selected."""
         if self._selected is None:
             self._say("midi learn: nothing selected")
             return
-        self._learning = not self._learning
-        self._learn_button.configure(
-            bg=BUTTON_BG_ACTIVE if self._learning else BUTTON_BG,
-            text="hit it" if self._learning else "learn")
+        if self._learning:
+            self._stop_learn()
+        else:
+            self._begin_learn()
+
+    def _add_and_learn(self) -> None:
+        """The list's button: a new mapping, bound by hitting the pad.
+
+        Which is the whole flow from an empty map - press this, hit the pad,
+        then say what it should do - rather than adding a mapping and typing
+        a note number read off a controller chart.
+        """
+        self._add()
+        self._begin_learn()
+
+    def _begin_learn(self) -> None:
+        self._learning = True
+        self._learn_button.configure(bg=BUTTON_BG_ACTIVE, text="hit it")
+        self._add_learn_button.configure(bg=BUTTON_BG_ACTIVE)
+        # Said as well as shown: the button is one word in a folded panel, and
+        # the thing to do next - touch the controller - happens off screen.
+        self._say("midi learn: hit a pad or move a control")
+
+    def _stop_learn(self) -> None:
+        self._learning = False
+        self._learn_button.configure(bg=BUTTON_BG, text="learn")
+        self._add_learn_button.configure(bg=BUTTON_BG)
 
     def take_learn(self, event: MidiEvent) -> bool:
         """Offered every event before the dispatcher sees it. Takes exactly
@@ -403,8 +442,7 @@ class MidiMapPanel:
         mapping.kind = folded
         mapping.channel = event.channel
         mapping.number = event.data1
-        self._learning = False
-        self._learn_button.configure(bg=BUTTON_BG, text="learn")
+        self._stop_learn()
         self._mark_dirty()
         self._load_editor()
         self._refresh_list(keep_selection=True)

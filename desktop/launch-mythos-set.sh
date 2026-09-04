@@ -46,11 +46,37 @@ OSC_ADDRESS="${ECLIPSE_OSC_ADDRESS:-Jakes-Mac-mini.local:6000}"
 # the output port set to this number and the output IP naming this machine.
 OSC_IN_PORT="${ECLIPSE_OSC_IN_PORT:-7000}"
 
+# The controller, for the cue pads and the midi map's learn button.
+#
+# The config says "auto", and on Linux auto will not open a controller at all:
+# it publishes "eclipse-dmx IN" for Mixxx and waits, because every pad on a box
+# of buttons sends notes and one of them landing on beat_note would yank the
+# beat grid. So the Launchpad has to be named, and naming it does not cost the
+# tempo route - the published port stays up alongside the subscription, so
+# Mixxx still reaches us on the same run.
+#
+# Named, not addressed: this is "20:1" to aconnect today and something else
+# after a replug, the same reason the mac mini is a name up there. The X shows
+# up as two ports and only one of them carries your pads - the MIDI port for
+# the standalone custom and note modes, the DAW port for a session-mode host.
+# Which one is a question for the controller, not for this file:
+#
+#   python -m eclipse_dmx midi-watch config/mythos26.json \
+#       --midi "Launchpad X LPX DAW In" --seconds 15
+#
+# and press some pads. Whichever prints is the one to put here.
+#
+# Worth knowing once they are in: the pads share the input with the beat clock,
+# so a pad sending note 50, 52, 64, 68 or 69 on channel 1 reads as beat, tempo
+# or VU. Move the controller's custom mode to another channel if they collide.
+MIDI_PORT="${ECLIPSE_MIDI_PORT:-Launchpad X LPX MIDI In}"
+
 live=1
 viewer=1
 osc=1
 osc_in=1
 extra=()
+midi_args=()
 
 usage() {
     cat <<'USAGE'
@@ -66,6 +92,9 @@ launch-mythos-set.sh - the mythos26 set, on this machine
   --osc HOST:PORT      where the visualiser is listening. Defaults to the mac
                        mini, Jakes-Mac-mini.local:6000, or $ECLIPSE_OSC_ADDRESS.
                        A name is followed if its address changes.
+  --midi SPEC          controller to take pads from (default the Launchpad,
+                       or $ECLIPSE_MIDI_PORT). Empty string opens none and
+                       leaves the config's "auto" to publish for Mixxx.
   --config PATH        a different show (default config/mythos26.json)
   --bpm N              opening tempo, and the fallback if the beat goes quiet
   --state NAME         the look to open on (beat_pulse, vu_pulse, tv_static...)
@@ -85,6 +114,7 @@ while [ $# -gt 0 ]; do
         --osc-in)          OSC_IN_PORT="${2:?--osc-in needs a port}"; shift ;;
         --osc)             OSC_ADDRESS="${2:?--osc needs HOST:PORT}"; shift ;;
         --config)          CONFIG="${2:?--config needs a path}"; shift ;;
+        --midi)            MIDI_PORT="${2-}"; shift ;;
         --bpm)             extra+=(--bpm "${2:?--bpm needs a number}"); shift ;;
         --state)           extra+=(--state "${2:?--state needs a name}"); shift ;;
         --)                shift; extra+=("$@"); break ;;
@@ -161,6 +191,26 @@ if [ "$live" = 1 ]; then
     fi
 fi
 
+if [ -n "$MIDI_PORT" ]; then
+    # Only if it is actually plugged in. A *named* port that is not there is
+    # fatal at startup - deliberately, since naming one means you meant it -
+    # and a controller left in the flight case must not be the reason a set
+    # does not run. Unplugged, the config's "auto" publishes for Mixxx exactly
+    # as it did before, and the cue pads are simply not there tonight.
+    if "$EXE" --list-midi 2>/dev/null | grep -Fq "$MIDI_PORT"; then
+        # Into its own array rather than `extra`, so it goes on the command
+        # line *before* anything passed after `--` - argparse takes the last
+        # of a repeated option, and a --midi typed at the prompt has to beat
+        # the one this file defaults to.
+        midi_args=(--midi "$MIDI_PORT")
+        echo "controller: $MIDI_PORT"
+    else
+        echo "warning: no '$MIDI_PORT' on this machine - no cue pads tonight." >&2
+        echo "         the beat still arrives on 'eclipse-dmx IN'." >&2
+        echo "         --list-midi shows what is here." >&2
+    fi
+fi
+
 if [ "$osc" = 1 ]; then
     # A quick look at where the visualiser is, through the same code the sender
     # uses, so a name prints as an address before anything opens. Three seconds
@@ -221,6 +271,7 @@ if [ "$osc_in" = 1 ]; then
     command+=(--osc-in "$OSC_IN_PORT")
 fi
 
+command+=("${midi_args[@]+"${midi_args[@]}"}")
 command+=("${extra[@]+"${extra[@]}"}")
 
 # Mixxx enumerates MIDI once, at startup, and this is the port it connects to -
