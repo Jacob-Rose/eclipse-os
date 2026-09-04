@@ -562,7 +562,8 @@ namespace scanner
 
     /* @brief One flat color. Covers the python states that just filled the
     * ring: success green, failure red, seed verdicts, and - at v 0 - the rest
-    * and blackout states. */
+    * and blackout states. The dark ones (`none`, `audio_playback_rest`) set
+    * leaveObeliskToUnderlay on the desk, so their black is the ring's only. */
     class Pattern_Scanner_Solid : public PatternScanner
     {
     public:

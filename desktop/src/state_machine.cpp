@@ -530,7 +530,8 @@ std::unique_ptr<StateMachinePattern> edmx::makeScannerStateMachine()
         // over an underlay (the obelisk's own look, shadowed on the desk)
         // these three leave the tower alone: the boot is the ring's, and
         // the dark of `none` is the ring's - a take or a cross-fade through
-        // them then changes nothing on the sculpture
+        // them then changes nothing on the sculpture. audio_playback_rest,
+        // below, is the fourth.
         overUnderlay(scannerSolid("none", HSV(0.0f, 0.0f, 0.0f))),
         overUnderlay(scannerLook<Pattern_Scanner_PowerUp>("power_up")),
         overUnderlay(scannerLook<Pattern_Scanner_Boot>("boot")),
@@ -550,7 +551,11 @@ std::unique_ptr<StateMachinePattern> edmx::makeScannerStateMachine()
         scannerLook<Pattern_Scanner_PlaybackGeneric>("audio_playback_generic"),
         scannerSolid("audio_playback_seed", HSV(120.0f, 1.0f, 0.392f)),
         scannerSolid("audio_playback_seed_bad", HSV(0.0f, 1.0f, 0.392f)), // rgb(100,0,0)
-        scannerSolid("audio_playback_rest", HSV(0.0f, 0.0f, 0.0f)),
+        // the rest after a scan is the ring's dark, like `none`: the tower
+        // is the sculpture's own picture through it, so the fade out of a
+        // playback look lands on the shadow, and scan_idle then composes
+        // over the same picture - no black tower between the two
+        overUnderlay(scannerSolid("audio_playback_rest", HSV(0.0f, 0.0f, 0.0f))),
 
         // The recording flow and the void stone - the last looks the game
         // rendered in python, so every state the scanner has is now here.
