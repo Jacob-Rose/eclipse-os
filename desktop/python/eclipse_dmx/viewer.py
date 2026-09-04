@@ -867,6 +867,10 @@ class ViewerApp:
         self._lamps = LampPainter(self._midimap)
         self._midi_out_wanted = (midi_out or "").strip()
         self._lamps_open = False
+        #: Whether the input port has been handed back; see _release_devices.
+        self._midi_released = False
+        #: Set by a signal handler, acted on by the pump. See _install_signal_handlers.
+        self._bail_requested = False
 
         #: where the panel saves without asking. A --midimap that does not
         #: exist yet is still the place its mappings should land.
@@ -1083,6 +1087,7 @@ class ViewerApp:
         self.root.bind("<Key-q>", hotkey(self._quit))
         self.root.bind("<Escape>", lambda event: self._quit())
         self.root.protocol("WM_DELETE_WINDOW", self._quit)
+        self._install_signal_handlers()
 
         # Panels wait for the executable to say what devices there are - which
         # arrives a moment after it starts. _pump builds them then.
@@ -2282,6 +2287,12 @@ class ViewerApp:
         if self._closing:
             return
 
+        # A Ctrl-C or a kill, noticed here rather than in the handler that
+        # took it - see _install_signal_handlers.
+        if self._bail_requested:
+            self._quit()
+            return
+
         if not self.show.is_running:
             self._status = "the show has ended"
             self._refresh_header()
@@ -2556,10 +2567,9 @@ class ViewerApp:
         except Exception:
             pass
 
-        # Before the show goes down: the lamps and the far end's wires both
-        # talk through it.
-        self._close_lamps()
-        self._close_sink()
+        # Before the show goes down: the lamps, the far end's wires and the
+        # MIDI ports all talk through it.
+        self._release_devices()
 
         # Cancel the pending redraw first. destroy() does not drop queued
         # `after` callbacks, so one would fire into a dead interpreter and
@@ -2624,6 +2634,31 @@ class ViewerApp:
             # second into a pipe that is gone. The desk keeps running.
             self._sink_failed = True
             self._say(f"client: {error}; frames stopped")
+
+    def _release_devices(self) -> None:
+        """Give back every port this desk took, on any way out.
+
+        Called from `_quit` and again from `run`'s finally, because they are
+        not the same exit: closing the window runs the first, and Ctrl-C - the
+        way the launcher tells you to end a set - unwinds straight past it out
+        of `mainloop`. Leaving by that door used to leave the Launchpad in
+        Programmer mode with the whole map still lit, and its own Setup button
+        disabled, which is a controller you have to unplug to get back.
+
+        Everything here is idempotent and guarded: it runs while the show may
+        already be going down, and the second call must be a no-op rather than
+        a traceback over the top of a clean exit.
+        """
+        self._close_lamps()
+        self._close_sink()
+
+        # And the input, explicitly. The port would go when the process does,
+        # but "when the process does" is a race with whatever wants the port
+        # next - and on the ALSA sequencer `eclipse-dmx IN` lingering is a
+        # port Mixxx can still see and connect to after the desk has gone.
+        if not self._midi_released:
+            self._midi_released = True
+            self._guard_quiet(lambda: self.show.command("midi close"))
 
     def _close_sink(self) -> None:
         if self._sink is None:
@@ -2752,10 +2787,72 @@ class ViewerApp:
         for line in self._osc_dispatcher.handle(address, arguments):
             self._say(line)
 
+    def _install_signal_handlers(self) -> None:
+        """Ctrl-C and a plain `kill` end the set the same way the window does.
+
+        The launcher says "Ctrl-C ends the set; the rig is put dark on the way
+        out", and that has to include the controller: without this, SIGINT
+        unwinds out of mainloop with the Launchpad still in Programmer mode
+        and the map still lit.
+
+        Queued with `after_idle` rather than run in the handler, because a
+        signal lands between two bytecodes wherever the interpreter happens to
+        be - possibly inside tk - and tearing the window down from there is
+        how a clean exit becomes a crash. Falls back to running it directly if
+        tk will not take the callback, which is the case when the signal
+        arrives before mainloop.
+
+        Only on the main thread, and only where the signals exist: a viewer
+        constructed inside a worker (a test) must not touch process-wide
+        handlers.
+        """
+        import signal
+        import threading
+
+        if threading.current_thread() is not threading.main_thread():
+            return
+
+        def bail(_signum, _frame):
+            # Only a flag. A signal lands between two bytecodes wherever the
+            # interpreter happens to be - very often inside tk, since that is
+            # where this process spends its life - and both tearing the window
+            # down from there and scheduling onto tk's own queue from there
+            # are re-entrant into Tcl. The pump is already running every 16ms
+            # and is a safe place to be told.
+            self._bail_requested = True
+
+        for name in ("SIGINT", "SIGTERM", "SIGHUP"):
+            handler = getattr(signal, name, None)
+            if handler is None:
+                continue
+            try:
+                # Only where nothing has claimed it. A host that installed
+                # its own handler - a supervisor, a test runner catching
+                # Ctrl-C - meant it, and quietly replacing it would break the
+                # thing it was for.
+                #
+                # `default_int_handler` counts as unclaimed: it is what python
+                # itself puts on SIGINT at startup, so treating it as somebody
+                # else's would skip the one signal this is most for.
+                unclaimed = (signal.SIG_DFL, None,
+                             getattr(signal, "default_int_handler", None))
+                if signal.getsignal(handler) not in unclaimed:
+                    continue
+                signal.signal(handler, bail)
+            except (ValueError, OSError):
+                # Not the main thread of the process, or a platform without
+                # it. Closing the window still works; this was the extra door.
+                pass
+
     def run(self) -> int:
         try:
             self.root.mainloop()
         finally:
+            # First, and before the show is stopped: these speak through it.
+            # `_quit` has usually done this already and it is a no-op, but the
+            # door out of mainloop is not always `_quit` - a Ctrl-C or an
+            # exception in a callback comes through here and nowhere else.
+            self._guard_quiet(self._release_devices)
             try:
                 self.show.stop()
             except Exception:

@@ -3144,6 +3144,106 @@ class TheFrameSink(unittest.TestCase):
             show.send_frame([(0, 0, 0)])
 
 
+class ViewerGivesTheDevicesBack(unittest.TestCase):
+    """What the desk lets go of on the way out.
+
+    Closing the window was never the only door: Ctrl-C is what the launcher
+    tells you to use, and it unwinds straight past `_quit` out of mainloop.
+    Leaving that way used to leave the Launchpad in Programmer mode with the
+    map still lit and its own Setup button disabled - a controller you have to
+    unplug to get back.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        executable_or_skip()
+        try:
+            import tkinter
+        except ImportError as error:
+            raise unittest.SkipTest(f"no tkinter: {error}")
+        try:
+            tkinter.Tk().destroy()
+        except Exception as error:
+            raise unittest.SkipTest(f"no display: {error}")
+
+    def setUp(self):
+        import tempfile
+        from eclipse_dmx.viewer import ViewerApp
+        self.scratch = tempfile.TemporaryDirectory()
+        self.app = ViewerApp(SHOW, midi="", bpm=120.0,
+                             midimap=Path(self.scratch.name) / "default.json")
+        self.settle(0.6)
+
+        # Stand in for a controller that was opened, without needing one.
+        self.sent = []
+        self.closed = []
+        self.commands = []
+        self.app._lamps_open = True
+        self.app.show.midi_send = self.sent.append
+        self.app.show.midi_out_close = lambda: self.closed.append("closed")
+        real_command = self.app.show.command
+        def spy(line, expect_reply=True):
+            self.commands.append(line)
+            if line.startswith("midi "):
+                return "OK"
+            return real_command(line, expect_reply)
+        self.app.show.command = spy
+
+    def tearDown(self):
+        self.app._quit()
+        self.scratch.cleanup()
+
+    def settle(self, seconds=0.3):
+        end = time.monotonic() + seconds
+        while time.monotonic() < end:
+            self.app.root.update()
+            time.sleep(0.02)
+
+    def test_it_puts_the_controller_back_in_live_mode(self):
+        self.app._release_devices()
+
+        self.assertTrue(self.sent, "nothing was sent to the controller")
+        # Programmer mode off is the one that matters: it re-enables the
+        # device's own Setup button.
+        self.assertIn(launchpad.programmer_mode(False), self.sent)
+        self.assertEqual(self.closed, ["closed"])
+
+    def test_it_darkens_the_pads_before_letting_go(self):
+        self.app._release_devices()
+
+        clears = launchpad.clear()
+        for message in clears:
+            self.assertIn(message, self.sent)
+        # and the mode change comes after the dark, not before
+        self.assertLess(self.sent.index(clears[0]),
+                        self.sent.index(launchpad.programmer_mode(False)))
+
+    def test_it_hands_the_input_port_back(self):
+        self.app._release_devices()
+        self.assertIn("midi close", self.commands)
+
+    def test_the_second_way_out_is_a_no_op(self):
+        # _quit runs it, and run()'s finally runs it again. The second must be
+        # silent rather than a traceback over a clean exit.
+        self.app._release_devices()
+        before = (len(self.sent), len(self.closed), self.commands.count("midi close"))
+
+        self.app._release_devices()
+
+        self.assertEqual(len(self.sent), before[0])
+        self.assertEqual(len(self.closed), before[1])
+        self.assertEqual(self.commands.count("midi close"), before[2])
+
+    def test_a_controller_that_was_never_opened_is_left_alone(self):
+        self.app._lamps_open = False
+        self.sent.clear()
+
+        self.app._release_devices()
+
+        self.assertEqual(self.sent, [], "nothing to put back")
+        self.assertIn("midi close", self.commands, "the input is still handed back")
+
+
 class ViewerAgainstAnotherRig(unittest.TestCase):
     """A rig whose device list is not this config's.
 
