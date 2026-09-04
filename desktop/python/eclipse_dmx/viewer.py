@@ -729,6 +729,7 @@ class ViewerApp:
         osc_fixture: int = 0,
         midimap: Optional[Union[str, Path]] = None,
         midi_out: Optional[str] = None,
+        client: Optional[str] = None,
         oscmap: Optional[Union[str, Path]] = None,
         osc_in: Optional[int] = None,
         host: Optional[str] = None,
@@ -904,6 +905,13 @@ class ViewerApp:
         #: at different times and the OSC one may never exist - but a scene the
         #: *app* announced arrives on the OSC side while the lamp asking about
         #: it hangs off the MIDI side, so this one object has to span them.
+        #: Client mode: the machine whose wires this desk drives. The show
+        #: runs *here* - which is the whole point, because MIDI does not cross
+        #: ssh and the controllers are on this desk - and the frames go there.
+        self._client_host = (client or "").strip()
+        self._sink: Optional[ShowController] = None
+        self._sink_failed = False
+
         self._syn_state = SynesthesiaState()
 
         self._dispatcher = Dispatcher(self._midimap, ActionContext(
@@ -961,6 +969,8 @@ class ViewerApp:
         # outrun by the state it is aimed at.
         if self._midimap_note:
             self._say(self._midimap_note)
+        if self._client_host:
+            self._open_sink(self._client_host)
         if self._midi_out_wanted:
             self._open_lamps(self._midi_out_wanted)
         if self._oscmap_wanted:
@@ -2237,6 +2247,12 @@ class ViewerApp:
         if self._osc is not None:
             self._send_osc(frame)
 
+        # And on to the wires, when they are somebody else's. Same thread and
+        # the same frame the OSC sender gets: this is one picture going to
+        # three places - the screen, the visualiser, and the rig.
+        if self._sink is not None:
+            self._send_to_sink(frame)
+
     def _send_osc(self, frame: Frame) -> None:
         """One fixture of this frame, out to the visualiser.
 
@@ -2540,8 +2556,10 @@ class ViewerApp:
         except Exception:
             pass
 
-        # Before the show goes down: the lamps talk through it.
+        # Before the show goes down: the lamps and the far end's wires both
+        # talk through it.
         self._close_lamps()
+        self._close_sink()
 
         # Cancel the pending redraw first. destroy() does not drop queued
         # `after` callbacks, so one would fire into a dead interpreter and
@@ -2560,6 +2578,60 @@ class ViewerApp:
         except Exception:
             pass
         self.root.destroy()
+
+    # -- client mode ---------------------------------------------------------
+
+    def _open_sink(self, host: str) -> None:
+        """Opens the far end's wires and starts feeding them this show.
+
+        Never fatal, on the same reasoning as the lamps: a rig that cannot be
+        reached is a desk that still runs, draws and speaks OSC. The reason is
+        said once and the frames simply stop being forwarded.
+        """
+        try:
+            sink = ShowController(
+                self.config_path,
+                dry_run=not self.live,
+                remote=host,
+                sink=True,
+                emit_frames=False,
+                autostart=False,
+            )
+            sink.start()
+        except Exception as error:
+            self._sink_failed = True
+            self._say(f"client: {host}: {error}")
+            return
+
+        self._sink = sink
+        self._say(f"client: driving {host}'s wires from here")
+
+    def _send_to_sink(self, frame: Frame) -> None:
+        """The newest frame, on to the far end's wires.
+
+        Called from the reader thread with every frame the local show emits,
+        so `--emit-rate` is what the rig is driven at - which has to be at
+        least the fastest `device.fps` over there or the wires are being fed
+        slower than they refresh.
+        """
+        sink = self._sink
+        if sink is None or self._sink_failed:
+            return
+        try:
+            sink.send_frame(frame)
+        except Exception as error:
+            # One failure stops the stream rather than throwing thirty times a
+            # second into a pipe that is gone. The desk keeps running.
+            self._sink_failed = True
+            self._say(f"client: {error}; frames stopped")
+
+    def _close_sink(self) -> None:
+        if self._sink is None:
+            return
+        sink, self._sink = self._sink, None
+        # `quit` first, so the far end sends its dark frame and gives the
+        # relic its pixels back rather than being cut off mid-show.
+        self._guard_quiet(sink.stop)
 
     # -- lamps -------------------------------------------------------------
 
@@ -2720,6 +2792,7 @@ def view(
     osc_fixture: int = 0,
     midimap: Optional[Union[str, Path]] = None,
     midi_out: Optional[str] = None,
+    client: Optional[str] = None,
     oscmap: Optional[Union[str, Path]] = None,
     osc_in: Optional[int] = None,
     host: Optional[str] = None,
@@ -2740,6 +2813,7 @@ def view(
         osc_fixture=osc_fixture,
         midimap=midimap,
         midi_out=midi_out,
+        client=client,
         oscmap=oscmap,
         osc_in=osc_in,
         host=host,

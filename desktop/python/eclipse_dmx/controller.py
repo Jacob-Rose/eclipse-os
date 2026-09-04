@@ -357,7 +357,13 @@ class ShowController:
         command_timeout: float = 5.0,
         remote: Optional[str] = None,
         remote_command: Optional[str] = None,
+        sink: bool = False,
     ) -> None:
+        #: Client mode: this end renders nothing and paints what it is sent.
+        #: The show is somewhere else - usually this same process, driving a
+        #: second controller - and this one only owns the wires.
+        self.sink = sink
+
         #: The ssh host running the show, or None for this machine.
         self.remote = remote
         self.remote_command = (remote_command
@@ -566,6 +572,11 @@ class ShowController:
 
     def _build_flags(self, config_path: str) -> List[str]:
         args = ["--config", config_path]
+        if self.sink:
+            # Emitting as well as sinking, because the ring is a preview
+            # device painted by the bridge from the frames going past - so
+            # the stream has to come back out the far side to reach it.
+            args.append("--sink")
         if self.dry_run:
             args.append("--dry-run")
         if self.frames > 0:
@@ -1013,6 +1024,20 @@ class ShowController:
         """
         self.command(f"state {name}")
         self.current_state = name
+
+    def send_frame(self, frame: Frame) -> None:
+        """One frame down to a sink, as the `F` line it already speaks.
+
+        Fire and forget, like the streamed knobs: a frame is a picture and
+        not a transaction. Waiting for a reply thirty times a second would
+        put the desk's render loop behind the network, which is the one thing
+        client mode must not do - and a dropped frame is 30ms of the last
+        picture, which nobody can see.
+        """
+        if not self.sink:
+            raise ShowError("send_frame needs a controller opened with sink=True")
+        line = "F " + " ".join(f"{r:02x}{g:02x}{b:02x}" for r, g, b in frame)
+        self.command(line, expect_reply=False)
 
     def set_input(self, channel: str, down: bool) -> None:
         """Drives one of the two momentary inputs a relic look can read.

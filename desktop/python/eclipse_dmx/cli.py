@@ -656,6 +656,7 @@ def _cmd_view(args: argparse.Namespace) -> int:
         osc_fixture=args.osc_fixture,
         midimap=args.midimap,
         midi_out=args.midi_out,
+        client=args.client,
         oscmap=args.oscmap,
         osc_in=args.osc_in,
         host=args.host,
@@ -880,6 +881,10 @@ def build_parser() -> argparse.ArgumentParser:
     viewer.add_argument("--midimap", metavar="FILE",
                         help="load this midi mapping file into the [m] panel "
                              "(default: midimaps/default.json beside the config, if present)")
+    viewer.add_argument("--client", metavar="HOST",
+                        help="run the show HERE and put the frames on HOST's wires "
+                             "over ssh - the opposite of --host, and the way to keep "
+                             "Mixxx and a controller, which do not cross the link")
     viewer.add_argument("--midi-out", metavar="SPEC", dest="midi_out",
                         help="light a controller's pads from the map: a MIDI output "
                              "name, a fragment of one, an index or hw:C,D,S. "
