@@ -2067,20 +2067,41 @@ class ViewerApp:
         # Which of them came up without a wire. Known only now: the config says
         # what is in the room, and only a started show says what is plugged in.
         offline = dict(self.show.offline_devices)
+        unknown: List[str] = []
 
         for span in spans:
             device = self.config.device_named(span.name)
             if device is None and len(self.config.devices) == len(spans):
                 device = self.config.devices[span.index]
             if device is None:
+                # On the rig, absent from this config - which over ssh means
+                # the two checkouts disagree about the show. Said rather than
+                # skipped silently: a panel that is simply not there is a
+                # thing you notice and cannot explain.
+                unknown.append(span.name)
                 continue
 
             panel = DevicePanel(
                 self.surface, span.name, plan_layout(device),
                 device=device, on_touched=self._mark_panels_touched)
+            # The span this panel draws, kept *on* the panel. A device the
+            # config has never heard of is skipped just above, so the panels
+            # and the spans are not parallel lists and an index into one is
+            # not an index into the other - which over ssh, against a rig with
+            # a device this config lacks, drew every panel one device early.
+            panel.span = span
             if span.name in offline:
                 panel.set_offline(offline[span.name])
             self._panels.append(panel)
+
+        if unknown:
+            # Over ssh this is the two checkouts disagreeing about the show,
+            # and it is worth saying out loud: the rig is rendering a device
+            # this config has no positions for, so it cannot be drawn - and
+            # the frame it occupies is real, which is what used to shift every
+            # other panel along.
+            self._say("rig has " + ", ".join(unknown)
+                      + ": not in this config, not drawn")
 
         # A focus on a device that is no longer in the show is a focus on
         # nothing - back to the desk.
@@ -2335,13 +2356,15 @@ class ViewerApp:
             table = self._ungamma
             shown = [(table[r], table[g], table[b]) for r, g, b in shown]
 
-        spans = list(self.show.devices)
-        for index, panel in enumerate(self._panels):
+        for panel in self._panels:
+            span = getattr(panel, "span", None)
             if shown is None:
                 panel.paint(None)
-            elif index < len(spans):
-                panel.paint(spans[index].slice(shown))
+            elif span is not None:
+                panel.paint(span.slice(shown))
             else:
+                # No span means no DEVICE line claimed this panel; drawing the
+                # whole frame is the old behaviour and still the best guess.
                 panel.paint(shown)
 
 

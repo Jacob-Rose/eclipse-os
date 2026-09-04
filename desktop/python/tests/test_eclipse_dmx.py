@@ -3060,6 +3060,120 @@ class MidiMapEditorActions(unittest.TestCase):
         self.assertIn("2 actions", line)
 
 
+class ViewerAgainstAnotherRig(unittest.TestCase):
+    """A rig whose device list is not this config's.
+
+    Which is what `--host` is: the executable runs on the pi, out of the pi's
+    checkout, and its `config/mythos26.json` has a scanner_ring this desk's
+    copy does not. The frame that comes back is 391 fixtures with the obelisk
+    at 35; the config here says 356 with the obelisk at 0.
+
+    The panels are built from the DEVICE lines and skip what the config has no
+    positions for - so they are *not* parallel to the spans, and an index into
+    one was never an index into the other. That drew every panel one device
+    early: the obelisk panel showing the ring's pixels.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        executable_or_skip()
+        try:
+            import tkinter
+        except ImportError as error:
+            raise unittest.SkipTest(f"no tkinter: {error}")
+        try:
+            tkinter.Tk().destroy()
+        except Exception as error:
+            raise unittest.SkipTest(f"no display: {error}")
+
+    def setUp(self):
+        import tempfile
+        from eclipse_dmx.viewer import ViewerApp
+        self.scratch = tempfile.TemporaryDirectory()
+        self.app = ViewerApp(SHOW, midi="", bpm=120.0,
+                             midimap=Path(self.scratch.name) / "default.json")
+        self.settle(0.8)
+
+    def tearDown(self):
+        self.app._quit()
+        self.scratch.cleanup()
+
+    def settle(self, seconds=0.4):
+        end = time.monotonic() + seconds
+        while time.monotonic() < end:
+            self.app.root.update()
+            time.sleep(0.02)
+
+    def test_the_local_rig_draws_each_panel_its_own_slice(self):
+        spans = list(self.app.show.devices)
+        self.assertTrue(spans, "the show announced no devices")
+        for panel in self.app._panels:
+            self.assertIsNotNone(getattr(panel, "span", None), panel.name)
+            self.assertEqual(panel.span.name, panel.name)
+
+    def test_a_device_this_config_lacks_does_not_shift_the_others(self):
+        from eclipse_dmx.controller import DeviceSpan
+
+        real = list(self.app.show.devices)
+        names = [span.name for span in real]
+        self.assertIn("obelisk", names, "the test show has no obelisk")
+
+        # The pi's shape: an extra device first, everything else pushed along.
+        extra = 35
+        shifted = [DeviceSpan(index=0, name="scanner_ring", first=0, count=extra)]
+        for span in real:
+            shifted.append(DeviceSpan(index=span.index + 1, name=span.name,
+                                      first=span.first + extra, count=span.count))
+        self.app.show.devices = shifted
+        self.app._rebuild_items()
+        self.settle(0.3)
+
+        drawn = {panel.name: panel.span for panel in self.app._panels}
+        self.assertNotIn("scanner_ring", drawn, "no positions for it here")
+        for span in shifted[1:]:
+            self.assertIn(span.name, drawn)
+            self.assertEqual(drawn[span.name].first, span.first,
+                             f"{span.name} must read from where the rig put it")
+
+        obelisk = drawn["obelisk"]
+        self.assertEqual(obelisk.first, extra,
+                         "the obelisk starts after the ring, not at zero")
+
+    def test_the_slice_each_panel_paints_is_its_own(self):
+        from eclipse_dmx.controller import DeviceSpan
+
+        real = list(self.app.show.devices)
+        extra = 4
+        shifted = [DeviceSpan(index=0, name="ghost", first=0, count=extra)]
+        for span in real:
+            shifted.append(DeviceSpan(index=span.index + 1, name=span.name,
+                                      first=span.first + extra, count=span.count))
+        self.app.show.devices = shifted
+        self.app._rebuild_items()
+        self.settle(0.3)
+
+        # A frame whose every pixel encodes its own index, so a slice that
+        # started in the wrong place is visible in the values. The screen's
+        # gamma correction is off for this: it rewrites every channel, which
+        # is right for a picture and fatal to a frame used as a ruler.
+        self.app._ungamma = None
+        total = extra + sum(span.count for span in real)
+        frame = [((i >> 8) & 0xFF, i & 0xFF, 0) for i in range(total)]
+
+        painted = {}
+        for panel in self.app._panels:
+            panel.paint = (lambda got, name=panel.name: painted.__setitem__(name, got))
+
+        self.app._paint(frame, force=True)
+
+        for panel_name, got in painted.items():
+            span = next(s for s in shifted if s.name == panel_name)
+            first = (got[0][0] << 8) | got[0][1]
+            self.assertEqual(first, span.first,
+                             f"{panel_name} began at {first}, rig put it at {span.first}")
+            self.assertEqual(len(got), span.count)
+
+
 class ViewerOnTheShow(unittest.TestCase):
     """The tempo controls, driven the way a click drives them."""
 
