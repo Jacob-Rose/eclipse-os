@@ -85,12 +85,35 @@ MIDI_PORT="${ECLIPSE_MIDI_PORT:-Launchpad X LPX MIDI In}"
 # nothing and leaves the controller alone.
 MIDI_OUT="${ECLIPSE_MIDI_OUT:-Launchpad X LPX MIDI Out}"
 
+# Where the show runs. Empty is this machine.
+#
+# With a host, the executable runs there over ssh and the window stays here -
+# the control protocol is lines on two pipes and `ssh host cmd` is exactly two
+# pipes, so nothing above ShowController notices. The point is where the wires
+# are: the obelisk's USB cable and the scanner's ring are on the pi, so the
+# frames never leave it.
+#
+# What does *not* cross the link is MIDI. The executable reads it, so a
+# controller plugged in here is invisible to a show on the pi - see the block
+# below, which is why the pads and the lamps default to off when a host is
+# named. The OSC sender is desk-side off the frame stream and is unaffected.
+HOST="${ECLIPSE_HOST:-}"
+DEFAULT_HOST="scanner-pi.local"
+
 live=1
 viewer=1
 osc=1
 osc_in=1
 extra=()
 midi_args=()
+
+# Whether the MIDI ports were *asked for* rather than defaulted. Naming one
+# means you meant it, and over ssh that is the difference between "light the
+# Launchpad on the pi" and "the author of this file guessed".
+midi_named=0
+midi_out_named=0
+[ -n "${ECLIPSE_MIDI_PORT:-}" ] && midi_named=1
+[ -n "${ECLIPSE_MIDI_OUT:-}" ] && midi_out_named=1
 
 usage() {
     cat <<'USAGE'
@@ -112,6 +135,12 @@ launch-mythos-set.sh - the mythos26 set, on this machine
   --midi-out SPEC      controller to light from the map (default the
                        Launchpad, or $ECLIPSE_MIDI_OUT). Empty string lights
                        nothing. Puts the pad grid into Programmer mode.
+  --host [NAME]        run the show on another machine over ssh, keeping the
+                       window here (default scanner-pi.local, or $ECLIPSE_HOST).
+                       The wires - DMX widget, obelisk, ring - are the host's.
+                       So is MIDI: the pads and lamps default to off unless
+                       --midi/--midi-out are named, because the controller
+                       plugged in here is invisible to a show over there.
   --config PATH        a different show (default config/mythos26.json)
   --bpm N              opening tempo, and the fallback if the beat goes quiet
   --state NAME         the look to open on (beat_pulse, vu_pulse, tv_static...)
@@ -131,8 +160,16 @@ while [ $# -gt 0 ]; do
         --osc-in)          OSC_IN_PORT="${2:?--osc-in needs a port}"; shift ;;
         --osc)             OSC_ADDRESS="${2:?--osc needs HOST:PORT}"; shift ;;
         --config)          CONFIG="${2:?--config needs a path}"; shift ;;
-        --midi)            MIDI_PORT="${2-}"; shift ;;
-        --midi-out)        MIDI_OUT="${2-}"; shift ;;
+        --midi)            MIDI_PORT="${2-}"; midi_named=1; shift ;;
+        --midi-out)        MIDI_OUT="${2-}"; midi_out_named=1; shift ;;
+        --host)
+            # The name is optional: bare --host means the usual one.
+            if [ $# -ge 2 ] && [ -n "${2-}" ] && [ "${2#-}" = "$2" ]; then
+                HOST="$2"; shift
+            else
+                HOST="$DEFAULT_HOST"
+            fi
+            ;;
         --bpm)             extra+=(--bpm "${2:?--bpm needs a number}"); shift ;;
         --state)           extra+=(--state "${2:?--state needs a name}"); shift ;;
         --)                shift; extra+=("$@"); break ;;
@@ -161,9 +198,26 @@ for candidate in "${ECLIPSE_DMX_BINARY:-}" build/eclipse-dmx build/Release/eclip
     fi
 done
 
-if [ -z "$EXE" ]; then
+if [ -z "$EXE" ] && [ -z "$HOST" ]; then
     echo "eclipse-dmx is not built. Run ./build.sh first." >&2
     exit 1
+fi
+
+if [ -n "$HOST" ]; then
+    # ShowController runs ssh instead of the binary, so there is nothing local
+    # to be missing - the host's build is the one that matters, and it has to
+    # know this show (see "Over ssh" in the readme: a stale binary there
+    # answers `unknown pattern` to a cue).
+    echo "host: $HOST - the show runs there, the window is here"
+
+    # Batch mode, because a password prompt inside a pipe is a hang rather
+    # than a question. Checked now rather than discovered thirty seconds in
+    # with a window already open.
+    if ! ssh -o BatchMode=yes -o ConnectTimeout=5 "$HOST" true 2>/dev/null; then
+        echo "warning: 'ssh $HOST true' did not succeed." >&2
+        echo "         the set will not start. ssh needs a key, not a password:" >&2
+        echo "         ssh-copy-id $HOST" >&2
+    fi
 fi
 
 if ! command -v "$PYTHON" >/dev/null 2>&1; then
@@ -178,7 +232,14 @@ if [ "$viewer" = 1 ] && ! "$PYTHON" -c "import tkinter" >/dev/null 2>&1; then
     exit 1
 fi
 
-if [ "$live" = 1 ]; then
+if [ "$live" = 1 ] && [ -n "$HOST" ]; then
+    # The widget, the obelisk and the ring are all on the host. Listing this
+    # machine's serial ports would be answering a question nobody asked, and
+    # a "nothing plugged in" warning here would be actively misleading.
+    echo "wires: on $HOST - nothing on this machine is used"
+fi
+
+if [ "$live" = 1 ] && [ -z "$HOST" ]; then
     # A device with no wire does not stop the show - it comes up OFFLINE and
     # keeps rendering - so none of this is fatal. It is said now because at
     # the venue the difference between "not plugged in" and "held by something
@@ -209,6 +270,26 @@ if [ "$live" = 1 ]; then
     fi
 fi
 
+# MIDI does not cross the ssh link. The executable is what reads a port, and
+# over there it is the *host's* ALSA - so the Launchpad on this desk is
+# invisible to a show on the pi, and a port named here would be looked for
+# there. A named port that is missing is fatal at startup, so defaulting them
+# on would turn "run the set on the pi" into "the set does not start".
+#
+# Defaulted, they go quiet and say so. Named, they are believed and passed
+# through, because naming one over ssh can only mean the controller is plugged
+# into the host - which is a real way to run this, just not the usual one.
+if [ -n "$HOST" ]; then
+    if [ "$midi_named" = 0 ] && [ -n "$MIDI_PORT" ]; then
+        echo "pads:  off - MIDI does not cross ssh; the beat and the cue pads"
+        echo "       would be the host's. --midi NAME if the controller is on $HOST."
+        MIDI_PORT=""
+    fi
+    if [ "$midi_out_named" = 0 ] && [ -n "$MIDI_OUT" ]; then
+        MIDI_OUT=""
+    fi
+fi
+
 # What the machine can hear and light, read once and held.
 #
 # Held rather than piped straight into grep, and that is not tidiness: this
@@ -218,11 +299,15 @@ fi
 # as it was found before the last line - which is why naming the input port
 # silently did nothing while the output port, last in the list, worked.
 midi_ports=""
-if [ -n "$MIDI_PORT" ] || [ -n "$MIDI_OUT" ]; then
+if [ -z "$HOST" ] && [ -n "$EXE" ] && { [ -n "$MIDI_PORT" ] || [ -n "$MIDI_OUT" ]; }; then
     midi_ports="$("$EXE" --list-midi 2>/dev/null || true)"
 fi
 
+# Over ssh there is nothing here to check against - the ports that matter are
+# the host's - so a named port is taken on trust rather than refused by a
+# probe that was asking the wrong machine.
 has_midi_port() {
+    [ -n "$HOST" ] && return 0
     [ -n "$midi_ports" ] && printf '%s\n' "$midi_ports" | grep -Fq "$1"
 }
 
@@ -321,6 +406,10 @@ if [ "$osc_in" = 1 ]; then
     # turns the listener on. A port already held is a warning, not a refusal -
     # see _osc_input_for.
     command+=(--osc-in "$OSC_IN_PORT")
+fi
+
+if [ -n "$HOST" ]; then
+    command+=(--host "$HOST")
 fi
 
 command+=("${midi_args[@]+"${midi_args[@]}"}")

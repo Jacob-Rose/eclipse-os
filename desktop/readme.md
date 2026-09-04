@@ -1486,6 +1486,29 @@ In", which is what the device listens on). Viewer only: the pads are painted
 from the midi map and `--headless` has no map to paint from. See
 [lighting the pads](#lighting-the-pads).
 
+`--host [NAME]` runs the show on another machine — `scanner-pi.local` unless
+told otherwise, or `$ECLIPSE_HOST` — keeping the window here. That is
+[over ssh](#over-ssh) with the launcher's preflight in front of it: it checks
+`ssh NAME true` before opening anything, because a key that is not set up
+fails as a password prompt inside a pipe, which is a hang rather than a
+question.
+
+Two things move to the far end with the show, and the launcher says so rather
+than letting them be discovered:
+
+- **The wires.** The DMX widget, the obelisk and the ring are the host's, so
+  the local port listing is skipped — a "nothing plugged in" warning about
+  this machine would be answering a question nobody asked.
+- **MIDI.** The executable is what reads a port, so over there it is the
+  *host's* ALSA and the Launchpad on this desk is invisible. The pads and the
+  lamps therefore stand down when a host is named, and say so. Name
+  `--midi`/`--midi-out` explicitly and they are believed and passed through,
+  because over ssh naming one can only mean the controller is plugged into
+  the host.
+
+The OSC sender is unaffected either way: it is desk-side, off the frame
+stream, so the colour still reaches the visualiser from this machine.
+
 It also opens the audio link back from the visualiser — `--osc-in 7000`, the
 map beside the config — which `--no-osc-in` turns off and `--osc-in PORT` (or
 `ECLIPSE_OSC_IN_PORT`) moves. See [back the other way](#back-the-other-way--the-visualisers-audio-engine).
