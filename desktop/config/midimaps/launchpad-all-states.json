@@ -1043,11 +1043,37 @@
       "colour": 21
     },
     {
-      "label": "scanner - power_up",
+      "label": "scanner - none",
       "trigger": {
         "kind": "note",
         "channel": 1,
         "number": 11
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "scanner"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "none"
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "scanner",
+      "colour": 53
+    },
+    {
+      "label": "scanner - power_up",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 12
       },
       "mode": "press",
       "actions": [
@@ -1073,7 +1099,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 12
+        "number": 13
       },
       "mode": "press",
       "actions": [
@@ -1099,7 +1125,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 13
+        "number": 14
       },
       "mode": "press",
       "actions": [
@@ -1125,7 +1151,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 14
+        "number": 15
       },
       "mode": "press",
       "actions": [
@@ -1151,7 +1177,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 15
+        "number": 16
       },
       "mode": "press",
       "actions": [
@@ -1177,7 +1203,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 16
+        "number": 17
       },
       "mode": "press",
       "actions": [
@@ -1203,7 +1229,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 17
+        "number": 18
       },
       "mode": "press",
       "actions": [
@@ -1229,7 +1255,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 18
+        "number": 21
       },
       "mode": "press",
       "actions": [
@@ -1255,7 +1281,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 21
+        "number": 22
       },
       "mode": "press",
       "actions": [
@@ -1281,7 +1307,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 22
+        "number": 23
       },
       "mode": "press",
       "actions": [
@@ -1307,7 +1333,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 23
+        "number": 24
       },
       "mode": "press",
       "actions": [
@@ -1333,7 +1359,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 24
+        "number": 25
       },
       "mode": "press",
       "actions": [
@@ -1359,7 +1385,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 25
+        "number": 26
       },
       "mode": "press",
       "actions": [
@@ -1385,7 +1411,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 26
+        "number": 27
       },
       "mode": "press",
       "actions": [
@@ -1411,7 +1437,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 27
+        "number": 28
       },
       "mode": "press",
       "actions": [
@@ -1437,7 +1463,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 28
+        "number": 31
       },
       "mode": "press",
       "actions": [
@@ -1463,7 +1489,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 31
+        "number": 32
       },
       "mode": "press",
       "actions": [
@@ -1489,7 +1515,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 32
+        "number": 33
       },
       "mode": "press",
       "actions": [
@@ -1515,7 +1541,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 33
+        "number": 34
       },
       "mode": "press",
       "actions": [
@@ -1541,7 +1567,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 34
+        "number": 35
       },
       "mode": "press",
       "actions": [
@@ -1567,7 +1593,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 35
+        "number": 36
       },
       "mode": "press",
       "actions": [
@@ -1593,7 +1619,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 36
+        "number": 37
       },
       "mode": "press",
       "actions": [
@@ -1619,7 +1645,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 37
+        "number": 38
       },
       "mode": "press",
       "actions": [
@@ -1645,7 +1671,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 38
+        "number": 41
       },
       "mode": "press",
       "actions": [
@@ -1671,7 +1697,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 41
+        "number": 42
       },
       "mode": "press",
       "actions": [
@@ -1697,7 +1723,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 42
+        "number": 43
       },
       "mode": "press",
       "actions": [
@@ -1711,6 +1737,58 @@
           "action": "state",
           "params": {
             "name": "void"
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "scanner",
+      "colour": 53
+    },
+    {
+      "label": "scanner - cleanse_arm",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 44
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "scanner"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "cleanse_arm"
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "scanner",
+      "colour": 53
+    },
+    {
+      "label": "scanner - cleanse_done",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 45
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "scanner"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "cleanse_done"
           }
         }
       ],

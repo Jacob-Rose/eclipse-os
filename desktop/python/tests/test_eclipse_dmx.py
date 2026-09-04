@@ -3117,10 +3117,14 @@ class ViewerAgainstAnotherRig(unittest.TestCase):
         real = list(self.app.show.devices)
         names = [span.name for span in real]
         self.assertIn("obelisk", names, "the test show has no obelisk")
+        first_real = next(s for s in real if s.name == "obelisk").first
 
         # The pi's shape: an extra device first, everything else pushed along.
+        # Deliberately a name no config will ever have - `scanner_ring` was
+        # the real case and is now in this config, which is the point: the
+        # test is about a device the desk cannot draw, not about that one.
         extra = 35
-        shifted = [DeviceSpan(index=0, name="scanner_ring", first=0, count=extra)]
+        shifted = [DeviceSpan(index=0, name="ghost_ring", first=0, count=extra)]
         for span in real:
             shifted.append(DeviceSpan(index=span.index + 1, name=span.name,
                                       first=span.first + extra, count=span.count))
@@ -3129,15 +3133,14 @@ class ViewerAgainstAnotherRig(unittest.TestCase):
         self.settle(0.3)
 
         drawn = {panel.name: panel.span for panel in self.app._panels}
-        self.assertNotIn("scanner_ring", drawn, "no positions for it here")
+        self.assertNotIn("ghost_ring", drawn, "no positions for it here")
         for span in shifted[1:]:
             self.assertIn(span.name, drawn)
             self.assertEqual(drawn[span.name].first, span.first,
                              f"{span.name} must read from where the rig put it")
 
-        obelisk = drawn["obelisk"]
-        self.assertEqual(obelisk.first, extra,
-                         "the obelisk starts after the ring, not at zero")
+        self.assertEqual(drawn["obelisk"].first, first_real + extra,
+                         "the obelisk reads from where the rig put it, not from before")
 
     def test_the_slice_each_panel_paints_is_its_own(self):
         from eclipse_dmx.controller import DeviceSpan
