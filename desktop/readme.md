@@ -296,6 +296,38 @@ Three things worth knowing before switching it on:
   Launchpad's own Setup button, so a desk that exited without restoring Live
   mode would leave the box somewhere its front panel cannot get out of.
 
+### the whole rig on one surface
+
+`config/midimaps/launchpad-all-states.json` is every state of every machine,
+laid out for a Launchpad X — 66 state pads, plus six machine selectors down
+the right column:
+
+```
+./launch-mythos-set.sh -- --midimap config/midimaps/launchpad-all-states.json
+```
+
+Each state pad carries **two** actions, `rig: pattern` then `rig: state`, so
+it works from wherever the rig happens to be rather than only when its machine
+is already loaded. The right column is `rig: pattern` alone — one button per
+machine, which lights whenever that machine is up whatever look is running, so
+the surface always says which bank you are in.
+
+The five small machines total exactly forty, so `scanner` starts on a row
+boundary; everything else wraps mid-row like text, and the colour is what
+separates them — mythos26 cyan, jacket amber, obelisk blue, uv purple, generic
+green, scanner magenta. Scanner is two states bigger than the grid, so its
+tail runs onto the top row directly above it.
+
+It is generated rather than written, because seventy-odd rows of JSON have to
+agree with what the rig announces and the rig is the only authority on that:
+
+```
+python tools/make-launchpad-map.py --probe
+```
+
+Add a state to a machine and re-run it. Hand-edit the JSON and it is right
+until the next time.
+
 Underneath, the executable knows nothing about any of this. It grew one
 generic verb — `midi out <spec>` opens a port and `midi send F0 00 20 ...`
 puts bytes on it — and every Launchpad-shaped decision lives in

@@ -1,0 +1,1769 @@
+{
+  "version": 2,
+  "mappings": [
+    {
+      "label": "mythos26 - beat_pulse",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 11
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "mythos26"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "beat_pulse"
+          }
+        }
+      ],
+      "enabled": true,
+      "colour": 41
+    },
+    {
+      "label": "mythos26 - vu_pulse",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 12
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "mythos26"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "vu_pulse"
+          }
+        }
+      ],
+      "enabled": true,
+      "colour": 41
+    },
+    {
+      "label": "mythos26 - tv_static_mono",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 13
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "mythos26"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "tv_static_mono"
+          }
+        }
+      ],
+      "enabled": true,
+      "colour": 41
+    },
+    {
+      "label": "mythos26 - tv_static",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 14
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "mythos26"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "tv_static"
+          }
+        }
+      ],
+      "enabled": true,
+      "colour": 41
+    },
+    {
+      "label": "mythos26 - slot_5",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 15
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "mythos26"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "slot_5"
+          }
+        }
+      ],
+      "enabled": true,
+      "colour": 41
+    },
+    {
+      "label": "mythos26 - slot_6",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 16
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "mythos26"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "slot_6"
+          }
+        }
+      ],
+      "enabled": true,
+      "colour": 41
+    },
+    {
+      "label": "mythos26 - slot_7",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 17
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "mythos26"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "slot_7"
+          }
+        }
+      ],
+      "enabled": true,
+      "colour": 41
+    },
+    {
+      "label": "jacket - digital_void",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 18
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "jacket"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "digital_void"
+          }
+        }
+      ],
+      "enabled": true,
+      "colour": 9
+    },
+    {
+      "label": "jacket - enchanted_forest",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 21
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "jacket"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "enchanted_forest"
+          }
+        }
+      ],
+      "enabled": true,
+      "colour": 9
+    },
+    {
+      "label": "jacket - warp_turbines",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 22
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "jacket"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "warp_turbines"
+          }
+        }
+      ],
+      "enabled": true,
+      "colour": 9
+    },
+    {
+      "label": "jacket - rainbow_road",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 23
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "jacket"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "rainbow_road"
+          }
+        }
+      ],
+      "enabled": true,
+      "colour": 9
+    },
+    {
+      "label": "jacket - breathe_with_me",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 24
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "jacket"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "breathe_with_me"
+          }
+        }
+      ],
+      "enabled": true,
+      "colour": 9
+    },
+    {
+      "label": "jacket - parrot",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 25
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "jacket"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "parrot"
+          }
+        }
+      ],
+      "enabled": true,
+      "colour": 9
+    },
+    {
+      "label": "jacket - system_overload",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 26
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "jacket"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "system_overload"
+          }
+        }
+      ],
+      "enabled": true,
+      "colour": 9
+    },
+    {
+      "label": "jacket - cyber_toxin",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 27
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "jacket"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "cyber_toxin"
+          }
+        }
+      ],
+      "enabled": true,
+      "colour": 9
+    },
+    {
+      "label": "jacket - datamine",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 28
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "jacket"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "datamine"
+          }
+        }
+      ],
+      "enabled": true,
+      "colour": 9
+    },
+    {
+      "label": "jacket - blue_magic",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 31
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "jacket"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "blue_magic"
+          }
+        }
+      ],
+      "enabled": true,
+      "colour": 9
+    },
+    {
+      "label": "jacket - campfire",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 32
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "jacket"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "campfire"
+          }
+        }
+      ],
+      "enabled": true,
+      "colour": 9
+    },
+    {
+      "label": "jacket - hitstop",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 33
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "jacket"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "hitstop"
+          }
+        }
+      ],
+      "enabled": true,
+      "colour": 9
+    },
+    {
+      "label": "obelisk - seasons",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 34
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "obelisk"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "seasons"
+          }
+        }
+      ],
+      "enabled": true,
+      "colour": 45
+    },
+    {
+      "label": "obelisk - blobs",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 35
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "obelisk"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "blobs"
+          }
+        }
+      ],
+      "enabled": true,
+      "colour": 45
+    },
+    {
+      "label": "obelisk - mono",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 36
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "obelisk"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "mono"
+          }
+        }
+      ],
+      "enabled": true,
+      "colour": 45
+    },
+    {
+      "label": "uv - off",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 37
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "uv"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "off"
+          }
+        }
+      ],
+      "enabled": true,
+      "colour": 49
+    },
+    {
+      "label": "uv - flash",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 38
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "uv"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "flash"
+          }
+        }
+      ],
+      "enabled": true,
+      "colour": 49
+    },
+    {
+      "label": "uv - on",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 41
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "uv"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "on"
+          }
+        }
+      ],
+      "enabled": true,
+      "colour": 49
+    },
+    {
+      "label": "generic - matrix_rain",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 42
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "generic"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "matrix_rain"
+          }
+        }
+      ],
+      "enabled": true,
+      "colour": 21
+    },
+    {
+      "label": "generic - fire_2012",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 43
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "generic"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "fire_2012"
+          }
+        }
+      ],
+      "enabled": true,
+      "colour": 21
+    },
+    {
+      "label": "generic - flow",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 44
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "generic"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "flow"
+          }
+        }
+      ],
+      "enabled": true,
+      "colour": 21
+    },
+    {
+      "label": "generic - lake",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 45
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "generic"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "lake"
+          }
+        }
+      ],
+      "enabled": true,
+      "colour": 21
+    },
+    {
+      "label": "generic - pacifica",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 46
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "generic"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "pacifica"
+          }
+        }
+      ],
+      "enabled": true,
+      "colour": 21
+    },
+    {
+      "label": "generic - phased",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 47
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "generic"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "phased"
+          }
+        }
+      ],
+      "enabled": true,
+      "colour": 21
+    },
+    {
+      "label": "generic - saw",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 48
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "generic"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "saw"
+          }
+        }
+      ],
+      "enabled": true,
+      "colour": 21
+    },
+    {
+      "label": "generic - spots_fade",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 51
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "generic"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "spots_fade"
+          }
+        }
+      ],
+      "enabled": true,
+      "colour": 21
+    },
+    {
+      "label": "generic - twinkleup",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 52
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "generic"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "twinkleup"
+          }
+        }
+      ],
+      "enabled": true,
+      "colour": 21
+    },
+    {
+      "label": "generic - waterfall",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 53
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "generic"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "waterfall"
+          }
+        }
+      ],
+      "enabled": true,
+      "colour": 21
+    },
+    {
+      "label": "generic - color_clouds",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 54
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "generic"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "color_clouds"
+          }
+        }
+      ],
+      "enabled": true,
+      "colour": 21
+    },
+    {
+      "label": "generic - rainbow",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 55
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "generic"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "rainbow"
+          }
+        }
+      ],
+      "enabled": true,
+      "colour": 21
+    },
+    {
+      "label": "generic - chase",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 56
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "generic"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "chase"
+          }
+        }
+      ],
+      "enabled": true,
+      "colour": 21
+    },
+    {
+      "label": "generic - theater",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 57
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "generic"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "theater"
+          }
+        }
+      ],
+      "enabled": true,
+      "colour": 21
+    },
+    {
+      "label": "generic - blobs",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 58
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "generic"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "blobs"
+          }
+        }
+      ],
+      "enabled": true,
+      "colour": 21
+    },
+    {
+      "label": "scanner - power_up",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 61
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "scanner"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "power_up"
+          }
+        }
+      ],
+      "enabled": true,
+      "colour": 53
+    },
+    {
+      "label": "scanner - boot",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 62
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "scanner"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "boot"
+          }
+        }
+      ],
+      "enabled": true,
+      "colour": 53
+    },
+    {
+      "label": "scanner - scan_idle",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 63
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "scanner"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "scan_idle"
+          }
+        }
+      ],
+      "enabled": true,
+      "colour": 53
+    },
+    {
+      "label": "scanner - scan_idle_emergency",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 64
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "scanner"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "scan_idle_emergency"
+          }
+        }
+      ],
+      "enabled": true,
+      "colour": 53
+    },
+    {
+      "label": "scanner - scan_idle_broken",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 65
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "scanner"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "scan_idle_broken"
+          }
+        }
+      ],
+      "enabled": true,
+      "colour": 53
+    },
+    {
+      "label": "scanner - scan_item_detected_filter",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 66
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "scanner"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "scan_item_detected_filter"
+          }
+        }
+      ],
+      "enabled": true,
+      "colour": 53
+    },
+    {
+      "label": "scanner - scan_item_detected_generic",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 67
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "scanner"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "scan_item_detected_generic"
+          }
+        }
+      ],
+      "enabled": true,
+      "colour": 53
+    },
+    {
+      "label": "scanner - scan_item_detected_seed",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 68
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "scanner"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "scan_item_detected_seed"
+          }
+        }
+      ],
+      "enabled": true,
+      "colour": 53
+    },
+    {
+      "label": "scanner - scan_item_detected_mushroom",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 71
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "scanner"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "scan_item_detected_mushroom"
+          }
+        }
+      ],
+      "enabled": true,
+      "colour": 53
+    },
+    {
+      "label": "scanner - scan_item_detected_mushroom_new",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 72
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "scanner"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "scan_item_detected_mushroom_new"
+          }
+        }
+      ],
+      "enabled": true,
+      "colour": 53
+    },
+    {
+      "label": "scanner - scan_item_success",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 73
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "scanner"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "scan_item_success"
+          }
+        }
+      ],
+      "enabled": true,
+      "colour": 53
+    },
+    {
+      "label": "scanner - scan_item_success_mushroom",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 74
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "scanner"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "scan_item_success_mushroom"
+          }
+        }
+      ],
+      "enabled": true,
+      "colour": 53
+    },
+    {
+      "label": "scanner - scan_item_success_secret",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 75
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "scanner"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "scan_item_success_secret"
+          }
+        }
+      ],
+      "enabled": true,
+      "colour": 53
+    },
+    {
+      "label": "scanner - scan_item_failure",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 76
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "scanner"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "scan_item_failure"
+          }
+        }
+      ],
+      "enabled": true,
+      "colour": 53
+    },
+    {
+      "label": "scanner - audio_playback_mushroom",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 77
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "scanner"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "audio_playback_mushroom"
+          }
+        }
+      ],
+      "enabled": true,
+      "colour": 53
+    },
+    {
+      "label": "scanner - audio_playback_generic",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 78
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "scanner"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "audio_playback_generic"
+          }
+        }
+      ],
+      "enabled": true,
+      "colour": 53
+    },
+    {
+      "label": "scanner - audio_playback_seed",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 81
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "scanner"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "audio_playback_seed"
+          }
+        }
+      ],
+      "enabled": true,
+      "colour": 53
+    },
+    {
+      "label": "scanner - audio_playback_seed_bad",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 82
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "scanner"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "audio_playback_seed_bad"
+          }
+        }
+      ],
+      "enabled": true,
+      "colour": 53
+    },
+    {
+      "label": "scanner - audio_playback_rest",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 83
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "scanner"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "audio_playback_rest"
+          }
+        }
+      ],
+      "enabled": true,
+      "colour": 53
+    },
+    {
+      "label": "scanner - record_arm",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 84
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "scanner"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "record_arm"
+          }
+        }
+      ],
+      "enabled": true,
+      "colour": 53
+    },
+    {
+      "label": "scanner - record_countdown",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 85
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "scanner"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "record_countdown"
+          }
+        }
+      ],
+      "enabled": true,
+      "colour": 53
+    },
+    {
+      "label": "scanner - record_active",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 86
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "scanner"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "record_active"
+          }
+        }
+      ],
+      "enabled": true,
+      "colour": 53
+    },
+    {
+      "label": "scanner - record_saved",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 87
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "scanner"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "record_saved"
+          }
+        }
+      ],
+      "enabled": true,
+      "colour": 53
+    },
+    {
+      "label": "scanner - scan_item_detected_recording",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 88
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "scanner"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "scan_item_detected_recording"
+          }
+        }
+      ],
+      "enabled": true,
+      "colour": 53
+    },
+    {
+      "label": "scanner - audio_playback_recording",
+      "trigger": {
+        "kind": "cc",
+        "channel": 1,
+        "number": 91
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "scanner"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "audio_playback_recording"
+          }
+        }
+      ],
+      "enabled": true,
+      "colour": 53
+    },
+    {
+      "label": "scanner - void",
+      "trigger": {
+        "kind": "cc",
+        "channel": 1,
+        "number": 92
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "scanner"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "void"
+          }
+        }
+      ],
+      "enabled": true,
+      "colour": 53
+    },
+    {
+      "label": "mythos26 (machine)",
+      "trigger": {
+        "kind": "cc",
+        "channel": 1,
+        "number": 89
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "mythos26"
+          }
+        }
+      ],
+      "enabled": true,
+      "colour": 41
+    },
+    {
+      "label": "jacket (machine)",
+      "trigger": {
+        "kind": "cc",
+        "channel": 1,
+        "number": 79
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "jacket"
+          }
+        }
+      ],
+      "enabled": true,
+      "colour": 9
+    },
+    {
+      "label": "obelisk (machine)",
+      "trigger": {
+        "kind": "cc",
+        "channel": 1,
+        "number": 69
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "obelisk"
+          }
+        }
+      ],
+      "enabled": true,
+      "colour": 45
+    },
+    {
+      "label": "uv (machine)",
+      "trigger": {
+        "kind": "cc",
+        "channel": 1,
+        "number": 59
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "uv"
+          }
+        }
+      ],
+      "enabled": true,
+      "colour": 49
+    },
+    {
+      "label": "generic (machine)",
+      "trigger": {
+        "kind": "cc",
+        "channel": 1,
+        "number": 49
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "generic"
+          }
+        }
+      ],
+      "enabled": true,
+      "colour": 21
+    },
+    {
+      "label": "scanner (machine)",
+      "trigger": {
+        "kind": "cc",
+        "channel": 1,
+        "number": 39
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "scanner"
+          }
+        }
+      ],
+      "enabled": true,
+      "colour": 53
+    }
+  ]
+}
