@@ -388,6 +388,14 @@ class Dispatcher:
         now = time.monotonic()
         said: List[str] = []
 
+        # Before the bindings, and regardless of whether any of them wants
+        # this address: Synesthesia announces `/scenes/{name}` when a scene is
+        # launched, and that is the one thing the app tells us about itself
+        # rather than about the music. It is what makes a scene pad's lamp
+        # true instead of hopeful - and it catches a scene changed in the
+        # app's own window, which nothing else here can see.
+        self.context.syn.hear(address)
+
         for binding in self.bindings.bindings:
             if not binding.enabled or not binding.matches(address):
                 continue

@@ -34,7 +34,8 @@ from . import look_presets
 from .config import RELIC_TYPES, Config
 from .controller import Frame, ShowController, ShowError
 from .curve_editor import CurveEditor
-from .midi_map import ActionContext, Dispatcher, MappingSet, parse_midi_line
+from .midi_map import (ActionContext, Dispatcher, MappingSet,
+                       SynesthesiaState, parse_midi_line)
 from .osc_input import DEFAULT_INPUT_PORT
 from .launchpad import LampPainter, programmer_mode, clear as lamp_clear
 from .midi_panel import MidiMapPanel
@@ -897,8 +898,16 @@ class ViewerApp:
             remote_command=remote_command,
         )
 
+        #: What the visualiser is up to, shared by both dispatchers. The pads
+        #: and the audio engine run against separate contexts - they are built
+        #: at different times and the OSC one may never exist - but a scene the
+        #: *app* announced arrives on the OSC side while the lamp asking about
+        #: it hangs off the MIDI side, so this one object has to span them.
+        self._syn_state = SynesthesiaState()
+
         self._dispatcher = Dispatcher(self._midimap, ActionContext(
-            show=self.show, osc_factory=self._map_osc, say=self._say))
+            show=self.show, osc_factory=self._map_osc, say=self._say,
+            syn=self._syn_state))
 
         # The other input: a visualiser's audio analysis, bound to the same
         # actions the pads use. Built here and opened after the show starts -
@@ -2621,7 +2630,7 @@ class ViewerApp:
 
         self._osc_dispatcher = OscDispatcher(
             bindings, ActionContext(show=self.show, osc_factory=self._map_osc,
-                                    say=self._say))
+                                    say=self._say, syn=self._syn_state))
 
         port = self._osc_in_port or DEFAULT_INPUT_PORT
         try:

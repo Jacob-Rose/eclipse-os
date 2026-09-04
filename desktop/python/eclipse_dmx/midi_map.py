@@ -52,6 +52,8 @@ from dataclasses import InitVar, dataclass, field
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Union
 
+from .osc import scene_address
+
 
 # ---------------------------------------------------------------------------
 # what arrives
@@ -138,21 +140,107 @@ class FieldSpec:
     hint: str = ""
 
 
+class SynesthesiaState:
+    """What the visualiser is doing, as far as this desk can tell.
+
+    Two sources, and they do not rank equally:
+
+      - **what was sent.** Every Synesthesia action records what it asked
+        for. This is always available and is right until something else
+        changes the app, which nothing here can see.
+      - **what was heard.** Synesthesia publishes `/scenes/{name}` when a
+        scene is launched, and if its OSC output is switched on that arrives
+        on the same port the audio does. This is what the app actually did,
+        so it outranks the first - and it catches a scene changed in
+        Synesthesia's own window, which is exactly the case the sent record
+        gets wrong.
+
+    Only the scene has a feedback route; presets, favslots and media have no
+    OSC output at all, so for those the sent record is all there will ever be.
+
+    Held apart from the OSC *link* on purpose: a check must be able to ask
+    what is running without causing a socket to be opened, and `context.osc()`
+    builds one on first use.
+    """
+
+    def __init__(self) -> None:
+        self.sent_scene: str = ""
+        self.sent_preset: str = ""
+        self.sent_favslot: int = 0
+        self.sent_media: str = ""
+
+        #: The folded address of the last scene the app announced, e.g.
+        #: "/scenes/neongrid" - or "" if it has never spoken. Empty is the
+        #: meaningful case: it means OSC output is off at the other end, and
+        #: the scene check falls back to what was sent.
+        self.heard_scene: str = ""
+
+    # -- what the desk asked for -------------------------------------------
+
+    def scene_sent(self, scene: str) -> None:
+        self.sent_scene = scene
+        # A new scene retires the preset: a preset belongs to the scene that
+        # was running when it was loaded, and claiming it across a scene
+        # change would light a pad for something no longer on screen.
+        self.sent_preset = ""
+
+    # -- what the app said --------------------------------------------------
+
+    def hear(self, address: str) -> bool:
+        """Record an incoming OSC address if it announces a scene.
+
+        Returns True when it did, so a caller can tell the difference between
+        a message that meant something here and the forty audio uniforms a
+        frame that do not.
+        """
+        if not address.lower().startswith("/scenes/"):
+            return False
+        self.heard_scene = address.lower()
+        return True
+
+    def scene_is(self, scene: str) -> Optional[bool]:
+        """Is `scene` the one running? None when there is no way to tell."""
+        scene = scene.strip()
+        if not scene:
+            return None
+        if self.heard_scene:
+            return self.heard_scene == scene_address(scene)
+        if not self.sent_scene:
+            # Nothing sent and nothing heard: the desk has not touched the
+            # visualiser and its output is off. Pass - a Synesthesia action
+            # must never be the reason a pad fails to light, and with no way
+            # to tell, the answer that keeps a cue lighting is yes.
+            #
+            # The visible cost is a fresh surface where every scene pad
+            # pulses until the first cue is fired. It settles on the first
+            # press and disappears entirely once the app's OSC output is on,
+            # which is the configuration this is worth having.
+            return True
+        return scene_address(self.sent_scene) == scene_address(scene)
+
+
 class ActionContext:
     """What actions run against: the show, and a link to the visualiser.
 
     The link is built lazily via `osc_factory` and kept - one socket for the
     life of the desk, not one per press - and `say` is one line to whatever
     status surface the host has.
+
+    `syn` is what the visualiser is up to. Passed in when two dispatchers
+    have to agree on it: the pads and the audio engine run against separate
+    contexts, and a scene the *app* announced arrives on the OSC one while
+    the lamp asking about it hangs off the MIDI one.
     """
 
     def __init__(self, show=None,
                  osc_factory: Optional[Callable[[], object]] = None,
-                 say: Optional[Callable[[str], None]] = None) -> None:
+                 say: Optional[Callable[[str], None]] = None,
+                 syn: Optional[SynesthesiaState] = None) -> None:
         self.show = show
         self._osc_factory = osc_factory
         self._osc = None
         self.say = say or (lambda message: None)
+        self.syn = syn if syn is not None else SynesthesiaState()
 
     def osc(self):
         if self._osc is None:
@@ -210,6 +298,9 @@ def _run_syn_scene(context, params, value):
         return "syn scene: no scene named"
     preset = str(params.get("preset", "")).strip()
     context.osc().send_scene(scene, preset or None)
+    context.syn.scene_sent(scene)
+    if preset:
+        context.syn.sent_preset = preset
     return f"syn scene {scene}" + (f" + {preset}" if preset else "")
 
 
@@ -218,12 +309,14 @@ def _run_syn_preset(context, params, value):
     if not preset:
         return "syn preset: no preset named"
     context.osc().send_preset(preset)
+    context.syn.sent_preset = preset
     return f"syn preset {preset}"
 
 
 def _run_syn_favslot(context, params, value):
     slot = int(params.get("slot", 1))
     context.osc().send_favslot(slot)
+    context.syn.sent_favslot = slot
     return f"syn favslot {slot}"
 
 
@@ -232,7 +325,46 @@ def _run_syn_media(context, params, value):
     if not name:
         return "syn media: no media named"
     context.osc().send_media(name)
+    context.syn.sent_media = name
     return f"syn media {name}"
+
+
+def _check_syn_scene(context, params):
+    """What the app is on, if it says; what we asked for, if it does not.
+
+    Never a no on no information - see SynesthesiaState.scene_is. A scene
+    binding must not be the thing that stops a cue lighting, because the
+    commonest cue on this desk is a scene beside a state and only one half of
+    it can ever answer.
+    """
+    return context.syn.scene_is(str(params.get("scene", "")))
+
+
+def _check_syn_preset(context, params):
+    preset = str(params.get("preset", "")).strip()
+    if not preset:
+        return None
+    # No feedback route exists for presets, so this is the sent record and
+    # nothing else - true until the app is touched from its own window.
+    if not context.syn.sent_preset:
+        return True
+    return context.syn.sent_preset == preset
+
+
+def _check_syn_favslot(context, params):
+    slot = int(params.get("slot", 1))
+    if not context.syn.sent_favslot:
+        return True
+    return context.syn.sent_favslot == slot
+
+
+def _check_syn_media(context, params):
+    name = str(params.get("name", "")).strip()
+    if not name:
+        return None
+    if not context.syn.sent_media:
+        return True
+    return context.syn.sent_media == name
 
 
 def _run_syn_control(context, params, value):
@@ -378,24 +510,28 @@ register_action(ActionSpec(
         FieldSpec("preset", "preset", hint="optional, case-sensitive"),
     ],
     run=_run_syn_scene,
+    check=_check_syn_scene,
 ))
 
 register_action(ActionSpec(
     key="syn_preset", label="syn: preset",
     fields=[FieldSpec("preset", "preset", hint="case-sensitive preset name")],
     run=_run_syn_preset,
+    check=_check_syn_preset,
 ))
 
 register_action(ActionSpec(
     key="syn_favslot", label="syn: favslot",
     fields=[FieldSpec("slot", "slot", kind="int", default=1, hint="favorites slot, first is 1")],
     run=_run_syn_favslot,
+    check=_check_syn_favslot,
 ))
 
 register_action(ActionSpec(
     key="syn_media", label="syn: media",
     fields=[FieldSpec("name", "file", hint="media filename or full path")],
     run=_run_syn_media,
+    check=_check_syn_media,
 ))
 
 register_action(ActionSpec(

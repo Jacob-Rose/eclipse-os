@@ -4238,8 +4238,8 @@ class TheActionChecks(unittest.TestCase):
     the only thing that cares *why* is whatever is drawing the picture.
     """
 
-    def _at(self, pattern="mythos26", state=""):
-        return midi_map.ActionContext(show=_FakeRig(pattern, state))
+    def _at(self, pattern="mythos26", state="", syn=None):
+        return midi_map.ActionContext(show=_FakeRig(pattern, state), syn=syn)
 
     def _cue(self, *actions, **kw):
         return midi_map.Mapping(kind="note", number=41,
@@ -4264,10 +4264,15 @@ class TheActionChecks(unittest.TestCase):
         self.assertIs(spec.check(self._at(pattern="rainbow", state=""),
                                  {"name": "tv_static"}), False)
 
-    def test_most_actions_have_no_opinion(self):
-        # Synesthesia never reports back, and neither does a protocol line.
-        for key in ("syn_scene", "syn_preset", "syn_favslot", "syn_control", "command"):
+    def test_the_actions_that_cannot_answer_do_not_try(self):
+        # A protocol line, a knob, a tempo: nothing about any of them says
+        # "still in force", and syn_control is a fader rather than a cue.
+        for key in ("command", "param", "master", "bpm", "syn_control"):
             self.assertIsNone(midi_map.ACTIONS[key].check, key)
+
+    def test_the_synesthesia_cues_do_answer(self):
+        for key in ("syn_scene", "syn_preset", "syn_favslot", "syn_media"):
+            self.assertIsNotNone(midi_map.ACTIONS[key].check, key)
 
     # -- how the votes are counted ------------------------------------------
 
@@ -4289,11 +4294,17 @@ class TheActionChecks(unittest.TestCase):
         self.assertIs(cue.is_live(self._at(state="tv_static")), True)
         self.assertIs(cue.is_live(self._at(state="beat_pulse")), False)
 
-    def test_a_row_nothing_can_answer_for_returns_none(self):
-        # None is not False: there is no answer available, and a surface that
-        # pulsed anyway would be inventing one.
+    def test_a_synesthesia_row_passes_until_something_says_otherwise(self):
+        # With nothing sent and the app's OSC output off there is no way to
+        # tell, and the answer that keeps a cue lighting is yes. A scene
+        # binding must never be the reason a pad fails to light.
         scene = self._cue(("syn_scene", {"scene": "Neon Grid", "preset": ""}))
-        self.assertIsNone(scene.is_live(self._at(state="tv_static")))
+        self.assertIs(scene.is_live(self._at(state="tv_static")), True)
+
+    def test_a_row_with_no_actions_that_answer_is_still_none(self):
+        # `command` cannot answer and nothing else is in the row.
+        row = self._cue(("command", {"line": "bpm 128"}))
+        self.assertIsNone(row.is_live(self._at()))
 
     def test_an_unknown_action_abstains(self):
         row = self._cue(("warp_core", {}), ("state", {"name": "tv_static"}))
@@ -4317,15 +4328,116 @@ class TheActionChecks(unittest.TestCase):
         self.assertIsNone(cue.is_live(midi_map.ActionContext(show=None)))
 
 
+class TheSynesthesiaState(unittest.TestCase):
+    """What the visualiser is doing, and how sure we are of it.
+
+    Two sources that do not rank equally: what this desk asked for, which is
+    always available, and what the app announced, which is true.
+    """
+
+    def _at(self, syn):
+        return midi_map.ActionContext(show=None, syn=syn)
+
+    def test_nothing_known_is_a_yes(self):
+        # OSC output off and no cue fired yet. There is no way to tell, and a
+        # Synesthesia binding must never be the reason a pad fails to light.
+        syn = midi_map.SynesthesiaState()
+        self.assertIs(syn.scene_is("Neon Grid"), True)
+
+    def test_what_was_sent_is_believed_until_the_app_speaks(self):
+        syn = midi_map.SynesthesiaState()
+        syn.scene_sent("Neon Grid")
+        self.assertIs(syn.scene_is("Neon Grid"), True)
+        self.assertIs(syn.scene_is("Hex Array"), False)
+
+    def test_what_the_app_said_outranks_what_we_sent(self):
+        # The case the sent record gets wrong: a scene changed in
+        # Synesthesia's own window, which nothing else here can see.
+        syn = midi_map.SynesthesiaState()
+        syn.scene_sent("Neon Grid")
+        syn.hear("/scenes/hexarray")
+
+        self.assertIs(syn.scene_is("Neon Grid"), False)
+        self.assertIs(syn.scene_is("Hex Array"), True)
+
+    def test_the_scene_name_is_folded_the_way_the_app_spells_it(self):
+        # "Neon Grid" is /scenes/neongrid - lowercase, spaces and hyphens
+        # gone. A map carries the human spelling; the wire carries neither.
+        syn = midi_map.SynesthesiaState()
+        syn.hear("/scenes/neongrid")
+        for spelling in ("Neon Grid", "neon grid", "Neon-Grid", "neon_grid"):
+            self.assertIs(syn.scene_is(spelling), True, spelling)
+
+    def test_only_scene_addresses_are_heard(self):
+        # Forty audio uniforms a frame arrive on the same port.
+        syn = midi_map.SynesthesiaState()
+        for noise in ("/syn_BassLevel", "/controls/global/color/1", "/audio/level"):
+            self.assertFalse(syn.hear(noise), noise)
+        self.assertEqual(syn.heard_scene, "")
+        self.assertTrue(syn.hear("/scenes/neongrid"))
+
+    def test_a_new_scene_retires_the_preset(self):
+        # A preset belongs to the scene that was running when it loaded, and
+        # claiming it across a scene change would light a pad for something
+        # no longer on screen.
+        syn = midi_map.SynesthesiaState()
+        syn.sent_preset = "Deep"
+        syn.scene_sent("Hex Array")
+        self.assertEqual(syn.sent_preset, "")
+
+    # -- through the actions ------------------------------------------------
+
+    def test_firing_a_scene_records_it(self):
+        link = _RecorderLink()
+        syn = midi_map.SynesthesiaState()
+        context = midi_map.ActionContext(osc_factory=lambda: link, syn=syn)
+        spec = midi_map.ACTIONS["syn_scene"]
+
+        spec.run(context, {"scene": "Neon Grid", "preset": "Deep"}, 1.0)
+
+        self.assertEqual(syn.sent_scene, "Neon Grid")
+        self.assertEqual(syn.sent_preset, "Deep")
+        self.assertIs(spec.check(context, {"scene": "Neon Grid"}), True)
+        self.assertIs(spec.check(context, {"scene": "Hex Array"}), False)
+
+    def test_a_favslot_pad_lights_the_one_last_fired(self):
+        link = _RecorderLink()
+        syn = midi_map.SynesthesiaState()
+        context = midi_map.ActionContext(osc_factory=lambda: link, syn=syn)
+        spec = midi_map.ACTIONS["syn_favslot"]
+
+        # Nothing fired yet: no way to tell, so yes.
+        self.assertIs(spec.check(context, {"slot": 3}), True)
+
+        spec.run(context, {"slot": 3}, 1.0)
+        self.assertIs(spec.check(context, {"slot": 3}), True)
+        self.assertIs(spec.check(context, {"slot": 4}), False)
+
+    def test_the_osc_input_records_a_scene_the_app_announced(self):
+        # The wiring that makes the lamp true rather than hopeful: the
+        # announcement arrives on the audio port, through the OSC dispatcher.
+        syn = midi_map.SynesthesiaState()
+        dispatcher = osc_input.Dispatcher(
+            osc_input.BindingSet(),
+            midi_map.ActionContext(show=None, syn=syn))
+
+        dispatcher.handle("/syn_BassLevel", [0.4])
+        self.assertEqual(syn.heard_scene, "")
+
+        dispatcher.handle("/scenes/neongrid", ["Neon Grid"])
+        self.assertEqual(syn.heard_scene, "/scenes/neongrid")
+        self.assertIs(syn.scene_is("Neon Grid"), True)
+
+
 class TheLampPainter(unittest.TestCase):
     """Which pads are lit, and which one is live."""
 
     def _map(self, *rows):
         return midi_map.MappingSet(list(rows))
 
-    def _at(self, pattern="mythos26", state=""):
+    def _at(self, pattern="mythos26", state="", syn=None):
         """The context a check is asked against."""
-        return midi_map.ActionContext(show=_FakeRig(pattern, state))
+        return midi_map.ActionContext(show=_FakeRig(pattern, state), syn=syn)
 
     def _cue(self, number, state, colour=41, **kw):
         return midi_map.Mapping(label=state, kind="note", number=number,
@@ -4351,16 +4463,19 @@ class TheLampPainter(unittest.TestCase):
         self.assertEqual(painter.wanted(self._at(state="beat_pulse"))[12][0], launchpad.PULSING)
         self.assertEqual(painter.wanted(self._at(state="beat_pulse"))[11][0], launchpad.STATIC)
 
-    def test_a_scene_only_pad_is_lit_but_never_pulses(self):
-        # Synesthesia never reports back what it is showing, so a lamp that
-        # claimed to know would be wrong the first time a scene was changed
-        # in its own window.
+    def test_a_scene_pad_pulses_for_the_scene_the_app_is_on(self):
         painter = launchpad.LampPainter(self._map(
             midi_map.Mapping(kind="note", number=11, colour=53,
-                             action="syn_scene", params={"scene": "Neon Grid"})))
+                             action="syn_scene", params={"scene": "Neon Grid"}),
+            midi_map.Mapping(kind="note", number=12, colour=53,
+                             action="syn_scene", params={"scene": "Hex Array"})))
 
-        surface = painter.wanted(self._at(state="tv_static"))
-        self.assertEqual(surface[11], (launchpad.STATIC, 53))
+        syn = midi_map.SynesthesiaState()
+        syn.hear("/scenes/neongrid")          # the app announced it
+        surface = painter.wanted(self._at(syn=syn))
+
+        self.assertEqual(surface[11][0], launchpad.PULSING)
+        self.assertEqual(surface[12][0], launchpad.STATIC)
 
     def test_a_disabled_mapping_is_dark(self):
         painter = launchpad.LampPainter(

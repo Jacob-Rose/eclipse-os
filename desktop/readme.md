@@ -256,16 +256,30 @@ Three rules fall out of that, and all three are the point:
   *and* opens one of its looks is only live when both are true. That is what
   makes `jacket / campfire` a cue rather than two buttons: on jacket at some
   other look it is lit, not pulsing.
-- **Nothing to answer means no pulse.** A row of pure Synesthesia actions has
-  no answer available, and a lamp that pulsed anyway would be inventing one —
-  wrong the first time a scene was changed in Synesthesia's own window.
+- **A Synesthesia action never answers no on no information.** With nothing
+  known it passes, so a scene binding can never be the reason a pad fails to
+  light. The cost is a fresh surface where scene pads pulse until the first
+  cue is fired; it settles on the first press.
 
-Two actions answer today: `rig: state` compares the running look, and
-`rig: pattern` compares the running pattern — which for a state machine is
-another way of saying *which machine is loaded*. Both read what the rig
-actually did (`STATE`, and the `PARAMS` header), not what was last pressed
-here, so a state changed from a click, a shortcut or an OSC binding moves the
-lamp too.
+The rig answers off what it actually did — `rig: state` compares the running
+look and `rig: pattern` the running pattern (for a state machine, *which
+machine is loaded*), both read from `STATE` and the `PARAMS` header rather
+than from what was last pressed here. So a state changed from a click, a
+shortcut or an OSC binding moves the lamp too.
+
+**Synesthesia answers off two sources that do not rank equally.** What this
+desk sent is always available and is right until the app is touched from its
+own window. What the app *announced* is true — it publishes `/scenes/{name}`
+on every scene launch, and if **Settings > OSC > Output** is on at its end
+that arrives on the same port the audio does, gets recorded, and outranks the
+sent record. That is the one thing that catches a scene changed in
+Synesthesia's own window, and it is worth switching on for exactly that.
+
+Presets, favslots and media have no OSC output at all — the app only accepts
+them, it never reports them — so those pads light off the sent record and
+nothing else. A new scene retires the remembered preset, since a preset
+belongs to the scene that was running when it loaded. `syn: control` is a
+fader rather than a cue and abstains entirely.
 
 Three things worth knowing before switching it on:
 

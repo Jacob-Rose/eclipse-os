@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "mappings": [
     {
       "label": "map 1",
@@ -9,12 +9,17 @@
         "number": 64
       },
       "mode": "press",
-      "action": "syn_scene",
-      "params": {
-        "scene": "rearranged",
-        "preset": ""
-      },
-      "enabled": true
+      "actions": [
+        {
+          "action": "syn_scene",
+          "params": {
+            "scene": "rearranged",
+            "preset": ""
+          }
+        }
+      ],
+      "enabled": true,
+      "colour": 41
     }
   ]
 }
