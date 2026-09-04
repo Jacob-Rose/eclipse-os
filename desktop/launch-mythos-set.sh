@@ -99,6 +99,18 @@ MIDI_OUT="${ECLIPSE_MIDI_OUT:-Launchpad X LPX MIDI Out}"
 # named. The OSC sender is desk-side off the frame stream and is unaffected.
 HOST="${ECLIPSE_HOST:-}"
 
+# Client mode: the show runs *here* and the far end only paints. The opposite
+# trade from --host, and the reason to want it is MIDI - the executable is what
+# opens a port, so under --host the beat from Mixxx and every pad on the
+# Launchpad belong to the pi and this desk has neither. Under --client they
+# stay here, where they are plugged in, and the frames go over instead.
+#
+# The cost is the other way round: the rig's picture now arrives over the
+# network, so a hiccup is visible on the sculpture rather than only in the
+# preview. Under --host the far end renders locally and a stall costs you
+# nothing but a stuttery window.
+CLIENT="${ECLIPSE_CLIENT:-}"
+
 # The ssh *alias*, not the hostname - `scanner-pi`, not `scanner-pi.local`.
 # ~/.ssh/config is where the user and the key live:
 #
@@ -154,6 +166,11 @@ launch-mythos-set.sh - the mythos26 set, on this machine
                        So is MIDI: the pads and lamps default to off unless
                        --midi/--midi-out are named, because the controller
                        plugged in here is invisible to a show over there.
+  --client [NAME]      run the show HERE and put the frames on NAME's wires
+                       (default scanner-pi, or $ECLIPSE_CLIENT). The opposite
+                       of --host: Mixxx and the Launchpad keep working,
+                       because they never leave this machine. The rig's
+                       picture crosses the network instead of its cues.
   --config PATH        a different show (default config/mythos26.json)
   --bpm N              opening tempo, and the fallback if the beat goes quiet
   --state NAME         the look to open on (beat_pulse, vu_pulse, tv_static...)
@@ -181,6 +198,13 @@ while [ $# -gt 0 ]; do
                 HOST="$2"; shift
             else
                 HOST="$DEFAULT_HOST"
+            fi
+            ;;
+        --client)
+            if [ $# -ge 2 ] && [ -n "${2-}" ] && [ "${2#-}" = "$2" ]; then
+                CLIENT="$2"; shift
+            else
+                CLIENT="$DEFAULT_HOST"
             fi
             ;;
         --bpm)             extra+=(--bpm "${2:?--bpm needs a number}"); shift ;;
@@ -216,6 +240,21 @@ if [ -z "$EXE" ] && [ -z "$HOST" ]; then
     exit 1
 fi
 
+if [ -n "$HOST" ] && [ -n "$CLIENT" ]; then
+    echo "--host and --client are opposite ways round; pick one." >&2
+    echo "  --host   the show runs there, this is a window onto it" >&2
+    echo "  --client the show runs here, that machine only paints" >&2
+    exit 1
+fi
+
+# Whichever way round it is, one machine is at the far end of an ssh link.
+REMOTE="${HOST:-$CLIENT}"
+
+if [ -n "$CLIENT" ]; then
+    echo "client: $CLIENT - the show runs here, its wires are painted there"
+    echo "        pads, lamps and the beat stay on this machine"
+fi
+
 if [ -n "$HOST" ]; then
     # ShowController runs ssh instead of the binary, so there is nothing local
     # to be missing - the host's build is the one that matters, and it has to
@@ -223,30 +262,33 @@ if [ -n "$HOST" ]; then
     # answers `unknown pattern` to a cue).
     echo "host: $HOST - the show runs there, the window is here"
 
+fi
+
+if [ -n "$REMOTE" ]; then
     # Batch mode, because a password prompt inside a pipe is a hang rather
     # than a question. Checked now rather than discovered thirty seconds in
     # with a window already open.
-    if ! ssh -o BatchMode=yes -o ConnectTimeout=5 "$HOST" true 2>/dev/null; then
-        echo "warning: 'ssh $HOST true' did not succeed - the set will not start." >&2
+    if ! ssh -o BatchMode=yes -o ConnectTimeout=5 "$REMOTE" true 2>/dev/null; then
+        echo "warning: 'ssh $REMOTE true' did not succeed - the set will not start." >&2
         echo "         ssh runs in batch mode here, so it needs a key: a password" >&2
         echo "         prompt inside a pipe is a hang rather than a question." >&2
         # Is the bare form of this name an alias in ~/.ssh/config? Tokenised
         # rather than matched with a pattern, because `Host` takes a list and
         # a name is a whole word in it - a regex here matches `scanner-pi` in
         # `scanner-pi-two` and says the wrong thing confidently.
-        if awk -v want="${HOST%%.*}" '
+        if awk -v want="${REMOTE%%.*}" '
                 tolower($1) == "host" {
                     for (i = 2; i <= NF; i++) if ($i == want) found = 1
                 }
                 END { exit !found }
            ' ~/.ssh/config 2>/dev/null; then
-            echo "         ~/.ssh/config has a Host block named '${HOST%%.*}' - use that" >&2
-            echo "         instead of '$HOST'. The alias is what carries the user and" >&2
+            echo "         ~/.ssh/config has a Host block named '${REMOTE%%.*}' - use that" >&2
+            echo "         instead of '$REMOTE'. The alias is what carries the user and" >&2
             echo "         the key; the hostname on its own walks straight past both." >&2
         else
             echo "         check ~/.ssh/config for an alias for this machine (its Host" >&2
             echo "         name, not its hostname, is what carries the user and key)," >&2
-            echo "         or set one up: ssh-keygen -t ed25519 && ssh-copy-id $HOST" >&2
+            echo "         or set one up: ssh-keygen -t ed25519 && ssh-copy-id $REMOTE" >&2
         fi
     fi
 fi
@@ -263,14 +305,14 @@ if [ "$viewer" = 1 ] && ! "$PYTHON" -c "import tkinter" >/dev/null 2>&1; then
     exit 1
 fi
 
-if [ "$live" = 1 ] && [ -n "$HOST" ]; then
+if [ "$live" = 1 ] && [ -n "$REMOTE" ]; then
     # The widget, the obelisk and the ring are all on the host. Listing this
     # machine's serial ports would be answering a question nobody asked, and
     # a "nothing plugged in" warning here would be actively misleading.
-    echo "wires: on $HOST - nothing on this machine is used"
+    echo "wires: on $REMOTE - nothing on this machine is used"
 fi
 
-if [ "$live" = 1 ] && [ -z "$HOST" ]; then
+if [ "$live" = 1 ] && [ -z "$REMOTE" ]; then
     # A device with no wire does not stop the show - it comes up OFFLINE and
     # keeps rendering - so none of this is fatal. It is said now because at
     # the venue the difference between "not plugged in" and "held by something
@@ -441,6 +483,10 @@ fi
 
 if [ -n "$HOST" ]; then
     command+=(--host "$HOST")
+fi
+
+if [ -n "$CLIENT" ]; then
+    command+=(--client "$CLIENT")
 fi
 
 command+=("${midi_args[@]+"${midi_args[@]}"}")

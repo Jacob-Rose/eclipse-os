@@ -3060,6 +3060,90 @@ class MidiMapEditorActions(unittest.TestCase):
         self.assertIn("2 actions", line)
 
 
+class TheFrameSink(unittest.TestCase):
+    """Client mode's far end, run locally: paint what arrives, render nothing.
+
+    The contract is that a frame survives the trip byte for byte. It has to:
+    an F line is read back out of the universe at the sending end, so it is
+    already through master, brightness and gamma, and anything this end did to
+    it again would darken the rig by a curve on every hop.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        executable_or_skip()
+
+    def setUp(self):
+        self.frames = []
+        self.events = []
+        self.sink = ShowController(
+            SHOW, dry_run=True, autostart=False, sink=True,
+            emit_rate=30, on_frame=self.frames.append, on_event=self.events.append)
+        self.sink.start()
+        self.settle(1.0)
+
+    def tearDown(self):
+        try:
+            self.sink.stop()
+        except Exception:
+            pass
+
+    def settle(self, seconds):
+        end = time.monotonic() + seconds
+        while time.monotonic() < end:
+            time.sleep(0.02)
+
+    def fixture_count(self):
+        line = next(e for e in self.events if e.startswith("SINK "))
+        return int(line.split()[1])
+
+    def test_it_announces_how_many_fixtures_it_will_paint(self):
+        # The desk and this end have to agree on the shape of a frame without
+        # negotiating it; both read it off the same config.
+        self.assertGreater(self.fixture_count(), 0)
+        self.assertEqual(self.fixture_count(), len(self.sink.fixture_names))
+
+    def test_a_frame_survives_the_trip_byte_for_byte(self):
+        n = self.fixture_count()
+        sent = [((i * 7) % 256, (i * 13) % 256, (i * 29) % 256) for i in range(n)]
+
+        for _ in range(12):
+            self.sink.send_frame(sent)
+            self.settle(0.05)
+        self.settle(0.5)
+
+        self.assertTrue(self.frames, "the sink echoed nothing")
+        self.assertEqual(self.frames[-1], sent,
+                         "what came back is not what went in")
+
+    def test_it_paints_the_newest_frame_not_a_backlog(self):
+        # Several frames can land between two renders. A dropped one is 30ms
+        # of the last picture; a queue of stale ones is the rig running late.
+        n = self.fixture_count()
+        for shade in range(0, 60):
+            self.sink.send_frame([(shade, 0, 0)] * n)
+        self.settle(0.8)
+        self.assertEqual(self.frames[-1][0], (59, 0, 0))
+
+    def test_a_short_frame_is_taken_as_far_as_it_goes(self):
+        # A picture, not a transaction: half of one beats none, and the next
+        # is 30ms away.
+        n = self.fixture_count()
+        self.sink.send_frame([(255, 0, 0)] * n)
+        self.settle(0.3)
+        self.sink.send_frame([(0, 255, 0)] * (n // 2))
+        self.settle(0.5)
+
+        painted = self.frames[-1]
+        self.assertEqual(painted[0], (0, 255, 0), "the half it was given")
+        self.assertEqual(painted[-1], (255, 0, 0), "the rest left as it was")
+
+    def test_send_frame_needs_a_sink(self):
+        show = ShowController(SHOW, dry_run=True, autostart=False)
+        with self.assertRaises(ShowError):
+            show.send_frame([(0, 0, 0)])
+
+
 class ViewerAgainstAnotherRig(unittest.TestCase):
     """A rig whose device list is not this config's.
 

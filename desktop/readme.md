@@ -2396,6 +2396,52 @@ purpose, and the bridge warns when the binary on the pi is older than what was
 pulled — a cue that answers `unknown pattern` is what a stale binary looks
 like from the desk.
 
+## Client mode — the other way round
+
+`--host` puts the executable beside the wires and drives it from here. That
+costs the desk its MIDI: the executable is what opens a port, so over there
+`eclipse-dmx IN` is published on the *pi's* sequencer and Mixxx on this
+machine cannot see it. The beat, the tempo, the VU, the pads and the lamps all
+belong to the far end.
+
+Client mode is the same link the other way round. The show runs **here**,
+where the controllers are plugged in, and only the picture crosses:
+
+```sh
+python -m eclipse_dmx view config/mythos26.json --live --client scanner-pi
+./launch-mythos-set.sh --client
+```
+
+The far end runs `eclipse-dmx --sink`, which renders nothing and paints what
+arrives — the same `F aabbcc ...` lines `--emit-frames` already produces. Two
+details make it work:
+
+- **The bytes are painted, not rendered.** An F line is read back out of the
+  universe at the sending end, so it has already been through master,
+  brightness and gamma. Running it through those again would darken the rig
+  by a curve on every hop.
+- **The render still runs, for its other half.** A fixture's dimmer and its
+  parked mode channels are constants, and the frame stream carries only rgb —
+  so a par driven from F lines alone sits at dimmer 0 with its mode channel
+  floating, which on a cheap fixture means dark and running its own colour
+  macro. The sink renders into the universe for those, then overwrites the
+  three colour channels. Fed full red, the pars come out `255 255 0 0 0 0 0`.
+
+The ring needs nothing new: it is a `preview` device and was always painted by
+`ring_bridge` from the frames going past, so the sink's own `--emit-frames`
+hands it the stream it already reads. The obelisk and the DMX widget are
+driven by the sink itself, through the same output layer as ever.
+
+**What you are trading.** Under `--host` the far end renders locally at
+`device.fps` and a network stall costs you a stuttery preview. Under
+`--client` the rig's picture arrives over the wire, so a stall is visible on
+the sculpture. And `--emit-rate` stops being a display rate and becomes the
+rate the rig is driven at — it has to be at least the fastest `device.fps`
+over there (30 covers the 24 this rig asks for).
+
+OSC is unaffected either way: the sender is desk-side off the frame stream,
+and the audio listener is local.
+
 ## What is not here yet
 
 - **Art-Net / sACN.** Only the USB widgets. The `DmxOutput` interface is the
