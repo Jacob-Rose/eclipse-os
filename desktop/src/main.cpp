@@ -680,7 +680,8 @@ namespace
                 }
             }
             check("sim: the relic answered", simLine.empty() ? 0 : 1, 1);
-            check("sim: it names seasons", simLine.rfind("EOSLINK sim seasons noise.seed=", 0) == 0 ? 1 : 0, 1);
+            // the look the firmware boots on - see ObeliskCore::ObeliskCore
+            check("sim: it names blobs", simLine.rfind("EOSLINK sim blobs noise.seed=", 0) == 0 ? 1 : 0, 1);
             check("sim: with its clock", simLine.find(" noise.time=") != std::string::npos ? 1 : 0, 1);
 
             RelicShadow shadow;
@@ -692,7 +693,7 @@ namespace
             shadow.setProfile(findShadowProfile("obelisk"));
             check("shadow: spawned from the answer",
                   shadow.applySim(simLine.substr(std::string("EOSLINK sim ").size()), shadowError) ? 1 : 0, 1);
-            check("shadow: is seasons", shadow.getLookName() == "seasons" ? 1 : 0, 1);
+            check("shadow: is blobs", shadow.getLookName() == "blobs" ? 1 : 0, 1);
             check("shadow: is the obelisk's length", shadow.pixelCount(), kObelisk);
 
             if (strip)

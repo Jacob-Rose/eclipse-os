@@ -29,6 +29,8 @@
 
 // The generic looks - free-standing stage patterns, grouped as a machine.
 #include "relics/scanner/generic_patterns.h"
+// the recording flow's looks built on a generic one: record_arm's fire
+#include "relics/scanner/recording_patterns.h"
 
 // The obelisk's own looks, for their machine and a borrowed generic cue.
 #include "relics/obelisk/state_obelisk.h"
@@ -552,8 +554,9 @@ std::unique_ptr<StateMachinePattern> edmx::makeScannerStateMachine()
 
         // The recording flow and the void stone - the last looks the game
         // rendered in python, so every state the scanner has is now here.
-        scannerLookWith<Pattern_Scanner_SinePulse>("record_arm",
-            HSV(45.0f, 1.0f, 1.0f), 4.0f, 0.15f, 0.5f),                 // CRGB(1.0, 0.75, 0.0)
+        // waiting for the rock: the fire, over the tower's own picture, and
+        // doused on the game's cue as the rock lands (scanner.record.douse)
+        scannerLook<Pattern_Scanner_RecordArm>("record_arm"),
         scannerLook<Pattern_Scanner_RecordCountdown>("record_countdown"),
         scannerLook<Pattern_Scanner_RecordComet>("record_active"),
         scannerLookWith<Pattern_Scanner_SinePulse>("record_saved",

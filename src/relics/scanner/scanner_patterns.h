@@ -458,14 +458,21 @@ namespace scanner
     };
 
 
-    /* @brief record_active: a red comet orbiting the ring while tape rolls.
+    /* @brief record_active: a red comet orbiting the ring while tape rolls,
+    * and the same orbit on every face of the tower.
     *
     * The head is an angle around the ring's centre on the stage, not an
     * index along a strip. On the ring that is the python comet unchanged -
-    * 12 pixels a second, an 8 pixel tail, a dim red floor behind it - and on
-    * the obelisk, standing above the orbit, the same pass reads as a beam
-    * sweeping across the tower once per revolution, narrower the higher it
-    * reaches. One clock, both rigs, no per-rig cases.
+    * 12 pixels a second, an 8 pixel tail, a dim red floor behind it.
+    *
+    * The obelisk is four faces of two runs each, up and down (ObeliskIO::init:
+    * an even column is a side's up run, the odd one beside it its down run).
+    * Each face is its own loop: the comet climbs the up run and comes back
+    * down the down run, one lap per revolution of the ring, every face in
+    * step - four radars turning together round the sculpture. It used to be
+    * one beam sweeping across the whole tower by bearing, which read as a
+    * shadow passing rather than a spin. The truss still gets that bearing
+    * sweep: it has no loop to run.
     */
     class Pattern_Scanner_RecordComet : public PatternScanner
     {
@@ -481,14 +488,23 @@ namespace scanner
     };
 
 
-    /* @brief record_countdown: three white pulses - 3, 2, 1 - before the tape
-    * rolls, so a take does not start abruptly out of the arm state.
+    /* @brief record_countdown: the ring fills round as a circle - 3, 2, 1 -
+    * and each count flashes the tower white over the sculpture's own
+    * picture, before the tape rolls.
+    *
+    * The ring is the clock a visitor can read: white from the top pixel
+    * round the way the pixels run, full at the end of the last count, which
+    * is when the take starts. A soft leading edge grows it rather than
+    * stepping it a pixel at a time.
     *
     * Each count fires an AutomationCurveTrigger whose curve is one quick
-    * white pulse. A node's height on the stage delays its read into that
-    * curve, which is the whole sweep: the count lands at the bottom of the
-    * ring and runs to the top of the obelisk in sweepSeconds, so the pulse
-    * crosses the ring before it climbs the sculpture.
+    * white pulse. On the tower a row's height delays its read into it - the
+    * sweep scan_idle's pulse makes - so the count leaves the foot and runs
+    * to the tip in sweepSeconds. Over an underlay (the obelisk's own look,
+    * shadowed on the desk; see eanim::Underlay) the flash is blended over
+    * it by its own brightness: between counts the tower is the sculpture's
+    * own picture and the flash lands on top of it, as scan_idle's scan line
+    * does. Without one it is the flash over black, which it always was.
     */
     class Pattern_Scanner_RecordCountdown : public PatternScanner
     {
@@ -500,18 +516,30 @@ namespace scanner
         virtual void render(HSVStripNode* inNode, HSV& inOutColor) const override;
         virtual void reflect(ecore::PropertyBag& bag) override;
 
-        /// counts fire at 0, 1 and 2 seconds; the game holds the state for 3.
-        /// Not reflected: the count is the game's choreography, and a desk
-        /// retiming it here would desync the lights from the display and the
-        /// take.
+        /// counts fire at 0, 1 and 2 seconds; the game holds the state for 3,
+        /// and the ring is full at that 3. Not reflected: the count is the
+        /// game's choreography, and a desk retiming it here would desync the
+        /// lights from the display and the take.
         float secondsPerCount = 1.0f;
         int totalCounts = 3;
 
-        /// how long a pulse takes to climb the whole stage, kStageBottom to
+        /// how long a flash takes to climb the whole stage, kStageBottom to
         /// kStageTop
         float sweepSeconds = 0.25f;
 
+        /// the fill's leading edge, as a fraction of the ring
+        float edgeWidth = 0.08f;
+
+        /// what the unfilled ring shows, so it reads as a ring waiting to
+        /// fill rather than as nothing
+        float floorLevel = 0.05f;
+
     private:
+        /// where a node sits round the ring, 0 at the top pixel and on round
+        /// the way the pixels are numbered - a bare strip answers with its
+        /// place along itself
+        static float ringAlpha(const HSVStripNode* node);
+
         eanim::AutomationCurveTrigger pulse;
         int firedCount{0};
     };

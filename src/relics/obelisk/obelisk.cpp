@@ -12,6 +12,7 @@
 #include "../../lib/ecore/logging.h"
 
 #include "state_obelisk.h"
+#include "../scanner/recording_patterns.h"
 
 using namespace obelisk;
 using namespace ecore;
@@ -107,9 +108,17 @@ ObeliskCore::ObeliskCore() : RelicCore()
     testPatternState->setGenerator(std::make_shared<Pattern_Obelisk_Monocolor>());
     testPatternState->init();
 
+    // the default: what the sculpture shows on its own, and what the desk
+    // shadows under the scanner's looks (see relic_shadow.cpp) - the idle
+    // scan line, the countdown's flashes and the arm's fire all land on it
+    blobsPatternState = std::make_shared<State_GenericHSV>("blobsState", coreIO.get());
+    blobsPatternState->setGenerator(std::make_shared<Pattern_Obelisk_Blobs>());
+    blobsPatternState->init();
+
     mainPatternId = stateManager->addState(mainPatternState);
     theaterPatternId = stateManager->addState(theaterPatternState);
     testPatternId = stateManager->addState(testPatternState);
+    blobsPatternId = stateManager->addState(blobsPatternState);
 
     // The scanner's looks, one state per afterglow state tag. The variants the
     // python picks with save-file flags (emergency lock, broken device, newly
@@ -129,6 +138,7 @@ ObeliskCore::ObeliskCore() : RelicCore()
     looksByName["seasons"] = mainPatternState;
     looksByName["theater"] = theaterPatternState;
     looksByName["mono"]    = testPatternState;
+    looksByName["blobs"]   = blobsPatternState;
 
     using namespace scanner;
 
@@ -156,7 +166,8 @@ ObeliskCore::ObeliskCore() : RelicCore()
     // The recording flow and the void stone - same table as
     // makeScannerStateMachine() in the desktop build, kept in step so a cue
     // works wherever it lands.
-    addScannerState("record_arm",                      make_shared<Pattern_Scanner_SinePulse>(HSV(45.0f, 1.0f, 1.0f), 4.0f, 0.15f, 0.5f));   // CRGB(1.0, 0.75, 0.0)
+    // the fire over the tower's own picture, doused on the game's cue
+    addScannerState("record_arm",                      make_shared<Pattern_Scanner_RecordArm>());
     addScannerState("record_countdown",                make_shared<Pattern_Scanner_RecordCountdown>());
     addScannerState("record_active",                   make_shared<Pattern_Scanner_RecordComet>());
     addScannerState("record_saved",                    make_shared<Pattern_Scanner_SinePulse>(HSV(132.0f, 1.0f, 1.0f), 6.0f, 0.4f, 0.6f));   // CRGB(0.0, 1.0, 0.2)
@@ -165,8 +176,8 @@ ObeliskCore::ObeliskCore() : RelicCore()
     addScannerState("audio_playback_recording",        make_shared<Pattern_Scanner_DetectedWave>(HSV(33.3f, 0.9f, 1.0f)));
     addScannerState("void",                            make_shared<Pattern_Scanner_SinePulse>(HSV(282.0f, 1.0f, 0.5f), 2.0f, 0.0f, 0.6f));   // CRGB(0.35, 0.0, 0.5)
 
-    // Start State Machine
-    stateMachine->setActiveState(mainPatternState);
+    // Start State Machine, on the blobs
+    stateMachine->setActiveState(blobsPatternState);
     stateMachine->init();
 
 #if 0
@@ -299,6 +310,7 @@ bool obelisk::ObeliskCore::handleCommand(string msg)
         if (wanted == "seasons" || wanted == "main")   target = mainPatternState;
         else if (wanted == "theater")                  target = theaterPatternState;
         else if (wanted == "mono" || wanted == "test") target = testPatternState;
+        else if (wanted == "blobs")                    target = blobsPatternState;
         else
         {
             auto it = scannerStates.find(wanted);
@@ -379,7 +391,7 @@ bool obelisk::ObeliskCore::handleCommand(string msg)
 
     if (msg == "states")
     {
-        string reply = "EOSLINK states seasons theater mono";
+        string reply = "EOSLINK states blobs seasons theater mono";
         for (const auto& entry : scannerStates)
         {
             reply += " " + entry.first;

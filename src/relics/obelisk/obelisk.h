@@ -84,9 +84,13 @@ namespace obelisk
         shared_ptr<State_GenericHSV> mainPatternState;
         shared_ptr<State_GenericHSV> theaterPatternState;
         shared_ptr<State_GenericHSV> testPatternState;
+        /// the look the sculpture boots on - the seasons field generalised,
+        /// two colours the desk can pick
+        shared_ptr<State_GenericHSV> blobsPatternState;
         int mainPatternId{0};
         int theaterPatternId{0};
         int testPatternId{0};
+        int blobsPatternId{0};
 
         // The scanner's looks, keyed by the exact state tags afterglow's
         // python game uses, so the scanner can mirror its state machine here

@@ -101,6 +101,10 @@ namespace scanner
         float spread = 0.15f;
         /// how fast a flame climbs, stage units per second
         float riseSpeed = 12.0f;
+        /// a gain on the ignition, over sparking: 0 lights nothing new and
+        /// the flames in the air burn out, which is how a fire is put out
+        /// rather than switched off - record_arm runs this down on its cue
+        float emitter = 1.0f;
 
         virtual void reset() override;
         virtual void tick(float deltaTime) override;

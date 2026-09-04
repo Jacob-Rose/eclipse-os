@@ -95,6 +95,10 @@ set(ECLIPSE_RELIC_SOURCES
     # from WLED. Same stage, free-standing.
     ${ECLIPSE_SRC}/relics/scanner/generic_patterns.cpp
 
+    # The recording flow's looks that build on a generic one (record_arm is
+    # the fire, with a cue to answer and a picture to sit over).
+    ${ECLIPSE_SRC}/relics/scanner/recording_patterns.cpp
+
     # The jacket's looks. Its State_* wrappers reach into JacketIO for physical
     # buttons, so the desktop drives the Pattern_* generators inside them
     # directly, through esm's own State_GenericHSV - the state machine is real,

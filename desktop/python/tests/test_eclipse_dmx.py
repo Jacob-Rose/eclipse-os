@@ -2775,10 +2775,11 @@ class ScannerKnobs(unittest.TestCase):
     def test_the_recording_flow_offers_its_shapes(self):
         show = self._show()
         try:
+            # the fire's own knobs, plus the douse the game cues
             show.set_state("record_arm")
             time.sleep(0.8)
             self.assertEqual([param.name for param in show.params],
-                             ["rate", "floor", "gain"])
+                             ["cooling", "sparking", "spread", "rise", "emitter", "douse"])
 
             show.set_state("record_active")
             time.sleep(0.8)
@@ -2787,17 +2788,18 @@ class ScannerKnobs(unittest.TestCase):
 
             show.set_state("record_countdown")
             time.sleep(0.8)
-            self.assertEqual([param.name for param in show.params], ["sweep"])
+            self.assertEqual([param.name for param in show.params],
+                             ["sweep", "edge", "floor"])
         finally:
             show.stop()
 
     def test_a_scanner_knob_reaches_the_render(self):
-        """floor 1, gain 0 flattens record_arm's breath to a steady amber."""
+        """floor 1, gain 0 flattens record_saved's breath to a steady green."""
         frames = []
         show = ShowController(SCANNER, dry_run=True, midi="", on_frame=frames.append,
                               emit_rate=20.0)
         try:
-            show.set_state("record_arm")
+            show.set_state("record_saved")
             time.sleep(1.2)          # past the cue blend
             show.set_param("floor", 1.0)
             show.set_param("gain", 0.0)
@@ -2805,9 +2807,38 @@ class ScannerKnobs(unittest.TestCase):
             frames.clear()
             time.sleep(0.8)
 
-            reds = [frame[0][0] for frame in frames]
-            self.assertGreater(min(reds), 200, "not at full amber")
-            self.assertLessEqual(max(reds) - min(reds), 2, "still breathing")
+            greens = [frame[0][1] for frame in frames]
+            self.assertGreater(min(greens), 200, "not at full green")
+            self.assertLessEqual(max(greens) - min(greens), 2, "still breathing")
+        finally:
+            show.stop()
+
+    def test_the_countdown_fills_the_ring_and_the_douse_puts_the_fire_out(self):
+        """The ring's top pixel lights first and its last pixel last; after
+        the douse cue nothing new ignites, so the fire goes dark."""
+        frames = []
+        show = ShowController(SCANNER, dry_run=True, midi="", on_frame=frames.append,
+                              emit_rate=20.0)
+        try:
+            show.set_state("record_countdown")
+            time.sleep(0.6)
+            early = frames[-1]
+            # pixel 0 is the top of the ring, pixel 34 just before it
+            self.assertGreater(early[0][0], 100, "the top pixel is not lit early")
+            self.assertLess(early[34][0], 40, "the last pixel is lit early")
+            time.sleep(2.8)
+            late = frames[-1]
+            self.assertGreater(late[34][0], 200, "the ring did not fill")
+
+            show.set_state("record_arm")
+            time.sleep(1.0)
+            show.trigger("scanner.record.douse")
+            time.sleep(4.5)          # the longest flame burns out
+            frames.clear()
+            time.sleep(0.5)
+            brightest = max(max(channel for pixel in frame[:35] for channel in pixel)
+                            for frame in frames)
+            self.assertLess(brightest, 8, "the fire is still burning after the douse")
         finally:
             show.stop()
 
