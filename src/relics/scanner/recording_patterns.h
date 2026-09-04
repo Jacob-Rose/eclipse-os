@@ -18,17 +18,17 @@
 
 namespace scanner_tags
 {
-    /// the rock has landed and the game is about to count down: record_arm
-    /// runs its fire's emitter down, and the game waits that long before it
-    /// fades - see Pattern_Scanner_RecordArm::douseSeconds and RecordArmState
-    /// in afterglow's game.py
-    inline const GameplayTag Douse{"scanner.record.douse"};
+    /// the rock has landed on an armed cleanse and its take is about to go:
+    /// cleanse_arm runs its fire's emitter down, and the game waits that
+    /// long before it fades - see Pattern_Scanner_CleanseFire::douseSeconds
+    /// and CleanseArmState in afterglow's game.py
+    inline const GameplayTag Douse{"scanner.cleanse.douse"};
 }
 
 namespace scanner
 {
-    /* @brief record_arm: the fire burns while the rig waits for a rock, over
-    * the sculpture's own picture.
+    /* @brief cleanse_arm: the fire burns while the rig waits for the rock
+    * whose take is to be cleansed, over the sculpture's own picture.
     *
     * Fire2012 on the stage - the ember bed along the foot, risers climbing
     * through the ring and on up the runs - blended over the underlay (the
@@ -38,16 +38,16 @@ namespace scanner
     * only where it is. Without an underlay it is the fire over black, which
     * is what it is on the ring.
     *
-    * The game douses it as the rock lands: `trigger scanner.record.douse`
+    * The game douses it as the rock lands: `trigger scanner.cleanse.douse`
     * runs the emitter down to nothing over douseSeconds, and the game holds
-    * the state that long before fading to the countdown - so the flames it
+    * the state that long before fading to cleanse_done - so the flames it
     * hands over are already dying, not cut off mid-burn. Entry relights it.
     */
-    class Pattern_Scanner_RecordArm : public Pattern_Generic_Fire2012
+    class Pattern_Scanner_CleanseFire : public Pattern_Generic_Fire2012
     {
     public:
         /// how long the douse takes the emitter from full to nothing. The
-        /// game's RECORD_DOUSE_SECONDS is this: change one, change the other.
+        /// game's CLEANSE_DOUSE_SECONDS is this: change one, change the other.
         float douseSeconds = 0.3f;
 
         virtual void reset() override;

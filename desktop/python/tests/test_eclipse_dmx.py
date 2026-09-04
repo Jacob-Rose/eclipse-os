@@ -2775,8 +2775,14 @@ class ScannerKnobs(unittest.TestCase):
     def test_the_recording_flow_offers_its_shapes(self):
         show = self._show()
         try:
-            # the fire's own knobs, plus the douse the game cues
+            # the breath, and how much of the tower it gives to the shadow
             show.set_state("record_arm")
+            time.sleep(0.8)
+            self.assertEqual([param.name for param in show.params],
+                             ["rate", "floor", "gain", "shadow"])
+
+            # the fire's own knobs, plus the douse the game cues
+            show.set_state("cleanse_arm")
             time.sleep(0.8)
             self.assertEqual([param.name for param in show.params],
                              ["cooling", "sparking", "spread", "rise", "emitter", "douse"])
@@ -2830,9 +2836,9 @@ class ScannerKnobs(unittest.TestCase):
             late = frames[-1]
             self.assertGreater(late[34][0], 200, "the ring did not fill")
 
-            show.set_state("record_arm")
+            show.set_state("cleanse_arm")
             time.sleep(1.0)
-            show.trigger("scanner.record.douse")
+            show.trigger("scanner.cleanse.douse")
             time.sleep(4.5)          # the longest flame burns out
             frames.clear()
             time.sleep(0.5)

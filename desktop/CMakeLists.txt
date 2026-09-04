@@ -95,7 +95,7 @@ set(ECLIPSE_RELIC_SOURCES
     # from WLED. Same stage, free-standing.
     ${ECLIPSE_SRC}/relics/scanner/generic_patterns.cpp
 
-    # The recording flow's looks that build on a generic one (record_arm is
+    # The recording flow's looks that build on a generic one (cleanse_arm is
     # the fire, with a cue to answer and a picture to sit over).
     ${ECLIPSE_SRC}/relics/scanner/recording_patterns.cpp
 

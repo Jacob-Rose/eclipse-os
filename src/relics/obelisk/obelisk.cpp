@@ -166,8 +166,8 @@ ObeliskCore::ObeliskCore() : RelicCore()
     // The recording flow and the void stone - same table as
     // makeScannerStateMachine() in the desktop build, kept in step so a cue
     // works wherever it lands.
-    // the fire over the tower's own picture, doused on the game's cue
-    addScannerState("record_arm",                      make_shared<Pattern_Scanner_RecordArm>());
+    // the amber breath, fading into the tower's own picture by height
+    addScannerState("record_arm",                      make_shared<Pattern_Scanner_SinePulse>(HSV(45.0f, 1.0f, 1.0f), 4.0f, 0.15f, 0.5f, 1.0f));   // CRGB(1.0, 0.75, 0.0)
     addScannerState("record_countdown",                make_shared<Pattern_Scanner_RecordCountdown>());
     addScannerState("record_active",                   make_shared<Pattern_Scanner_RecordComet>());
     addScannerState("record_saved",                    make_shared<Pattern_Scanner_SinePulse>(HSV(132.0f, 1.0f, 1.0f), 6.0f, 0.4f, 0.6f));   // CRGB(0.0, 1.0, 0.2)
@@ -175,6 +175,10 @@ ObeliskCore::ObeliskCore() : RelicCore()
     addScannerState("scan_item_detected_recording",    make_shared<Pattern_Scanner_DetectedWave>(HSV(33.3f, 0.9f, 1.0f)));                   // CRGB(1.0, 0.6, 0.1)
     addScannerState("audio_playback_recording",        make_shared<Pattern_Scanner_DetectedWave>(HSV(33.3f, 0.9f, 1.0f)));
     addScannerState("void",                            make_shared<Pattern_Scanner_SinePulse>(HSV(282.0f, 1.0f, 0.5f), 2.0f, 0.0f, 0.6f));   // CRGB(0.35, 0.0, 0.5)
+    // the cleanse: the fire over the tower's own picture, doused on the
+    // game's cue as the rock lands; done is a cool breath
+    addScannerState("cleanse_arm",                     make_shared<Pattern_Scanner_CleanseFire>());
+    addScannerState("cleanse_done",                    make_shared<Pattern_Scanner_SinePulse>(HSV(200.0f, 0.6f, 1.0f), 6.0f, 0.4f, 0.6f));
 
     // Start State Machine, on the blobs
     stateMachine->setActiveState(blobsPatternState);

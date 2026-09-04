@@ -435,23 +435,31 @@ namespace scanner
 
     /* @brief The whole ring breathing one colour on a sine.
     *
-    * The shape three of the recording-flow states share, differing only in
-    * their numbers: brightness runs floorLevel..floorLevel+gain as the sine
+    * The shape the recording-flow states share, differing only in their
+    * numbers: brightness runs floorLevel..floorLevel+gain as the sine
     * swings, at rate radians per second.
     *   record_arm    amber, quick and shallow, waiting for the rock
     *   record_saved  green, faster and brighter, the take is on disk
     *   void          purple from black, the empty stone's slow breath
+    *   cleanse_done  a cool breath, the rock void again
+    *
+    * Over an underlay (the obelisk's own look, shadowed on the desk; see
+    * eanim::Underlay) the pulse can give the tower back by height:
+    * shadowFade 1 is the pulse whole at the foot fading out to the
+    * sculpture's own picture at the tip, which is record_arm's setting. 0
+    * paints the whole tower, and is what the others do.
     */
     class Pattern_Scanner_SinePulse : public PatternScanner
     {
     public:
-        Pattern_Scanner_SinePulse(const HSV& inColor, float inRate, float inFloor, float inGain)
-            : color(inColor), rate(inRate), floorLevel(inFloor), gain(inGain) {}
+        Pattern_Scanner_SinePulse(const HSV& inColor, float inRate, float inFloor, float inGain, float inShadowFade = 0.0f)
+            : color(inColor), rate(inRate), floorLevel(inFloor), gain(inGain), shadowFade(inShadowFade) {}
 
         HSV color;
         float rate;
         float floorLevel;
         float gain;
+        float shadowFade;
 
         virtual void render(HSVStripNode* inNode, HSV& inOutColor) const override;
         virtual void reflect(ecore::PropertyBag& bag) override;

@@ -415,22 +415,38 @@ void Pattern_Scanner_PlaybackGeneric::reflect(ecore::PropertyBag& bag)
 
 void Pattern_Scanner_SinePulse::render(HSVStripNode* inNode, HSV& inOutColor) const
 {
-    (void)inNode;
-
     const float pulse = (std::sin(timeActive * rate) + 1.0f) * 0.5f;
 
     inOutColor = color;
     inOutColor.setBrightnessAlpha(color.getValFloat() * (floorLevel + pulse * gain));
+
+    // over the sculpture's own picture, the foot ours and the tip its own:
+    // the claim runs 1 at the foot down to 1 - shadowFade at the tip
+    if (shadowFade > 0.0f)
+    {
+        const HSVStripNode_Space* spaced = eio::spaceOf(inNode);
+        if (spaced != nullptr && spaced->space == NodeSpace::Obelisk)
+        {
+            HSV under;
+            if (underlay != nullptr && underlay->sample(inNode, under))
+            {
+                const float claim = 1.0f - clamp01(spaced->v * shadowFade);
+                inOutColor = HSV::blend(under, inOutColor, claim);
+            }
+        }
+    }
 }
 
 void Pattern_Scanner_SinePulse::reflect(ecore::PropertyBag& bag)
 {
-    // The breath's three independent handles - the states that share this
-    // class (record_arm, record_saved, void) differ only in these numbers and
-    // the colour, so the knobs *are* the state's identity, worth curves each.
+    // The breath's independent handles - the states that share this class
+    // (record_arm, record_saved, void, cleanse_done) differ only in these
+    // numbers and the colour, so the knobs *are* the state's identity,
+    // worth curves each. The shadow fade is the tower's alone.
     bag.add("rate", rate, 0.5f, 12.0f);
     bag.add("floor", floorLevel, 0.0f, 1.0f);
     bag.add("gain", gain, 0.0f, 1.0f);
+    bag.add("shadow", shadowFade, 0.0f, 1.0f);
 }
 
 void Pattern_Scanner_RecordComet::render(HSVStripNode* inNode, HSV& inOutColor) const
