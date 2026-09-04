@@ -363,6 +363,35 @@ namespace edmx
     };
 
 
+    /// One flat colour, at one level. The simplest look there is.
+    ///
+    /// It exists to be driven rather than to be watched: with `level` on a
+    /// modulation and `color` set per layer, it is the additive hit layers -
+    /// red on the ring off `bass_hits`, green on the obelisk off `mid_hits`,
+    /// blue on the truss off `high_hits`. The look itself knows nothing about
+    /// audio; it is a colour and a number, and the bus turns the number.
+    ///
+    /// Which is the point worth keeping. Nothing here reads a channel, so the
+    /// same class is also the UV par's `off` / `on` and the `hits` cue's
+    /// near-black base, and a fourth use tomorrow needs no fourth pattern.
+    class Pattern_Mythos_Solid : public eanim::GeneratorHSV
+    {
+    public:
+        /// White, and unsaturated, by default: the levelLook states that
+        /// predate this knob - the UV par's `off` and `on` - never set it, and
+        /// render exactly as they did before it existed.
+        ecore::HSV color{0.0f, 0.0f, 1.0f};
+
+        /// Scales the colour's own value rather than replacing it, so a dark
+        /// swatch stays dark at full level. The same shape as vu_pulse's
+        /// wash: the colour is a ceiling, the number is how much of it.
+        float level{1.0f};
+
+        virtual void render(eio::HSVStripNode* node, ecore::HSV& inOutColor) const override;
+        virtual void reflect(ecore::PropertyBag& bag) override;
+    };
+
+
     /// A placeholder look, so a slot in the show can be switched to and seen
     /// before it has been written.
     ///

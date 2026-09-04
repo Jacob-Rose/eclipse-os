@@ -17,6 +17,7 @@
 #include "relics/scanner/generic_patterns.h"
 #include "relics/scanner/scanner_patterns.h"
 
+#include "edmx/audio_meter.h"
 #include "edmx/mythos26.h"
 #include "edmx/state_machine.h"
 
@@ -506,6 +507,24 @@ namespace
         // --- the UV par's three modes, for a layer over the show --------
         table["uv"] = []() {
             return std::unique_ptr<Pattern>(makeUvStateMachine().release());
+        };
+
+        // --- the audio bus, as cues: one per channel -----------------------
+        // An instrument rather than a show - see edmx/audio_meter.h. Grouped
+        // as a state machine for the same reason mythos26 is: the desk gets a
+        // cue list and the surface gets a page, with nothing here per channel.
+        table["audio"] = []() {
+            return std::unique_ptr<Pattern>(makeAudioStateMachine().release());
+        };
+
+        // --- one colour at one level: what an additive layer runs ----------
+        // Registered as a pattern of its own because a layer names a pattern,
+        // and the hit layers want this without a cue list wrapped round it.
+        // `color` and `level` are its whole surface; a mod on `level` is what
+        // makes it a hit.
+        table["solid"] = []() {
+            return std::unique_ptr<Pattern>(new GeneratorPattern(
+                "solid", std::make_shared<Pattern_Mythos_Solid>()));
         };
     }
 }

@@ -1,0 +1,65 @@
+{
+  // A bench rig for additive layers, and the only place they are declared.
+  //
+  //   python -m eclipse_dmx run config/audio_layers_test.json --dry-run --osc-in 7000
+  //
+  // The show used to carry three of these - red, green and blue transients on
+  // the ring, the pillar and the truss - patched permanently and always on.
+  // That was wrong, and it is worth writing down why rather than just
+  // deleting it: an additive layer rides over *whatever* is running. The
+  // argument for leaving them patched was that a layer sitting at black adds
+  // nothing, so they cost nothing under the cues they were not written for.
+  //
+  // That holds exactly until the channels are actually being fed. Then every
+  // cue in the show is itself plus red, green and blue, the obelisk reads as
+  // 344 pixels of yellow-green jittering at whatever mid_hits is doing, and
+  // the audio meter - an instrument, whose whole job is to report one number
+  // honestly - reports that number plus a layer. A permanent overlay across
+  // three devices is an implicit global effect, and a rig should not have one.
+  //
+  // So they live here, where turning them on is a thing you did on purpose.
+  // The capability is unchanged and worth keeping: `blend: add`, mods off the
+  // audio bus, and `device/*` fixture globs are all exercised by this file.
+
+  "master": { "brightness": 1.0, "gamma": 2.2 },
+
+  // Nothing underneath. On a show a black base would be a bad idea - a rig
+  // that goes fully dark is indistinguishable from a rig that has crashed -
+  // but this is a bench for the layers, and the layers being the only thing
+  // that can light a fixture is exactly the property under test.
+  "pattern": { "name": "off" },
+
+  "audio": {
+    "source": "synesthesia",
+    "port": 7000,
+    "bpm": false,
+    "map": "oscmaps/synesthesia.json"
+  },
+
+  // The same three devices the show has, so the fixture globs below resolve
+  // against the shapes they were written for.
+  "devices": [
+    { "device": "scanner_ring", "offset": [0, 0], "view_scale": [0.9, 1.0] },
+    { "device": "obelisk", "offset": [0, 0], "view_scale": [0.3, 1.0] },
+    { "device": "uking_par36_x10", "name": "pars", "offset": [10, 0],
+      "view_scale": [1.7, 0.45] }
+  ],
+
+  // One transient per section, in frequency order up the room: kick at the
+  // bottom on the ring, mids up the pillar, the top of the spectrum on the
+  // truss. Each is a `solid` whose level is driven straight off the bus, so
+  // nothing in the pattern knows about audio - it is a colour and a number,
+  // and the bus turns the number.
+  //
+  // midhigh_hits and not high_hits on the truss: /audio/hits/high measures
+  // flat at zero on this build while every band around it moves. See the
+  // readme.
+  "layers": [
+    { "name": "hit_ring", "fixtures": ["scanner_ring/*"], "pattern": "solid",
+      "blend": "add", "color": "#ff0000", "mods": { "level": "bass_hits" } },
+    { "name": "hit_obelisk", "fixtures": ["obelisk/*"], "pattern": "solid",
+      "blend": "add", "color": "#00ff00", "mods": { "level": "mid_hits" } },
+    { "name": "hit_pars", "fixtures": ["pars/par_*"], "pattern": "solid",
+      "blend": "add", "color": "#0000ff", "mods": { "level": "midhigh_hits" } }
+  ]
+}

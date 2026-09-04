@@ -353,6 +353,8 @@ class ShowController:
         emit_rate: float = 30.0,
         midi: Optional[str] = None,
         bpm: Optional[float] = None,
+        pattern: Optional[str] = None,
+        state: Optional[str] = None,
         autostart: bool = True,
         command_timeout: float = 5.0,
         remote: Optional[str] = None,
@@ -380,6 +382,18 @@ class ShowController:
         # "open nothing", distinct from None meaning "whatever the config said".
         self.midi_port = midi
         self.start_bpm = bpm
+
+        #: The look to open on, overriding the config's. The executable's own
+        #: --pattern / --state, which the CLI and the viewer already expose;
+        #: here so a caller that builds a show directly can say which machine
+        #: it means rather than inheriting whatever a shared config happens to
+        #: open on this week. See config/mythos26.json, which currently opens
+        #: on the audio meter.
+        #: One command at a time waits for a reply. See command().
+        self._command_lock = threading.Lock()
+
+        self.start_pattern = pattern
+        self.start_state = state
 
         # Asking for frames implies wanting them: a caller that passes on_frame
         # and forgets the flag would otherwise sit and watch nothing happen.
@@ -587,6 +601,10 @@ class ShowController:
             args.extend(["--midi", self.midi_port] if self.midi_port else ["--no-midi"])
         if self.start_bpm is not None:
             args.extend(["--bpm", str(self.start_bpm)])
+        if self.start_pattern:
+            args.extend(["--pattern", self.start_pattern])
+        if self.start_state:
+            args.extend(["--state", self.start_state])
         if self.verbose:
             args.append("--verbose")
         return args
@@ -990,24 +1008,44 @@ class ShowController:
 
         Raises ShowError on an ERR reply, so callers can treat a returned value
         as success without checking.
+
+        Serialised against other commands, and streamed lines do not touch the
+        reply queue at all. Both of those are about the audio bus: `audio`
+        lines arrive from the OSC listener's thread at a couple of hundred a
+        second, and they are sent with expect_reply=False.
+
+        Without the lock, a cue fired from a pad drains the queue, a streamed
+        line is written between the drain and the read, and the cue waits five
+        seconds for a reply that was never coming. Without the guard on the
+        drain it is worse: every streamed line was clearing the queue, so a
+        command already waiting had its reply thrown away by traffic that has
+        nothing to do with it. That is not theoretical - it is
+        `no reply to 'layer hit_obelisk mod level off' within 5.0s`, on a rig
+        with a track playing, from a command that had in fact worked.
         """
-        # Drop stale replies so a timed-out earlier command cannot be mistaken
-        # for this one's answer.
-        while True:
-            try:
-                self._replies.get_nowait()
-            except queue.Empty:
-                break
-
-        self._write_line(line)
-
         if not expect_reply:
+            # Nothing to wait for and nothing to protect: writes are atomic
+            # enough at this size, and taking the lock here would put the whole
+            # audio stream behind whatever command is currently in flight.
+            self._write_line(line)
             return ""
 
-        try:
-            reply = self._replies.get(timeout=self.command_timeout)
-        except queue.Empty as error:
-            raise ShowError(f"no reply to '{line}' within {self.command_timeout}s") from error
+        with self._command_lock:
+            # Drop stale replies so a timed-out earlier command cannot be
+            # mistaken for this one's answer.
+            while True:
+                try:
+                    self._replies.get_nowait()
+                except queue.Empty:
+                    break
+
+            self._write_line(line)
+
+            try:
+                reply = self._replies.get(timeout=self.command_timeout)
+            except queue.Empty as error:
+                raise ShowError(
+                    f"no reply to '{line}' within {self.command_timeout}s") from error
 
         if reply.startswith("ERR"):
             raise ShowError(reply[4:].strip())

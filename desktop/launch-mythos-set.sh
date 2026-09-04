@@ -38,12 +38,17 @@ PYTHON="${PYTHON:-python3}"
 # overrides both.
 OSC_ADDRESS="${ECLIPSE_OSC_ADDRESS:-Jakes-Mac-mini.local:6000}"
 
-# The way back: Synesthesia's audio engine, driving this rig's knobs. Its FFT
-# is the only thing in the room doing real analysis - the beat off Mixxx is a
-# grid and a VU meter and nothing else - so bass, highs and presence come back
-# in on this port and land on whatever config/oscmaps/synesthesia.json binds
-# them to. Turn it on in the app: Settings > OSC > Output Audio Variables, with
-# the output port set to this number and the output IP naming this machine.
+# The way back: Synesthesia's audio engine, which is the source for this show.
+# Its FFT is the only thing in the room doing real analysis, so the levels, the
+# transients, the presence *and* the beat come back in on this port and land on
+# the channels config/oscmaps/synesthesia.json binds them to - see "audio" in
+# config/mythos26.json. Turn it on in the app: Settings > OSC > Output Audio
+# Variables, with the output port set to this number and the output IP naming
+# this machine.
+#
+# --no-osc-in is the fallback if it will not start: the beat goes back to
+# Mixxx's grid on the MIDI cable, the additive hit layers go dark, and every
+# cue runs as it did.
 OSC_IN_PORT="${ECLIPSE_OSC_IN_PORT:-7000}"
 
 # The controller, for the cue pads and the midi map's learn button.
@@ -147,7 +152,9 @@ launch-mythos-set.sh - the mythos26 set, on this machine
   --bench, --dry-run   render and draw, but put nothing on any wire
   --headless           run without the viewer window (ssh, or no tkinter)
   --no-osc             do not send the rig's colour to a visualiser
-  --no-osc-in          do not take the visualiser's audio analysis back in
+  --no-osc-in          do not take the visualiser's audio analysis back in,
+                       whatever the config declares. The hit layers go dark;
+                       everything else runs as it does.
   --osc-in PORT        listen for it on this port instead (default 7000, or
                        $ECLIPSE_OSC_IN_PORT). Must match Synesthesia's OSC
                        *output* port; `osc-watch` shows what arrives.
@@ -475,10 +482,16 @@ else
 fi
 
 if [ "$osc_in" = 1 ]; then
-    # The map beside the config is found by name; naming a port here is what
-    # turns the listener on. A port already held is a warning, not a refusal -
-    # see _osc_input_for.
+    # The port. config/mythos26.json declares "audio": {"source": "synesthesia"}
+    # and would open it on its own; naming it here is what makes
+    # $ECLIPSE_OSC_IN_PORT and --osc-in override that. A port already held is a
+    # warning, not a refusal - see _osc_input_for.
     command+=(--osc-in "$OSC_IN_PORT")
+else
+    # Said rather than left out. Since the config declares the source, leaving
+    # the flag off no longer means "off" - it means "whatever the config says",
+    # which is exactly what --no-osc-in is being asked to override.
+    command+=(--no-osc-in)
 fi
 
 if [ -n "$HOST" ]; then

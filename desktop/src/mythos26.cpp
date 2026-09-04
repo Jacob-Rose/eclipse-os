@@ -527,36 +527,39 @@ namespace
         return def;
     }
 
-    /// One flat level of white: a light held where it is put. The UV par's
-    /// `off` and `on` are this at 0 and 1; `level` is a knob so `on` can be
-    /// trimmed at the desk without becoming a different state.
-    class Pattern_Level : public eanim::GeneratorHSV
-    {
-    public:
-        float level{1.0f};
-
-        virtual void render(eio::HSVStripNode* /*node*/, ecore::HSV& inOutColor) const override
-        {
-            inOutColor = ecore::HSV(0.0f, 0.0f, level);
-        }
-
-        virtual void reflect(ecore::PropertyBag& bag) override
-        {
-            bag.add("level", level, 0.0f, 1.0f);
-        }
-    };
-
+    /// A light held where it is put, in whatever colour it is given.
+    ///
+    /// The UV par's `off` and `on` are this at 0 and 1, and slot_5's `hits`
+    /// base is it at 0.03. `level` is a knob so `on` can be trimmed at the
+    /// desk without becoming a different state - and so a mod can turn it,
+    /// which is what makes the same class the three additive hit layers.
     StateDef levelLook(const char* name, float level)
     {
         StateDef def;
         def.name = name;
         def.make = [level]() -> std::shared_ptr<eanim::GeneratorHSV> {
-            auto pattern = std::make_shared<Pattern_Level>();
+            auto pattern = std::make_shared<Pattern_Mythos_Solid>();
             pattern->level = level;
             return pattern;
         };
         return def;
     }
+}
+
+// ============================================================================
+// solid
+// ============================================================================
+
+void Pattern_Mythos_Solid::render(eio::HSVStripNode* /*node*/, ecore::HSV& inOutColor) const
+{
+    inOutColor = color;
+    inOutColor.setBrightnessAlpha(color.getValFloat() * level);
+}
+
+void Pattern_Mythos_Solid::reflect(ecore::PropertyBag& bag)
+{
+    bag.add("color", color);
+    bag.add("level", level, 0.0f, 1.0f);
 }
 
 std::unique_ptr<StateMachinePattern> edmx::makeUvStateMachine()

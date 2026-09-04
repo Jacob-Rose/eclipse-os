@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "opens_on": "mythos26",
+  "opens_on": "audio",
   "mappings": [
     {
       "label": "mythos26 - beat_pulse",
@@ -1797,32 +1797,6 @@
       "colour": 53
     },
     {
-      "label": "mythos26 (tab)",
-      "trigger": {
-        "kind": "cc",
-        "channel": 1,
-        "number": 89
-      },
-      "mode": "press",
-      "actions": [
-        {
-          "action": "page",
-          "params": {
-            "name": "mythos26"
-          }
-        },
-        {
-          "action": "pattern",
-          "params": {
-            "name": "mythos26"
-          }
-        }
-      ],
-      "enabled": true,
-      "page": "",
-      "colour": 41
-    },
-    {
       "label": "jacket (tab)",
       "trigger": {
         "kind": "cc",
@@ -1991,6 +1965,604 @@
       "enabled": true,
       "page": "",
       "colour": 3
+    },
+    {
+      "label": "audio - level",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 11
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "audio"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "level"
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "audio",
+      "colour": 3
+    },
+    {
+      "label": "audio - bass",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 12
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "audio"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "bass"
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "audio",
+      "colour": 3
+    },
+    {
+      "label": "audio - mid",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 13
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "audio"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "mid"
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "audio",
+      "colour": 3
+    },
+    {
+      "label": "audio - midhigh",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 14
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "audio"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "midhigh"
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "audio",
+      "colour": 3
+    },
+    {
+      "label": "audio - high",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 15
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "audio"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "high"
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "audio",
+      "colour": 3
+    },
+    {
+      "label": "audio - hits",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 16
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "audio"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "hits"
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "audio",
+      "colour": 5
+    },
+    {
+      "label": "audio - bass_hits",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 17
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "audio"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "bass_hits"
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "audio",
+      "colour": 5
+    },
+    {
+      "label": "audio - mid_hits",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 18
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "audio"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "mid_hits"
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "audio",
+      "colour": 5
+    },
+    {
+      "label": "audio - midhigh_hits",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 21
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "audio"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "midhigh_hits"
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "audio",
+      "colour": 5
+    },
+    {
+      "label": "audio - high_hits",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 22
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "audio"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "high_hits"
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "audio",
+      "colour": 5
+    },
+    {
+      "label": "audio - presence",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 23
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "audio"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "presence"
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "audio",
+      "colour": 45
+    },
+    {
+      "label": "audio - bass_presence",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 24
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "audio"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "bass_presence"
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "audio",
+      "colour": 45
+    },
+    {
+      "label": "audio - mid_presence",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 25
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "audio"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "mid_presence"
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "audio",
+      "colour": 45
+    },
+    {
+      "label": "audio - midhigh_presence",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 26
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "audio"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "midhigh_presence"
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "audio",
+      "colour": 45
+    },
+    {
+      "label": "audio - high_presence",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 27
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "audio"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "high_presence"
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "audio",
+      "colour": 45
+    },
+    {
+      "label": "audio - beat",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 28
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "audio"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "beat"
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "audio",
+      "colour": 21
+    },
+    {
+      "label": "audio - bpm",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 31
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "audio"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "bpm"
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "audio",
+      "colour": 21
+    },
+    {
+      "label": "audio - bpm_confidence",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 32
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "audio"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "bpm_confidence"
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "audio",
+      "colour": 21
+    },
+    {
+      "label": "audio - intensity",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 33
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "audio"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "intensity"
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "audio",
+      "colour": 21
+    },
+    {
+      "label": "audio - level_instant",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 34
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "audio"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "level_instant"
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "audio",
+      "colour": 9
+    },
+    {
+      "label": "audio - level_meter",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 35
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "audio"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "level_meter"
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "audio",
+      "colour": 9
+    },
+    {
+      "label": "audio (tab)",
+      "trigger": {
+        "kind": "cc",
+        "channel": 1,
+        "number": 29
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "page",
+          "params": {
+            "name": "audio"
+          }
+        },
+        {
+          "action": "pattern",
+          "params": {
+            "name": "audio"
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "",
+      "colour": 5
+    },
+    {
+      "label": "mythos26 (tab)",
+      "trigger": {
+        "kind": "cc",
+        "channel": 1,
+        "number": 89
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "page",
+          "params": {
+            "name": "mythos26"
+          }
+        },
+        {
+          "action": "pattern",
+          "params": {
+            "name": "mythos26"
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "",
+      "colour": 41
     }
   ]
 }

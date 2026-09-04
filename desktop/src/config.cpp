@@ -13,6 +13,7 @@
 #include <string>
 #include <utility>
 
+#include "edmx/beat_clock.h"
 #include "edmx/json.h"
 
 #include "kits/palettes.h"
@@ -1003,6 +1004,104 @@ bool edmx::loadConfig(const std::string& path, Config& outConfig, std::string& o
         }
     }
 
+    // ---- audio --------------------------------------------------------------
+    // Where the numbers about the sound come from. One switch; see AudioConfig.
+    {
+        const JsonValue& audio = root["audio"];
+        config.audio.source = audio["source"].asString(config.audio.source);
+        config.audio.port   = audio["port"].asInt(config.audio.port);
+        config.audio.map    = audio["map"].asString("");
+        config.audio.bpm    = audio["bpm"].asBool(config.audio.bpm);
+
+        if (config.audio.source != "mixxx"
+            && config.audio.source != "synesthesia"
+            && config.audio.source != "none")
+        {
+            outError = path + ": audio.source '" + config.audio.source
+                     + "'; expected \"mixxx\", \"synesthesia\" or \"none\"";
+            return false;
+        }
+        if (config.audio.port < 1 || config.audio.port > 65535)
+        {
+            outError = path + ": audio.port " + std::to_string(config.audio.port)
+                     + " is not a port";
+            return false;
+        }
+    }
+
+    // ---- mods -------------------------------------------------------------
+    // Knobs driven by the audio bus. Whether the property exists is checked
+    // when the look announces itself - a state machine has no knobs until it
+    // has rendered once - so here only the channel is, because a channel name
+    // is a closed set and a typo in one is silent otherwise.
+    const auto readMods = [&](const JsonValue& from, const std::string& where,
+                              std::vector<ModConfig>& into) -> bool
+    {
+        const JsonValue& mods = from["mods"];
+
+        // Two spellings, because the short one is what a hit layer wants:
+        //   "mods": { "level": "bass_hits" }
+        //   "mods": [ { "param": "level", "channel": "bass_hits",
+        //               "low": 0, "high": 1, "slew": 0.1 } ]
+        // The object form is the array form with every default taken, and a
+        // rig of one-line layers should not have to spell out five fields to
+        // say the obvious thing.
+        if (mods.isObject())
+        {
+            for (const std::string& key : mods.keys())
+            {
+                ModConfig mod;
+                mod.param = key;
+                mod.channel = mods[key].asString("");
+                into.push_back(std::move(mod));
+            }
+        }
+        else if (mods.isArray())
+        {
+            for (size_t i = 0; i < mods.size(); ++i)
+            {
+                const JsonValue& entry = mods[i];
+                ModConfig mod;
+                mod.param = entry["param"].asString("");
+                mod.channel = entry["channel"].asString("");
+                mod.enabled = entry["enabled"].asBool(true);
+                mod.low = entry["low"].asFloat(0.0f);
+                mod.high = entry["high"].asFloat(1.0f);
+                mod.slew = entry["slew"].asFloat(0.0f);
+                into.push_back(std::move(mod));
+            }
+        }
+
+        for (const ModConfig& mod : into)
+        {
+            if (mod.param.empty())
+            {
+                outError = path + ": " + where + " has a mod with no param";
+                return false;
+            }
+            AudioChannel channel;
+            if (!findAudioChannel(mod.channel, channel))
+            {
+                outError = path + ": " + where + " mod '" + mod.param
+                         + "' reads '" + mod.channel + "', which is not a channel on the "
+                           "audio bus; see `channels`";
+                return false;
+            }
+            if (mod.slew < 0.0f)
+            {
+                outError = path + ": " + where + " mod '" + mod.param
+                         + "' has a negative slew";
+                return false;
+            }
+        }
+        return true;
+    };
+
+    if (!readMods(root, "show", config.mods))
+    {
+        return false;
+    }
+
     // ---- layers -----------------------------------------------------------
     // A second pattern on a few named fixtures. Whether the names resolve is
     // checked where the show is built, with the devices in hand; here only
@@ -1017,6 +1116,8 @@ bool edmx::loadConfig(const std::string& path, Config& outConfig, std::string& o
             layer.name = entry["name"].asString("layer_" + std::to_string(i));
             layer.pattern = entry["pattern"].asString("");
             layer.state = entry["state"].asString("");
+            layer.blend = entry["blend"].asString(layer.blend);
+            layer.color = entry["color"].asString("");
 
             const JsonValue& fixtures = entry["fixtures"];
             if (fixtures.isArray())
@@ -1039,6 +1140,16 @@ bool edmx::loadConfig(const std::string& path, Config& outConfig, std::string& o
             if (layer.fixtures.empty())
             {
                 outError = path + ": layer '" + layer.name + "' names no fixtures";
+                return false;
+            }
+            if (layer.blend != "over" && layer.blend != "add")
+            {
+                outError = path + ": layer '" + layer.name + "' blends '" + layer.blend
+                         + "'; expected \"over\" or \"add\"";
+                return false;
+            }
+            if (!readMods(entry, "layer '" + layer.name + "'", layer.mods))
+            {
                 return false;
             }
             config.layers.push_back(std::move(layer));

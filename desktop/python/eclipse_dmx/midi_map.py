@@ -474,6 +474,42 @@ def _run_param(context, params, value):
     return None  # streamed; narrating every value would bury the header
 
 
+def _run_audio(context, params, value):
+    """One channel of the audio bus, filled.
+
+    The binding that makes Synesthesia's analysis usable as an ordinary
+    parameter. It does not touch a knob: it writes a number onto the rig's
+    audio bus, and whatever the config or the desk has pointed at that channel
+    picks it up on the next frame - see ModConfig and applyMods in the
+    executable.
+
+    Which is why the shipped OSC map is nineteen of these and almost nothing
+    else. A binding straight onto a knob (`param`) has to know what look is
+    running and what its knobs are called, so it is written per show and dies
+    when the look changes. A binding onto a channel knows neither, so it is
+    written once and every look that ever wants bass can have it.
+
+    Rate-limited by the binding above, not here. The executable answers
+    nothing to `audio` for the same reason: sixty values a second per channel
+    is not a conversation.
+    """
+    channel = str(params.get("channel", "")).strip().lower()
+    if not channel:
+        return "audio: no channel named"
+    if context.show is None:
+        return "audio: no show"
+
+    # Scaled here rather than in the binding so that one binding can feed a
+    # channel from a uniform with its own range - syn_BPM's 50..220 becomes
+    # the bus's 0..1 - without the bus growing a units column.
+    low = float(params.get("low", 0.0))
+    high = float(params.get("high", 1.0))
+    scaled = low + (high - low) * value
+
+    context.show.command(f"audio {channel} {scaled:.4f}", expect_reply=False)
+    return None  # streamed; narrating every value would bury the header
+
+
 def _run_master(context, params, value):
     """Rig-wide brightness. The bluntest audio binding there is, and the one
     worth having: the whole room breathing with the track."""
@@ -486,13 +522,17 @@ def _run_master(context, params, value):
 
 
 def _run_bpm(context, params, value):
-    """Tempo, from a value rather than a fixed line.
+    """Tempo, from a value rather than a fixed line - a fader that is a tempo.
 
-    Which makes Synesthesia's beat detector usable as this rig's clock: bind
-    `syn_BPM` here, with the range it arrives in, and the desk takes its tempo
-    from the audio engine instead of from Mixxx's note 50. Off by default in
-    the shipped map, because two tempo sources disagreeing is worse than
-    either alone - see osc_input and `midi status`.
+    Not how a config takes its tempo from the visualiser any more. That goes
+    through the bus: `syn_BPM` fills the `bpm` channel like any other analysis
+    value, and `audio.bpm` decides whether the clock reads it. The shipped map
+    used to carry a binding straight onto this action as well, which was a
+    second competing route to one number.
+
+    Still registered, because a MIDI fader that sets a tempo is a legitimate
+    thing to want on a rig with no visualiser at all. Bind it and you own the
+    tempo; nothing arbitrates between this and anything else.
     """
     if context.show is None:
         return "bpm: no show"
@@ -628,6 +668,18 @@ register_action(ActionSpec(
         FieldSpec("layer", "layer", hint="optional: a layer's look instead of the show's"),
     ],
     run=_run_param,
+))
+
+register_action(ActionSpec(
+    key="audio", label="rig: fill an audio bus channel (value)",
+    fields=[
+        FieldSpec("channel", "channel", default="level",
+                  hint="level, bass, mid, midhigh, high, hits, bass_hits, ... "
+                       "see `channels` at the desk"),
+        FieldSpec("low", "low", kind="float", default=0.0, hint="bus value at 0"),
+        FieldSpec("high", "high", kind="float", default=1.0, hint="bus value at 1"),
+    ],
+    run=_run_audio,
 ))
 
 register_action(ActionSpec(

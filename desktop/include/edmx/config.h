@@ -118,6 +118,105 @@ namespace edmx
         bool freeRun{true};
     };
 
+    /// One knob, driven by one channel of the audio bus.
+    ///
+    /// The whole of "use the analysis as a parameter". A modulation names a
+    /// property the running look already reflects — `base_gain`, `attack`,
+    /// `level`, anything in a reflect() — and a channel to drive it from, and
+    /// every frame the engine writes `low + (high - low) * bus.get(channel)`
+    /// into it. Nothing in any pattern changes, and a knob written next year
+    /// is modulatable the day it is added.
+    ///
+    /// `low`/`high` are the knob's range, not the channel's: the bus is always
+    /// 0..1, and this is what puts that back into the units the property wants.
+    /// Inverting them (low above high) is legal and useful — a level that
+    /// should *close* something down as it rises.
+    struct ModConfig
+    {
+        std::string param;
+        std::string channel;
+        float low{0.0f};
+        float high{1.0f};
+
+        /// Whether this mod drives anything. A mod that is declared and off:
+        /// the wiring is recorded, the knob is left alone.
+        ///
+        /// Here for the same reason an OSC binding has one. The three additive
+        /// hit layers belong to the *show*, and they ride over whatever is
+        /// running - which is what makes them safe to leave patched, and
+        /// exactly wrong under the audio meter, where every channel would read
+        /// as itself plus bass_hits on the ring. So while this config opens on
+        /// the meter they are declared and quiet, and the surface's mythos26
+        /// tab turns them on with the show.
+        bool enabled{true};
+
+        /// Seconds to close most of a gap to a new bus value, 0 to follow it
+        /// exactly. A symmetric low-pass, the same shape as vu_pulse's
+        /// base_smoothing and for the same reason: an asymmetric one keeps
+        /// every transient on the way up, which is a second pulse rather than
+        /// a smoothing. Left at 0 for hits, which are already an envelope.
+        float slew{0.0f};
+    };
+
+    /// Where the numbers about the *sound* come from.
+    ///
+    /// Distinct from `midi`, which is where the *beat* comes from, because
+    /// they need not be the same cable and on this rig usually are not: Mixxx
+    /// has the beat grid, Synesthesia has the FFT. One setting rather than
+    /// four, because the failure this replaces is a set opening with two
+    /// tempo sources disagreeing or a binding nobody remembered to enable.
+    struct AudioConfig
+    {
+        /// "mixxx"       - the VU notes on the MIDI cable fill `level`,
+        ///                 `level_instant` and `level_meter`. The other
+        ///                 eighteen channels stay dark, which is what they
+        ///                 have always done.
+        /// "synesthesia" - the visualiser's audio uniforms fill all of them,
+        ///                 over OSC, and the MIDI VU notes are ignored so the
+        ///                 two cannot both write `level`.
+        /// "none"        - nothing fills the bus. Modulations hold at zero.
+        ///
+        /// Deliberately *not* about tempo. The beat stays with `midi`, where
+        /// it was, because Mixxx has a real beat grid and syn_BPM has a
+        /// detector's guess at one - and because a single setting that
+        /// silently moved the clock as well as the analysis is exactly the
+        /// kind of switch that is only discovered to have done so on stage.
+        /// To take tempo from the visualiser too, enable the `bpm` binding in
+        /// the OSC map; it is one line and it is off by default.
+        std::string source{"mixxx"};
+
+        /// The port Synesthesia's OSC *output* is pointed at. Only read when
+        /// source is "synesthesia"; the python wrapper opens it, not this.
+        int port{7000};
+
+        /// Take the beat from the visualiser too - syn_BPM for the tempo,
+        /// syn_OnBeat for the phase. On by default with source "synesthesia".
+        ///
+        /// This is what makes `source` mean one source. Having picked the
+        /// visualiser as the thing that listens to the music, taking its
+        /// answer for where the beat is as well is the consistent choice; the
+        /// split - analysis from one place, tempo from another - is the thing
+        /// that would have to be justified, and it is also the arrangement
+        /// where the two quietly fight. markBeat() folds every gap between
+        /// beats into the tempo, so a rig taking syn_BPM while Mixxx's notes
+        /// still reached the clock would sit at neither tempo.
+        ///
+        /// So with this on, the MIDI cable does not reach the beat clock at
+        /// all. The port is still opened and `midi monitor` still shows what
+        /// is on it; nothing has to be turned off at the Mixxx end.
+        ///
+        /// Turning it off is the one supported split: analysis from the
+        /// visualiser, beat from Mixxx.
+        bool bpm{true};
+
+        /// Which OSC bindings fill the bus, relative to the config. Empty
+        /// means oscmaps/synesthesia.json beside it.
+        std::string map;
+
+        bool isSynesthesia() const { return source == "synesthesia"; }
+        bool isNone() const { return source == "none"; }
+    };
+
     struct PatternConfig
     {
         std::string name{"palette_wave"};
@@ -298,19 +397,48 @@ namespace edmx
     struct LayerConfig
     {
         std::string name;
+
+        /// `device/fixture`, or `fixture` when only one device has one of that
+        /// name, or `device/*` for every fixture on a device.
         std::vector<std::string> fixtures;
         std::string pattern;
         std::string state;   ///< the state to open on, for a state machine
+
+        /// "over" writes the layer's colour where the show's was; "add" sums
+        /// them.
+        ///
+        /// Over is right for a light with its own job — the UV par is off or
+        /// flashing, and what the show wanted on it is irrelevant. Add is
+        /// right for a light that is doing two things at once: a hit in red on
+        /// a section that is also running the show's look, where black is
+        /// genuinely "nothing" and the layer only ever brightens. A layer that
+        /// sits at black in add mode is invisible, which is what makes an
+        /// always-on hit layer safe to leave patched.
+        std::string blend{"over"};
+
+        /// The layer's colour, if its pattern has a `color` knob. Sugar for a
+        /// mod-less `param color`, and here because a rig of one-colour hit
+        /// layers is the case this exists for — three of them differing only
+        /// in colour and channel should read as three lines, not three blocks.
+        std::string color;
+
+        /// Knobs on this layer's look driven by the bus.
+        std::vector<ModConfig> mods;
     };
 
     struct Config
     {
         MasterConfig master;
         MidiConfig midi;
+        AudioConfig audio;
         PatternConfig pattern;
 
         std::vector<Device> devices;
         std::vector<LayerConfig> layers;
+
+        /// Knobs on the show's own look driven by the bus. The layers carry
+        /// their own; these are the show's.
+        std::vector<ModConfig> mods;
 
         /// Warnings raised during load. Non-fatal: reported, then we light up.
         std::vector<std::string> warnings;

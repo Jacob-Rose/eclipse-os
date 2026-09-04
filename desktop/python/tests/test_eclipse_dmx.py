@@ -25,7 +25,10 @@ sys.path.insert(0, str(DESKTOP / "python"))
 
 from eclipse_dmx.binary import BinaryNotFoundError, find_executable  # noqa: E402
 from eclipse_dmx.config import (  # noqa: E402
+    AUDIO_CHANNELS,
+    AUDIO_STATES,
     MYTHOS26_STATES,
+    AudioConfig,
     Config,
     ConfigError,
     Fixture,
@@ -46,6 +49,11 @@ OBELISK = DESKTOP / "config" / "obelisk.json"
 OBELISK_USB = DESKTOP / "config" / "obelisk_usb.json"
 SCANNER = DESKTOP / "config" / "scanner.json"
 STAGE = DESKTOP / "config" / "scanner_stage.json"
+
+#: The bench rig for additive layers, and the only config that declares any.
+#: The show used to carry three, patched permanently - see the note at the top
+#: of that file for why a rig should not have an implicit global overlay.
+LAYERS = DESKTOP / "config" / "audio_layers_test.json"
 
 #: The sculpture's own numbers, from src/relics/obelisk/state_obelisk.h and the
 #: eight GenerateAxisRow calls in obelisk.cpp. The config has to agree with
@@ -154,7 +162,12 @@ class OscColour(unittest.TestCase):
 
     def link(self, **kwargs):
         made = osc.SynesthesiaLink("127.0.0.1:1", **kwargs)
-        made._send = self.sent.append       # no socket involved
+        # No socket involved. _send takes the address rather than a finished
+        # packet - one place that knows *what* is going out, which is what
+        # on_send and the osc panel need - so the encode moves in here to keep
+        # these assertions about the bytes on the wire.
+        made._send = lambda address, *values: self.sent.append(
+            osc.encode(address, *values))
         return made
 
     def test_normalised_from_bytes(self):
@@ -421,12 +434,26 @@ class OscInputBindings(unittest.TestCase):
         self.assertAlmostEqual(bound.scale(500.0), 1.0)      # clamped, not wrapped
         self.assertAlmostEqual(bound.scale(0.0), 0.0)
 
-    def test_a_level_that_holds_still_says_nothing(self):
-        # Sixty identical values a second down the pipe the cues use.
+    def test_a_level_that_holds_still_says_little(self):
+        """Sixty identical values a second down the pipe the cues use - but
+        not *nothing*, which is what this used to assert and what shipped.
+
+        The far end fades a channel nobody has restated in 0.8s, as a
+        dead-man's switch, so a binding that went permanently silent on a held
+        value deleted it. See max_interval and TheBindingKeepsTheBusAlive.
+        """
         bound = self.binding(min_interval=0.0, min_change=0.01)
         self.assertIsNotNone(bound.fires_on(0.5, 0.0))
-        self.assertIsNone(bound.fires_on(0.505, 1.0))
-        self.assertIsNotNone(bound.fires_on(0.7, 2.0))
+
+        # Inside the keepalive window an unchanged value still says nothing,
+        # which is the saving this exists for.
+        self.assertIsNone(bound.fires_on(0.505, 0.05))
+
+        # Past it, it restates itself rather than letting the value die.
+        self.assertIsNotNone(bound.fires_on(0.505, 1.0))
+
+        # And a real change is never delayed by any of it.
+        self.assertIsNotNone(bound.fires_on(0.7, 1.01))
 
     def test_the_rate_limit_is_a_rate_limit(self):
         bound = self.binding(min_interval=0.1, min_change=0.0)
@@ -687,17 +714,55 @@ class TheShippedOscMap(unittest.TestCase):
             if binding.enabled and binding.action == "param":
                 self.assertIn(binding.params.get("name"), known, binding.label)
 
-    def test_the_bands_do_not_all_drive_one_knob(self):
-        # The failure this map's `exclude` lists exist to prevent: four
-        # sources arriving at the same action, none of them wrong on their own.
+    #: Every address a real Synesthesia was observed sending, captured off the
+    #: wire with `osc-watch` rather than taken from the documentation - which
+    #: names the uniforms but not the addresses, and which this list does not
+    #: match. The scheme is `/audio/<family>/<band>`, so the band comes *after*
+    #: the family and the first version of this map, globbing `*bass*level*`,
+    #: matched nothing at all.
+    #:
+    #: The whole list rather than a sample, because the overlaps are the point:
+    #: `*/level/mid` must not also take `/audio/level/midhigh`, `*/bpm/bpm`
+    #: must not take `bpmconfidence` or the eight sine and triangle waves, and
+    #: `*/beat/onbeat` must not take `randomonbeat`.
+    UNIFORMS = tuple("/audio/" + name for name in (
+        "level/all", "level/raw",
+        "level/bass", "level/mid", "level/midhigh", "level/high",
+        "hits/all", "hits/bass", "hits/mid", "hits/midhigh", "hits/high",
+        "presence/all",
+        "presence/bass", "presence/mid", "presence/midhigh", "presence/high",
+        "time/all", "time/bass", "time/mid", "time/midhigh", "time/high",
+        "time/curved",
+        "beat/onbeat", "beat/randomonbeat", "beat/beattime",
+        "bpm/bpm", "bpm/bpmconfidence", "bpm/bpmtwitcher",
+        "bpm/bpmsin", "bpm/bpmsin2", "bpm/bpmsin4", "bpm/bpmsin8",
+        "bpm/bpmtri", "bpm/bpmtri2", "bpm/bpmtri4", "bpm/bpmtri8",
+        "energy/intensity",
+    ))
+
+    def test_each_binding_takes_exactly_the_uniform_it_names(self):
+        """The failure this map's `exclude` lists exist to prevent: several
+        sources arriving at one destination, none of them wrong on its own.
+
+        `*level*` takes BassLevel too unless told not to; `*mid*` takes
+        MidHigh; `*bpm` takes BPMConfidence and the six BPM waves. A glob
+        cannot say "not", which is what `exclude` is for - and a binding that
+        silently takes four uniforms is a knob driven by four sources at once.
+        """
         for binding in self.bindings:
             if not binding.enabled:
                 continue
-            hits = [address for address in
-                    ("/syn/Level", "/syn/BassLevel", "/syn/MidLevel",
-                     "/syn/MidHighLevel", "/syn/HighLevel")
-                    if binding.matches(address)]
-            self.assertEqual(len(hits), 1, f"{binding.label} takes {hits}")
+            taken = [address for address in self.UNIFORMS if binding.matches(address)]
+            self.assertEqual(len(taken), 1, f"{binding.label} takes {taken}")
+
+    def test_no_uniform_is_taken_by_two_bindings(self):
+        """The same failure from the other side: one address arriving at two
+        destinations. Harmless for two levels, not harmless for two writers on
+        one channel of the bus - that is whichever spoke last."""
+        for address in self.UNIFORMS:
+            takers = [b.label for b in self.bindings
+                      if b.enabled and b.matches(address)]
+            self.assertLessEqual(len(takers), 1, f"{address} taken by {takers}")
 
 
 class OscCommand(unittest.TestCase):
@@ -1164,7 +1229,11 @@ class TheUvLayer(unittest.TestCase):
     def test_the_stage_config_declares_it(self):
         config = Config.load(DESKTOP / "config" / "scanner_stage.json")
         self.assertEqual(config.layers, [
-            {"name": "uv", "fixtures": ["pars/uv"], "pattern": "uv", "state": "off"}])
+            # "over" is the default and what this layer has always done: the UV
+            # par is off or flashing, and what the show wanted on it is beside
+            # the point. See TheAudioBus for the additive case.
+            {"name": "uv", "fixtures": ["pars/uv"], "pattern": "uv", "state": "off",
+             "blend": "over"}])
         # and it survives a round trip
         again = Config.from_dict(config.to_dict())
         self.assertEqual(again.layers, config.layers)
@@ -1236,6 +1305,1029 @@ class TheUvLayer(unittest.TestCase):
             self.assertIsNone(show.get_param("rate"))
         finally:
             show.stop()
+
+
+class TheAudioBus(unittest.TestCase):
+    """Analysis in, as an ordinary parameter.
+
+    The bus is the one place a number about the *sound* lives. Mixxx's VU notes
+    fill three of its channels off the MIDI cable; Synesthesia's audio uniforms
+    fill all of them over OSC. A modulation points an ordinary pattern knob at
+    a channel, and nothing in any pattern knows which end filled it - which is
+    the whole reason for putting a bus in the middle rather than letting looks
+    read a cable.
+    """
+
+    # -- talking to the executable -----------------------------------------
+
+    @staticmethod
+    def _protocol(script, frames=60, config=None):
+        """Run the show on `script` and hand back every line it printed.
+
+        ShowController.command returns only the OK line, because that is what a
+        caller waiting on a command wants. These assertions are about the
+        announcement lines *around* it - CHANNEL, MOD - so this reads the
+        stream directly rather than through the wrapper.
+
+        Everything is written at once, so it all lands before the first frame
+        renders. That is fine for anything the command handler answers on the
+        spot, and wrong for anything a frame has to run to produce - see
+        _protocol_paced.
+        """
+        executable = executable_or_skip()
+        import subprocess
+        result = subprocess.run(
+            [str(executable), "--config", str(config or SHOW), "--dry-run",
+             "--midi", "", "--frames", str(frames)],
+            input="\n".join(script) + "\n",
+            capture_output=True, text=True, timeout=60,
+        )
+        return result.stdout.splitlines()
+
+    @staticmethod
+    def _protocol_paced(script, pause=0.05, config=None):
+        """The same, with frames actually rendering between the lines.
+
+        The bus is read by the *frame loop*, not by the command handler: an
+        `audio` line only reaches the beat clock when a frame runs after it. So
+        anything asking what the bus did has to leave room for one, which piping
+        the whole script in at once does not.
+        """
+        executable = executable_or_skip()
+        import subprocess
+        process = subprocess.Popen(
+            [str(executable), "--config", str(config or SHOW), "--dry-run",
+             "--midi", "", "--frames", "0"],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            text=True,
+        )
+        try:
+            for line in script:
+                process.stdin.write(line + "\n")
+                process.stdin.flush()
+                time.sleep(pause)
+            process.stdin.write("quit\n")
+            process.stdin.flush()
+            out, _ = process.communicate(timeout=30)
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.communicate()
+        return out.splitlines()
+
+    # -- the channel list ---------------------------------------------------
+
+    def test_the_channel_list_matches_the_executable(self):
+        """AUDIO_CHANNELS is a mirror, and a mirror that drifts is worse than
+        no mirror: a config would validate here and be refused there."""
+        lines = self._protocol(["channels"])
+        named = [line.split()[1] for line in lines if line.startswith("CHANNEL ")]
+        self.assertEqual(tuple(named), AUDIO_CHANNELS)
+
+    def test_every_channel_is_zero_and_dark_before_anything_feeds_it(self):
+        """"Nothing is wired" has to be distinguishable from "the music is
+        quiet", and both have to be safe. An unfed channel reads zero and not
+        live, so a mod on it holds its knob at `low` rather than at whatever
+        the last write left there."""
+        lines = [line for line in self._protocol(["channels"])
+                 if line.startswith("CHANNEL ")]
+        self.assertEqual(len(lines), len(AUDIO_CHANNELS))
+        for line in lines:
+            _, name, value, live = line.split()
+            self.assertEqual(float(value), 0.0, name)
+            self.assertEqual(live, "-", name)
+
+    def test_a_value_lands_on_its_channel_and_only_that_one(self):
+        lines = [line for line in self._protocol(["audio bass_hits 0.75", "channels"])
+                 if line.startswith("CHANNEL ")]
+        readings = {line.split()[1]: line.split()[2:] for line in lines}
+        self.assertEqual(float(readings["bass_hits"][0]), 0.75)
+        self.assertEqual(readings["bass_hits"][1], "live")
+        # its neighbours in the enum, untouched
+        self.assertEqual(float(readings["mid_hits"][0]), 0.0)
+        self.assertEqual(float(readings["hits"][0]), 0.0)
+
+    def test_a_channel_that_is_not_one_is_refused_at_the_desk_too(self):
+        lines = self._protocol(["audio bass_hit 1.0"])
+        self.assertTrue(any(line.startswith("ERR") and "bass_hit" in line
+                            for line in lines), lines)
+
+    # -- the config ---------------------------------------------------------
+
+    def test_the_show_declares_synesthesia_and_a_port(self):
+        config = Config.load(SHOW)
+        self.assertEqual(config.audio.source, "synesthesia")
+        self.assertEqual(config.audio.port, 7000)
+        self.assertTrue(config.audio.is_synesthesia)
+        again = Config.from_dict(config.to_dict())
+        self.assertEqual(again.audio.source, "synesthesia")
+
+    def test_the_show_takes_the_beat_from_synesthesia_too(self):
+        """One source owns the music. Having picked the app that is actually
+        listening to it, its answer for where the beat is comes with."""
+        config = Config.load(SHOW)
+        self.assertTrue(config.audio.bpm)
+        self.assertTrue(config.audio.owns_the_beat)
+        self.assertTrue(Config.from_dict(config.to_dict()).audio.owns_the_beat)
+
+    def test_a_mixxx_config_never_owns_the_beat_from_the_bus(self):
+        """`bpm` only means anything alongside `source: synesthesia` - on
+        mixxx the cable is the clock, which is what it always was."""
+        self.assertFalse(AudioConfig(source="mixxx", bpm=True).owns_the_beat)
+        self.assertFalse(AudioConfig(source="none", bpm=True).owns_the_beat)
+        self.assertFalse(AudioConfig(source="synesthesia", bpm=False).owns_the_beat)
+
+    # -- the clock ----------------------------------------------------------
+
+    def test_the_desk_says_which_end_owns_the_beat(self):
+        """`beat_from` is the configured owner; `src` inside the clock's own
+        status is whoever last actually set it. They differ in exactly the case
+        worth seeing at a venue - Mixxx playing and the rig not following it
+        reads as beat_from=osc with src=internal, which says the cable is not
+        wired to the clock rather than that the cable is dead."""
+        line = next(one for one in self._protocol(["midi status"])
+                    if one.startswith("MIDI-STATUS "))
+        self.assertIn("beat_from=osc", line)
+        self.assertIn("audio_from=synesthesia", line)
+
+    def test_syn_bpm_sets_the_tempo(self):
+        """50..220 across the channel's 0..1, which is the OSC binding's
+        `range` run backwards - the bus is 0..1 everywhere."""
+        # Restated a few times rather than once: the bus is read by the frame
+        # loop, not the command handler, so this needs a frame to have run in
+        # between - and one 0.05s gap is not reliably a frame on a loaded
+        # machine. Several gives it several chances and still costs under a
+        # second.
+        lines = self._protocol_paced(["audio bpm 0.4706"] * 5 + ["midi status"],
+                                     pause=0.08)
+        line = next(one for one in lines if one.startswith("MIDI-STATUS "))
+        reported = float(line.split("bpm=")[1].split()[0])
+        self.assertAlmostEqual(reported, 130.0, delta=0.5)
+
+    def test_an_empty_bus_leaves_the_tempo_where_it_was(self):
+        """A channel nobody is filling reads zero, and zero here would mean
+        50bpm. So nothing is done at all unless the channel is live: a link
+        that never came up, or dropped mid-set, costs the tempo nothing and the
+        show free-runs at the config's own bpm."""
+        lines = self._protocol(["midi status"], frames=30)
+        line = next(one for one in lines if one.startswith("MIDI-STATUS "))
+        self.assertAlmostEqual(float(line.split("bpm=")[1].split()[0]), 128.0,
+                               delta=0.5)
+        self.assertIn("src=internal", line)
+
+    def test_syn_onbeat_sets_the_phase_and_syn_bpm_still_owns_the_tempo(self):
+        """Both channels come from one detector and both imply a tempo: one
+        states it, the other implies it by when it fires. The stated one wins,
+        because syn_OnBeat arrives over UDP through a rate-limited binding
+        while syn_BPM is smoothed upstream - left to fight, the jittery one
+        takes it within a few beats. See BeatClock::setTempoHeld.
+
+        Driven here at a beat spacing that deliberately disagrees with the
+        stated tempo, which is the only way to tell the two apart.
+        """
+        script = []
+        for _ in range(16):
+            script += ["audio bpm 0.4706", "audio beat 1.0", "audio beat 0.0"]
+        script.append("midi status")
+
+        # Three lines a beat at 0.09s is ~0.27s between beats, about 220bpm:
+        # clearly not the 130 being stated, and still inside the 30..300 the
+        # clock will entertain at all. Faster than kMaxBpm and markBeat drops
+        # the beats as one beat said twice, which would make this pass whether
+        # the tempo were held or not.
+        lines = self._protocol_paced(script, pause=0.09)
+        line = next(one for one in lines if one.startswith("MIDI-STATUS "))
+
+        # The stated tempo, not the one the edges imply.
+        self.assertAlmostEqual(float(line.split("bpm=")[1].split()[0]), 130.0,
+                               delta=0.5)
+        # and the beats did land: the phase came from syn_OnBeat
+        self.assertIn("src=osc", line)
+
+    def test_a_config_with_no_audio_block_is_mixxx(self):
+        """Which is what every config written before the bus existed is, and
+        they must go on behaving exactly as they did."""
+        config = Config.load(RIG)
+        self.assertEqual(config.audio.source, "mixxx")
+        self.assertFalse(config.audio.is_synesthesia)
+
+    def test_an_unknown_source_or_port_is_refused(self):
+        with self.assertRaises(ConfigError):
+            AudioConfig(source="ableton").validate()
+        with self.assertRaises(ConfigError):
+            AudioConfig(port=0).validate()
+
+    # -- mods ---------------------------------------------------------------
+
+    def test_the_short_and_long_spellings_mean_the_same_thing(self):
+        """The object form is the array form with every default taken. A rig of
+        one-line hit layers should not have to spell out five fields."""
+        short = Config.from_dict({
+            "fixtures": [{"profile": "rgb3", "address": 1}],
+            "mods": {"level": "bass_hits"},
+        })
+        long = Config.from_dict({
+            "fixtures": [{"profile": "rgb3", "address": 1}],
+            "mods": [{"param": "level", "channel": "bass_hits",
+                      "low": 0.0, "high": 1.0, "slew": 0.0}],
+        })
+        self.assertEqual(short.mods[0]["param"], "level")
+        self.assertEqual(short.mods[0]["channel"], "bass_hits")
+        self.assertEqual(long.mods, [{"param": "level", "channel": "bass_hits",
+                                      "enabled": True,
+                                      "low": 0.0, "high": 1.0, "slew": 0.0}])
+
+    def test_a_channel_that_is_not_one_is_refused(self):
+        """The one failure on this path that is otherwise completely silent: a
+        mod on a misspelled channel binds to nothing and simply never fires,
+        which looks exactly like a visualiser that is not sending."""
+        with self.assertRaises(ConfigError) as caught:
+            Config.from_dict({
+                "fixtures": [{"profile": "rgb3", "address": 1}],
+                "mods": {"level": "bass_hit"},   # bass_hits
+            })
+        self.assertIn("bass_hit", str(caught.exception))
+
+        with self.assertRaises(ConfigError):
+            Config.from_dict({
+                "fixtures": [{"profile": "rgb3", "address": 1}],
+                "layers": [{"name": "x", "fixtures": ["a"], "pattern": "solid",
+                            "mods": {"level": "nope"}}],
+            })
+
+    def test_a_blend_that_is_not_over_or_add_is_refused(self):
+        with self.assertRaises(ConfigError):
+            Config.from_dict({
+                "fixtures": [{"profile": "rgb3", "address": 1}],
+                "layers": [{"name": "x", "fixtures": ["a"], "pattern": "solid",
+                            "blend": "screen"}],
+            })
+
+    # -- the shipped map ----------------------------------------------------
+
+    def test_the_map_fills_every_channel_the_visualiser_has(self):
+        """One binding per channel, authored once. This is the difference the
+        bus buys: a binding onto a *knob* has to know what look is running and
+        dies when the look changes, so it is rewritten per show; a binding onto
+        a channel knows neither and is written once."""
+        bindings = osc_input.BindingSet.load(
+            DESKTOP / "config" / "oscmaps" / "synesthesia.json")
+
+        filled = [b.params["channel"] for b in bindings.bindings
+                  if b.action == "audio" and b.enabled]
+
+        # No channel is fed twice - two bindings on one channel is whichever
+        # spoke last, and there is no reading of that a desk could show.
+        self.assertEqual(sorted(filled), sorted(set(filled)))
+
+        for channel in filled:
+            self.assertIn(channel, AUDIO_CHANNELS)
+
+        # Everything except the two Mixxx-only meters, which no visualiser
+        # sends and which stay dark on this source by design.
+        self.assertEqual(set(AUDIO_CHANNELS) - set(filled),
+                         {"level_instant", "level_meter"})
+
+        # `/audio/level/raw` is deliberately unbound: it is the unsmoothed
+        # level beside `/audio/level/all`, and binding both would put two
+        # writers on `level` - whichever spoke last.
+        self.assertFalse([b for b in bindings.bindings
+                          if b.enabled and b.matches("/audio/level/raw")])
+
+    def test_the_tempo_goes_through_the_bus_and_not_around_it(self):
+        """There is one route to the rig's tempo and it is the `bpm` channel.
+
+        The map used to carry a second binding straight onto the `bpm` action,
+        which set the clock directly. Two ways to set one number is the
+        confusion the whole `source` switch exists to remove - so the channel
+        is the route, and `audio.bpm` is what decides whether anything reads it.
+        """
+        bindings = osc_input.BindingSet.load(
+            DESKTOP / "config" / "oscmaps" / "synesthesia.json")
+        self.assertFalse([b for b in bindings.bindings if b.action == "bpm"])
+        self.assertTrue([b for b in bindings.bindings
+                         if b.action == "audio" and b.params["channel"] == "bpm"])
+
+    def test_the_bpm_channel_arrives_scaled(self):
+        """The bus is 0..1 everywhere, tempo included: scaled on the way in so
+        that nothing downstream has to know one channel is in different units."""
+        binding = next(b for b in osc_input.BindingSet.load(
+            DESKTOP / "config" / "oscmaps" / "synesthesia.json").bindings
+            if b.action == "audio" and b.params["channel"] == "bpm")
+        self.assertEqual((binding.low, binding.high), (50.0, 220.0))
+        self.assertAlmostEqual(binding.scale(135.0), (135.0 - 50.0) / 170.0)
+
+    def test_the_audio_action_streams_a_channel_and_a_value(self):
+        """It does not touch a knob: it writes a number onto the bus, and
+        whatever is pointed at that channel picks it up next frame. Streamed,
+        because a channel filled at frame rate cannot afford a round trip per
+        value - and the executable answers nothing for the same reason."""
+        show = OscInputActions.FakeShow()
+        spec = midi_map.ACTIONS["audio"]
+        spec.run(midi_map.ActionContext(show=show),
+                 midi_map.coerce_params(spec, {"channel": "bass_hits"}), 0.5)
+        self.assertEqual(show.calls, [("command", "audio bass_hits 0.5000", False)])
+
+    # -- the three hit layers -----------------------------------------------
+
+    def test_the_show_declares_no_layers_at_all(self):
+        """The invariant that replaced three always-on ones.
+
+        An additive layer rides over *whatever* is running. The argument for
+        leaving these patched was that a layer sitting at black adds nothing -
+        which holds exactly until the channels are being fed, and then every
+        cue in the show is itself plus red, green and blue, the obelisk is 344
+        pixels of jittering yellow-green, and the audio meter reports the
+        number it exists to report plus a layer. A permanent overlay across
+        three devices is an implicit global effect and the rig should not have
+        one.
+
+        They live in config/audio_layers_test.json now, where switching them
+        on is something done on purpose.
+        """
+        self.assertEqual(Config.load(SHOW).layers, [])
+
+    def test_the_bench_rig_declares_three_additive_hit_layers(self):
+        config = Config.load(LAYERS)
+        by_name = {layer["name"]: layer for layer in config.layers}
+        self.assertEqual(sorted(by_name), ["hit_obelisk", "hit_pars", "hit_ring"])
+
+        # One section each, one colour each, one band each, in frequency order
+        # up the room: kick at the bottom, hi-hat at the top.
+        expected = {
+            "hit_ring":    ("scanner_ring/*", "#ff0000", "bass_hits"),
+            "hit_obelisk": ("obelisk/*",      "#00ff00", "mid_hits"),
+            # midhigh_hits, not high_hits: /audio/hits/high was measured flat
+            # at zero on the real app while every band around it moved. See the
+            # note in the config.
+            "hit_pars":    ("pars/par_*",     "#0000ff", "midhigh_hits"),
+        }
+        for name, (fixtures, color, channel) in expected.items():
+            layer = by_name[name]
+            self.assertEqual(layer["fixtures"], [fixtures], name)
+            self.assertEqual(layer["blend"], "add", name)
+            self.assertEqual(layer["color"], color, name)
+            self.assertEqual(layer["mods"],
+                             [{"param": "level", "channel": channel, "enabled": True}],
+                             name)
+
+    def test_the_truss_layer_leaves_the_uv_par_alone(self):
+        """pars/par_* and not pars/*: the UV is the eleventh fixture on the
+        same cable and it is a blacklight, so a colour means nothing to it and
+        only the level would land - a UV unit strobing on every hi-hat."""
+        config = Config.load(LAYERS)
+        layer = next(l for l in config.layers if l["name"] == "hit_pars")
+        self.assertNotIn("pars/*", layer["fixtures"])
+
+    def test_a_layer_resolves_to_its_section_and_nothing_else(self):
+        """The wildcard, against the real rig: 35 ring pixels, 344 obelisk, and
+        10 pars without the UV on the end of them."""
+        executable_or_skip()
+        show = ShowController(LAYERS, dry_run=True, midi="", on_frame=lambda f: None)
+        try:
+            time.sleep(0.6)
+            self.assertEqual(len(show.layers["hit_ring"].fixtures), 35)
+            self.assertEqual(len(show.layers["hit_obelisk"].fixtures),
+                             OBELISK_PIXELS)
+            self.assertEqual(len(show.layers["hit_pars"].fixtures), 10)
+        finally:
+            show.stop()
+
+    def test_an_unfed_additive_layer_is_invisible(self):
+        """The guarantee that makes these safe to leave patched.
+
+        An additive layer sitting at black adds nothing, so the hit layers ride
+        over every cue rather than only the one written for them - and a night
+        with no visualiser costs the hits and nothing else. Checked on
+        beat_pulse, whose white hit would show any tint immediately.
+        """
+        executable_or_skip()
+        frames = []
+        show = ShowController(SHOW, dry_run=True, pattern="mythos26", midi="", bpm=120.0,
+                              on_frame=frames.append, emit_rate=40.0)
+        try:
+            # The config opens on the audio meter now, so the show's own cue
+            # has to be asked for - see the note by "pattern" in
+            # config/mythos26.json.
+            show.set_pattern("mythos26")
+            show.set_state("beat_pulse")
+            time.sleep(2.0)
+        finally:
+            show.stop()
+
+        peaks = [f for f in frames if max(f[0]) > 200]
+        self.assertTrue(peaks, "the rig never reached full brightness")
+        for frame in peaks:
+            for red, green, blue in frame:
+                self.assertEqual((red, green, blue), (red, red, red))
+
+    def test_a_fed_channel_drives_its_layer(self):
+        """End to end: a value onto the bus, through a mod, into an ordinary
+        knob, out as light on one section and not the others."""
+        executable_or_skip()
+        frames = []
+        show = ShowController(LAYERS, dry_run=True, midi="",
+                              on_frame=frames.append, emit_rate=40.0)
+        try:
+            time.sleep(0.5)
+
+            ring = show.layers["hit_ring"].fixtures[0]
+            obelisk = show.layers["hit_obelisk"].fixtures[0]
+            par = show.layers["hit_pars"].fixtures[0]
+
+            # The bus decays a reading it has not heard from in 0.8s - a
+            # dead-man's switch, not an effect - so this is held up rather
+            # than set once.
+            deadline = time.time() + 1.2
+            while time.time() < deadline:
+                show.command("audio bass_hits 1.0", expect_reply=False)
+                time.sleep(0.05)
+
+            frame = frames[-1]
+            self.assertGreater(frame[ring][0], 200, "the ring did not go red")
+            self.assertEqual(frame[ring][1], 0)
+            self.assertEqual(frame[ring][2], 0)
+
+            # The other two sections were never fed, so they are still dark.
+            self.assertEqual(frame[obelisk], (0, 0, 0))
+            self.assertEqual(frame[par], (0, 0, 0))
+        finally:
+            show.stop()
+
+    def test_the_config_declares_the_mods_the_desk_reports(self):
+        lines = [line for line in self._protocol(["mods"], config=LAYERS) if " MOD " in line]
+        self.assertIn("LAYER hit_ring MOD level bass_hits 0 1 0 ok", lines)
+        self.assertIn("LAYER hit_obelisk MOD level mid_hits 0 1 0 ok", lines)
+        self.assertIn("LAYER hit_pars MOD level midhigh_hits 0 1 0 ok", lines)
+
+    def test_a_mod_can_be_repointed_without_a_restart(self):
+        """A config declares the opening state; the desk retargets it. Which is
+        the difference between a rig you tune and a rig you edit and relaunch -
+        and relaunching is not available in front of a room."""
+        lines = self._protocol([
+            "layer hit_ring mod level high_hits",
+            "layer hit_ring mods",
+        ], config=LAYERS)
+        mods = [line for line in lines if line.startswith("LAYER hit_ring MOD ")]
+        self.assertEqual(mods, ["LAYER hit_ring MOD level high_hits 0 1 0 ok"])
+
+    def test_one_knob_has_one_driver(self):
+        """Repointing replaces rather than stacks: two modulations on one
+        property is a race whose winner is whichever ran last, and there is no
+        reading of that a desk could show."""
+        lines = self._protocol([
+            "layer hit_ring mod level high_hits",
+            "layer hit_ring mod level mid_hits",
+            "layer hit_ring mods",
+        ], config=LAYERS)
+        mods = [line for line in lines if line.startswith("LAYER hit_ring MOD ")]
+        self.assertEqual(len(mods), 1, mods)
+        self.assertIn("mid_hits", mods[0])
+
+    def test_a_mod_can_be_taken_off(self):
+        lines = self._protocol([
+            "layer hit_ring mod level off",
+            "layer hit_ring mods",
+        ], config=LAYERS)
+        self.assertFalse([line for line in lines
+                          if line.startswith("LAYER hit_ring MOD ")], lines)
+
+    def test_a_mod_says_when_its_knob_is_not_there(self):
+        """A mod survives a cue change - that is the point, the bus keeps
+        driving as the show moves - but a knob does not, and a mod pointing at
+        a knob the running look has never had is otherwise completely silent,
+        because a per-frame writer cannot complain sixty times a second."""
+        lines = self._protocol(["mod not_a_knob bass", "mods"])
+        self.assertTrue(any(line.startswith("MOD not_a_knob bass")
+                            and line.endswith("no-param") for line in lines), lines)
+
+    def test_a_mod_onto_a_colour_is_refused(self):
+        """A colour cannot come from one number, and half-writing one is worse
+        than refusing - the same reason PropertyBag::set leaves colours alone."""
+        lines = self._protocol(["layer hit_ring mod color bass"], config=LAYERS)
+        self.assertTrue(any(line.startswith("ERR") and "colour" in line
+                            for line in lines), lines)
+
+
+class TheBindingKeepsTheBusAlive(unittest.TestCase):
+    """The regression that shipped: a steady value vanishing off the bus.
+
+    Two mechanisms, each right on its own. A binding suppresses an unchanged
+    value - "a level holding still says nothing" - which was correct when a
+    binding drove a *knob*, because a knob that has been set stays set. The bus
+    instead fades any channel nobody has restated in 0.8s, which is a
+    dead-man's switch: without it a dropped link leaves the rig lit at whatever
+    the music was doing when it went.
+
+    Together, with no keepalive, they delete the value. The channel is
+    suppressed at this end, goes stale at the other, and the look driven from
+    it fades to nothing while the music is still playing.
+
+    It got through because the end-to-end test fed the bus with `show.command`
+    directly, which is not the path a set uses - so the binding's rate limiting
+    was never in the loop. These go through the binding.
+    """
+
+    def binding(self, channel="bass_hits"):
+        return next(b for b in osc_input.BindingSet.load(
+            DESKTOP / "config" / "oscmaps" / "synesthesia.json").bindings
+            if b.action == "audio" and b.params["channel"] == channel)
+
+    def test_a_steady_value_is_still_restated(self):
+        binding = self.binding()
+        now = time.monotonic()
+        fired = [step for step in range(40)
+                 if binding.fires_on(1.0, now + step * 0.05) is not None]
+
+        self.assertGreater(len(fired), 1, "a held value was sent once and never again")
+
+        # and the gaps stay inside the bus's hold, so it never begins to decay
+        from eclipse_dmx.osc_input import Binding
+        gaps = [(b - a) * 0.05 for a, b in zip(fired, fired[1:])]
+        self.assertTrue(gaps)
+        self.assertLessEqual(max(gaps), 0.35,
+                             "a gap longer than AudioLevel::kHoldFor lets the value sag")
+
+    def test_it_still_says_far_less_than_it_hears(self):
+        """The saving the suppression exists for is not given up: sixty
+        messages a second become five, not sixty."""
+        binding = self.binding()
+        now = time.monotonic()
+        heard = 120                       # two seconds at 60/s
+        fired = [step for step in range(heard)
+                 if binding.fires_on(0.42, now + step / 60.0) is not None]
+        self.assertLess(len(fired), heard / 4)
+
+    def test_a_changing_value_is_not_delayed_by_the_keepalive(self):
+        """The keepalive is a floor on how often it speaks, never a ceiling."""
+        binding = self.binding()
+        now = time.monotonic()
+        sent = [binding.fires_on(step / 20.0, now + step * 0.05) for step in range(20)]
+        self.assertEqual(len([one for one in sent if one is not None]), 20)
+
+    def test_a_trigger_has_no_keepalive_to_give(self):
+        """A trigger is an edge, not a held value: there is nothing to restate,
+        and restating one would be a second beat."""
+        for binding in osc_input.BindingSet.load(
+                DESKTOP / "config" / "oscmaps" / "synesthesia.json").bindings:
+            if binding.mode == "trigger":
+                self.assertEqual(binding.max_interval, 0.0, binding.label)
+
+    def test_it_survives_the_file(self):
+        binding = osc_input.Binding(max_interval=0.4)
+        again = osc_input.Binding.from_dict(binding.to_dict())
+        self.assertEqual(again.max_interval, 0.4)
+
+
+class TheOscInputSaysWhenItIsNotLanding(unittest.TestCase):
+    """The whole failure mode of this wire is silence.
+
+    A binding aimed at an address that never arrives looks exactly like a
+    visualiser that is switched off, which looks exactly like a rig running
+    normally. Worse, the two directions are independent: a desk whose colour is
+    already reaching Synesthesia proves only that the *outbound* half works,
+    and that is precisely the evidence that makes the inbound half look like it
+    must be fine too.
+
+    So the two states that are otherwise indistinguishable from fine get named
+    in the status line, without anyone having to know to open the panel.
+    """
+
+    def setUp(self):
+        import tempfile
+        from eclipse_dmx import viewer as viewer_module
+        from eclipse_dmx.viewer import ViewerApp
+
+        self.scratch = tempfile.TemporaryDirectory()
+        self.grace = viewer_module.OSC_SILENCE_GRACE
+        viewer_module.OSC_SILENCE_GRACE = 0.0
+
+        self.app = ViewerApp(SHOW, pattern="mythos26", midi="", bpm=120.0, osc_in=7803,
+                             midimap=Path(self.scratch.name) / "default.json")
+        self.said = []
+        self.app._say = self.said.append
+
+    def tearDown(self):
+        from eclipse_dmx import viewer as viewer_module
+        viewer_module.OSC_SILENCE_GRACE = self.grace
+        try:
+            self.app._quit()
+        except Exception:
+            pass
+        self.scratch.cleanup()
+
+    def osc_lines(self):
+        return [line for line in self.said if "osc in:" in line]
+
+    def test_silence_is_named_and_the_other_direction_is_not_the_answer(self):
+        self.app._check_osc_is_landing()
+        lines = self.osc_lines()
+        self.assertTrue(lines, "nothing arriving said nothing")
+        self.assertIn("output", lines[0],
+                      "it has to name the app's OSC *output*, which is the "
+                      "setting distinct from the one already working")
+
+    def test_it_is_said_once_and_not_every_frame(self):
+        for _ in range(50):
+            self.app._check_osc_is_landing()
+        self.assertEqual(len(self.osc_lines()), 1)
+
+    def test_traffic_that_no_binding_takes_is_named_as_that(self):
+        """The address-mismatch case, which is the one that bites: the
+        uniforms are undocumented and were renamed once already, so a shipped
+        map is a set of guesses until something checks it against this build."""
+        self.app.osc_traffic.saw_in("/syn/NobodyBoundThis", (0.5,))
+        self.app._check_osc_is_landing()
+
+        lines = self.osc_lines()
+        self.assertTrue(any("no binding takes" in line for line in lines), lines)
+
+    def test_traffic_a_binding_does_take_says_nothing(self):
+        """The working case must stay quiet, or the warning is noise and gets
+        ignored on the night it is right."""
+        # A real address off the wire, in the shape this build sends - the
+        # shipped map has to actually take it for this to mean anything.
+        self.app.osc_traffic.saw_in("/audio/hits/bass", (0.5,))
+        for _ in range(20):
+            self.app._check_osc_is_landing()
+        self.assertFalse([line for line in self.osc_lines()
+                          if "no binding takes" in line], self.said)
+
+
+class TheFirewallNote(unittest.TestCase):
+    """The half of the diagnosis nobody acts on unless it is specific.
+
+    "A firewall might be holding it" is advice; "ufw is active, its default is
+    DROP, and nothing in its rules mentions this port" is a diagnosis. This was
+    found by hand on the rig it was written for, after the port had already
+    swallowed an evening.
+    """
+
+    def note(self, port=7000):
+        from eclipse_dmx.cli import _firewall_note
+        return _firewall_note(port)
+
+    def test_it_never_guesses(self):
+        """Silent whenever it cannot actually tell - another platform, another
+        firewall, or rules that need root. A confident wrong answer sends
+        someone to reconfigure a firewall that was never the problem."""
+        note = self.note()
+        if note is None:
+            return
+        # If it did speak, it read real files and must name what it read.
+        self.assertIn("ufw", note)
+        self.assertIn("7000", note)
+
+    def test_it_reports_the_port_it_was_asked_about(self):
+        note = self.note(9999)
+        if note is None:
+            self.skipTest("no readable ufw on this machine")
+        self.assertIn("9999", note)
+        self.assertNotIn("7000", note)
+
+    def test_it_says_nothing_for_a_port_the_rules_mention(self):
+        """The rule that lets ssh in is in every ufw install, so it is the one
+        port that can be checked for a negative on any machine that has one."""
+        import pathlib as _pathlib
+        try:
+            rules = _pathlib.Path("/etc/ufw/user.rules").read_text(encoding="utf-8")
+        except OSError:
+            self.skipTest("ufw rules not readable here")
+        if "22" not in rules:
+            self.skipTest("this ufw does not mention 22 either")
+        self.assertIsNone(self.note(22))
+
+
+class CommandsSurviveTheAudioStream(unittest.TestCase):
+    """A cue fired while the bus is streaming must still get its reply.
+
+    `audio` lines come off the OSC listener's thread at a couple of hundred a
+    second and are sent with expect_reply=False. Two things in command() are
+    what keep that from eating everything else:
+
+      - a streamed line does not touch the reply queue. It used to drain it,
+        so any command already waiting had its answer thrown away by traffic
+        with nothing to do with it.
+      - replying commands are serialised, so a streamed write cannot land
+        between another command's drain and its read.
+
+    Found on a live rig, as `no reply to 'layer hit_obelisk mod level off'
+    within 5.0s` - from a command that had actually worked.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        executable_or_skip()
+
+    def test_a_command_replies_under_a_flood_of_streamed_lines(self):
+        import threading
+
+        show = ShowController(SHOW, dry_run=True, midi="",
+                              on_frame=lambda f: None, emit_rate=30.0)
+        stop = threading.Event()
+
+        def flood():
+            # The shape the OSC dispatcher produces: many channels, no reply
+            # wanted, from a thread that is not the one issuing commands.
+            while not stop.is_set():
+                for channel in ("bass", "mid", "high", "bass_hits", "level"):
+                    show.command(f"audio {channel} 0.5", expect_reply=False)
+                time.sleep(0.002)
+
+        try:
+            time.sleep(1.0)
+            streamer = threading.Thread(target=flood, daemon=True)
+            streamer.start()
+            time.sleep(0.3)
+
+            # Twenty in a row: the old failure was a race, so once is not a
+            # test of it.
+            for _ in range(20):
+                self.assertTrue(show.command("channels").startswith("OK"))
+        finally:
+            stop.set()
+            time.sleep(0.1)
+            show.stop()
+
+    def test_a_streamed_line_does_not_wait(self):
+        """The other half of why it is expect_reply=False: a knob driven at
+        frame rate cannot afford a round trip per value."""
+        show = ShowController(SHOW, dry_run=True, midi="",
+                              on_frame=lambda f: None)
+        try:
+            time.sleep(1.0)
+            started = time.monotonic()
+            for _ in range(200):
+                show.command("audio bass 0.5", expect_reply=False)
+            elapsed = time.monotonic() - started
+            self.assertLess(elapsed, 1.0, "streamed lines are blocking")
+        finally:
+            show.stop()
+
+
+class TheAudioMeter(unittest.TestCase):
+    """The bus, as cues: one per channel, for reading it with your eyes.
+
+    Every other look in this rig is a show. This one is an instrument, and it
+    exists because the analysis wire has several ways to fail that all present
+    as "the lights are not moving" - plus one that is worse and presents as
+    nothing at all: a uniform the app publishes and never fills. That is not
+    hypothetical; /audio/hits/high is exactly that on the build this was
+    written against.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        executable_or_skip()
+
+    @staticmethod
+    def _protocol(script, frames=60):
+        import subprocess
+        return subprocess.run(
+            [str(find_executable()), "--config", str(SHOW), "--dry-run",
+             "--midi", "", "--frames", str(frames)],
+            input="\n".join(script) + "\n",
+            capture_output=True, text=True, timeout=60,
+        ).stdout.splitlines()
+
+    # -- the cue list -------------------------------------------------------
+
+    def test_a_cue_per_channel_in_the_buss_own_order(self):
+        """Built from the channel table rather than a list written beside it,
+        so a channel added to AudioChannel is a cue with nothing else edited.
+        Two lists that must agree is one list that eventually does not."""
+        lines = self._protocol(["pattern audio", "states"])
+        named = [line for line in lines if line.startswith("STATES ")][-1].split()[1:]
+        self.assertEqual(tuple(named), AUDIO_STATES)
+
+    def test_the_python_mirror_matches_the_executable(self):
+        self.assertEqual(AUDIO_STATES, AUDIO_CHANNELS)
+
+    def test_the_viewers_buttons_match_too(self):
+        from eclipse_dmx.viewer import STATE_GROUPS
+        groups = dict((name, [label for label, _ in rows]) for name, rows in STATE_GROUPS)
+        self.assertEqual(tuple(groups["audio"]), AUDIO_STATES)
+
+    # -- what it draws ------------------------------------------------------
+
+    def test_a_fed_channel_reads_as_its_value(self):
+        # Paced, because the look samples the bus in tick(): a script piped in
+        # all at once is answered before a single frame has run, and every
+        # reading would be the zero it started at.
+        lines = TheAudioBus._protocol_paced(
+            ["pattern audio", "state bass"] + ["audio bass 1.0"] * 4 + ["params"])
+        value = [l for l in lines if l.startswith("PARAM value ")][-1].split()[3]
+        self.assertAlmostEqual(float(value), 1.0, places=3)
+
+    def test_an_unfed_channel_is_not_drawn_as_zero(self):
+        """The whole point. A channel nobody is filling and a channel sitting
+        at zero are the same number and completely different problems, and a
+        meter that drew both as black would be useless for the one job it has.
+
+        Checked on the colour rather than the value, because the value *is*
+        zero in both cases - it is the amber breath that carries the
+        difference, and it is deliberately too dim to be mistaken for a
+        reading.
+        """
+        lines = TheAudioBus._protocol_paced(
+            ["pattern audio", "state high_hits", "params"])
+        colour = [l for l in lines if l.startswith("PARAM color ")]
+        self.assertTrue(colour, lines[-5:])
+
+        # and the look itself reports the channel as unfed
+        value = [l for l in lines if l.startswith("PARAM value ")][-1].split()[3]
+        self.assertAlmostEqual(float(value), 0.0, places=3)
+
+    def test_the_peak_holds_above_a_value_that_has_dropped(self):
+        """A transient is two or three frames wide. Without the peak, the hits
+        channels flicker at a rate the eye cannot size, which is the opposite
+        of measurable."""
+        lines = TheAudioBus._protocol_paced(
+            ["pattern audio", "state bass"] + ["audio bass 1.0"] * 4
+            + ["audio bass 0.0"] * 2 + ["params"])
+        value = float([l for l in lines if l.startswith("PARAM value ")][-1].split()[3])
+        peak = float([l for l in lines if l.startswith("PARAM peak ")][-1].split()[3])
+        self.assertGreaterEqual(peak, value)
+
+    # -- the surface --------------------------------------------------------
+
+    def test_the_launchpad_has_a_pad_per_channel(self):
+        import json
+        data = json.loads((DESKTOP / "config" / "midimaps"
+                           / "launchpad-all-states.json").read_text())
+        pads = [m for m in data["mappings"] if m.get("page") == "audio"]
+        self.assertEqual(len(pads), len(AUDIO_STATES))
+
+        named = [a["params"]["name"] for m in pads
+                 for a in m["actions"] if a["action"] == "state"]
+        self.assertEqual(tuple(named), AUDIO_STATES)
+
+        # every pad also selects the pattern, so a page can be entered from
+        # any other machine without a second press
+        for pad in pads:
+            self.assertIn("audio", [a["params"].get("name") for a in pad["actions"]
+                                    if a["action"] == "pattern"])
+
+    def test_the_tab_selects_the_machine_like_every_other_tab(self):
+        """One press from anywhere, the way the scanner and jacket tabs work.
+
+        It used to also switch three additive hit layers off, because the show
+        carried them permanently and they rode over the meter. The show has no
+        layers now - see test_the_show_declares_no_layers_at_all - so there is
+        nothing to switch and the tab is a tab again.
+        """
+        import json
+        data = json.loads((DESKTOP / "config" / "midimaps"
+                           / "launchpad-all-states.json").read_text())
+        tab = next(m for m in data["mappings"]
+                   if any(a["action"] == "page" and a["params"]["name"] == "audio"
+                          for a in m["actions"]))
+        self.assertIn("audio", [a["params"].get("name") for a in tab["actions"]
+                                if a["action"] == "pattern"])
+
+    def test_no_tab_wires_a_layer_that_does_not_exist(self):
+        """The tabs used to send `layer hit_ring mod level ...`. With the
+        layers gone those are ERRs on every press - and an ERR on a tab is a
+        refusal the operator sees in the middle of a set."""
+        import json
+        data = json.loads((DESKTOP / "config" / "midimaps"
+                           / "launchpad-all-states.json").read_text())
+        declared = set()
+        for path in (SHOW, LAYERS):
+            declared.update(layer["name"] for layer in Config.load(path).layers)
+
+        for mapping in data["mappings"]:
+            for action in mapping["actions"]:
+                line = action["params"].get("line", "") if action["action"] == "command" else ""
+                if line.startswith("layer "):
+                    self.assertIn(line.split()[1], declared, mapping["label"])
+
+
+class TheOscInputHints(unittest.TestCase):
+    """What to type at the far end, said when the port opens.
+
+    Synesthesia's output address field takes a numeric IP and nothing else -
+    no hostname, no .local - so the number has to come from somewhere, and
+    every other source for it is a guess made under pressure. Its own default
+    is 127.0.0.1, which on a rig where the visualiser sits on a different
+    machine means "into my own loopback" and is completely silent about it.
+    """
+
+    def hints(self, port=7000):
+        from eclipse_dmx.cli import osc_input_hints
+        return osc_input_hints(port)
+
+    def test_it_names_an_address_that_is_not_loopback(self):
+        lines = [line for line in self.hints() if "output" in line]
+        if not lines:
+            self.skipTest("this machine has no non-loopback address")
+        self.assertNotIn("127.0.0.1:", lines[0])
+        self.assertIn(":7000", lines[0])
+
+    def test_it_says_localhost_means_the_other_machine(self):
+        """The trap itself, named. It is the one setting that is *right* when
+        both halves are tested on one machine and silently wrong the moment
+        they are not, which is why it survives a test setup and fails a rig."""
+        lines = [line for line in self.hints() if "output" in line]
+        if not lines:
+            self.skipTest("this machine has no non-loopback address")
+        self.assertIn("127.0.0.1", lines[0])
+
+    def test_every_hint_is_one_pasteable_line(self):
+        """These go to a status line as well as a terminal, so a newline or a
+        shell continuation surviving into one is a command that will not
+        paste."""
+        for line in self.hints():
+            self.assertNotIn("\n", line)
+            self.assertNotIn("\\", line)
+
+
+class TheOscPanel(unittest.TestCase):
+    """What is arriving, what is going out, and what can honestly be claimed."""
+
+    def traffic(self):
+        from eclipse_dmx.osc_panel import OscTraffic
+        return OscTraffic()
+
+    def test_addresses_are_discovered_rather_than_listed(self):
+        """Nothing here knows what addresses exist. A build of the app that
+        nests its uniforms differently, or a scene publishing controls of its
+        own, shows up without this code being edited - which is the whole
+        point, given the addresses are undocumented."""
+        traffic = self.traffic()
+        traffic.saw_in("/syn/NobodyWroteThisDown", (0.5,))
+        traffic.saw_out("/controls/global/color/1", (1.0, 0.0, 0.0), True)
+
+        state = traffic.snapshot()
+        self.assertEqual([row[0] for row in state["in"]], ["/syn/NobodyWroteThisDown"])
+        self.assertEqual([row[0] for row in state["out"]], ["/controls/global/color/1"])
+
+    def test_rows_stay_in_the_order_they_were_discovered(self):
+        """Sorting by rate or value would make the list jump under the cursor
+        exactly while it is being read."""
+        traffic = self.traffic()
+        for address in ("/c", "/a", "/b"):
+            traffic.saw_in(address, (0.1,))
+        for _ in range(50):
+            traffic.saw_in("/b", (0.9,))
+        self.assertEqual([row[0] for row in traffic.snapshot()["in"]], ["/c", "/a", "/b"])
+
+    def test_a_scene_announcement_is_recorded_as_the_app_speaking(self):
+        """The one message the visualiser sends about *itself*, so it is the
+        closest thing to a handshake this link has."""
+        traffic = self.traffic()
+        traffic.saw_in("/scenes/neongrid", ())
+        self.assertEqual(traffic.snapshot()["scene"], "/scenes/neongrid")
+
+    def test_a_refused_send_is_counted_apart_from_a_taken_one(self):
+        traffic = self.traffic()
+        traffic.saw_out("/a", (1.0,), True)
+        traffic.saw_out("/a", (1.0,), False)
+        state = traffic.snapshot()
+        self.assertEqual((state["sends"], state["send_failures"]), (2, 1))
+
+    def test_the_table_is_bounded(self):
+        """Something misconfigured into spraying unique addresses must not be
+        able to grow this for the length of a set."""
+        traffic = self.traffic()
+        for index in range(traffic.max_rows + 20):
+            traffic.saw_in(f"/syn/{index}", (0.0,))
+        state = traffic.snapshot()
+        self.assertEqual(len(state["in"]), traffic.max_rows)
+        self.assertEqual(state["overflowed"], 20)
+
+    def test_the_link_tells_it_what_went_out(self):
+        """SynesthesiaLink.on_send, which is why _send takes an address rather
+        than a finished packet: one place that knows *what* is being sent as
+        well as that something is."""
+        from eclipse_dmx.osc import SynesthesiaLink
+        seen = []
+        link = SynesthesiaLink("127.0.0.1:9", on_send=lambda a, v, ok: seen.append((a, v)))
+        try:
+            link.send_color((255, 0, 0))
+            link.send_scene("NeonGrid")
+            link.send_favslot(3)
+        finally:
+            link.close()
+
+        self.assertEqual([address for address, _ in seen],
+                         ["/controls/global/color/1", "/scenes/neongrid", "/favslots/3"])
+        self.assertEqual(seen[0][1], (1.0, 0.0, 0.0))
+
+    def test_an_observer_that_throws_cannot_stop_a_send(self):
+        """It is a diagnostic hanging off the side of a link that is itself
+        decoration hanging off the side of a show."""
+        from eclipse_dmx.osc import SynesthesiaLink
+
+        def explode(*_args):
+            raise RuntimeError("no")
+
+        link = SynesthesiaLink("127.0.0.1:9", on_send=explode)
+        try:
+            link.send_color((255, 0, 0))      # must not raise
+            self.assertEqual(link.sent, 1)
+        finally:
+            link.close()
 
 
 class SharedBeatTriggers(unittest.TestCase):
@@ -1332,7 +2424,7 @@ class SharedBeatTriggers(unittest.TestCase):
         """
         for offset in (0.13, 0.31):
             frames = []
-            show = ShowController(SHOW, dry_run=True, midi="", bpm=120.0,
+            show = ShowController(SHOW, dry_run=True, pattern="mythos26", midi="", bpm=120.0,
                                   on_frame=lambda f: frames.append((time.time(), f)),
                                   emit_rate=40.0)
             try:
@@ -1375,7 +2467,7 @@ class SharedBeatTriggers(unittest.TestCase):
         # and the show's own beat look is the other way round - a different
         # config, because beat_pulse is mythos26's cue and the UV is the
         # scanner stage's layer
-        show = ShowController(SHOW, dry_run=True, midi="", bpm=120.0,
+        show = ShowController(SHOW, dry_run=True, pattern="mythos26", midi="", bpm=120.0,
                               on_frame=lambda f: None, emit_rate=20.0)
         try:
             show.set_state("beat_pulse")
@@ -1884,8 +2976,11 @@ class MidiSettings(unittest.TestCase):
     def test_the_show_config_loads_clean(self):
         config = Config.load(SHOW)
         self.assertEqual(config.validate(), [])
-        self.assertEqual(config.pattern.name, "mythos26")
-        self.assertEqual(config.pattern.state, "beat_pulse")
+        # The show config currently opens on the audio meter rather than on
+        # the show - deliberately, while the Synesthesia wire is being trusted.
+        # See the note by "pattern" in config/mythos26.json.
+        self.assertEqual(config.pattern.name, "audio")
+        self.assertEqual(config.pattern.state, "level")
         self.assertTrue(config.midi.enabled)
 
     def test_naming_a_port_enables_midi(self):
@@ -1962,8 +3057,16 @@ class Mythos26(unittest.TestCase):
     def _show(self, **kwargs):
         # --midi "" so the test never opens a device that happens to be
         # plugged into the machine running it.
+        #
+        # `pattern` named explicitly because the show config currently opens on
+        # the audio meter rather than on the show - see the note by "pattern"
+        # in config/mythos26.json. These tests are about the show's own cue
+        # list, so they ask for it rather than inheriting whatever is default
+        # this week.
         kwargs.setdefault("midi", "")
-        return ShowController(SHOW, dry_run=True, **kwargs)
+        show = ShowController(SHOW, dry_run=True, **kwargs)
+        show.set_pattern("mythos26")
+        return show
 
     def test_seven_states_in_table_order(self):
         show = self._show(on_frame=lambda f: None)
@@ -2112,6 +3215,7 @@ class Mythos26(unittest.TestCase):
             show.stop()
 
     def test_the_placeholders_are_visible_and_distinct(self):
+        """slot_5, slot_6 and slot_7 - every empty slot in the machine."""
         frames = []
         show = self._show(on_frame=frames.append, emit_rate=20.0)
         try:
@@ -2164,7 +3268,8 @@ class BeatLooks(unittest.TestCase):
     def _count(self, state, seconds=4.0, bpm=120.0, params=None):
         frames = []
         show = ShowController(
-            SHOW, dry_run=True, midi="", bpm=bpm, on_frame=frames.append, emit_rate=40.0
+            SHOW, dry_run=True, pattern="mythos26", midi="", bpm=bpm,
+            on_frame=frames.append, emit_rate=40.0
         )
         try:
             show.set_state(state)
@@ -2187,7 +3292,7 @@ class BeatLooks(unittest.TestCase):
 
     def test_the_cue_list_sets_the_envelope(self):
         """beatLook's two numbers are what the look opens on."""
-        show = ShowController(SHOW, dry_run=True, midi="", on_frame=lambda f: None)
+        show = ShowController(SHOW, dry_run=True, pattern="mythos26", midi="", on_frame=lambda f: None)
         try:
             show.set_state("beat_pulse")
             time.sleep(0.4)
@@ -2206,7 +3311,7 @@ class BeatLooks(unittest.TestCase):
 
     def test_the_envelope_is_still_live(self):
         """Stated in the cue list, tunable at the desk - both, not either."""
-        show = ShowController(SHOW, dry_run=True, midi="", on_frame=lambda f: None)
+        show = ShowController(SHOW, dry_run=True, pattern="mythos26", midi="", on_frame=lambda f: None)
         try:
             show.set_state("beat_pulse")
             time.sleep(0.4)
@@ -2251,7 +3356,7 @@ class BeatLooks(unittest.TestCase):
         """
         period = 0.30
         stamped = []
-        show = ShowController(SHOW, dry_run=True, midi="",
+        show = ShowController(SHOW, dry_run=True, pattern="mythos26", midi="",
                               on_frame=lambda frame: stamped.append(
                                   (time.monotonic(), max(frame[0]) > 128)),
                               emit_rate=40.0)
@@ -2294,7 +3399,7 @@ class BeatLooks(unittest.TestCase):
         bpm = 200.0
         beat = 60.0 / bpm      # a bar every 1.2s, so four of them is quick
         stamped = []
-        show = ShowController(SHOW, dry_run=True, midi="", bpm=bpm,
+        show = ShowController(SHOW, dry_run=True, pattern="mythos26", midi="", bpm=bpm,
                               on_frame=lambda frame: stamped.append(
                                   (time.monotonic(), max(frame[0]) > 128)),
                               emit_rate=40.0)
@@ -2327,7 +3432,7 @@ class BeatLooks(unittest.TestCase):
         """
         bpm = 120.0
         stamped = []
-        show = ShowController(SHOW, dry_run=True, midi="", bpm=bpm,
+        show = ShowController(SHOW, dry_run=True, pattern="mythos26", midi="", bpm=bpm,
                               on_frame=lambda frame: stamped.append(
                                   (time.monotonic(), max(frame[0]) > 128)),
                               emit_rate=40.0)
@@ -2352,7 +3457,7 @@ class BeatLooks(unittest.TestCase):
 
     def test_the_cue_list_sets_the_rate(self):
         """Both looks open on the beat; the rate is a live knob from there."""
-        show = ShowController(SHOW, dry_run=True, midi="", on_frame=lambda f: None)
+        show = ShowController(SHOW, dry_run=True, pattern="mythos26", midi="", on_frame=lambda f: None)
         try:
             for state in ("beat_pulse", "vu_pulse"):
                 show.set_state(state)
@@ -2364,7 +3469,7 @@ class BeatLooks(unittest.TestCase):
 
     def test_the_rate_snaps_to_the_musical_ones(self):
         """A slider will hand over 1.37. Nobody wants 1.37 hits a beat."""
-        show = ShowController(SHOW, dry_run=True, midi="", on_frame=lambda f: None)
+        show = ShowController(SHOW, dry_run=True, pattern="mythos26", midi="", on_frame=lambda f: None)
         try:
             show.set_state("beat_pulse")
             time.sleep(0.4)
@@ -2378,7 +3483,7 @@ class BeatLooks(unittest.TestCase):
             show.stop()
 
     def test_beat_div_is_gone(self):
-        show = ShowController(SHOW, dry_run=True, midi="", on_frame=lambda f: None)
+        show = ShowController(SHOW, dry_run=True, pattern="mythos26", midi="", on_frame=lambda f: None)
         try:
             with self.assertRaises(ShowError):
                 show.command("beat div 2")
@@ -2397,7 +3502,8 @@ class TvStatic(unittest.TestCase):
     def _frames(self, state, seconds=1.5):
         frames = []
         show = ShowController(
-            SHOW, dry_run=True, midi="", on_frame=frames.append, emit_rate=40.0
+            SHOW, dry_run=True, pattern="mythos26", midi="",
+            on_frame=frames.append, emit_rate=40.0
         )
         try:
             show.set_state(state)
@@ -2536,7 +3642,7 @@ class MidiDiscovery(unittest.TestCase):
             self.assertIsInstance(port.index, int)
 
     def test_opening_a_port_that_is_not_there_is_an_error_not_a_crash(self):
-        show = ShowController(SHOW, dry_run=True, midi="", on_frame=lambda f: None)
+        show = ShowController(SHOW, dry_run=True, pattern="mythos26", midi="", on_frame=lambda f: None)
         try:
             with self.assertRaises(ShowError):
                 show.midi_open("definitely-not-a-midi-port")
@@ -2815,7 +3921,7 @@ class MidiLearn(unittest.TestCase):
         self.scratch = tempfile.TemporaryDirectory()
         scratch_map = Path(self.scratch.name) / "default.json"
 
-        self.app = ViewerApp(SHOW, midi="", bpm=120.0, midimap=scratch_map)
+        self.app = ViewerApp(SHOW, pattern="mythos26", midi="", bpm=120.0, midimap=scratch_map)
 
         # The panel saves on the way out when it is dirty, and learning makes
         # it dirty. `path` cleared so the save goes through default_dir, which
@@ -2950,7 +4056,7 @@ class MidiMapEditorActions(unittest.TestCase):
         from eclipse_dmx.viewer import ViewerApp
 
         self.scratch = tempfile.TemporaryDirectory()
-        self.app = ViewerApp(SHOW, midi="", bpm=120.0,
+        self.app = ViewerApp(SHOW, pattern="mythos26", midi="", bpm=120.0,
                              midimap=Path(self.scratch.name) / "default.json")
         self.panel = self.app.midi_panel
         self.panel.path = None
@@ -3170,7 +4276,7 @@ class ViewerGivesTheDevicesBack(unittest.TestCase):
         import tempfile
         from eclipse_dmx.viewer import ViewerApp
         self.scratch = tempfile.TemporaryDirectory()
-        self.app = ViewerApp(SHOW, midi="", bpm=120.0,
+        self.app = ViewerApp(SHOW, pattern="mythos26", midi="", bpm=120.0,
                              midimap=Path(self.scratch.name) / "default.json")
         self.settle(0.6)
 
@@ -3274,7 +4380,7 @@ class ViewerAgainstAnotherRig(unittest.TestCase):
         import tempfile
         from eclipse_dmx.viewer import ViewerApp
         self.scratch = tempfile.TemporaryDirectory()
-        self.app = ViewerApp(SHOW, midi="", bpm=120.0,
+        self.app = ViewerApp(SHOW, pattern="mythos26", midi="", bpm=120.0,
                              midimap=Path(self.scratch.name) / "default.json")
         self.settle(0.8)
 
@@ -3379,7 +4485,7 @@ class ViewerOnTheShow(unittest.TestCase):
     def setUp(self):
         from eclipse_dmx.viewer import ViewerApp
 
-        self.app = ViewerApp(SHOW, midi="", bpm=120.0)
+        self.app = ViewerApp(SHOW, pattern="mythos26", midi="", bpm=120.0)
 
     def tearDown(self):
         self.app._quit()
@@ -3558,7 +4664,7 @@ class LookParams(unittest.TestCase):
         executable_or_skip()
 
     def _show(self, **kwargs):
-        return ShowController(SHOW, dry_run=True, midi="", on_frame=lambda f: None,
+        return ShowController(SHOW, dry_run=True, pattern="mythos26", midi="", on_frame=lambda f: None,
                               emit_rate=20.0, **kwargs)
 
     def test_the_running_look_announces_its_knobs(self):
@@ -3637,7 +4743,7 @@ class LookParams(unittest.TestCase):
     def test_a_knob_reaches_the_render(self):
         """The point of the whole thing: the value is the look's own field."""
         frames = []
-        show = ShowController(SHOW, dry_run=True, midi="", bpm=128.0,
+        show = ShowController(SHOW, dry_run=True, pattern="mythos26", midi="", bpm=128.0,
                               on_frame=frames.append, emit_rate=40.0)
         try:
             time.sleep(1.0)
@@ -3658,7 +4764,7 @@ class LookParams(unittest.TestCase):
 
     def test_a_bool_takes_on_off_and_reaches_the_render(self):
         frames = []
-        show = ShowController(SHOW, dry_run=True, midi="", on_frame=frames.append,
+        show = ShowController(SHOW, dry_run=True, pattern="mythos26", midi="", on_frame=frames.append,
                               emit_rate=40.0)
         try:
             show.set_state("tv_static_mono")
@@ -3711,7 +4817,7 @@ class LookParams(unittest.TestCase):
     def _peak_colour(self, state, knobs):
         """The lit frame's colour, on the rig, with those knobs set."""
         frames = []
-        show = ShowController(SHOW, dry_run=True, midi="", bpm=128.0,
+        show = ShowController(SHOW, dry_run=True, pattern="mythos26", midi="", bpm=128.0,
                               on_frame=frames.append, emit_rate=40.0)
         try:
             show.set_state(state)
@@ -3747,7 +4853,7 @@ class LookParams(unittest.TestCase):
         """It scales the hit, and the floor holding the rig up is left alone."""
         def peak(knobs):
             frames = []
-            show = ShowController(SHOW, dry_run=True, midi="", bpm=128.0,
+            show = ShowController(SHOW, dry_run=True, pattern="mythos26", midi="", bpm=128.0,
                                   on_frame=frames.append, emit_rate=40.0)
             try:
                 show.set_state("vu_pulse")
@@ -3790,7 +4896,7 @@ class LookParams(unittest.TestCase):
         desaturation this look does with the white it opens on.
         """
         frames = []
-        show = ShowController(SHOW, dry_run=True, midi="", bpm=128.0,
+        show = ShowController(SHOW, dry_run=True, pattern="mythos26", midi="", bpm=128.0,
                               on_frame=frames.append, emit_rate=40.0)
         try:
             show.set_state("vu_pulse")
@@ -3986,7 +5092,7 @@ class TheCurveProtocol(unittest.TestCase):
         executable_or_skip()
 
     def test_the_pulse_announces_its_envelope(self):
-        show = ShowController(SHOW, dry_run=True, midi="", on_frame=lambda f: None,
+        show = ShowController(SHOW, dry_run=True, pattern="mythos26", midi="", on_frame=lambda f: None,
                               emit_rate=20.0)
         try:
             time.sleep(0.6)
@@ -4001,7 +5107,7 @@ class TheCurveProtocol(unittest.TestCase):
             show.stop()
 
     def test_a_drawn_shape_lands_and_echoes(self):
-        show = ShowController(SHOW, dry_run=True, midi="", on_frame=lambda f: None,
+        show = ShowController(SHOW, dry_run=True, pattern="mythos26", midi="", on_frame=lambda f: None,
                               emit_rate=20.0)
         try:
             time.sleep(0.6)
@@ -4043,7 +5149,7 @@ class TheCurveProtocol(unittest.TestCase):
             show.stop()
 
     def test_an_unknown_curve_is_refused_without_dying(self):
-        show = ShowController(SHOW, dry_run=True, midi="", on_frame=lambda f: None,
+        show = ShowController(SHOW, dry_run=True, pattern="mythos26", midi="", on_frame=lambda f: None,
                               emit_rate=20.0)
         try:
             time.sleep(0.6)
@@ -4060,7 +5166,7 @@ class TheCurveProtocol(unittest.TestCase):
         could rebuild from a half-filled list and a just-cleared curve dict -
         which read as the envelope target flickering out of the aim menu.
         """
-        show = ShowController(SHOW, dry_run=True, midi="", on_frame=lambda f: None,
+        show = ShowController(SHOW, dry_run=True, pattern="mythos26", midi="", on_frame=lambda f: None,
                               emit_rate=20.0)
         try:
             for _ in range(100):
@@ -4077,7 +5183,7 @@ class TheCurveProtocol(unittest.TestCase):
 
     def test_reset_restores_the_cue(self):
         """Tune a knob and redraw the envelope; reset puts both back."""
-        show = ShowController(SHOW, dry_run=True, midi="", on_frame=lambda f: None,
+        show = ShowController(SHOW, dry_run=True, pattern="mythos26", midi="", on_frame=lambda f: None,
                               emit_rate=20.0)
         try:
             time.sleep(0.6)
@@ -4099,7 +5205,7 @@ class TheCurveProtocol(unittest.TestCase):
 
     def test_a_ninth_key_is_refused_whole(self):
         """Too many keys rejects the message; the look keeps its old shape."""
-        show = ShowController(SHOW, dry_run=True, midi="", on_frame=lambda f: None,
+        show = ShowController(SHOW, dry_run=True, pattern="mythos26", midi="", on_frame=lambda f: None,
                               emit_rate=20.0)
         try:
             time.sleep(0.6)

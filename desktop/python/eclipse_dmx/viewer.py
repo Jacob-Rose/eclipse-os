@@ -39,9 +39,15 @@ from .midi_map import (ActionContext, Dispatcher, MappingSet,
 from .osc_input import DEFAULT_INPUT_PORT
 from .launchpad import LampPainter, programmer_mode, clear as lamp_clear
 from .midi_panel import MidiMapPanel
+from .osc_panel import OscPanel, OscTraffic
 from .patterns import list_patterns
 
 RGB = Tuple[int, int, int]
+
+#: Seconds to wait before saying the OSC input is not landing. Long enough that
+#: a visualiser started alongside the show is not accused of being off while it
+#: is still coming up.
+OSC_SILENCE_GRACE = 8.0
 
 # ===========================================================================
 # The buttons. This is the bit to edit.
@@ -75,6 +81,36 @@ RGB = Tuple[int, int, int]
 STATE_GROUPS: List[Tuple[str, List[Tuple[str, Tuple[str, str]]]]] = [
     # slot_5 onwards are still placeholders. Rename them here when they are
     # renamed in makeMythos26StateMachine().
+    # The audio bus, one cue per channel. An instrument rather than a look -
+    # see edmx/audio_meter.h - and first because while the analysis wire is
+    # being trusted it is the thing you actually want in front of you.
+    #
+    # Written out rather than generated from AUDIO_STATES so this table stays
+    # one flat literal like every group around it; the executable is the
+    # authority on the names and TheAudioMeter pins the two together.
+    ("audio", [
+        ("level", ("state", "level")),
+        ("bass", ("state", "bass")),
+        ("mid", ("state", "mid")),
+        ("midhigh", ("state", "midhigh")),
+        ("high", ("state", "high")),
+        ("hits", ("state", "hits")),
+        ("bass_hits", ("state", "bass_hits")),
+        ("mid_hits", ("state", "mid_hits")),
+        ("midhigh_hits", ("state", "midhigh_hits")),
+        ("high_hits", ("state", "high_hits")),
+        ("presence", ("state", "presence")),
+        ("bass_presence", ("state", "bass_presence")),
+        ("mid_presence", ("state", "mid_presence")),
+        ("midhigh_presence", ("state", "midhigh_presence")),
+        ("high_presence", ("state", "high_presence")),
+        ("beat", ("state", "beat")),
+        ("bpm", ("state", "bpm")),
+        ("bpm_confidence", ("state", "bpm_confidence")),
+        ("intensity", ("state", "intensity")),
+        ("level_instant", ("state", "level_instant")),
+        ("level_meter", ("state", "level_meter")),
+    ]),
     ("mythos26", [
         ("pulse", ("state", "beat_pulse")),
         ("vu pulse", ("state", "vu_pulse")),
@@ -173,6 +209,10 @@ PATTERN_BUTTONS: List[Tuple[str, Tuple[str, str]]] = [
     ("obelisk", ("pattern", "obelisk")),
     ("mythos26", ("pattern", "mythos26")),
     ("jacket", ("pattern", "jacket")),
+    # The audio bus, one cue per channel. A machine like the others, so it
+    # gets a button like the others - and the cue band above fills with the
+    # twenty-one channels the moment it is pressed.
+    ("audio", ("pattern", "audio")),
     ("identify", ("pattern", "identify")),
 ]
 
@@ -899,6 +939,14 @@ class ViewerApp:
             emit_rate=emit_rate,
             midi=midi,
             bpm=bpm,
+            # Opened on, rather than switched to after start. The executable
+            # takes both, so asking it directly means the window's first frame
+            # is already the look that was asked for - where switching
+            # afterwards showed the config's look for a beat first, and left
+            # the knobs announced a moment later than everything that reads
+            # them expects.
+            pattern=pattern,
+            state=state,
             autostart=False,
             remote=host,
             remote_command=remote_command,
@@ -956,15 +1004,15 @@ class ViewerApp:
             self.show.midi_monitor(True)
         except ShowError:
             pass
-        if pattern:
-            self.show.set_pattern(pattern)
-            self.current_pattern = pattern
-        else:
-            self.current_pattern = self.config.pattern.name
+        # Already running: the show was started on it. This only records which
+        # it is, for the surface.
+        self.current_pattern = pattern or self.config.pattern.name
 
         if state:
-            # Not fatal if it does not take: a bad name should leave a working
-            # window with a message, not refuse to open.
+            # The show already opened on it; this records it for the surface.
+            # Kept as a guarded call rather than a bare assignment so a name
+            # the machine does not have still leaves a working window with a
+            # message, which is what it did before.
             self._guard(lambda: self.show.set_state(state), "state")
 
         # Both of these speak, and _say draws the header - which reads
@@ -1064,6 +1112,36 @@ class ViewerApp:
             on_status=self._say, on_open_midi=self._open_midi)
         self._midimap_shown = False
 
+        # -- the osc watcher, likewise ---------------------------------------
+        # Fed from both wire threads and drawn on the pump; see osc_panel. The
+        # traffic store is built whether or not the panel is ever opened,
+        # because what it is for is the question asked *after* something has
+        # already gone wrong, and a recorder started then has nothing to show.
+        self.osc_traffic = OscTraffic()
+        self.osc_panel = OscPanel(
+            self.root, self.osc_traffic,
+            in_port=self._osc_in_port if self._oscmap_wanted else None,
+            link_describe=self._describe_osc_out,
+            link_stats=self._osc_out_stats,
+            bindings_for=self._bindings_for_address,
+            on_status=self._say)
+        self._oscpanel_shown = False
+
+        # Said once, when it becomes true. The whole failure mode of this wire
+        # is silence - a binding aimed at an address that never arrives looks
+        # exactly like a visualiser that is switched off, and both look exactly
+        # like a rig working normally - so the two states worth naming get
+        # named without anyone having to know to open the panel.
+        self._osc_quiet_said = False
+        self._osc_unbound_said = False
+        self._osc_started_at = time.monotonic()
+
+        # Everything this desk sends, seen. --osc's link if there is one; the
+        # map's lazily-built one is hooked in _map_osc, because it may not
+        # exist until a pad is pressed.
+        if self._osc is not None:
+            self._osc.on_send = self.osc_traffic.saw_out
+
         # Every single-key binding steps aside while an Entry has the focus:
         # the mapping editor and the knobs are full of text fields, and a
         # scene name with a q in it must not close the window.
@@ -1084,6 +1162,7 @@ class ViewerApp:
         self.root.bind("<Key-t>", hotkey(lambda: self._run_button(("beat", ""))))
         self.root.bind("<Key-e>", lambda event: self._on_curves_key())
         self.root.bind("<Key-m>", hotkey(self._toggle_midimap))
+        self.root.bind("<Key-o>", hotkey(self._toggle_oscpanel))
         self.root.bind("<Key-q>", hotkey(self._quit))
         self.root.bind("<Escape>", lambda event: self._quit())
         self.root.protocol("WM_DELETE_WINDOW", self._quit)
@@ -1200,6 +1279,16 @@ class ViewerApp:
             command=self._toggle_midimap,
         )
         self._midimap_button.pack(side="left", padx=3, pady=3)
+
+        # and the osc watcher's, beside that
+        self._oscpanel_button = tk.Button(
+            self.extra_row, text="osc", font=("Consolas", 9),
+            bg=BUTTON_BG, fg=BUTTON_FG, activebackground=BUTTON_BG_ACTIVE,
+            activeforeground=BUTTON_FG, relief="flat", padx=8, pady=3,
+            highlightthickness=0, borderwidth=0,
+            command=self._toggle_oscpanel,
+        )
+        self._oscpanel_button.pack(side="left", padx=3, pady=3)
 
         self.extra_row.pack(fill="x")
 
@@ -1834,6 +1923,96 @@ class ViewerApp:
         self._midimap_button.configure(
             bg=BUTTON_BG_ACTIVE if self._midimap_shown else BUTTON_BG)
 
+    # -- the osc watcher ----------------------------------------------------
+
+    def _toggle_oscpanel(self) -> None:
+        """Folds the OSC watcher in and out, down the right of the desk."""
+        self._oscpanel_shown = not self._oscpanel_shown
+        if self._oscpanel_shown:
+            self.osc_panel.frame.pack(side="right", fill="y",
+                                      before=self.surface, padx=(0, 4), pady=2)
+            self.osc_panel.refresh()
+        else:
+            self.osc_panel.frame.pack_forget()
+        self._oscpanel_button.configure(
+            bg=BUTTON_BG_ACTIVE if self._oscpanel_shown else BUTTON_BG)
+
+    def _check_osc_is_landing(self) -> None:
+        """Says the two things that are otherwise indistinguishable from fine.
+
+        Both are one-shot and both name the panel, because the panel is where
+        the answer is and neither line has room for it.
+        """
+        if self._osc_listener is None:
+            return
+        if self._osc_quiet_said and self._osc_unbound_said:
+            return
+
+        waited = time.monotonic() - self._osc_started_at
+        if waited < OSC_SILENCE_GRACE:
+            return
+
+        state = self.osc_traffic.snapshot()
+
+        # Nothing at all. The app's OSC *output* is a separate setting from its
+        # input, and a rig whose colour is already reaching the visualiser
+        # proves only that the other direction works - which is exactly the
+        # evidence that makes this one look like it must be fine too.
+        if state["last_in_at"] is None:
+            if not self._osc_quiet_said:
+                self._osc_quiet_said = True
+                from .cli import _my_addresses
+                mine = " or ".join(_my_addresses()) or "this machine"
+                self._say(f"osc in: nothing on {self._osc_listener.port} in "
+                          f"{waited:.0f}s - is Synesthesia's OSC *output* on, and its "
+                          f"output IP {mine}? (127.0.0.1 there means the mac, not "
+                          f"this desk.) [o] for the panel")
+            return
+        self._osc_quiet_said = True
+
+        # Traffic, but nothing the map wants. This is the address-mismatch
+        # case, and it is the one worth catching: the uniforms are
+        # undocumented and were renamed once already, so a shipped map is a
+        # set of guesses until something checks them against this build.
+        if self._osc_unbound_said:
+            return
+        if any(self._bindings_for_address(address) for address, _c, _v, _at in state["in"]):
+            self._osc_unbound_said = True
+            return
+        self._osc_unbound_said = True
+        self._say(f"osc in: {len(state['in'])} addresses arriving and no binding takes "
+                  "any of them - the map's globs do not match this build. [o] for the panel")
+
+    def _describe_osc_out(self) -> str:
+        if self._osc is None:
+            return "(nothing sending; --osc names a visualiser)"
+        return self._osc.describe()
+
+    def _osc_out_stats(self):
+        if self._osc is None:
+            return (0, 0, None)
+        return (self._osc.sent, self._osc.dropped, self._osc.last_error)
+
+    def _bindings_for_address(self, address: str):
+        """Which enabled bindings would take this address, by what they drive.
+
+        The whole question the panel exists to answer, and the reason it shows
+        the map's verdict beside each arrival rather than just the arrival: a
+        glob checked by eye against forty addresses is where this goes wrong.
+        """
+        if self._osc_dispatcher is None:
+            return []
+        targets = []
+        for binding in self._osc_dispatcher.bindings.bindings:
+            if not binding.enabled or not binding.matches(address):
+                continue
+            if binding.action == "audio":
+                targets.append(str(binding.params.get("channel", "audio ?")))
+            else:
+                named = binding.params.get("name")
+                targets.append(f"{binding.action} {named}" if named else binding.action)
+        return targets
+
     def _open_midi(self) -> None:
         """The panel's way in when the show was started without --midi."""
         self._guard(lambda: self.show.midi_open("auto"), "midi open")
@@ -1860,6 +2039,14 @@ class ViewerApp:
             self.midi_panel.show_traffic(last_event, fired)
         if fired:
             self._say(fired[-1])
+
+        # Only while it is open. The traffic is recorded either way - see the
+        # note where OscTraffic is built - but rewriting a folded-away panel
+        # sixty times a second is work nobody can see.
+        if self._oscpanel_shown:
+            self.osc_panel.refresh()
+
+        self._check_osc_is_landing()
 
     # -- the curve editor --------------------------------------------------
 
@@ -2467,7 +2654,7 @@ class ViewerApp:
             return self._osc
         if self._map_link is None:
             from .osc import SynesthesiaLink
-            self._map_link = SynesthesiaLink()
+            self._map_link = SynesthesiaLink(on_send=self.osc_traffic.saw_out)
         return self._map_link
 
     def _guard(self, action, describe: str) -> None:
@@ -2776,12 +2963,24 @@ class ViewerApp:
         live = sum(1 for one in bindings.bindings if one.enabled)
         self._say(f"osc in: port {port}, {live} of {len(bindings.bindings)} bindings live")
 
+        # What to type at the far end, and whether this machine will let it in -
+        # both said before anything has gone wrong rather than after. See
+        # osc_input_hints.
+        from .cli import osc_input_hints
+        for note in osc_input_hints(port):
+            self._say(note)
+
     def _on_osc_in(self, address: str, arguments) -> None:
         """Called on the listener's thread. Touches no widget.
 
         `_say` is the one thing it does reach for, and that is already what
         the reader thread uses for the same reason - see _send_osc.
         """
+        # Recorded before it is dispatched, and whether or not any binding
+        # wants it: an address nothing takes is precisely what the panel is
+        # for, and one filtered out here would be invisible there.
+        self.osc_traffic.saw_in(address, arguments)
+
         if self._osc_dispatcher is None:
             return
         for line in self._osc_dispatcher.handle(address, arguments):

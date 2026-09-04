@@ -355,7 +355,13 @@ class SynesthesiaLink:
         gamma: float = 0.0,
         resolve_every: float = RESOLVE_INTERVAL,
         on_resolve: Optional[Callable[[str], None]] = None,
+        on_send: Optional[Callable[[str, tuple, bool], None]] = None,
     ) -> None:
+        #: Told about every message this link sends: the address, its values,
+        #: and whether the socket actually took it. For a panel that shows what
+        #: is going out - see osc_panel. Never told anything about a reply,
+        #: because there are none; see the note under _send.
+        self.on_send = on_send
         self.host, self.port = parse_endpoint(endpoint)
         self.control = control.rstrip("/")
 
@@ -505,13 +511,13 @@ class SynesthesiaLink:
 
         if self.separate:
             for suffix, value in (("r", red), ("g", green), ("b", blue)):
-                self._send(encode(f"{self.control}/{suffix}", value))
+                self._send(f"{self.control}/{suffix}", value)
         else:
-            self._send(encode(self.control, red, green, blue))
+            self._send(self.control, red, green, blue)
 
     def send_raw(self, address: str, *values: Union[float, int, str]) -> None:
         """Any other route, for callers that want more than a colour."""
-        self._send(encode(address, *values))
+        self._send(address, *values)
 
     # -- the app's other routes -------------------------------------------
     # Scene, preset, favslot, media: the desk telling the visualiser what to
@@ -527,21 +533,21 @@ class SynesthesiaLink:
         that side the app is case-sensitive.
         """
         if preset:
-            self._send(encode(scene_address(scene), preset))
+            self._send(scene_address(scene), preset)
         else:
-            self._send(encode(scene_address(scene)))
+            self._send(scene_address(scene))
 
     def send_preset(self, preset: str) -> None:
         """Loads a saved preset on whatever scene is running."""
-        self._send(encode("/presets", preset))
+        self._send("/presets", preset)
 
     def send_favslot(self, slot: int) -> None:
         """Launches a favorites slot. The first slot is 1."""
-        self._send(encode(f"/favslots/{int(slot)}"))
+        self._send(f"/favslots/{int(slot)}")
 
     def send_media(self, name: str) -> None:
         """Selects a media file by name or full path."""
-        self._send(encode("/media/name", name))
+        self._send("/media/name", name)
 
     def _normalize(self, channel: int) -> float:
         value = max(0.0, min(1.0, channel / 255.0))
@@ -549,20 +555,42 @@ class SynesthesiaLink:
             value = value ** (1.0 / self.gamma)
         return value
 
-    def _send(self, packet: bytes) -> None:
+    def _send(self, address: str, *values: Union[float, int, str]) -> None:
+        """Every outbound message goes through here.
+
+        It takes the address rather than a finished packet so that there is one
+        place that knows what is being sent as well as that something is - which
+        is what `on_send` needs, and what the panel showing the link needs. The
+        encode is the cheap half of this function; the socket is the rest.
+        """
+        packet = encode(address, *values)
+
         # The lock is held across the send so a re-point cannot close the
         # socket out from under it; a UDP send at thirty a second is nowhere
         # near a contended lock.
         with self._lock:
             if self._socket is None:            # a name that has not resolved
                 self.dropped += 1
-                return
+                delivered = False
+            else:
+                try:
+                    self._socket.send(packet)
+                    self.sent += 1
+                    delivered = True
+                except OSError as error:
+                    self.dropped += 1
+                    self.last_error = str(error)
+                    delivered = False
+
+        # Outside the lock, and fenced: an observer is a diagnostic hanging off
+        # the side of a link that is itself decoration hanging off the side of
+        # a show. It must not be able to hold up a send, and it must not be
+        # able to stop one.
+        if self.on_send is not None:
             try:
-                self._socket.send(packet)
-                self.sent += 1
-            except OSError as error:
-                self.dropped += 1
-                self.last_error = str(error)
+                self.on_send(address, values, delivered)
+            except Exception:
+                pass
 
     # Worth knowing what `dropped` does and does not catch: a bad host or an
     # unreachable network raises here, but nothing listening on the far port

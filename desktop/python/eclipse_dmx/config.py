@@ -84,6 +84,9 @@ PATTERN_NAMES = (
     "mythos26",
     # the UV par's three modes, for a layer over the show
     "uv",
+    # the audio bus, one cue per channel: an instrument rather than a look.
+    # See edmx/audio_meter.h and AUDIO_STATES.
+    "audio",
 )
 
 #: The jacket's looks, in the order its state machine lists them. Must stay in
@@ -104,6 +107,30 @@ JACKET_STATES = (
     "campfire",
     "hitstop",
 )
+
+#: The audio bus's channels, in the order the executable lists them. Must stay
+#: in step with AudioChannel in desktop/include/edmx/beat_clock.h - the
+#: executable is the authority; this is so a config and an OSC map can be
+#: validated without one running.
+#:
+#: The names are Synesthesia's, lowercased and un-camelled: `syn_BassLevel` is
+#: `bass`, `syn_MidHighHits` is `midhigh_hits`. Everything is 0..1, `bpm`
+#: included - it arrives already scaled across its 50..220, so that a reader
+#: does not have to special-case one channel's units.
+AUDIO_CHANNELS = (
+    "level", "bass", "mid", "midhigh", "high",
+    "hits", "bass_hits", "mid_hits", "midhigh_hits", "high_hits",
+    "presence", "bass_presence", "mid_presence", "midhigh_presence", "high_presence",
+    "beat", "bpm", "bpm_confidence", "intensity",
+    "level_instant", "level_meter",
+)
+
+#: The `audio` pattern's cues, in machine order - one per channel, named after
+#: it. The same tuple rather than a copy, because the executable builds that
+#: cue list straight off the channel table too: a channel added to
+#: AudioChannel is a cue there and a cue here with nothing edited in either
+#: place. See makeAudioStateMachine and edmx/audio_meter.h.
+AUDIO_STATES = AUDIO_CHANNELS
 
 #: mythos26's states, in the order its state machine lists them. Must stay in
 #: step with makeMythos26StateMachine() in desktop/src/mythos26.cpp.
@@ -161,6 +188,7 @@ UV_STATES = (
 STATE_MACHINE_STATES = {
     "jacket": JACKET_STATES,
     "mythos26": MYTHOS26_STATES,
+    "audio": AUDIO_STATES,
     "generic": GENERIC_STATES,
     "obelisk": OBELISK_STATES,
     "uv": UV_STATES,
@@ -467,6 +495,68 @@ class MidiConfig:
             "bpm": self.bpm,
             "free_run": self.free_run,
         }
+
+
+#: What can fill the bus.
+AUDIO_SOURCES = ("mixxx", "synesthesia", "none")
+
+
+@dataclass
+class AudioConfig:
+    """Where the numbers about the *sound* come from.
+
+    Separate from `midi`, which is where the *beat* comes from, because they
+    need not be the same cable and on this rig usually are not: Mixxx has the
+    beat grid, Synesthesia has the FFT. One setting rather than four, because
+    the failure it replaces is a set opening with a binding nobody remembered
+    to enable.
+
+    `source` is enforced at the far end rather than merely advised: on
+    "synesthesia" the executable stops wiring Mixxx's VU notes to the bus, and
+    with `bpm` on it stops wiring the MIDI cable to the beat clock too. One
+    source owns the music; the other is parsed and ignored, so `midi monitor`
+    still shows it and nothing has to be switched off at the Mixxx end.
+    """
+
+    source: str = "mixxx"
+
+    #: The port Synesthesia's OSC *output* is pointed at. Read by the CLI,
+    #: which opens it; the executable never sees a socket.
+    port: int = 7000
+
+    #: Take the beat from the visualiser too - syn_BPM for the tempo,
+    #: syn_OnBeat for the phase - and unwire the MIDI cable from the clock.
+    #: Only meaningful with source "synesthesia". Off is the one supported
+    #: split: analysis from the visualiser, beat from Mixxx's grid.
+    bpm: bool = True
+
+    #: Which OSC bindings fill the bus, relative to the config. Empty means
+    #: oscmaps/synesthesia.json beside it.
+    map: str = ""
+
+    @property
+    def is_synesthesia(self) -> bool:
+        return self.source == "synesthesia"
+
+    def validate(self) -> None:
+        if self.source not in AUDIO_SOURCES:
+            raise ConfigError(
+                f"audio.source '{self.source}'; expected one of {', '.join(AUDIO_SOURCES)}"
+            )
+        if not 1 <= self.port <= 65535:
+            raise ConfigError(f"audio.port {self.port} is not a port")
+
+    @property
+    def owns_the_beat(self) -> bool:
+        """Whether the visualiser, rather than the MIDI cable, is the clock."""
+        return self.is_synesthesia and self.bpm
+
+    def to_dict(self) -> Dict[str, Any]:
+        out: Dict[str, Any] = {"source": self.source, "port": self.port,
+                               "bpm": self.bpm}
+        if self.map:
+            out["map"] = self.map
+        return out
 
 
 @dataclass
@@ -783,6 +873,7 @@ class Config:
 
     master: MasterConfig = field(default_factory=MasterConfig)
     midi: MidiConfig = field(default_factory=MidiConfig)
+    audio: AudioConfig = field(default_factory=AudioConfig)
     pattern: PatternConfig = field(default_factory=PatternConfig)
 
     devices: List[Device] = field(default_factory=lambda: [Device()])
@@ -793,6 +884,11 @@ class Config:
     #: is the authority on what they mean. See LayerConfig in
     #: desktop/include/edmx/config.h.
     layers: List[Dict[str, Any]] = field(default_factory=list)
+
+    #: Knobs on the show's own look driven by the audio bus, as the file's own
+    #: dicts (param, channel, low, high, slew). The layers carry their own in
+    #: their entries. See ModConfig in desktop/include/edmx/config.h.
+    mods: List[Dict[str, Any]] = field(default_factory=list)
 
     # -- the single-device view -------------------------------------------
     #
@@ -1019,8 +1115,11 @@ class Config:
         show: Dict[str, Any] = {
             "master": self.master.to_dict(),
             "midi": self.midi.to_dict(),
+            "audio": self.audio.to_dict(),
             "pattern": self.pattern.to_dict(),
         }
+        if self.mods:
+            show["mods"] = [dict(mod) for mod in self.mods]
         if self.layers:
             show["layers"] = [dict(layer) for layer in self.layers]
 
@@ -1268,6 +1367,21 @@ class Config:
             coord_span_y=_optional_float(pattern.get("coord_span_y")),
         )
 
+        # ---- audio ------------------------------------------------------
+        audio = data.get("audio") or {}
+        if not isinstance(audio, dict):
+            raise ConfigError("audio must be an object")
+        config.audio = AudioConfig(
+            source=str(audio.get("source", config.audio.source)),
+            port=int(audio.get("port", config.audio.port)),
+            bpm=bool(audio.get("bpm", config.audio.bpm)),
+            map=str(audio.get("map", "")),
+        )
+        config.audio.validate()
+
+        # The show's own mods, then each layer's.
+        config.mods = _read_mods(data, "show")
+
         # Layers, checked for shape only - whether a fixture name resolves is
         # the executable's call, with the devices in hand.
         config.layers = []
@@ -1282,11 +1396,23 @@ class Config:
                 "fixtures": [str(name) for name in fixtures],
                 "pattern": str(entry.get("pattern", "")),
                 "state": str(entry.get("state", "")),
+                "blend": str(entry.get("blend", "over")),
             }
+            if entry.get("color"):
+                layer["color"] = str(entry["color"])
+            mods = _read_mods(entry, f"layer '{layer['name']}'")
+            if mods:
+                layer["mods"] = mods
+
             if not layer["pattern"]:
                 raise ConfigError(f"layer '{layer['name']}' names no pattern")
             if not layer["fixtures"]:
                 raise ConfigError(f"layer '{layer['name']}' names no fixtures")
+            if layer["blend"] not in ("over", "add"):
+                raise ConfigError(
+                    f"layer '{layer['name']}' blends '{layer['blend']}'; "
+                    'expected "over" or "add"'
+                )
             config.layers.append(layer)
 
 
@@ -1416,6 +1542,66 @@ class Config:
         source = Path(path)
         text = source.read_text(encoding="utf-8")
         return cls.from_dict(json.loads(_strip_line_comments(text)), base_dir=source.parent)
+
+
+def _read_mods(data: Dict[str, Any], where: str) -> List[Dict[str, Any]]:
+    """A `mods` block, in either spelling, as a list of dicts.
+
+    Two spellings because the short one is what a hit layer wants:
+
+        "mods": { "level": "bass_hits" }
+        "mods": [ { "param": "level", "channel": "bass_hits",
+                    "low": 0, "high": 1, "slew": 0.1 } ]
+
+    The object form is the array form with every default taken. A rig of
+    one-line additive layers should not have to spell out five fields to say
+    the obvious thing, and the long form is there for the mod that needs a
+    range or a slew.
+
+    Whether the *param* exists is not checked here and cannot be: a state
+    machine has no knobs until it has rendered once, and a mod may well name a
+    knob that only some cues have. The channel is checked, because that is a
+    closed set and a typo in one is otherwise completely silent.
+    """
+    raw = data.get("mods")
+    if raw is None:
+        return []
+
+    entries: List[Dict[str, Any]] = []
+    if isinstance(raw, dict):
+        for param, channel in raw.items():
+            entries.append({"param": str(param), "channel": str(channel),
+                            "enabled": True})
+    elif isinstance(raw, list):
+        for index, entry in enumerate(raw):
+            if not isinstance(entry, dict):
+                raise ConfigError(f"{where}: mods[{index}] must be an object")
+            mod: Dict[str, Any] = {
+                "param": str(entry.get("param", "")),
+                "channel": str(entry.get("channel", "")),
+                "enabled": bool(entry.get("enabled", True)),
+            }
+            for key, default in (("low", 0.0), ("high", 1.0), ("slew", 0.0)):
+                if key in entry:
+                    mod[key] = float(entry[key])
+                else:
+                    mod[key] = default
+            entries.append(mod)
+    else:
+        raise ConfigError(f"{where}: mods must be an object or an array")
+
+    for mod in entries:
+        if not mod["param"]:
+            raise ConfigError(f"{where} has a mod with no param")
+        if mod["channel"] not in AUDIO_CHANNELS:
+            raise ConfigError(
+                f"{where} mod '{mod['param']}' reads '{mod['channel']}', which is not a "
+                f"channel on the audio bus; have: {', '.join(AUDIO_CHANNELS)}"
+            )
+        if mod.get("slew", 0.0) < 0.0:
+            raise ConfigError(f"{where} mod '{mod['param']}' has a negative slew")
+
+    return entries
 
 
 def _resolve_device_path(base_dir: Optional[Path], reference: str) -> Optional[Path]:

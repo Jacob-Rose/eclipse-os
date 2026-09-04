@@ -7,8 +7,10 @@ from __future__ import annotations
 
 import argparse
 import errno
+import json
 import sys
 import time
+import pathlib
 from pathlib import Path
 from typing import List, Optional
 
@@ -116,6 +118,13 @@ def _cmd_midi_watch(args: argparse.Namespace) -> int:
     return 0
 
 
+#: What to say about firewalls when nothing can be read about them - another
+#: platform, another firewall, or rules that need root. A question rather than
+#: a claim, because that is all it is.
+_FIREWALL_UNKNOWN = ("is a firewall on THIS machine holding inbound UDP on "
+                     "port {port}?")
+
+
 def _cmd_osc_watch(args: argparse.Namespace) -> int:
     """Prints what is actually arriving on the OSC input port.
 
@@ -166,32 +175,206 @@ def _cmd_osc_watch(args: argparse.Namespace) -> int:
 
     print()
     if not seen:
+        mine = " or ".join(_my_addresses()) or "this machine's LAN address"
         print("nothing arrived.", file=sys.stderr)
         print(
             "  - Synesthesia: Settings > OSC. Is OUTPUT on, and is\n"
             "    'Output Audio Variables' ticked? Both are needed and both ship off.\n"
-            f"  - does its output port say {args.port}, and its output IP name this\n"
-            "    machine? Broadcast (255.255.255.255) reaches it too.\n"
             "  - OSC is a Pro feature.\n"
-            "  - is a firewall holding UDP on this port?",
+            f"\n  - is its output IP {mine}?\n"
+            "\n    127.0.0.1 there means *the machine Synesthesia is running on*,\n"
+            "    which reaches this one only if the app is running on it too. On a\n"
+            "    rig where the visualiser sits on a mac beside the desk, localhost\n"
+            "    sends the whole analysis into that mac's own loopback and nothing\n"
+            "    ever leaves it. It is the easiest setting in the app to get wrong,\n"
+            "    because it is also the one that is right when you are testing both\n"
+            "    halves on one machine. Broadcast (255.255.255.255) reaches here too.\n"
+            f"\n  - does its output port say {args.port}?\n"
+            f"  - {_firewall_note(args.port) or _FIREWALL_UNKNOWN.format(port=args.port)}\n"
+            "\n  Note that the rig's colour reaching the visualiser proves none of\n"
+            "  this: that is the other direction, a different port and a different\n"
+            "  setting, and either direction works perfectly well alone.",
             file=sys.stderr,
         )
         return 1
+
+    # What the map would do with each of them. This is the whole question this
+    # command exists to answer: the addresses are undocumented and were renamed
+    # once already, so a map is a set of guesses until something checks them
+    # against what the app on *this* machine actually sends. Printing the
+    # arrivals alone left the last step - "and does my map catch these?" - to
+    # be done by eye against a glob, which is exactly where it goes wrong.
+    bindings = _watch_bindings(args)
 
     print(f"{packets} packets, {len(seen)} addresses:")
     for address, entry in sorted(seen.items(), key=lambda kv: -kv[1]["count"]):
         span = ""
         if entry["low"] is not None:
             span = f"  {entry['low']:.3f}..{entry['high']:.3f}"
-        print(f"  {address:<44} x{entry['count']:<6}{span}")
+
+        bound = ""
+        if bindings is not None:
+            takers = [b for b in bindings.bindings if b.enabled and b.matches(address)]
+            if not takers:
+                bound = "  -> nothing"
+            elif len(takers) == 1:
+                bound = "  -> " + _binding_target(takers[0])
+            else:
+                # Two bindings on one address is not a warning, it is the bug:
+                # for a bus channel it means whichever spoke last wins, and
+                # there is no reading of that anything could show.
+                bound = "  -> CLASH: " + ", ".join(_binding_target(b) for b in takers)
+
+        print(f"  {address:<40} x{entry['count']:<5}{span}{bound}")
 
     if undecodable:
         print(f"\n{undecodable} packets were not OSC this understood.", file=sys.stderr)
 
-    print("\nBind one of these in an OSC map - the pattern is a glob, so\n"
-          "'*bass*level*' survives the app renaming what is around it.",
-          file=sys.stderr)
+    if bindings is None:
+        print("\nBind one of these in an OSC map - the pattern is a glob, so\n"
+              "'*bass*level*' survives the app renaming what is around it.",
+              file=sys.stderr)
+        return 0
+
+    # The other direction, and the one that actually bites: a binding whose glob
+    # matches nothing that arrived is a channel that will never be filled and a
+    # look that will never move - and it is invisible from the rig, because it
+    # looks identical to a visualiser that is not sending at all.
+    idle = [b for b in bindings.bindings if b.enabled
+            and not any(b.matches(address) for address in seen)]
+    if idle:
+        print(f"\n{len(idle)} enabled binding(s) matched nothing that arrived:",
+              file=sys.stderr)
+        for binding in idle:
+            print(f"  {binding.pattern:<24} {_binding_target(binding)}", file=sys.stderr)
+        print("  These are guesses at addresses this build does not send under\n"
+              "  those names. Edit their `pattern` to match the list above.",
+              file=sys.stderr)
+    else:
+        print("\nEvery enabled binding matched something. The map fits this build.",
+              file=sys.stderr)
     return 0
+
+
+def _firewall_note(port: int) -> Optional[str]:
+    """Whether a local firewall is visibly going to eat this port.
+
+    Only ufw, only on Linux, and only what can be read without root - which is
+    enough, because `/etc/ufw/user.rules` and the default policy are both
+    world-readable and between them they answer it.
+
+    Here because "a firewall might be holding it" is advice nobody acts on,
+    while "ufw is active, its default is DROP, and nothing in its rules
+    mentions this port" is a diagnosis. This was found by hand on the rig it
+    was written for, after the port had already been silently swallowing an
+    evening's worth of packets.
+
+    Deliberately silent when it cannot tell. A confident wrong answer here
+    sends someone to reconfigure a firewall that was never the problem.
+    """
+    import shutil
+    import subprocess
+
+    if sys.platform.startswith("win") or sys.platform == "darwin":
+        return None
+    if shutil.which("ufw") is None:
+        return None
+
+    try:
+        active = subprocess.run(["systemctl", "is-active", "ufw"],
+                                capture_output=True, text=True, timeout=3)
+        if active.stdout.strip() != "active":
+            return None
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+    policy = ""
+    try:
+        policy = pathlib.Path("/etc/default/ufw").read_text(encoding="utf-8")
+    except OSError:
+        return None
+    if 'DEFAULT_INPUT_POLICY="DROP"' not in policy.replace("'", '"'):
+        return None
+
+    rules = ""
+    for name in ("/etc/ufw/user.rules", "/etc/ufw/user6.rules"):
+        try:
+            rules += pathlib.Path(name).read_text(encoding="utf-8")
+        except OSError:
+            # Root-only on some distributions. Then we know the policy is DROP
+            # but not whether this port is excepted, and saying so would be a
+            # guess - so say nothing.
+            return None
+
+    if str(port) in rules:
+        return None
+
+    # One line for the command, no continuation: this string is also flattened
+    # onto a single status line by osc_input_hints, and a backslash surviving
+    # that is a command that will not paste.
+    return (f"ufw is active, its default for incoming is DROP, and nothing in\n"
+            f"    its rules mentions port {port}. It will silently drop these\n"
+            f"    packets however the visualiser is pointed. To let the LAN in:\n"
+            f"      sudo ufw allow from 192.168.0.0/16 to any port {port} proto udp")
+
+
+def _my_addresses() -> List[str]:
+    """This machine's LAN addresses, for pasting into the visualiser.
+
+    Found by asking the routing table which source address would be used to
+    reach the network, via a UDP socket that is connected and never written
+    to - no packet is sent and nothing has to be up. Loopback is filtered out
+    on purpose: it is the answer that is never useful here, and offering it
+    would be repeating the mistake this message exists to explain.
+    """
+    import socket as socket_module
+
+    found: List[str] = []
+    for probe in ("192.168.1.1", "10.0.0.1", "8.8.8.8"):
+        sock = socket_module.socket(socket_module.AF_INET, socket_module.SOCK_DGRAM)
+        try:
+            sock.connect((probe, 9))
+            address = sock.getsockname()[0]
+            if not address.startswith("127.") and address not in found:
+                found.append(address)
+        except OSError:
+            continue
+        finally:
+            sock.close()
+    return found
+
+
+def _binding_target(binding) -> str:
+    """`bass_hits` for a bus binding, `param floor` for a knob - what it drives."""
+    if binding.action == "audio":
+        return str(binding.params.get("channel", "audio ?"))
+    named = binding.params.get("name")
+    return f"{binding.action} {named}" if named else binding.action
+
+
+def _watch_bindings(args):
+    """The map osc-watch should check arrivals against, or None for none.
+
+    Defaults to whatever a config beside it declares, so the common case -
+    `osc-watch` in a rig directory - checks the map that rig will actually run
+    rather than saying nothing.
+    """
+    from .osc_input import BindingSet
+
+    chosen = getattr(args, "oscmap", None)
+    if chosen:
+        path = Path(chosen)
+    else:
+        here = Path("config/oscmaps/synesthesia.json")
+        path = here if here.exists() else Path("oscmaps/synesthesia.json")
+
+    if not path.exists():
+        return None
+    try:
+        return BindingSet.load(path)
+    except (OSError, ValueError) as error:
+        print(f"osc map: {error}", file=sys.stderr)
+        return None
 
 
 def _wait_out(seconds: float) -> None:
@@ -207,10 +390,36 @@ def _add_osc_input_args(parser: argparse.ArgumentParser) -> None:
                         default=None, metavar="PORT",
                         help="take a visualiser's audio analysis in as OSC and let it "
                              f"drive the rig (default port {DEFAULT_INPUT_PORT}; it must match "
-                             "Synesthesia's OSC *output* port). `osc-watch` shows what arrives.")
+                             "Synesthesia's OSC *output* port). `osc-watch` shows what arrives. "
+                             'A config with "audio": {"source": "synesthesia"} opens this on '
+                             "its own; this flag is for overriding it or for a config without one.")
+    parser.add_argument("--no-osc-in", action="store_true",
+                        help="do not listen, whatever the config's audio block says. "
+                             "For the night the visualiser is not running: the show keeps "
+                             "its beat, and anything driven off the audio bus holds at zero.")
     parser.add_argument("--oscmap", metavar="FILE",
-                        help="which OSC bindings to load (default: oscmaps/synesthesia.json "
-                             "beside the config, if present)")
+                        help="which OSC bindings to load (default: the config's audio.map, "
+                             "else oscmaps/synesthesia.json beside the config, if present)")
+
+
+def _audio_block(config_path) -> dict:
+    """A config's `audio` block, or an empty one.
+
+    Deliberately forgiving: a missing file, a config that does not parse, a
+    file with no `audio` in it all read the same way here - "nothing declared"
+    - because this only decides whether to open a port, and a config that is
+    actually broken is about to say so properly somewhere else.
+    """
+    if not config_path:
+        return {}
+    try:
+        from .config import _strip_line_comments
+        text = Path(config_path).read_text(encoding="utf-8")
+        data = json.loads(_strip_line_comments(text))
+    except (OSError, ValueError):
+        return {}
+    audio = data.get("audio")
+    return audio if isinstance(audio, dict) else {}
 
 
 def _osc_input_for(args, show, say=None):
@@ -222,24 +431,49 @@ def _osc_input_for(args, show, say=None):
     from .osc_input import BindingSet, Dispatcher as OscDispatcher, OscListener
     from .midi_map import ActionContext
 
+    # Checked before anything else, including the config's own declaration.
+    # A config that says "synesthesia" opens the port on its own, so refusing
+    # has to be sayable - otherwise the only way to run a declared show without
+    # the visualiser would be to edit the config, at a venue, under lights.
+    if getattr(args, "no_osc_in", False):
+        return None
+
     port = getattr(args, "osc_in", None)
     chosen = getattr(args, "oscmap", None)
+    config = getattr(args, "config", None)
+
+    # The config's own `audio` block, when there is one. This is what makes
+    # `--osc-in` a thing you type to override rather than a thing you must
+    # remember: a show whose analysis comes from Synesthesia says so in its
+    # config, and opening the port is then not a flag on the command line that
+    # somebody has to get right at a venue.
+    #
+    # Read straight off the file rather than through Config.load, because this
+    # runs on paths that Config.load would refuse - `osc` and `view` take a
+    # config that may not have devices resolved yet - and because a bad config
+    # should fail where configs are loaded, not here.
+    declared = _audio_block(config)
     if port is None and not chosen:
-        return None
-    port = port or DEFAULT_INPUT_PORT
+        if declared.get("source") != "synesthesia":
+            return None
+        port = int(declared.get("port") or DEFAULT_INPUT_PORT)
+    port = port or int(declared.get("port") or DEFAULT_INPUT_PORT)
 
     say = say or (lambda line: print(line, file=sys.stderr))
 
-    config = getattr(args, "config", None)
-    path = (Path(chosen) if chosen
-            else Path(config or ".").parent / "oscmaps" / "synesthesia.json")
+    if chosen:
+        path = Path(chosen)
+    elif declared.get("map"):
+        path = Path(config or ".").parent / str(declared["map"])
+    else:
+        path = Path(config or ".").parent / "oscmaps" / "synesthesia.json"
     if path.exists():
         try:
             bindings = BindingSet.load(path)
         except (OSError, ValueError) as error:
             say(f"osc map: {error}")
             bindings = BindingSet()
-    elif chosen:
+    elif chosen or declared.get("map"):
         say(f"osc map: {path} not found; listening with no bindings")
         bindings = BindingSet()
     else:
@@ -262,7 +496,36 @@ def _osc_input_for(args, show, say=None):
 
     live = sum(1 for one in bindings.bindings if one.enabled)
     say(f"osc in: {listener.describe()}, {live} of {len(bindings.bindings)} bindings live")
+
+    # What to type at the far end, said before anything has gone wrong.
+    #
+    # Synesthesia's output address field takes a numeric IP only - no hostname,
+    # no .local - so the number has to come from somewhere, and every other
+    # source for it is a guess made under pressure. The app's own default is
+    # 127.0.0.1, which on a rig where the visualiser sits on a different
+    # machine means "send the analysis into my own loopback" and is completely
+    # silent about it. This one line is the cheapest possible fix for that.
+    for note in osc_input_hints(port):
+        say(note)
     return listener
+
+
+def osc_input_hints(port: int) -> List[str]:
+    """The lines worth saying when an OSC input port opens.
+
+    Shared by the CLI and the viewer so the two cannot drift, and returned
+    rather than printed so a window can put them somewhere other than stdout.
+    """
+    hints: List[str] = []
+    mine = _my_addresses()
+    if mine:
+        hints.append(f"osc in: point Synesthesia's OSC *output* at "
+                     f"{' or '.join(mine)}:{port} - it takes a numeric IP only, "
+                     f"and 127.0.0.1 there means the machine it is running on")
+    note = _firewall_note(port)
+    if note:
+        hints.append("osc in: " + " ".join(note.split()))
+    return hints
 
 
 def _cmd_validate(args: argparse.Namespace) -> int:
@@ -657,8 +920,11 @@ def _cmd_view(args: argparse.Namespace) -> int:
         midimap=args.midimap,
         midi_out=args.midi_out,
         client=args.client,
-        oscmap=args.oscmap,
-        osc_in=args.osc_in,
+        oscmap=None if args.no_osc_in else args.oscmap,
+        # --no-osc-in wins here the way it does in _osc_input_for. Without
+        # this the flag was accepted and ignored on the one command that has
+        # a window, which is the command it would actually be typed at.
+        osc_in=None if args.no_osc_in else args.osc_in,
         host=args.host,
         remote_command=args.remote_command,
     )

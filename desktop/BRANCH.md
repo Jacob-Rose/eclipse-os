@@ -1120,6 +1120,287 @@ four above were found.
 
 ---
 
+### the audio bus, and the analysis as an ordinary parameter
+
+The version above drove three knobs, and that was its ceiling. A binding aimed
+straight at a knob has to know which look is running and what its knobs are
+called — so it is written per show, it dies when the look changes, and every
+new audio-reactive idea is new wiring. Meanwhile the engine already had a
+three-slot `AudioLevel` singleton fed only by Mixxx's VU notes, which patterns
+read by name (`vu_pulse`), and the two never met: Synesthesia's analysis could
+not reach a pattern, and a pattern could not read anything but Mixxx.
+
+So there is one bus now, twenty-one named channels, and two sources that fill
+the same slots.
+
+**`AudioChannel` replaces the three-slot `VuSource`.** The names are
+Synesthesia's, lowercased — `bass`, `midhigh_hits`, `bass_presence`. `VuSource`
+survives as three aliases (`channelFor`), so `midi_input.cpp` and `vu_pulse`
+are untouched, and Mixxx's two-second average *is* `level`, the same slot
+`syn_Level` fills. That aliasing is the whole reason `audio.source` can be a
+switch rather than a rewrite.
+
+Everything is 0..1, `bpm` included — scaled on the way in, so nothing
+downstream special-cases one channel's units. `syn_*Time` and the BPMSin/Tri
+waves are deliberately not on the bus: they are unbounded or generated, and the
+hold-and-decay dead-man's switch means nothing for a value that only counts up.
+
+**A modulation is the load-bearing idea.** `mod <param> <channel> [low] [high]
+[slew]`, declared in a config or typed at the desk, and every frame the engine
+writes `low + (high - low) × bus.get(channel)` into that property. Because
+`ecore::Property` points straight at the pattern's member and fires its
+`onChanged`, a knob driven this way is indistinguishable from one turned by
+hand — so **no pattern needed changing to become audio-reactive**, and one
+written next year will not either. That is the thing worth keeping: the feature
+is a table in the runner, not a capability spread through the looks.
+
+The bag is reflected fresh each frame rather than cached, for the reason
+`PropertyBag` says not to keep one — on a state machine the object those
+pointers point into changes when the look does.
+
+**One knob has one driver.** Repointing replaces rather than stacks: two
+modulations on one property is a race whose winner is whichever ran last, and
+there is no reading of that a desk could show.
+
+**A mod survives a cue change; a knob does not.** `mods` marks one whose
+property the current look has never had as `no-param`. That is the only way the
+failure is visible — a per-frame writer cannot complain sixty times a second,
+which is also why `audio` is the one command that answers nothing.
+
+#### additive layers, and the one thing that made them work
+
+`"blend": "add"` on a layer sums with what the show put there. The guarantee
+that makes it useful is that **a layer sitting at black is invisible** — so a
+hit layer is safe to leave patched, rides over every cue rather than only the
+one written for it, and a night with no visualiser costs the hits and nothing
+else.
+
+`ecore::HSV::add` would not have given that. It blends the two hues at a flat
+50% however dark either is, so a black layer would drag the show's colour
+halfway to red while emitting no light of its own. (It had no callers anywhere
+in the tree, firmware included, so this was untested rather than relied upon; it
+is left alone.) The compositor weights the hue by each side's share of the
+light instead, which is what two lamps pointed at one surface actually do, and
+degenerates correctly at both ends.
+
+Layer `fixtures` also take a trailing `*` as a prefix match. The ring's 35
+pixels are individually named and a `"count": 10` run becomes `par_1..par_10`,
+so without it a layer over a *section* means pasting a list the device file
+already has — and re-pasting it every time the rig changes.
+
+#### slot 5, and three colours on three sections
+
+`config/mythos26.json` ships three additive layers, one per section of the room,
+in frequency order up it: `bass_hits` red on the scanner ring, `mid_hits` green
+on the obelisk, `high_hits` blue on the truss. Each runs `solid` — one colour,
+one level — with its level on a mod. Nothing in the pattern knows about audio;
+it is a colour and a number, and the bus turns the number. A fourth needs no
+new code.
+
+`pars/par_*` and not `pars/*`, because the UV par is the eleventh fixture on
+that cable and a blacklight strobing on every hi-hat is not what "blue on the
+truss" means.
+
+Slot 5 became `hits`: a near-black base so the three read as three colours over
+nothing. Not literally zero — a rig that goes fully dark on a cue is
+indistinguishable from a rig that has crashed, and the one place that matters
+is the moment you press it in front of a room. The layers are not part of that
+state and add over the other cues too; `hits` is the one that gets out of their
+way.
+
+#### mixxx or synesthesia, and what the switch deliberately does not do
+
+`"audio": {"source": ...}` is one setting and it is **enforced, not advised**:
+on `synesthesia` the runner does not wire the MIDI VU notes to the bus at all,
+so the two cannot both write `level` and leave it flickering between two
+readings of the same music. The notes still arrive and are still visible in
+`midi monitor`, so nothing has to be turned off at the Mixxx end.
+
+**It moves the beat too**, and that is the whole of what `source` means: one
+source owns the music. `syn_BPM` sets the tempo, `syn_OnBeat` sets the phase,
+and the MIDI cable is not wired to the beat clock at all in this mode. Set
+`"bpm": false` for the one supported split — analysis from the visualiser, beat
+from Mixxx's grid.
+
+I built the split version first, with the tempo left on the MIDI cable. It was
+the wrong instinct dressed up as caution. Having picked the app that is
+actually listening to the music, taking its answer for how fast that music is
+going is the consistent choice; the split is the thing that needs justifying.
+And the split is also where the two quietly fight, which is the part worth
+recording:
+
+**`markBeat` learns a tempo from every gap between beats**, folding it into the
+period at 25%. So any arrangement where one thing states a tempo and another
+keeps delivering beats converges on the *beat spacing*, within a few beats,
+whatever was stated. A rig taking `syn_BPM` while Mixxx's notes still reached
+the clock would sit at neither tempo, and would look like it was working.
+
+Cutting the cable does not fix that on its own, because **Synesthesia's own two
+channels both imply a tempo** — `syn_BPM` states it, `syn_OnBeat` implies it by
+when it fires. That is what `BeatClock::setTempoHeld` is for: while the stated
+tempo is live, beats anchor the phase and stop teaching a rate. The stated
+number is the better of the two, being smoothed inside the detector, where
+`syn_OnBeat` comes over UDP through a rate-limited binding. This was found by
+driving the two deliberately out of step — 130bpm stated, beats at 400 — and
+watching the rig report 230.
+
+Nothing happens unless the `bpm` channel is live. A channel nobody fills reads
+zero, and zero would be 50bpm; instead the clock is left alone and free-runs,
+which it is already built to do.
+
+`midi status` grew `beat_from=` (the configured owner) beside the clock's own
+`src=` (whoever last set it). They differ in exactly the case worth seeing at a
+venue: Mixxx playing and the rig not following reads as `beat_from=osc` with
+`src=internal`, which says the cable is not wired to the clock rather than that
+the cable is dead.
+
+The shipped map lost its direct `bpm`-action binding. With the tempo coming off
+the `bpm` channel, that was a second competing route to one number, which is
+the confusion `source` exists to remove.
+
+Consequence worth stating plainly: flipping that one word back to `"mixxx"` is
+a complete, working fallback. The beat returns to the cable, the eighteen
+Synesthesia-only channels go dark, the hit layers sit at black and therefore
+vanish, and every other cue runs exactly as it did.
+
+Because a config can now declare the source, `--no-osc-in` had to become a real
+override rather than merely the absence of a flag — otherwise the only way to
+run a declared show without the visualiser would be to edit the config at a
+venue.
+
+---
+
+### the bug that made the hit layers do nothing
+
+The first time this ran against a real Synesthesia, nothing moved. The chain
+was right at both ends and wrong in the middle, and the middle was a pairing of
+two decisions that are each correct alone:
+
+- a value binding **suppresses an unchanged value** — "a level holding still
+  says nothing". Correct when a binding drove a *knob*, because a knob that has
+  been set stays set. That is what these bindings did before the bus existed.
+- the bus **fades any channel nobody has restated in 0.8s**. A dead-man's
+  switch: without it a dropped link leaves the rig lit at whatever the music
+  was doing when it went.
+
+Put together with no keepalive, they delete the value. The channel is
+suppressed at the python end, goes stale at the C++ end, and the look driven
+from it fades to nothing while the music is still playing.
+
+The fix is `Binding.max_interval`, default 0.2s — the longest a binding may
+stay silent about a value that is not changing. Against the bus's 0.35s hold
+that leaves room for one keepalive to be lost, which matters because nothing
+retransmits UDP. A still channel now costs five lines a second instead of
+thirty, rather than one and then none.
+
+**Why the tests missed it.** The end-to-end test fed the bus with
+`show.command("audio ...")` in a loop — which is not the path a set uses. It
+proved the engine half and skipped the half that broke. `TheBindingKeepsTheBusAlive`
+goes through the binding, and the old `test_a_level_that_holds_still_says_nothing`
+became `..._says_little`, because it had been asserting exactly the behaviour
+that was wrong.
+
+Worth keeping as a shape: the failure was not in either component, it was in
+the seam between one written for a stateless consumer and one written as a
+stateful sink. Neither file was wrong on its own reading.
+
+### the osc panel
+
+`osc-watch` cannot run while a show holds the port, which is exactly when the
+question gets asked — so the viewer grew a band for it (`osc`, or `[o]`). It
+shows every address arriving with what the map does with it, everything going
+out, and the last `/scenes/{name}` the app announced.
+
+Two decisions in it:
+
+**Rows are discovered, never listed.** Nothing in the panel knows what
+addresses exist, so a build that nests its uniforms differently or a scene
+publishing controls of its own appears with no code edited. A list written from
+the documentation would have hidden the one case worth seeing, since the
+addresses are not in the documentation at all.
+
+**It never says "connected".** Over UDP there is no such thing, and `osc.py`
+already said so in a comment explaining why `SynesthesiaLink` offers no
+`is_connected`. So the panel reports three separable facts — when something
+last arrived, whether the socket took our sends, and whether the app has
+announced a scene — and a rig sending happily to an app that is not listening
+reads as "out: sending, in: nothing heard". That is the failure that costs an
+evening, and a single green lamp would have hidden it.
+
+`SynesthesiaLink._send` now takes an address and values rather than a finished
+packet, so there is one place that knows *what* is going out as well as that
+something is. `on_send` hangs off it, fenced, because an observer on a
+diagnostic on a decoration must not be able to stop a send.
+
+`osc-watch` gained the same check offline, in both directions: which binding
+takes each arriving address, and which enabled bindings matched nothing that
+arrived. The second is the one that bites — a binding aimed at an address this
+build does not send is invisible from the rig, because it looks exactly like a
+visualiser that is switched off.
+
+---
+
+### the audio meter, and two things it caught
+
+`pattern audio`: one cue per channel of the bus, built from the channel table
+rather than a list beside it. An instrument rather than a look - the analysis
+wire has several failures that all present as "the lights are not moving", and
+one that presents as nothing at all, which is a uniform the app publishes and
+never fills.
+
+Three states drawn apart, and the third is the reason it exists: a value
+(brightness, in the family's colour), a peak (held above it and decaying,
+because a transient is two frames wide and flickers too fast to size), and
+**not wired** - a dim amber breath that no real reading looks like. A channel
+nobody is filling and a channel sitting at zero are the same number and
+completely different problems, and drawing both as black would have made this
+useless for its one job.
+
+Not spatial. A meter filling up the rig would read as a different number on
+each device: the obelisk keeps its own 0..43 rather than being squashed into
+the show's 0..1, the ring is in literal stage coordinates, the truss is offset
+past both.
+
+**It found the layers should never have been in the show.** The first
+measurement said every channel was moving, including `high_hits`, which is flat
+zero - the three additive hit layers were adding red, green and blue over the
+meter. My first fix was to have the surface switch them off on the way in,
+which was treating the symptom: on the rig it showed up as the obelisk locked
+yellow-green and jittering on *every* cue, not just the meter.
+
+The layers rode over everything. The argument for leaving them patched was the
+invisibility guarantee - a layer at black adds nothing - and that holds exactly
+until the channels are being fed. A permanent additive overlay across three
+devices is an implicit global effect, and "invisible while the input is dead"
+is not a property to design around.
+
+So they moved to `config/audio_layers_test.json`, a bench rig that is the only
+config declaring any layers, and the show carries none. The capability -
+`blend: add`, mods off the bus, `device/*` globs - is unchanged and still
+tested; only the patching went. slot_5 went back to a placeholder with them,
+since the `hits` cue was a near-black base that existed only to be added to.
+
+**It found a race in the wrapper.** `ShowController.command()` drained the
+reply queue on every call - including `expect_reply=False`, which is how the
+`audio` lines go out, a couple of hundred a second off the OSC listener's
+thread. So any command waiting for a reply had it thrown away by traffic with
+nothing to do with it, and the symptom was
+`no reply to 'layer hit_obelisk mod level off' within 5.0s` from a command that
+had actually worked. Streamed lines no longer touch the queue, and replying
+commands take a lock so a streamed write cannot land between a drain and its
+read. This was live on the rig, not in a test, and it would have shown up as a
+pad occasionally not firing during a set.
+
+Making the meter the config's opening pattern broke thirty-nine tests, all of
+which had been inheriting the machine under test from whatever the shared
+config happened to open on. `ShowController` grew `pattern` / `state` kwargs -
+which the executable and the viewer already had - and those tests now say which
+machine they mean. The viewer passes them down too, so the window opens on the
+look asked for rather than switching to it after start, which used to show the
+config's look for a beat first.
+
+---
+
 ## Commits, in order
 
 | commit | what |

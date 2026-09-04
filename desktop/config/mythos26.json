@@ -21,9 +21,21 @@
   // first thing here that reads the beat. Its space is x flat, y running 0..1
   // from the first fixture to the last - which is what the placements below are
   // fitting the two devices into.
+  // FOR NOW: the audio meter, not the show.
+  //
+  // One cue per channel of the audio bus, so the analysis can be read off the
+  // rig from across the room instead of off a terminal - see
+  // edmx/audio_meter.h. It is an instrument, not a look, and it is here as the
+  // opening pattern only while the Synesthesia wire is being trusted.
+  //
+  // Put the show back by changing these two lines to mythos26 / beat_pulse, or
+  // at the surface without editing anything: the launchpad's mythos26 tab
+  // (cc 89) sends `pattern mythos26` and restores the three hit layers, which
+  // the audio tab (cc 29) switches off so the meter is not being read through
+  // them.
   "pattern": {
-    "name": "mythos26",
-    "state": "beat_pulse"
+    "name": "audio",
+    "state": "level"
   },
 
   // Tempo in, from Mixxx.
@@ -112,6 +124,71 @@
     "beat_channel": 1,
     "bpm": 128,
     "free_run": true
+  },
+
+  // The music, from Synesthesia. This is the source for this show: the levels,
+  // the transients, the presence *and* the beat - syn_BPM for the tempo,
+  // syn_OnBeat for the phase.
+  //
+  // One source rather than two on purpose. Having picked the app that is
+  // actually listening to the music, taking its answer for where the beat is
+  // as well is the consistent choice - and a split is also the arrangement
+  // where the two quietly fight, because the beat clock learns a tempo from
+  // the gaps between the beats it is given. So with "bpm" on below, the MIDI
+  // block above no longer reaches the beat clock at all. Its port is still
+  // opened and `midi monitor on` still prints what is on it, so this is
+  // visible rather than mysterious, and nothing has to be switched off at the
+  // Mixxx end. `midi status` says beat_from=osc.
+  //
+  // Setup, once:
+  //
+  //   1. Synesthesia: Settings > OSC. Tick "Output Audio Variables". Set the
+  //      output address to this machine (127.0.0.1 if they are the same one)
+  //      and the output port to the "port" below.
+  //   2. Check what it actually sends, because the addresses are not in the
+  //      app's documentation and changed once already:
+  //
+  //        python -m eclipse_dmx osc-watch --port 7000
+  //
+  //      You should see forty-odd addresses a frame. If nothing arrives, it is
+  //      the app's output port or a firewall, and no amount of editing here
+  //      will help.
+  //   3. Run this config. `channels` at the desk shows what is landing on the
+  //      bus, and `mods` shows what each channel is driving.
+  //
+  // "source" is the one switch, and it is enforced rather than advisory:
+  //
+  //   "mixxx"        the VU notes on the MIDI cable fill level / level_instant
+  //                  / level_meter, the way they always did, and the beat is
+  //                  Mixxx's grid. The other eighteen channels stay dark, so
+  //                  the hit layers below sit at black - which, being
+  //                  additive, means they vanish rather than break. The show
+  //                  runs exactly as it did before any of this existed.
+  //   "synesthesia"  the app fills all twenty-one and owns the beat. The MIDI
+  //                  VU notes and, with "bpm" on, the MIDI beat notes are not
+  //                  wired, so the two cannot both write the same thing.
+  //   "none"         nothing fills the bus; the show keeps its own time.
+  //
+  // So flipping this one word back to "mixxx" is a complete, working fallback
+  // for the night Synesthesia will not start: the beat returns to the cable,
+  // the hit layers go dark, and nothing else changes. `--no-osc-in` on the
+  // launcher does the same thing without editing anything.
+  "audio": {
+    "source": "synesthesia",
+    "port": 7000,
+
+    // The beat too, not just the analysis. syn_BPM sets the tempo and
+    // syn_OnBeat sets the phase, and the MIDI cable stops reaching the clock.
+    //
+    // Turn this off for the one supported split - analysis from Synesthesia,
+    // beat from Mixxx's grid - which is worth knowing about if a set is ever
+    // mixed from tracks whose tempo the detector struggles with.
+    "bpm": true,
+
+    // Which bindings fill the bus. Relative to this file; the default is
+    // oscmaps/synesthesia.json beside it, which is this line - written out so
+    // it is obvious there is a file to edit.
+    "map": "oscmaps/synesthesia.json"
   },
 
   "devices": [

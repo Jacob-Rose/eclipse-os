@@ -2,14 +2,10 @@
   "version": 1,
   "bindings": [
     {
-      "label": "level -> master: the room breathes with the track",
+      "label": "/audio/level/all -> level",
       "trigger": {
-        "pattern": "*level*",
-        "exclude": [
-          "*bass*",
-          "*mid*",
-          "*high*"
-        ],
+        "pattern": "*/level/all",
+        "exclude": [],
         "argument": 0
       },
       "mode": "value",
@@ -20,19 +16,21 @@
       },
       "limit": {
         "interval": 0.03333333333333333,
-        "change": 0.02
+        "change": 0.02,
+        "keepalive": 0.2
       },
-      "action": "master",
+      "action": "audio",
       "params": {
-        "low": 0.55,
+        "channel": "level",
+        "low": 0.0,
         "high": 1.0
       },
       "enabled": true
     },
     {
-      "label": "bass -> floor: the rig glows under the beat flashes",
+      "label": "/audio/level/bass -> bass",
       "trigger": {
-        "pattern": "*bass*level*",
+        "pattern": "*/level/bass",
         "exclude": [],
         "argument": 0
       },
@@ -44,49 +42,21 @@
       },
       "limit": {
         "interval": 0.03333333333333333,
-        "change": 0.02
+        "change": 0.02,
+        "keepalive": 0.2
       },
-      "action": "param",
+      "action": "audio",
       "params": {
-        "name": "floor",
+        "channel": "bass",
         "low": 0.0,
-        "high": 0.35,
-        "layer": ""
+        "high": 1.0
       },
       "enabled": true
     },
     {
-      "label": "high -> intensity: hats and cymbals sharpen the hit",
+      "label": "/audio/level/mid -> mid",
       "trigger": {
-        "pattern": "*high*level*",
-        "exclude": [
-          "*midhigh*"
-        ],
-        "argument": 0
-      },
-      "mode": "value",
-      "range": {
-        "low": 0.0,
-        "high": 1.0,
-        "threshold": 0.5
-      },
-      "limit": {
-        "interval": 0.03333333333333333,
-        "change": 0.02
-      },
-      "action": "param",
-      "params": {
-        "name": "intensity",
-        "low": 0.55,
-        "high": 1.0,
-        "layer": ""
-      },
-      "enabled": true
-    },
-    {
-      "label": "bass presence -> vu_pulse's red wash (that look only)",
-      "trigger": {
-        "pattern": "*bass*presence*",
+        "pattern": "*/level/mid",
         "exclude": [],
         "argument": 0
       },
@@ -98,27 +68,360 @@
       },
       "limit": {
         "interval": 0.03333333333333333,
-        "change": 0.02
+        "change": 0.02,
+        "keepalive": 0.2
       },
-      "action": "param",
+      "action": "audio",
       "params": {
-        "name": "base_gain",
-        "low": 0.3,
-        "high": 1.0,
-        "layer": ""
+        "channel": "mid",
+        "low": 0.0,
+        "high": 1.0
       },
-      "enabled": false
+      "enabled": true
     },
     {
-      "label": "syn_BPM -> the rig's clock (OFF: Mixxx is the tempo source)",
+      "label": "/audio/level/midhigh -> midhigh",
       "trigger": {
-        "pattern": "*bpm",
-        "exclude": [
-          "*confidence*",
-          "*sin*",
-          "*tri*",
-          "*twitcher*"
-        ],
+        "pattern": "*/level/midhigh",
+        "exclude": [],
+        "argument": 0
+      },
+      "mode": "value",
+      "range": {
+        "low": 0.0,
+        "high": 1.0,
+        "threshold": 0.5
+      },
+      "limit": {
+        "interval": 0.03333333333333333,
+        "change": 0.02,
+        "keepalive": 0.2
+      },
+      "action": "audio",
+      "params": {
+        "channel": "midhigh",
+        "low": 0.0,
+        "high": 1.0
+      },
+      "enabled": true
+    },
+    {
+      "label": "/audio/level/high -> high",
+      "trigger": {
+        "pattern": "*/level/high",
+        "exclude": [],
+        "argument": 0
+      },
+      "mode": "value",
+      "range": {
+        "low": 0.0,
+        "high": 1.0,
+        "threshold": 0.5
+      },
+      "limit": {
+        "interval": 0.03333333333333333,
+        "change": 0.02,
+        "keepalive": 0.2
+      },
+      "action": "audio",
+      "params": {
+        "channel": "high",
+        "low": 0.0,
+        "high": 1.0
+      },
+      "enabled": true
+    },
+    {
+      "label": "/audio/hits/all -> hits",
+      "trigger": {
+        "pattern": "*/hits/all",
+        "exclude": [],
+        "argument": 0
+      },
+      "mode": "value",
+      "range": {
+        "low": 0.0,
+        "high": 1.0,
+        "threshold": 0.5
+      },
+      "limit": {
+        "interval": 0.03333333333333333,
+        "change": 0.01,
+        "keepalive": 0.2
+      },
+      "action": "audio",
+      "params": {
+        "channel": "hits",
+        "low": 0.0,
+        "high": 1.0
+      },
+      "enabled": true
+    },
+    {
+      "label": "/audio/hits/bass -> bass_hits",
+      "trigger": {
+        "pattern": "*/hits/bass",
+        "exclude": [],
+        "argument": 0
+      },
+      "mode": "value",
+      "range": {
+        "low": 0.0,
+        "high": 1.0,
+        "threshold": 0.5
+      },
+      "limit": {
+        "interval": 0.03333333333333333,
+        "change": 0.01,
+        "keepalive": 0.2
+      },
+      "action": "audio",
+      "params": {
+        "channel": "bass_hits",
+        "low": 0.0,
+        "high": 1.0
+      },
+      "enabled": true
+    },
+    {
+      "label": "/audio/hits/mid -> mid_hits",
+      "trigger": {
+        "pattern": "*/hits/mid",
+        "exclude": [],
+        "argument": 0
+      },
+      "mode": "value",
+      "range": {
+        "low": 0.0,
+        "high": 1.0,
+        "threshold": 0.5
+      },
+      "limit": {
+        "interval": 0.03333333333333333,
+        "change": 0.01,
+        "keepalive": 0.2
+      },
+      "action": "audio",
+      "params": {
+        "channel": "mid_hits",
+        "low": 0.0,
+        "high": 1.0
+      },
+      "enabled": true
+    },
+    {
+      "label": "/audio/hits/midhigh -> midhigh_hits",
+      "trigger": {
+        "pattern": "*/hits/midhigh",
+        "exclude": [],
+        "argument": 0
+      },
+      "mode": "value",
+      "range": {
+        "low": 0.0,
+        "high": 1.0,
+        "threshold": 0.5
+      },
+      "limit": {
+        "interval": 0.03333333333333333,
+        "change": 0.01,
+        "keepalive": 0.2
+      },
+      "action": "audio",
+      "params": {
+        "channel": "midhigh_hits",
+        "low": 0.0,
+        "high": 1.0
+      },
+      "enabled": true
+    },
+    {
+      "label": "/audio/hits/high -> high_hits",
+      "trigger": {
+        "pattern": "*/hits/high",
+        "exclude": [],
+        "argument": 0
+      },
+      "mode": "value",
+      "range": {
+        "low": 0.0,
+        "high": 1.0,
+        "threshold": 0.5
+      },
+      "limit": {
+        "interval": 0.03333333333333333,
+        "change": 0.01,
+        "keepalive": 0.2
+      },
+      "action": "audio",
+      "params": {
+        "channel": "high_hits",
+        "low": 0.0,
+        "high": 1.0
+      },
+      "enabled": true
+    },
+    {
+      "label": "/audio/presence/all -> presence",
+      "trigger": {
+        "pattern": "*/presence/all",
+        "exclude": [],
+        "argument": 0
+      },
+      "mode": "value",
+      "range": {
+        "low": 0.0,
+        "high": 1.0,
+        "threshold": 0.5
+      },
+      "limit": {
+        "interval": 0.03333333333333333,
+        "change": 0.03,
+        "keepalive": 0.2
+      },
+      "action": "audio",
+      "params": {
+        "channel": "presence",
+        "low": 0.0,
+        "high": 1.0
+      },
+      "enabled": true
+    },
+    {
+      "label": "/audio/presence/bass -> bass_presence",
+      "trigger": {
+        "pattern": "*/presence/bass",
+        "exclude": [],
+        "argument": 0
+      },
+      "mode": "value",
+      "range": {
+        "low": 0.0,
+        "high": 1.0,
+        "threshold": 0.5
+      },
+      "limit": {
+        "interval": 0.03333333333333333,
+        "change": 0.03,
+        "keepalive": 0.2
+      },
+      "action": "audio",
+      "params": {
+        "channel": "bass_presence",
+        "low": 0.0,
+        "high": 1.0
+      },
+      "enabled": true
+    },
+    {
+      "label": "/audio/presence/mid -> mid_presence",
+      "trigger": {
+        "pattern": "*/presence/mid",
+        "exclude": [],
+        "argument": 0
+      },
+      "mode": "value",
+      "range": {
+        "low": 0.0,
+        "high": 1.0,
+        "threshold": 0.5
+      },
+      "limit": {
+        "interval": 0.03333333333333333,
+        "change": 0.03,
+        "keepalive": 0.2
+      },
+      "action": "audio",
+      "params": {
+        "channel": "mid_presence",
+        "low": 0.0,
+        "high": 1.0
+      },
+      "enabled": true
+    },
+    {
+      "label": "/audio/presence/midhigh -> midhigh_presence",
+      "trigger": {
+        "pattern": "*/presence/midhigh",
+        "exclude": [],
+        "argument": 0
+      },
+      "mode": "value",
+      "range": {
+        "low": 0.0,
+        "high": 1.0,
+        "threshold": 0.5
+      },
+      "limit": {
+        "interval": 0.03333333333333333,
+        "change": 0.03,
+        "keepalive": 0.2
+      },
+      "action": "audio",
+      "params": {
+        "channel": "midhigh_presence",
+        "low": 0.0,
+        "high": 1.0
+      },
+      "enabled": true
+    },
+    {
+      "label": "/audio/presence/high -> high_presence",
+      "trigger": {
+        "pattern": "*/presence/high",
+        "exclude": [],
+        "argument": 0
+      },
+      "mode": "value",
+      "range": {
+        "low": 0.0,
+        "high": 1.0,
+        "threshold": 0.5
+      },
+      "limit": {
+        "interval": 0.03333333333333333,
+        "change": 0.03,
+        "keepalive": 0.2
+      },
+      "action": "audio",
+      "params": {
+        "channel": "high_presence",
+        "low": 0.0,
+        "high": 1.0
+      },
+      "enabled": true
+    },
+    {
+      "label": "/audio/beat/onbeat -> beat",
+      "trigger": {
+        "pattern": "*/beat/onbeat",
+        "exclude": [],
+        "argument": 0
+      },
+      "mode": "value",
+      "range": {
+        "low": 0.0,
+        "high": 1.0,
+        "threshold": 0.5
+      },
+      "limit": {
+        "interval": 0.03333333333333333,
+        "change": 0.01,
+        "keepalive": 0.2
+      },
+      "action": "audio",
+      "params": {
+        "channel": "beat",
+        "low": 0.0,
+        "high": 1.0
+      },
+      "enabled": true
+    },
+    {
+      "label": "/audio/bpm/bpm -> bpm (scaled 50..220 into 0..1)",
+      "trigger": {
+        "pattern": "*/bpm/bpm",
+        "exclude": [],
         "argument": 0
       },
       "mode": "value",
@@ -128,20 +431,74 @@
         "threshold": 0.5
       },
       "limit": {
-        "interval": 2.0,
-        "change": 0.01
+        "interval": 0.25,
+        "change": 0.005,
+        "keepalive": 0.2
       },
-      "action": "bpm",
+      "action": "audio",
       "params": {
-        "low": 50.0,
-        "high": 220.0
+        "channel": "bpm",
+        "low": 0.0,
+        "high": 1.0
       },
-      "enabled": false
+      "enabled": true
+    },
+    {
+      "label": "/audio/bpm/bpmconfidence -> bpm_confidence",
+      "trigger": {
+        "pattern": "*/bpm/bpmconfidence",
+        "exclude": [],
+        "argument": 0
+      },
+      "mode": "value",
+      "range": {
+        "low": 0.0,
+        "high": 1.0,
+        "threshold": 0.5
+      },
+      "limit": {
+        "interval": 0.25,
+        "change": 0.02,
+        "keepalive": 0.2
+      },
+      "action": "audio",
+      "params": {
+        "channel": "bpm_confidence",
+        "low": 0.0,
+        "high": 1.0
+      },
+      "enabled": true
+    },
+    {
+      "label": "/audio/energy/intensity -> intensity",
+      "trigger": {
+        "pattern": "*/energy/intensity",
+        "exclude": [],
+        "argument": 0
+      },
+      "mode": "value",
+      "range": {
+        "low": 0.0,
+        "high": 1.0,
+        "threshold": 0.5
+      },
+      "limit": {
+        "interval": 0.03333333333333333,
+        "change": 0.02,
+        "keepalive": 0.2
+      },
+      "action": "audio",
+      "params": {
+        "channel": "intensity",
+        "low": 0.0,
+        "high": 1.0
+      },
+      "enabled": true
     },
     {
       "label": "onbeat -> tv_static as a stab (OFF: an example of a trigger)",
       "trigger": {
-        "pattern": "*onbeat*",
+        "pattern": "*/beat/onbeat",
         "exclude": [],
         "argument": 0
       },
@@ -153,7 +510,8 @@
       },
       "limit": {
         "interval": 0.03333333333333333,
-        "change": 0.01
+        "change": 0.01,
+        "keepalive": 0.0
       },
       "action": "state",
       "params": {

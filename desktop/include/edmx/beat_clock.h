@@ -65,6 +65,7 @@ namespace edmx
         MidiClock, ///< 0xF8 realtime clock, 24 per quarter note
         MidiNote,  ///< a note-on per beat
         Manual,    ///< someone sent `beat`, i.e. tapped it in
+        Osc,       ///< the visualiser's detector, off the audio bus
     };
 
     const char* describeBeatSource(BeatSource source);
@@ -120,6 +121,24 @@ namespace edmx
         void setBpm(float bpm, BeatSource source, double when);
         void setBpm(float bpm, BeatSource source = BeatSource::Internal);
         float getBpm() const;
+
+        /// The tempo is being set explicitly: beats anchor the phase, but the
+        /// gaps between them stop teaching a tempo.
+        ///
+        /// Set while syn_BPM is live. It is not about two *sources* - by then
+        /// the MIDI cable has already been cut - but about two channels of one
+        /// source that both imply a tempo: syn_BPM states it, and syn_OnBeat
+        /// implies it by when it fires. Without this, markBeat() folds every
+        /// gap into the period at 25% and the beat spacing wins within a few
+        /// beats, which would leave `audio.bpm` decorative and the rig running
+        /// at whatever the edge jitter averaged to.
+        ///
+        /// The stated number is the better of the two: it is smoothed upstream
+        /// by the detector, where syn_OnBeat arrives over UDP through a
+        /// rate-limited binding. So the tempo is taken from syn_BPM and the
+        /// phase - the half that genuinely needs an event - from syn_OnBeat.
+        void setTempoHeld(bool held);
+        bool isTempoHeld() const;
 
         /// A beat message landed at `when` (a nowSeconds() value). Re-anchors
         /// the grid, learns the tempo, and moves the count on by however many
@@ -261,6 +280,11 @@ namespace edmx
 
         std::atomic<double> lastExternal{-1.0};
         std::atomic<int> source{static_cast<int>(BeatSource::Internal)};
+
+        /// See setTempoHeld(). Written by the render thread once a frame and
+        /// read wherever a beat is marked, so atomic like everything else.
+        std::atomic<bool> tempoHeld{false};
+
         std::atomic<bool> freeRun{true};
         std::atomic<unsigned long long> externalBeats{0};
     };
@@ -301,11 +325,95 @@ namespace edmx
 
     const char* describeVuSource(VuSource source);
 
-
-    /// How loud the music is, 0..1, on each of the sources above.
+    /// One analysis value on the audio bus, by name.
     ///
-    /// Fed from the VU messages on the MIDI cable — the only thing on there
-    /// that says anything about the *sound* as opposed to the grid.
+    /// The bus is the one place a number about the *sound* lives, and these are
+    /// its slots. The names are Synesthesia's, lowercased and un-camelled —
+    /// `syn_BassLevel` is `bass`, `syn_MidHighHits` is `midhigh_hits` — because
+    /// that app publishes the richest set and inventing a second vocabulary for
+    /// the same four bands would mean translating twice.
+    ///
+    /// Which source filled a channel is deliberately not recorded. Mixxx's VU
+    /// notes land on `level` / `level_instant` / `level_meter` and Synesthesia's
+    /// uniforms land on all of them; a look asks for `bass` and gets whatever is
+    /// wired tonight. That is the whole point of putting a bus here rather than
+    /// letting patterns read a MIDI cable.
+    ///
+    /// Everything is 0..1, including `bpm` — which arrives already scaled
+    /// across its 50..220 by whatever fed it, because a bus that held one value
+    /// in its own units would make every reader special-case it. A modulation
+    /// maps it back out into the knob's range; see Modulation in main.cpp.
+    ///
+    /// Deliberately absent: Synesthesia's `syn_*Time` clocks and its BPMSin /
+    /// BPMTri waves. They are unbounded or generated, and the hold-and-decay
+    /// below means nothing for a value that only counts up. A pattern that
+    /// wants a beat-rate sine has a clock of its own already.
+    enum class AudioChannel
+    {
+        // -- levels: how loud, smoothed. The backdrop numbers.
+        Level,          ///< syn_Level        - the whole spectrum
+        Bass,           ///< syn_BassLevel
+        Mid,            ///< syn_MidLevel
+        MidHigh,        ///< syn_MidHighLevel
+        High,           ///< syn_HighLevel
+
+        // -- hits: isolated transients, spiking. The drum numbers.
+        Hits,           ///< syn_Hits
+        BassHits,       ///< syn_BassHits
+        MidHits,        ///< syn_MidHits
+        MidHighHits,    ///< syn_MidHighHits
+        HighHits,       ///< syn_HighHits
+
+        // -- presence: how much of the band is there at all, slower than level.
+        Presence,       ///< syn_Presence
+        BassPresence,   ///< syn_BassPresence
+        MidPresence,    ///< syn_MidPresence
+        MidHighPresence,///< syn_MidHighPresence
+        HighPresence,   ///< syn_HighPresence
+
+        // -- the grid, and the shape of the track.
+        Beat,           ///< syn_OnBeat        - spikes on the detected beat
+        Bpm,            ///< syn_BPM           - scaled across 50..220
+        BpmConfidence,  ///< syn_BPMConfidence - how sure the detector is
+        Intensity,      ///< syn_Intensity     - accumulated song intensity
+
+        // -- Mixxx's other two meters. No Synesthesia equivalent; `level` is
+        //    the one both apps fill, so a config that switches source keeps
+        //    working and only these two go quiet.
+        LevelInstant,   ///< Mixxx note 64 - peaks on every kick
+        LevelMeter,     ///< Mixxx note 69 - the quantised meter bar
+
+        Count           ///< not a channel; the size of the bus
+    };
+
+    constexpr int kAudioChannelCount = static_cast<int>(AudioChannel::Count);
+
+    /// `bass_hits`. Stable: it is what a config and the `mod` command say.
+    const char* audioChannelName(AudioChannel channel);
+
+    /// A name back to its channel. False for a name that is not one, which is
+    /// a typo in a config and must be reported rather than silently bound to
+    /// channel zero.
+    bool findAudioChannel(const std::string& name, AudioChannel& outChannel);
+
+    /// The channel a VU source is. Mixxx's two-second average *is* `level` —
+    /// the same slot Synesthesia's `syn_Level` fills — which is what makes
+    /// `audio.source` a switch rather than a rewrite: the looks reading a
+    /// level do not learn that the cable changed.
+    constexpr AudioChannel channelFor(VuSource source)
+    {
+        return (source == VuSource::Instant) ? AudioChannel::LevelInstant
+             : (source == VuSource::Meter)   ? AudioChannel::LevelMeter
+             :                                 AudioChannel::Level;
+    }
+
+
+    /// The audio bus: every analysis value the rig knows, 0..1, by channel.
+    ///
+    /// Fed by whatever is wired — Mixxx's VU notes off the MIDI cable, or
+    /// Synesthesia's audio uniforms arriving as `audio <channel> <value>` on
+    /// the protocol. Read by modulations, which drive ordinary pattern knobs
+    /// from it, and by the couple of looks that read a level directly.
     ///
     /// A reading is held flat until it is old enough to be suspect, then fades
     /// out. The fade is not an effect, it is a dead-man's switch: a level held
@@ -329,23 +437,50 @@ namespace edmx
         static constexpr double kStaleAfter = 0.8;
 
         /// A new reading, 0..1, taken at `when`.
-        void set(VuSource source, float level, double when);
+        void set(AudioChannel channel, float level, double when);
 
         /// The level as of `now`, with the hold and staleness decay applied.
-        float get(VuSource source, double now) const;
+        float get(AudioChannel channel, double now) const;
 
-        /// Whether that source has been heard from recently enough to trust.
-        bool isLive(VuSource source, double now) const;
+        /// Whether that channel has been heard from recently enough to trust.
+        bool isLive(AudioChannel channel, double now) const;
 
         /// Readings taken, for status and for telling "silent" apart from
         /// "not wired up".
-        unsigned long long getUpdates(VuSource source) const;
+        unsigned long long getUpdates(AudioChannel channel) const;
 
-        /// True when any source is reporting.
+        /// The VU sources, which are three of the channels under their older
+        /// names. Kept so the MIDI path and the looks written against it read
+        /// the way they did; see channelFor().
+        void set(VuSource source, float level, double when)
+        {
+            set(channelFor(source), level, when);
+        }
+        float get(VuSource source, double now) const
+        {
+            return get(channelFor(source), now);
+        }
+        bool isLive(VuSource source, double now) const
+        {
+            return isLive(channelFor(source), now);
+        }
+        unsigned long long getUpdates(VuSource source) const
+        {
+            return getUpdates(channelFor(source));
+        }
+
+        /// True when any channel is reporting.
         bool isAnyLive(double now) const;
 
-        /// `avg=0.42 inst=0.61 meter=0.33`, for status.
+        /// `avg=0.42 inst=0.61 meter=0.33`, for the MIDI status line. The three
+        /// VU sources only, because that line is about the MIDI cable.
         std::string describe(double now) const;
+
+        /// `bass=0.71 bass_hits=0.930 level=0.44`, for the audio status line:
+        /// every channel that is live right now and nothing else. A bus with
+        /// twenty-one slots mostly reads as "these four are wired", and the
+        /// empty ones are noise on a status line rather than information.
+        std::string describeLive(double now) const;
 
     private:
         struct Reading
@@ -355,7 +490,7 @@ namespace edmx
             std::atomic<unsigned long long> updates{0};
         };
 
-        Reading readings[kVuSourceCount];
+        Reading readings[kAudioChannelCount];
     };
 
     /// The process's level meter. Same reasoning as sharedBeatClock().

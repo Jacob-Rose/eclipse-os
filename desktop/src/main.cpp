@@ -219,6 +219,121 @@ namespace
         elink::RelicLink link;
     };
 
+    /// What the bus's `bpm` channel's 0..1 spans. Synesthesia's syn_BPM is
+    /// documented as 50..220 and the shipped OSC map scales it across exactly
+    /// that, so these two numbers and that binding's `range` are one fact
+    /// written twice - which is why they say so in both places.
+    constexpr float kBusBpmLow = 50.0f;
+    constexpr float kBusBpmHigh = 220.0f;
+
+    /// The beat, off the audio bus, when the visualiser is the source.
+    ///
+    /// `audio.source: synesthesia` with `audio.bpm` on. Having picked the
+    /// visualiser as the thing that listens to the music, the whole grid comes
+    /// from it: syn_BPM for the tempo, syn_OnBeat for the phase. The MIDI
+    /// cable is not wired to the clock in this mode (see applyMidiConfig), so
+    /// there is no second writer and nothing to arbitrate.
+    ///
+    /// Held state rather than a pure function because the phase needs an edge:
+    /// syn_OnBeat is a *level* that spikes on each detected beat, arriving at
+    /// frame rate, and taking every frame above the threshold as a beat would
+    /// count one beat five times.
+    struct BusClock
+    {
+        float lastBpmSent{-1.0f};
+        bool wasOnBeat{false};
+
+        /// The level syn_OnBeat has to cross for a beat to have happened.
+        /// High, because the uniform spikes to 1 and decays: a low threshold
+        /// catches the tail of the previous beat on the way down as well.
+        static constexpr float kBeatThreshold = 0.6f;
+
+        void tick(const AudioConfig& audio, BeatClock& clock,
+                  const AudioLevel& bus, double now)
+        {
+            if (!audio.isSynesthesia() || !audio.bpm)
+            {
+                return;
+            }
+
+            // -- the tempo --------------------------------------------------
+            // Only while the channel is live. A channel nobody is filling
+            // reads zero, and zero here would mean 50bpm; leaving the clock
+            // alone instead means a link that never came up or dropped
+            // mid-set costs the tempo nothing - free-run keeps the last one,
+            // which is what it is for.
+            const bool statingTempo = bus.isLive(AudioChannel::Bpm, now);
+
+            // While we are stating it, beats stop implying it. Both channels
+            // come from the same detector and should agree, but syn_OnBeat
+            // arrives over UDP through a rate-limited binding and syn_BPM is
+            // smoothed upstream - so left to fight, the jittery one wins
+            // within a few beats. See BeatClock::setTempoHeld.
+            clock.setTempoHeld(statingTempo);
+
+            if (statingTempo)
+            {
+                // The bus is 0..1 everywhere - see AudioChannel - so this is
+                // the one place that knows the channel means 50..220. The OSC
+                // binding scaled it on the way in; this is that map run back.
+                const float bpm = kBusBpmLow + ((kBusBpmHigh - kBusBpmLow)
+                                                * bus.get(AudioChannel::Bpm, now));
+
+                // setBpm holds the phase but still rewrites the period, and
+                // the channel is quantised by its binding's change threshold,
+                // so an unchanged reading is not worth restating every frame.
+                if (std::fabs(bpm - lastBpmSent) >= 0.05f)
+                {
+                    clock.setBpm(bpm, BeatSource::Osc, now);
+                    lastBpmSent = bpm;
+                }
+            }
+
+            // -- the phase --------------------------------------------------
+            // The rising edge of syn_OnBeat, which is the only thing on the
+            // bus that says *when* rather than how much.
+            if (!bus.isLive(AudioChannel::Beat, now))
+            {
+                wasOnBeat = false;   // nothing arriving; do not fire on the
+                return;              // first message after a gap
+            }
+
+            const bool onBeat = bus.get(AudioChannel::Beat, now) >= kBeatThreshold;
+            if (onBeat && !wasOnBeat)
+            {
+                clock.markBeat(now, BeatSource::Osc);
+            }
+            wasOnBeat = onBeat;
+        }
+    };
+
+    /// One fixture of an additive layer, over what the show put there.
+    ///
+    /// Not ecore::HSV::add, which blends the two hues at a flat 50% however
+    /// dark either is. That breaks the one guarantee that makes an always-on
+    /// hit layer safe to leave patched: a layer sitting at black must be
+    /// invisible, and under a flat hue blend it would drag the show's colour
+    /// halfway to red while emitting no light of its own.
+    ///
+    /// So the hue is weighted by each side's share of the light, which is what
+    /// two lamps pointed at one surface actually do: at nothing from the layer
+    /// the show is untouched, at nothing from the show the layer is the whole
+    /// colour, and in between the mix follows the brightness.
+    ecore::HSV addOver(const ecore::HSV& base, const ecore::HSV& over)
+    {
+        const float baseValue = base.getValFloat();
+        const float overValue = over.getValFloat();
+        const float sum = baseValue + overValue;
+        if (sum <= 0.0f)
+        {
+            return base;   // both dark; nothing to weight by
+        }
+
+        ecore::HSV out = ecore::HSV::blend(base, over, overValue / sum);
+        out.setBrightnessAlpha(std::min(sum, 1.0f));
+        return out;
+    }
+
     /// Drives the relic's end of the link with a synthesised desk and checks
     /// what lands on the strip. Returns 0 on success.
     ///
@@ -1156,6 +1271,124 @@ namespace
             check("vu.unfed_is_zero", untouched.get(VuSource::Instant, 30.0), 0.0, 0.0);
         }
 
+        // ---- the audio bus --------------------------------------------------
+        {
+            // Every channel's name round-trips. The names are what a config, an
+            // OSC map and the `mod` command all spell, and a table that has
+            // drifted from the enum binds a mod to the wrong channel silently.
+            bool allNamed = true;
+            for (int index = 0; index < kAudioChannelCount; ++index)
+            {
+                const AudioChannel channel = static_cast<AudioChannel>(index);
+                AudioChannel back;
+                if (!findAudioChannel(audioChannelName(channel), back)
+                    || back != channel)
+                {
+                    allNamed = false;
+                }
+            }
+            check("bus.names_round_trip", allNamed ? 1.0 : 0.0, 1.0, 0.0);
+
+            AudioChannel unused;
+            check("bus.a_typo_is_not_channel_zero",
+                  findAudioChannel("bass_hit", unused) ? 1.0 : 0.0, 0.0, 0.0);
+
+            // Mixxx's two-second average *is* `level` - the slot Synesthesia's
+            // syn_Level fills. That aliasing is what makes audio.source a
+            // switch rather than a rewrite, so it is worth pinning: a look
+            // reading a level must not learn that the cable changed.
+            AudioLevel bus;
+            bus.set(VuSource::Average, 0.5f, 10.0);
+            check("bus.mixxx_average_is_level",
+                  bus.get(AudioChannel::Level, 10.0), 0.5, 0.001);
+
+            bus.set(AudioChannel::Level, 0.25f, 10.0);
+            check("bus.and_the_alias_reads_back",
+                  bus.get(VuSource::Average, 10.0), 0.25, 0.001);
+
+            // The bands are separate slots. Mixing two up is not cosmetic: a
+            // hit layer driven from the wrong band fires on the wrong drum.
+            bus.set(AudioChannel::BassHits, 1.0f, 10.0);
+            check("bus.bands_are_separate",
+                  bus.get(AudioChannel::MidHits, 10.0), 0.0, 0.0);
+            check("bus.bass_hits_landed",
+                  bus.get(AudioChannel::BassHits, 10.0), 1.0, 0.001);
+        }
+
+        // ---- the tempo, when it is stated rather than inferred --------------
+        {
+            // Two channels of one source both imply a tempo: syn_BPM states
+            // it, syn_OnBeat implies it by when it fires. Left to fight,
+            // markBeat folds every gap into the period at 25% and the beat
+            // spacing wins within a few beats - which would leave audio.bpm
+            // decorative and the rig running at whatever the edge jitter
+            // averaged to. This is the guard, driven with the two deliberately
+            // far apart, which is the only way to tell them apart.
+            BeatClock held;
+            held.setBpm(130.0f, BeatSource::Osc, 0.0);
+            held.setTempoHeld(true);
+
+            // 0.30s is 200bpm: well clear of the 130 being stated, and inside
+            // the 30..300 markBeat will entertain at all. Anything faster than
+            // kMaxBpm is dropped as the same beat said twice, which would make
+            // this pass without the guard doing anything.
+            double at = 0.0;
+            for (int beat = 0; beat < 12; ++beat)
+            {
+                at += 0.30;
+                held.markBeat(at, BeatSource::Osc);
+            }
+            check("tempo.held_stands", held.getBpm(), 130.0, 0.01);
+
+            // and the beats still landed: it is only the rate that is pinned
+            check("tempo.held_still_counts_beats",
+                  static_cast<double>(held.beatsSinceDownbeat(at)) > 0.0 ? 1.0 : 0.0,
+                  1.0, 0.0);
+
+            // Unheld, the same beats teach their own tempo - which is the
+            // behaviour every rig without a stated tempo depends on.
+            BeatClock learning;
+            learning.setBpm(130.0f, BeatSource::Osc, 0.0);
+
+            at = 0.0;
+            for (int beat = 0; beat < 12; ++beat)
+            {
+                at += 0.30;
+                learning.markBeat(at, BeatSource::Osc);
+            }
+            check("tempo.unheld_learns_from_beats", learning.getBpm(), 200.0, 5.0);
+        }
+
+        // ---- additive layers ------------------------------------------------
+        {
+            // The guarantee that makes an always-on hit layer safe to leave
+            // patched: a layer sitting at black must be invisible. Under
+            // ecore::HSV::add, which blends the two hues at a flat 50% however
+            // dark either is, it would instead drag the show's colour halfway
+            // to red while emitting no light of its own. Hence addOver.
+            const ecore::HSV showGreen(120.0f, 1.0f, 1.0f);
+            const ecore::HSV black(0.0f, 1.0f, 0.0f);
+
+            const ecore::HSV untouched = addOver(showGreen, black);
+            check("add.black_layer_keeps_the_hue",
+                  untouched.getHueFloat(), showGreen.getHueFloat(), 1.0);
+            check("add.black_layer_keeps_the_value",
+                  untouched.getValFloat(), 1.0, 0.001);
+
+            // Over nothing, the layer is the whole colour.
+            const ecore::HSV red(0.0f, 1.0f, 1.0f);
+            const ecore::HSV onNothing = addOver(ecore::HSV(0.0f, 0.0f, 0.0f), red);
+            check("add.over_black_is_the_layer",
+                  onNothing.getValFloat(), 1.0, 0.001);
+
+            // Two lamps on one surface: the brightnesses sum and clamp.
+            const ecore::HSV half(0.0f, 1.0f, 0.5f);
+            check("add.brightness_sums",
+                  addOver(half, half).getValFloat(), 1.0, 0.001);
+            check("add.and_clamps",
+                  addOver(red, red).getValFloat(), 1.0, 0.001);
+        }
+
         // ---- the ignore list -----------------------------------------------
         {
             const std::vector<std::string> ignore = {"Traktor", "Kontrol"};
@@ -1478,6 +1711,27 @@ namespace
         /// the shadow within a frame of the sculpture.
         double nextSimAskAt{0.0};
 
+        /// One knob driven by the audio bus, live.
+        ///
+        /// The config's ModConfig with the channel resolved once and the slew
+        /// filter's state alongside it. `resolved` is written every frame by
+        /// applyMods and read by the `mods` command: a mod naming a knob the
+        /// running look does not have is the one failure here that is
+        /// otherwise completely silent, because a per-frame path cannot say
+        /// anything sixty times a second.
+        struct Modulation
+        {
+            ModConfig config;
+            AudioChannel channel{AudioChannel::Level};
+            float current{0.0f};
+            bool seeded{false};
+            bool resolved{true};
+        };
+
+        /// Knobs on the show's own look driven by the bus. Seeded from the
+        /// config and edited live with `mod`.
+        std::vector<Modulation> mods;
+
         /// A second pattern on a few named fixtures, rendered over the show
         /// each frame - the UV par with its own off / flash / on machine
         /// while the truss around it follows the scanner. Its pattern sees
@@ -1492,9 +1746,87 @@ namespace
             std::unique_ptr<Pattern> pattern;
             PatternContext context;
             std::vector<ecore::HSV> colors;
+
+            /// True for blend "add": summed with what the show put there
+            /// rather than written over it. Cached off the config so the
+            /// composite loop is a bool test rather than a string compare
+            /// per fixture per frame.
+            bool additive{false};
+
+            std::vector<Modulation> mods;
         };
         std::vector<Layer> layers;
     };
+
+    /// A config's mods, with their channels resolved. Names are checked at
+    /// load, so anything here is a channel that exists.
+    std::vector<ShowState::Modulation> buildMods(const std::vector<ModConfig>& configs)
+    {
+        std::vector<ShowState::Modulation> mods;
+        mods.reserve(configs.size());
+        for (const ModConfig& one : configs)
+        {
+            ShowState::Modulation mod;
+            mod.config = one;
+            findAudioChannel(one.channel, mod.channel);
+            mods.push_back(std::move(mod));
+        }
+        return mods;
+    }
+
+    /// Every modulation, written into the look's knobs. Once per pattern per
+    /// frame, before it renders.
+    ///
+    /// This is the whole of "Synesthesia's analysis as an ordinary parameter".
+    /// A Property points straight at the pattern's member and fires its
+    /// onChanged, so a knob driven from here is indistinguishable from one
+    /// turned at the desk - which is why no pattern needed changing to become
+    /// audio-reactive, and why one written next year will not either.
+    void applyMods(Pattern& pattern, std::vector<ShowState::Modulation>& mods,
+                   const AudioLevel& bus, double now, float deltaTime)
+    {
+        if (mods.empty())
+        {
+            return;
+        }
+
+        // Reflected fresh each frame rather than cached, for the reason
+        // PropertyBag says not to keep one: on a state machine the object the
+        // pointers point into changes when the look does, and a cached bag
+        // would be writing into the look before last.
+        ecore::PropertyBag bag;
+        pattern.reflect(bag);
+
+        for (ShowState::Modulation& mod : mods)
+        {
+            if (!mod.config.enabled)
+            {
+                continue;   // declared, and deliberately not driving anything
+            }
+
+            const float raw = bus.get(mod.channel, now);
+
+            float value = raw;
+            if (mod.config.slew > 0.0f && deltaTime > 0.0f && mod.seeded)
+            {
+                // Symmetric low-pass, framerate-independent: equally slow in
+                // both directions. An asymmetric one - fast attack, slow
+                // release, the way a meter is drawn - keeps every transient on
+                // the way up, which is a second pulse rather than a smoothing.
+                const float alpha = 1.0f - std::exp(-deltaTime / mod.config.slew);
+                value = mod.current + ((raw - mod.current) * alpha);
+            }
+            mod.current = value;
+            mod.seeded = true;
+
+            // low..high is the knob's range, not the channel's. Inverted is
+            // legal: a level that closes something down as it rises.
+            const float scaled = mod.config.low
+                               + ((mod.config.high - mod.config.low) * value);
+            mod.resolved = bag.set(mod.config.param, scaled);
+        }
+    }
+
 
     /// Each layer's slice of the rig, taken from the show's own context -
     /// re-cut whenever that is, so a placement change reaches the layers.
@@ -1557,14 +1889,42 @@ namespace
                 const std::string deviceName = (slash == std::string::npos) ? "" : reference.substr(0, slash);
                 const std::string fixtureName = (slash == std::string::npos) ? reference : reference.substr(slash + 1);
 
+                // A trailing `*` matches by prefix, in the device's own order:
+                // `ring/*` is the whole ring, `pars/par_*` is the ten pars
+                // without the UV on the end of the same cable.
+                //
+                // Here because a layer over a *section* of the rig is the
+                // normal case the moment layers stop being one UV par. The
+                // ring's thirty-five pixels are individually named and a run
+                // written `"count": 10` becomes par_1..par_10, so without this
+                // an additive layer on a section means pasting a list the
+                // device file already has - and re-pasting it every time the
+                // rig changes.
+                const bool prefixMatch = !fixtureName.empty() && fixtureName.back() == '*';
+                const std::string wanted = prefixMatch
+                    ? fixtureName.substr(0, fixtureName.size() - 1)
+                    : fixtureName;
+
+                if (prefixMatch && wanted.empty() && deviceName.empty())
+                {
+                    outError = "layer '" + config.name + "': a bare '*' would take the whole "
+                               "rig; write device/* for one device, or name fixtures";
+                    return false;
+                }
+
                 std::vector<size_t> found;
                 size_t at = 0;
                 for (const Device& device : show.config.devices)
                 {
                     for (size_t idx = 0; idx < device.fixtures.size(); ++idx)
                     {
-                        if ((deviceName.empty() || device.name == deviceName)
-                            && device.fixtures[idx].name == fixtureName)
+                        const std::string& has = device.fixtures[idx].name;
+                        const bool nameMatches = prefixMatch
+                            ? (has.size() >= wanted.size()
+                               && has.compare(0, wanted.size(), wanted) == 0)
+                            : (has == wanted);
+
+                        if ((deviceName.empty() || device.name == deviceName) && nameMatches)
                         {
                             found.push_back(at + idx);
                         }
@@ -1577,7 +1937,7 @@ namespace
                     outError = "layer '" + config.name + "': no fixture named '" + reference + "'";
                     return false;
                 }
-                if (found.size() > 1 && deviceName.empty())
+                if (found.size() > 1 && deviceName.empty() && !prefixMatch)
                 {
                     outError = "layer '" + config.name + "': more than one device has a '" + reference
                              + "'; name it as device/" + reference;
@@ -1596,6 +1956,13 @@ namespace
                 return false;
             }
 
+            layer.additive = (config.blend == "add");
+            layer.mods = buildMods(config.mods);
+
+            // The colour, if the layer's look has one. Deferred rather than
+            // applied here: a state machine has no knobs until it has been
+            // rendered once, so this is replayed after the first frame with
+            // the mods - see the render loop.
             show.layers.push_back(std::move(layer));
         }
 
@@ -1884,6 +2251,148 @@ namespace
         emitParamsFor(show.pattern.get(), "");
     }
 
+    /// `MOD base_gain bass 0 1 0.1 ok`, one per modulation.
+    ///
+    /// The trailing word is whether the knob it names exists on the look that
+    /// is running *now*. A mod survives a cue change - that is the point, the
+    /// bus keeps driving as the show moves - but a knob does not, and a mod
+    /// pointing at a knob the current look has never had is the one failure
+    /// on this path that says nothing on its own, because a per-frame writer
+    /// cannot complain sixty times a second.
+    void emitMods(const std::vector<ShowState::Modulation>& mods, const std::string& prefix)
+    {
+        for (const ShowState::Modulation& mod : mods)
+        {
+            std::ostringstream out;
+            out << "MOD " << mod.config.param
+                << " " << mod.config.channel
+                << " " << mod.config.low
+                << " " << mod.config.high
+                << " " << mod.config.slew
+                << " " << (!mod.config.enabled ? "off"
+                           : (mod.resolved ? "ok" : "no-param"));
+            emit(prefix + out.str());
+        }
+    }
+
+    /// `mod <param> <channel> [low] [high] [slew]`, or `mod <param> off`.
+    ///
+    /// Replaces rather than stacks: one knob has one driver, because two
+    /// modulations on one property is a race whose winner is whichever ran
+    /// last, and there is no reading of that a desk could show.
+    bool applyMod(std::vector<ShowState::Modulation>& mods, Pattern* pattern,
+                  const std::vector<std::string>& words, size_t at,
+                  const std::string& prefix)
+    {
+        if (words.size() < at + 2)
+        {
+            emit("ERR mod needs a param and a channel, or a param and 'off'");
+            return false;
+        }
+
+        const std::string param = words[at];
+        const std::string channelName = words[at + 1];
+
+        const auto existing = std::find_if(
+            mods.begin(), mods.end(),
+            [&](const ShowState::Modulation& one) { return one.config.param == param; });
+
+        if (channelName == "off")
+        {
+            if (existing == mods.end())
+            {
+                emit("ERR nothing is driving '" + param + "'");
+                return false;
+            }
+            mods.erase(existing);
+            emit("OK " + prefix + "mod " + param + " off");
+            return true;
+        }
+
+        ShowState::Modulation mod;
+        if (!findAudioChannel(channelName, mod.channel))
+        {
+            emit("ERR no channel '" + channelName + "'; `channels` lists them");
+            return false;
+        }
+
+        // The knob is checked here, where there is somebody to tell. It is not
+        // fatal to bind one the running look does not have - a cue later in
+        // the set may well have it, and a map written for the whole show
+        // should not be refused because of what is on screen at the moment it
+        // is loaded - so this is a warning and the mod stands.
+        if (pattern != nullptr)
+        {
+            ecore::PropertyBag bag;
+            pattern->reflect(bag);
+            const ecore::Property* target = bag.find(param);
+
+            // Recorded now as well as warned about, so `mods` agrees with the
+            // warning. applyMods overwrites this every frame; without it a mod
+            // created and listed before the first frame would report the
+            // default rather than the answer we just worked out.
+            mod.resolved = (target != nullptr);
+
+            if (target == nullptr)
+            {
+                emit("WARN the look running now has no '" + param
+                   + "'; the mod stands and will bite when one does");
+            }
+            else if (target->type == ecore::Property::Type::Color)
+            {
+                // A colour cannot come from one number, and half-writing one
+                // is worse than refusing - the same reason PropertyBag::set
+                // leaves colours alone.
+                emit("ERR '" + param + "' is a colour; a mod drives a number");
+                return false;
+            }
+        }
+
+        mod.config.param = param;
+        mod.config.channel = channelName;
+
+        // Naming a channel is asking for it to drive: a mod declared off in
+        // the config and then pointed from the desk is being switched on, and
+        // any other reading would make the surface's tabs silently do nothing.
+        mod.config.enabled = true;
+
+        if (words.size() > at + 2 && !parseFloatArg(words[at + 2], mod.config.low))
+        {
+            emit("ERR mod low: '" + words[at + 2] + "' is not a number");
+            return false;
+        }
+        if (words.size() > at + 3 && !parseFloatArg(words[at + 3], mod.config.high))
+        {
+            emit("ERR mod high: '" + words[at + 3] + "' is not a number");
+            return false;
+        }
+        if (words.size() > at + 4 && !parseFloatArg(words[at + 4], mod.config.slew))
+        {
+            emit("ERR mod slew: '" + words[at + 4] + "' is not a number");
+            return false;
+        }
+        if (mod.config.slew < 0.0f)
+        {
+            emit("ERR mod slew must not be negative");
+            return false;
+        }
+
+        if (existing != mods.end())
+        {
+            *existing = mod;
+        }
+        else
+        {
+            mods.push_back(mod);
+        }
+
+        std::ostringstream out;
+        out << "OK " << prefix << "mod " << param << " " << channelName
+            << " " << mod.config.low << " " << mod.config.high;
+        emit(out.str());
+        return true;
+    }
+
     /// The current set as one line of JSON, for keeping a tuning session.
     std::string dumpLine(Pattern& pattern)
     {
@@ -2117,6 +2626,20 @@ namespace
     /// I reopen the port", which is a miserable thing to chase at a venue.
     void applyMidiConfig(ShowState& show)
     {
+        // One source owns the music. With `audio.source: synesthesia` and
+        // `audio.bpm` on, the visualiser's syn_BPM and syn_OnBeat are the
+        // grid, so the cable is cut here rather than filtered note by note:
+        // markBeat() folds every gap between beats into the tempo, so a rig
+        // taking syn_BPM while Mixxx's notes still reached the clock would sit
+        // at neither tempo.
+        //
+        // The port stays open and `midi monitor on` still prints what is on
+        // it, so this is visible rather than mysterious, and nothing has to be
+        // turned off at the Mixxx end. `midi status` says beat_from=osc.
+        const bool midiOwnsTheBeat = !(show.config.audio.isSynesthesia()
+                                       && show.config.audio.bpm);
+
+        show.midi.setBeatClock(midiOwnsTheBeat ? &sharedBeatClock() : nullptr);
         show.midi.setFollowClock(show.config.midi.followClock);
         show.midi.setFollowNotes(show.config.midi.followNotes);
         show.midi.setBeatNote(show.config.midi.beatNote);
@@ -2125,7 +2648,13 @@ namespace
         show.midi.setVuNote(VuSource::Average, show.config.midi.vuAverageNote);
         show.midi.setVuNote(VuSource::Meter, show.config.midi.vuMeterNote);
         show.midi.setBeatChannel(show.config.midi.beatChannel);
-        show.midi.setAudioLevel(&sharedAudioLevel());
+        // And the same for the meters: Mixxx's average and Synesthesia's
+        // syn_Level land on the same channel, so with both wired `level` is
+        // whichever spoke last and the wash flickers between two readings of
+        // the same music.
+        show.midi.setAudioLevel(show.config.audio.source == "mixxx"
+                                    ? &sharedAudioLevel()
+                                    : nullptr);
     }
 
     /// Every device's output, for a status line.
@@ -2705,7 +3234,8 @@ namespace
             // a command is one at a time.
             if (words.size() < 3)
             {
-                emit("ERR layer needs a name and a command (state, states, params, param, curve, trigger)");
+                emit("ERR layer needs a name and a command (state, states, params, param, "
+                     "curve, trigger, mod, mods)");
                 return;
             }
 
@@ -2760,6 +3290,20 @@ namespace
             {
                 emitStatesFor(&pattern, prefix);
                 emit("OK layer " + layer->name + " states");
+                return;
+            }
+
+            if (sub == "mods")
+            {
+                emitMods(layer->mods, prefix);
+                emit("OK layer " + layer->name + " mods");
+                return;
+            }
+
+            if (sub == "mod")
+            {
+                applyMod(layer->mods, &pattern, words, 3,
+                         "layer " + layer->name + " ");
                 return;
             }
 
@@ -2857,6 +3401,83 @@ namespace
             return;
         }
 
+        // ---- the audio bus -----------------------------------------------
+        // Everything the rig knows about the *sound*, as opposed to the grid.
+        // Filled from here by the python wrapper, which is holding the OSC
+        // port Synesthesia sends its audio uniforms to; and from the MIDI
+        // callback, which is holding Mixxx's VU notes. Neither knows about
+        // the other, and a look reads a channel without learning which.
+        if (command == "audio")
+        {
+            if (words.size() < 3)
+            {
+                emit("ERR audio needs a channel and a value 0..1");
+                return;
+            }
+
+            AudioChannel channel;
+            if (!findAudioChannel(words[1], channel))
+            {
+                emit("ERR no channel '" + words[1] + "'; `channels` lists them");
+                return;
+            }
+
+            float value = 0.0f;
+            if (!parseFloatArg(words[2], value))
+            {
+                emit("ERR audio " + words[1] + ": '" + words[2] + "' is not a number");
+                return;
+            }
+
+            sharedAudioLevel().set(channel, value, nowSeconds());
+
+            // No OK. This arrives at frame rate, per channel, for the length
+            // of a set - the same reason the OSC bindings rate-limit at the
+            // other end. An acknowledgement per value would be thousands of
+            // lines a minute back up a pipe the desk also reads cues on.
+            return;
+        }
+
+        if (command == "channels")
+        {
+            const double audioAt = nowSeconds();
+            for (int index = 0; index < kAudioChannelCount; ++index)
+            {
+                const AudioChannel channel = static_cast<AudioChannel>(index);
+                std::ostringstream out;
+                out << "CHANNEL " << audioChannelName(channel)
+                    << " " << sharedAudioLevel().get(channel, audioAt)
+                    << " " << (sharedAudioLevel().isLive(channel, audioAt) ? "live" : "-");
+                emit(out.str());
+            }
+            emit("OK " + std::to_string(kAudioChannelCount) + " channels");
+            return;
+        }
+
+        // ---- modulation ----------------------------------------------------
+        // A knob on the running look, driven by a channel of the bus. See
+        // ModConfig and applyMods: this is the same thing the config declares,
+        // editable while the show runs.
+        if (command == "mods")
+        {
+            emitMods(show.mods, "");
+            for (ShowState::Layer& layer : show.layers)
+            {
+                emitMods(layer.mods, "LAYER " + layer.name + " ");
+            }
+            emit("OK mods");
+            return;
+        }
+
+        if (command == "mod")
+        {
+            if (!applyMod(show.mods, show.pattern.get(), words, 1, ""))
+            {
+                return;
+            }
+            return;
+        }
+
         // ---- tempo -------------------------------------------------------
         // The beat clock is process-wide rather than owned by a pattern, so
         // these work whatever is running: dial the tempo in on `solid`, then
@@ -2935,9 +3556,20 @@ namespace
 
             if (action == "status")
             {
-                emit("MIDI-STATUS " + show.midi.describe() + " "
+                // beat_from is the *configured* owner; src, inside the clock's
+                // own describe(), is whoever last actually set it. They differ
+                // in exactly the case worth being able to see at a venue -
+                // "Mixxx is playing and the rig is not following it" reads as
+                // beat_from=osc with src=internal, which says the cable is not
+                // wired to the clock rather than that the cable is dead.
+                const bool beatFromBus = show.config.audio.isSynesthesia()
+                                      && show.config.audio.bpm;
+                emit("MIDI-STATUS " + show.midi.describe()
+                   + " beat_from=" + (beatFromBus ? "osc" : "midi")
+                   + " audio_from=" + show.config.audio.source + " "
                    + sharedBeatClock().describe(nowSeconds()) + " "
-                   + sharedAudioLevel().describe(nowSeconds()));
+                   + sharedAudioLevel().describe(nowSeconds())
+                   + " bus=" + sharedAudioLevel().describeLive(nowSeconds()));
                 emit("MIDI-OUT-STATUS " + show.midiOut.describe());
                 emit("OK midi status");
                 return;
@@ -3794,6 +4426,10 @@ int main(int argc, char** argv)
         return 1;
     }
 
+    // The show's own knobs on the bus. The layers took theirs in buildLayers;
+    // channel names were checked at load, so nothing here can fail.
+    show.mods = buildMods(show.config.mods);
+
     {
         std::ostringstream ready;
         ready << "READY fixtures=" << fixtureCount
@@ -3899,6 +4535,10 @@ int main(int argc, char** argv)
     auto nextFrame = lastFrame;
     auto nextEmit = lastFrame; // emit the first frame straight away
     long long framesRendered = 0;
+
+    // The grid, when it comes off the audio bus rather than a cable. Holds the
+    // last tempo it sent and the edge state syn_OnBeat needs; see BusClock.
+    BusClock busClock;
     long long lastEmittedBeat = -1;
     int exitCode = 0;
 
@@ -3925,11 +4565,22 @@ int main(int argc, char** argv)
         const float deltaTime = std::chrono::duration<float>(now - lastFrame).count();
         lastFrame = now;
 
-        // Before anything ticks: which of this frame's beats are hits is one
-        // question with one answer, and every look that fires on the beat is
-        // about to read it. Working it out per look is what used to let the UV
-        // and the truss fall out of step - see edmx/beat_trigger.h.
-        sharedTriggerRack().tick(nowSeconds());
+        // One reading of the clock for everything the bus drives this frame, so
+        // the beat, the show's knobs and a layer's all come from the same
+        // instant of it rather than from three a few microseconds apart.
+        const double audioNow = nowSeconds();
+
+        // The beat, when the visualiser is the source: syn_BPM and syn_OnBeat
+        // into the grid. First of all, and before the trigger rack below,
+        // because everything after this reads the grid - a beat put in after
+        // the rack had asked would light the rig one frame late, every time.
+        busClock.tick(show.config.audio, sharedBeatClock(), sharedAudioLevel(), audioNow);
+
+        // Which of this frame's beats are hits is one question with one
+        // answer, and every look that fires on the beat is about to read it.
+        // Working it out per look is what used to let the UV and the truss
+        // fall out of step - see edmx/beat_trigger.h.
+        sharedTriggerRack().tick(audioNow);
 
         // The sculpture's own look, beside the show, for the looks that
         // compose over it. Ticked first so a sample this frame is this
@@ -3943,6 +4594,10 @@ int main(int argc, char** argv)
         // second, unseen copy of itself on the far end of the link.
         if (!sinkMode)
         {
+            // The bus, into the knobs, before anything reads them. A look does
+            // not know it is being modulated: `base_gain` is just its own field
+            // and it was already going to read it this frame.
+            applyMods(*show.pattern, show.mods, sharedAudioLevel(), audioNow, deltaTime);
             show.pattern->tick(deltaTime);
             show.pattern->render(show.context, show.colors);
         }
@@ -3957,6 +4612,7 @@ int main(int argc, char** argv)
             {
                 break;  // the desk already composed its layers into the frame
             }
+            applyMods(*layer.pattern, layer.mods, sharedAudioLevel(), audioNow, deltaTime);
             layer.pattern->tick(deltaTime);
             layer.pattern->render(layer.context, layer.colors);
             for (size_t idx = 0; idx < layer.fixtures.size() && idx < layer.colors.size(); ++idx)
@@ -3964,7 +4620,9 @@ int main(int argc, char** argv)
                 const size_t at = layer.fixtures[idx];
                 if (at < show.colors.size())
                 {
-                    show.colors[at] = layer.colors[idx];
+                    show.colors[at] = layer.additive
+                        ? addOver(show.colors[at], layer.colors[idx])
+                        : layer.colors[idx];
                 }
             }
         }
@@ -3979,6 +4637,28 @@ int main(int argc, char** argv)
             emitParams(show);
             for (ShowState::Layer& layer : show.layers)
             {
+                // The layer's declared colour, now that its look has knobs to
+                // put it in. Before announcing, so the block a client reads
+                // carries the colour the layer is actually running.
+                if (!layer.config->color.empty())
+                {
+                    ecore::HSV parsed;
+                    if (parseColorString(layer.config->color, parsed))
+                    {
+                        ecore::PropertyBag bag;
+                        layer.pattern->reflect(bag);
+                        if (!bag.setColor("color", parsed))
+                        {
+                            emit("WARN layer " + layer.name + ": '" + layer.config->pattern
+                               + "' has no colour knob, so \"color\" does nothing");
+                        }
+                    }
+                    else
+                    {
+                        emit("WARN layer " + layer.name + ": '" + layer.config->color
+                           + "' is not a colour (want '#rrggbb' or a name)");
+                    }
+                }
                 announceLayer(layer);
             }
         }

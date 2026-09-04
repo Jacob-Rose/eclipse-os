@@ -211,6 +211,24 @@ class Binding:
     threshold: float = 0.5      # trigger mode: what counts as "up"
     min_interval: float = 1 / 30.0
     min_change: float = 0.01
+    #: Restate an unchanged value at least this often. 0 never restates.
+    #:
+    #: This exists because `min_change` and the audio bus's staleness decay
+    #: are each right on their own and wrong together. The binding says "a
+    #: level holding still says nothing", which was correct when a binding
+    #: drove a *knob* - a knob that has been set stays set. The bus instead
+    #: treats a channel nobody has restated in 0.8s as dead and fades it out,
+    #: which is a dead-man's switch: without it a dropped link would leave the
+    #: rig lit at whatever the music was doing when it went.
+    #:
+    #: Together, with no keepalive, they delete any value that holds still -
+    #: the channel is suppressed here, goes stale there, and the look driven
+    #: from it fades to nothing while the music is still playing.
+    #:
+    #: 0.2s against AudioLevel::kHoldFor of 0.35s leaves room for one keepalive
+    #: to be lost - which matters, because this arrives over UDP and nothing
+    #: retransmits. A still channel costs five lines a second instead of thirty.
+    max_interval: float = 0.2
     action: str = "param"
     params: Dict[str, object] = field(default_factory=dict)
     enabled: bool = True
@@ -277,10 +295,20 @@ class Binding:
 
         if now - self._last_at < self.min_interval:
             return None
-        if self._last_sent >= 0.0 and abs(value - self._last_sent) < self.min_change:
+
+        overdue = (self.max_interval > 0.0
+                   and (now - self._last_at) >= self.max_interval)
+
+        if (self._last_sent >= 0.0
+                and abs(value - self._last_sent) < self.min_change
+                and not overdue):
             # Not a rate limit but a silence limit: a level that is holding
             # still says nothing rather than restating itself thirty times a
             # second, which is what leaves the pipe clear for cues.
+            #
+            # `overdue` is what keeps that from deleting the value entirely -
+            # see max_interval. A channel that says nothing for long enough
+            # reads, at the far end, exactly like a channel nobody is filling.
             return None
 
         self._last_sent = value
@@ -296,7 +324,8 @@ class Binding:
                         "argument": self.argument},
             "mode": self.mode,
             "range": {"low": self.low, "high": self.high, "threshold": self.threshold},
-            "limit": {"interval": self.min_interval, "change": self.min_change},
+            "limit": {"interval": self.min_interval, "change": self.min_change,
+                      "keepalive": self.max_interval},
             "action": self.action,
             "params": dict(self.params),
             "enabled": self.enabled,
@@ -319,6 +348,7 @@ class Binding:
             threshold=float(span.get("threshold", 0.5)),
             min_interval=float(limit.get("interval", 1 / 30.0)),
             min_change=float(limit.get("change", 0.01)),
+            max_interval=float(limit.get("keepalive", 0.2)),
             action=str(data.get("action", "param")),
             params=dict(data.get("params", {})),
             enabled=bool(data.get("enabled", True)),

@@ -26,6 +26,7 @@ const char* edmx::describeBeatSource(BeatSource source)
         case BeatSource::MidiClock: return "midi_clock";
         case BeatSource::MidiNote:  return "midi_note";
         case BeatSource::Manual:    return "manual";
+        case BeatSource::Osc:       return "osc";
         case BeatSource::Internal:  break;
     }
     return "internal";
@@ -62,8 +63,26 @@ float BeatClock::getBpm() const
     return static_cast<float>(60.0 / period.load());
 }
 
+void BeatClock::setTempoHeld(bool held)
+{
+    tempoHeld.store(held);
+}
+
+bool BeatClock::isTempoHeld() const
+{
+    return tempoHeld.load();
+}
+
 void BeatClock::learnPeriod(double interval)
 {
+    // The tempo is being stated rather than inferred - see setTempoHeld.
+    // Beats still re-anchor the phase; this is the one thing they stop doing.
+    if (tempoHeld.load())
+    {
+        return;
+    }
+
+
     // Only from a gap that could actually be one beat. A dropped message, a
     // pause, or a stray note-on all show up as an interval way outside the
     // range, and folding those into the average would wreck a tempo that was
@@ -388,17 +407,55 @@ const char* edmx::describeVuSource(VuSource source)
     return "avg";
 }
 
-void AudioLevel::set(VuSource source, float inLevel, double when)
+namespace
 {
-    Reading& reading = readings[static_cast<int>(source)];
+    /// The channel names, in enum order. One table, because every other way of
+    /// spelling a channel — the `mod` command, a config, the status line, the
+    /// OSC map — resolves through it, and two lists that must agree is one
+    /// list that eventually does not.
+    const char* const kAudioChannelNames[kAudioChannelCount] = {
+        "level", "bass", "mid", "midhigh", "high",
+        "hits", "bass_hits", "mid_hits", "midhigh_hits", "high_hits",
+        "presence", "bass_presence", "mid_presence", "midhigh_presence", "high_presence",
+        "beat", "bpm", "bpm_confidence", "intensity",
+        "level_instant", "level_meter",
+    };
+}
+
+const char* edmx::audioChannelName(AudioChannel channel)
+{
+    const int index = static_cast<int>(channel);
+    if (index < 0 || index >= kAudioChannelCount)
+    {
+        return "?";
+    }
+    return kAudioChannelNames[index];
+}
+
+bool edmx::findAudioChannel(const std::string& name, AudioChannel& outChannel)
+{
+    for (int index = 0; index < kAudioChannelCount; ++index)
+    {
+        if (name == kAudioChannelNames[index])
+        {
+            outChannel = static_cast<AudioChannel>(index);
+            return true;
+        }
+    }
+    return false;
+}
+
+void AudioLevel::set(AudioChannel channel, float inLevel, double when)
+{
+    Reading& reading = readings[static_cast<int>(channel)];
     reading.level.store(std::clamp(inLevel, 0.0f, 1.0f));
     reading.stamp.store(when);
     reading.updates.fetch_add(1);
 }
 
-float AudioLevel::get(VuSource source, double now) const
+float AudioLevel::get(AudioChannel channel, double now) const
 {
-    const Reading& reading = readings[static_cast<int>(source)];
+    const Reading& reading = readings[static_cast<int>(channel)];
 
     const double last = reading.stamp.load();
     if (last < 0.0)
@@ -422,22 +479,22 @@ float AudioLevel::get(VuSource source, double now) const
     return reading.level.load() * static_cast<float>(1.0 - fade);
 }
 
-bool AudioLevel::isLive(VuSource source, double now) const
+bool AudioLevel::isLive(AudioChannel channel, double now) const
 {
-    const double last = readings[static_cast<int>(source)].stamp.load();
+    const double last = readings[static_cast<int>(channel)].stamp.load();
     return (last >= 0.0) && ((now - last) < kHoldFor);
 }
 
-unsigned long long AudioLevel::getUpdates(VuSource source) const
+unsigned long long AudioLevel::getUpdates(AudioChannel channel) const
 {
-    return readings[static_cast<int>(source)].updates.load();
+    return readings[static_cast<int>(channel)].updates.load();
 }
 
 bool AudioLevel::isAnyLive(double now) const
 {
-    for (int index = 0; index < kVuSourceCount; ++index)
+    for (int index = 0; index < kAudioChannelCount; ++index)
     {
-        if (isLive(static_cast<VuSource>(index), now))
+        if (isLive(static_cast<AudioChannel>(index), now))
         {
             return true;
         }
@@ -453,6 +510,31 @@ std::string AudioLevel::describe(double now) const
                   static_cast<double>(get(VuSource::Instant, now)),
                   static_cast<double>(get(VuSource::Meter, now)));
     return std::string(text);
+}
+
+std::string AudioLevel::describeLive(double now) const
+{
+    std::string text;
+    for (int index = 0; index < kAudioChannelCount; ++index)
+    {
+        const AudioChannel channel = static_cast<AudioChannel>(index);
+        if (!isLive(channel, now))
+        {
+            continue;
+        }
+        char one[48];
+        std::snprintf(one, sizeof(one), "%s=%.2f",
+                      audioChannelName(channel),
+                      static_cast<double>(get(channel, now)));
+        if (!text.empty())
+        {
+            text += ' ';
+        }
+        text += one;
+    }
+    // "nothing is wired" and "everything is silent" are different problems and
+    // a blank status line reads as neither.
+    return text.empty() ? std::string("none") : text;
 }
 
 AudioLevel& edmx::sharedAudioLevel()
