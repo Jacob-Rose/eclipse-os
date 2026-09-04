@@ -1,5 +1,6 @@
 {
   "version": 2,
+  "opens_on": "",
   "mappings": [
     {
       "label": "map 1",
@@ -19,6 +20,25 @@
         }
       ],
       "enabled": true,
+      "page": "",
+      "colour": 41
+    },
+    {
+      "label": "map 2",
+      "trigger": {
+        "kind": "note",
+        "channel": 0,
+        "number": 60
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "syn_scene",
+          "params": {}
+        }
+      ],
+      "enabled": true,
+      "page": "",
       "colour": 41
     }
   ]

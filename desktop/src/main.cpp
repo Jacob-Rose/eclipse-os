@@ -108,6 +108,8 @@ namespace
             "  --bpm <n>           starting tempo, and the free-run fallback\n"
             "  --show-patch        print the resolved channel map and exit\n"
             "  --emit-frames       stream per-fixture rgb on stdout, for a viewer\n"
+            "  --sink              drive the wires from F lines on stdin rather than\n"
+            "                      from a pattern - the far end of client mode\n"
             "  --emit-rate <n>     cap that stream at n per second (default 30)\n"
             "  --no-stdin          do not read the control protocol from stdin\n"
             "  --verbose           log every state change\n"
@@ -1205,6 +1207,15 @@ namespace
         return joined;
     }
 
+    /// One hex digit, or -1.
+    inline int hexDigit(char c)
+    {
+        if (c >= '0' && c <= '9') return c - '0';
+        if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+        if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+        return -1;
+    }
+
     bool parseFloatArg(const std::string& text, float& outValue)
     {
         try
@@ -1418,6 +1429,17 @@ namespace
         /// survive a state change.
         bool inputA{false};
         bool inputB{false};
+
+        /// Client mode: the newest frame that arrived on stdin, one rgb per
+        /// fixture in the same order the F line reports them.
+        ///
+        /// Written by the command handler and read by the render loop, both on
+        /// the render thread - the stdin reader only queues lines, it does not
+        /// interpret them - so this needs no lock. Several F lines can arrive
+        /// between two renders; each overwrites this, and the newest is the
+        /// one that gets painted, which is what a dropped frame should mean.
+        std::vector<Rgb8> sinkFrame;
+        bool sinkPainted{false};
 
         /// Tempo in, when there is any. The beat itself lives in
         /// sharedBeatClock(), which is what patterns read; this is only the
@@ -2164,6 +2186,63 @@ namespace
 
     /// Applies one line of the control protocol. Replies on stdout with OK or
     /// ERR so the wrapper can tell whether a command took.
+    /// `F aabbcc ddeeff ...` into a run of rgb, one per fixture.
+    ///
+    /// The line the desk sends is exactly the one `--emit-frames` produces,
+    /// which is read back out of the universe *there* - so it is what actually
+    /// went out on the desk's own patch, already through master, brightness
+    /// and gamma. Which is the whole reason the far end paints these bytes
+    /// rather than rendering them again: doing the second half of the pipeline
+    /// twice would darken the rig by a gamma curve every hop.
+    ///
+    /// A short line is taken as far as it goes and the rest left alone. A
+    /// frame is a picture, not a transaction: half of one is better than none,
+    /// and the next is 30ms away.
+    void applySinkFrame(ShowState& show, const std::string& line)
+    {
+        size_t at = 0;
+        size_t pos = 2;  // past "F "
+        const size_t size = line.size();
+
+        while (pos < size && at < show.sinkFrame.size())
+        {
+            while (pos < size && line[pos] == ' ')
+            {
+                ++pos;
+            }
+            if (pos + 6 > size)
+            {
+                break;  // fewer than six digits left
+            }
+
+            int nibble[6];
+            bool ok = true;
+            for (int i = 0; i < 6; ++i)
+            {
+                nibble[i] = hexDigit(line[pos + i]);
+                if (nibble[i] < 0)
+                {
+                    ok = false;
+                    break;
+                }
+            }
+            if (!ok)
+            {
+                break;
+            }
+
+            Rgb8& out = show.sinkFrame[at];
+            out.r = static_cast<uint8_t>((nibble[0] << 4) | nibble[1]);
+            out.g = static_cast<uint8_t>((nibble[2] << 4) | nibble[3]);
+            out.b = static_cast<uint8_t>((nibble[4] << 4) | nibble[5]);
+
+            ++at;
+            pos += 6;
+        }
+
+        show.sinkPainted = true;
+    }
+
     void handleCommand(ShowState& show, const std::string& rawLine)
     {
         // Strip a UTF-8 BOM. Anything that pipes a file of cues in - PowerShell
@@ -2176,6 +2255,17 @@ namespace
                              && static_cast<unsigned char>(line[2]) == 0xBF)
         {
             line.erase(0, 3);
+        }
+
+        // The frame stream, in client mode. Taken before the line is split
+        // into words on purpose: an F line is one token per fixture, and at
+        // thirty frames a second on a pi that is twelve thousand string
+        // allocations a second to reach a number we can read straight out of
+        // the buffer.
+        if (line.size() > 1 && line[0] == 'F' && line[1] == ' ')
+        {
+            applySinkFrame(show, line);
+            return;
         }
 
         const std::vector<std::string> words = splitWords(line);
@@ -3147,6 +3237,10 @@ int main(int argc, char** argv)
     bool verbose = false;
     bool showPatch = false;
     bool emitFrames = false;
+
+    // Client mode's far end: render nothing, paint what arrives. See the
+    // note where the frames are applied, further down the loop.
+    bool sinkMode = false;
     float emitRate = 30.0f;
 
     // --port is read ahead of the loop as well as in it, because the one-shot
@@ -3190,6 +3284,7 @@ int main(int argc, char** argv)
         else if (arg == "--dry-run")               dryRun = true;
         else if (arg == "--show-patch")            showPatch = true;
         else if (arg == "--emit-frames")           emitFrames = true;
+        else if (arg == "--sink")                  sinkMode = true;
         else if (arg == "--emit-rate")             emitRate = std::stof(nextArg("--emit-rate"));
         else if (arg == "--no-stdin")              useStdin = false;
         else if (arg == "--verbose")               verbose = true;
@@ -3747,6 +3842,22 @@ int main(int argc, char** argv)
     // buttons before the first frame lands.
     emitStates(show);
 
+    if (sinkMode)
+    {
+        // One slot per fixture across every device, in the order the F line
+        // reports them - the same order FIXTURES and the DEVICE lines
+        // describe, so the desk and this end agree without negotiating.
+        size_t slots = 0;
+        for (const Device& device : show.config.devices)
+        {
+            slots += device.fixtures.all().size();
+        }
+        show.sinkFrame.assign(slots, Rgb8{});
+        emit("SINK " + std::to_string(show.sinkFrame.size()) + " fixtures");
+        logLine("sink: painting " + std::to_string(show.sinkFrame.size())
+              + " fixtures from stdin; the pattern here is not running");
+    }
+
     if (emitFrames)
     {
         // Name the fixtures once, so the frame lines can stay compact. Across
@@ -3826,8 +3937,15 @@ int main(int argc, char** argv)
         show.shadow.tick(deltaTime);
         show.pattern->setUnderlay(show.shadow.isLive() ? &show.shadow : nullptr);
 
-        show.pattern->tick(deltaTime);
-        show.pattern->render(show.context, show.colors);
+        // Client mode renders nothing: the picture is arriving on stdin and
+        // the pattern here would only fight it. Ticked past entirely rather
+        // than rendered-and-discarded, so a look with a clock does not run a
+        // second, unseen copy of itself on the far end of the link.
+        if (!sinkMode)
+        {
+            show.pattern->tick(deltaTime);
+            show.pattern->render(show.context, show.colors);
+        }
 
         // The layers, over the show: each renders its own few fixtures as a
         // rig of their own and writes the result over what the show put
@@ -3835,6 +3953,10 @@ int main(int argc, char** argv)
         // follows the scanner is one layer of one fixture.
         for (ShowState::Layer& layer : show.layers)
         {
+            if (sinkMode)
+            {
+                break;  // the desk already composed its layers into the frame
+            }
             layer.pattern->tick(deltaTime);
             layer.pattern->render(layer.context, layer.colors);
             for (size_t idx = 0; idx < layer.fixtures.size() && idx < layer.colors.size(); ++idx)
@@ -3942,6 +4064,31 @@ int main(int argc, char** argv)
                                            master * device.config->brightness,
                                            device.config->gamma > 0.0f ? device.config->gamma : show.config.master.gamma,
                                            device.universe);
+
+            if (sinkMode)
+            {
+                // The render above still earns its keep: a fixture's dimmer
+                // and its parked mode channels are constants, and a cheap par
+                // with channel 6 left floating runs its own colour macro and
+                // ignores everything else. What it computed for *colour* is
+                // discarded here, because the desk already did that - master,
+                // brightness and gamma included - and the bytes on the wire
+                // are the answer, not an input to another pass of the same
+                // arithmetic.
+                size_t slot = device.firstFixture;
+                for (const Fixture& fixture : device.config->fixtures.all())
+                {
+                    if (slot >= show.sinkFrame.size())
+                    {
+                        break;
+                    }
+                    const Rgb8& rgb = show.sinkFrame[slot];
+                    device.universe.setChannel(fixture.startChannel + fixture.offsetR, rgb.r);
+                    device.universe.setChannel(fixture.startChannel + fixture.offsetG, rgb.g);
+                    device.universe.setChannel(fixture.startChannel + fixture.offsetB, rgb.b);
+                    ++slot;
+                }
+            }
 
             // Rendered above, sent here - and only the sending needs a wire.
             // An offline device has done its work by now: its colours are in
