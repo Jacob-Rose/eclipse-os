@@ -98,7 +98,20 @@ MIDI_OUT="${ECLIPSE_MIDI_OUT:-Launchpad X LPX MIDI Out}"
 # below, which is why the pads and the lamps default to off when a host is
 # named. The OSC sender is desk-side off the frame stream and is unaffected.
 HOST="${ECLIPSE_HOST:-}"
-DEFAULT_HOST="scanner-pi.local"
+
+# The ssh *alias*, not the hostname - `scanner-pi`, not `scanner-pi.local`.
+# ~/.ssh/config is where the user and the key live:
+#
+#     Host scanner-pi
+#         HostName scanner-pi.local
+#         User jakee
+#         IdentityFile ~/.ssh/scanner_pi
+#
+# Naming the machine directly walks past all of that and ssh falls back to
+# default identities, which on a machine whose only key is named for this host
+# means none - "Permission denied (publickey)" for a key that is sitting right
+# there. Anything with a Host block wants the block's name.
+DEFAULT_HOST="scanner-pi"
 
 live=1
 viewer=1
@@ -214,9 +227,27 @@ if [ -n "$HOST" ]; then
     # than a question. Checked now rather than discovered thirty seconds in
     # with a window already open.
     if ! ssh -o BatchMode=yes -o ConnectTimeout=5 "$HOST" true 2>/dev/null; then
-        echo "warning: 'ssh $HOST true' did not succeed." >&2
-        echo "         the set will not start. ssh needs a key, not a password:" >&2
-        echo "         ssh-copy-id $HOST" >&2
+        echo "warning: 'ssh $HOST true' did not succeed - the set will not start." >&2
+        echo "         ssh runs in batch mode here, so it needs a key: a password" >&2
+        echo "         prompt inside a pipe is a hang rather than a question." >&2
+        # Is the bare form of this name an alias in ~/.ssh/config? Tokenised
+        # rather than matched with a pattern, because `Host` takes a list and
+        # a name is a whole word in it - a regex here matches `scanner-pi` in
+        # `scanner-pi-two` and says the wrong thing confidently.
+        if awk -v want="${HOST%%.*}" '
+                tolower($1) == "host" {
+                    for (i = 2; i <= NF; i++) if ($i == want) found = 1
+                }
+                END { exit !found }
+           ' ~/.ssh/config 2>/dev/null; then
+            echo "         ~/.ssh/config has a Host block named '${HOST%%.*}' - use that" >&2
+            echo "         instead of '$HOST'. The alias is what carries the user and" >&2
+            echo "         the key; the hostname on its own walks straight past both." >&2
+        else
+            echo "         check ~/.ssh/config for an alias for this machine (its Host" >&2
+            echo "         name, not its hostname, is what carries the user and key)," >&2
+            echo "         or set one up: ssh-keygen -t ed25519 && ssh-copy-id $HOST" >&2
+        fi
     fi
 fi
 

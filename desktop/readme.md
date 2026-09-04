@@ -1486,8 +1486,13 @@ In", which is what the device listens on). Viewer only: the pads are painted
 from the midi map and `--headless` has no map to paint from. See
 [lighting the pads](#lighting-the-pads).
 
-`--host [NAME]` runs the show on another machine — `scanner-pi.local` unless
-told otherwise, or `$ECLIPSE_HOST` — keeping the window here. That is
+`--host [NAME]` runs the show on another machine — `scanner-pi` unless told
+otherwise, or `$ECLIPSE_HOST` — keeping the window here. That name is the ssh
+**alias**, not the hostname: `~/.ssh/config` is where the user and the key
+live, and naming the machine directly (`scanner-pi.local`) walks past the
+whole `Host` block, so ssh falls back to default identities and refuses with
+a key sitting right there. The preflight spots that case and says which name
+to use instead. That is
 [over ssh](#over-ssh) with the launcher's preflight in front of it: it checks
 `ssh NAME true` before opening anything, because a key that is not set up
 fails as a password prompt inside a pipe, which is a hang rather than a
