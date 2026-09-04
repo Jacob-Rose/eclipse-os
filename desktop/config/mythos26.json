@@ -116,6 +116,23 @@
 
   "devices": [
     {
+      // The scanner's ring, on the sculpture: a circle of literal stage
+      // coordinates spanning the obelisk's width with its lowest pixel on the
+      // origin line y 16, exactly where config/scanner.json puts it - so at a
+      // zero offset it stands in the same space as the pillar and a beat that
+      // climbs the obelisk passes through the ring on its way up.
+      //
+      // No wire here: the device is preview-only, and the real ring is
+      // painted from the frame stream by the game or, at a desk over ssh
+      // (--live --host scanner-pi), by the pi's ring bridge - see
+      // devices/scanner_ring.json. On a desk without either it is a picture.
+      "device": "scanner_ring",
+      "offset": [0, 0],
+
+      // A near-square panel for a circle. View only.
+      "view_scale": [0.9, 1.0]
+    },
+    {
       // The pillar, at the origin, in its own coordinates.
       //
       // Deliberately no "fit" or "scale": the obelisk's 0..7 across the sides
