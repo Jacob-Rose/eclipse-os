@@ -1678,7 +1678,7 @@ through if a second sculpture ever misbehaves.
    `strip=0:344` matching the patch is the check worth making.
 3. **A frame.** `--config config/obelisk_usb.json --frames 90` ✓, with
    `RELIC EOSLINK take` in the log — the sculpture confirming the takeover.
-4. **Cues.** `link cmd states` ✓ `EOSLINK states seasons theater mono`, and
+4. **Cues.** `link cmd states` ✓ `EOSLINK states blobs seasons theater mono`, and
    `link cmd state theater` ✓ `EOSLINK state theater`.
 5. **Both modes.** `link cue` ✓ `EOSLINK release asked`, then a cue in cue mode,
    then `link pixels` ✓ `EOSLINK take` again.
@@ -1733,9 +1733,9 @@ relic *what it is doing* and runs the same thing itself.
 
 ```
 link take            # -> sim, then the stream starts once the shadow is live
-RELIC obelisk EOSLINK sim seasons noise.seed=41 noise.time=812.4
-SHADOW obelisk seasons noise.seed=41 noise.time=812.4
-LINK obelisk streaming over seasons
+RELIC obelisk EOSLINK sim blobs noise.seed=41 noise.time=812.4
+SHADOW obelisk blobs noise.seed=41 noise.time=812.4
+LINK obelisk streaming over blobs
 ```
 
 Three pieces:
