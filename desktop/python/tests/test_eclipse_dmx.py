@@ -4222,11 +4222,110 @@ class TheLaunchpad(unittest.TestCase):
         self.assertEqual(len(launchpad.light(specs)), 2)
 
 
+class _FakeRig:
+    """Just the two things a check asks about."""
+
+    def __init__(self, pattern="mythos26", state=""):
+        self.current_pattern = pattern
+        self.current_state = state
+
+
+class TheActionChecks(unittest.TestCase):
+    """`check` on an ActionSpec: is this action's effect already so?
+
+    The generic half of a lit surface. Nothing here is about lamps - an
+    action answers for itself, the votes are counted in Mapping.is_live, and
+    the only thing that cares *why* is whatever is drawing the picture.
+    """
+
+    def _at(self, pattern="mythos26", state=""):
+        return midi_map.ActionContext(show=_FakeRig(pattern, state))
+
+    def _cue(self, *actions, **kw):
+        return midi_map.Mapping(kind="note", number=41,
+                                actions=[midi_map.Action(k, p) for k, p in actions], **kw)
+
+    # -- the two that can answer -------------------------------------------
+
+    def test_a_state_answers_for_itself(self):
+        spec = midi_map.ACTIONS["state"]
+        self.assertIs(spec.check(self._at(state="tv_static"), {"name": "tv_static"}), True)
+        self.assertIs(spec.check(self._at(state="beat_pulse"), {"name": "tv_static"}), False)
+
+    def test_a_pattern_answers_which_machine_is_loaded(self):
+        spec = midi_map.ACTIONS["pattern"]
+        self.assertIs(spec.check(self._at(pattern="jacket"), {"name": "jacket"}), True)
+        self.assertIs(spec.check(self._at(pattern="mythos26"), {"name": "jacket"}), False)
+
+    def test_no_state_at_all_is_a_no_not_a_shrug(self):
+        # A plain pattern is running. Whatever this pad sets, the rig is
+        # certainly not in it - which is knowledge, not an absence of it.
+        spec = midi_map.ACTIONS["state"]
+        self.assertIs(spec.check(self._at(pattern="rainbow", state=""),
+                                 {"name": "tv_static"}), False)
+
+    def test_most_actions_have_no_opinion(self):
+        # Synesthesia never reports back, and neither does a protocol line.
+        for key in ("syn_scene", "syn_preset", "syn_favslot", "syn_control", "command"):
+            self.assertIsNone(midi_map.ACTIONS[key].check, key)
+
+    # -- how the votes are counted ------------------------------------------
+
+    def test_every_action_that_can_answer_has_to_agree(self):
+        # "jacket / campfire" is not live on jacket alone - that is what makes
+        # it a cue rather than two buttons.
+        cue = self._cue(("pattern", {"name": "jacket"}), ("state", {"name": "campfire"}))
+
+        self.assertIs(cue.is_live(self._at("jacket", "campfire")), True)
+        self.assertIs(cue.is_live(self._at("jacket", "digital_void")), False)
+        self.assertIs(cue.is_live(self._at("mythos26", "campfire")), False)
+
+    def test_an_action_that_cannot_answer_does_not_veto(self):
+        # The common cue: a scene beside a state. If the scene counted as no,
+        # the one thing this exists for could never light.
+        cue = self._cue(("syn_scene", {"scene": "Neon Grid", "preset": ""}),
+                        ("state", {"name": "tv_static"}))
+
+        self.assertIs(cue.is_live(self._at(state="tv_static")), True)
+        self.assertIs(cue.is_live(self._at(state="beat_pulse")), False)
+
+    def test_a_row_nothing_can_answer_for_returns_none(self):
+        # None is not False: there is no answer available, and a surface that
+        # pulsed anyway would be inventing one.
+        scene = self._cue(("syn_scene", {"scene": "Neon Grid", "preset": ""}))
+        self.assertIsNone(scene.is_live(self._at(state="tv_static")))
+
+    def test_an_unknown_action_abstains(self):
+        row = self._cue(("warp_core", {}), ("state", {"name": "tv_static"}))
+        self.assertIs(row.is_live(self._at(state="tv_static")), True)
+
+    def test_a_check_that_throws_costs_that_pad_not_the_repaint(self):
+        exploding = midi_map.ActionSpec(
+            key="explodes", label="explodes", fields=[],
+            run=lambda c, p, v: None,
+            check=lambda c, p: (_ for _ in ()).throw(RuntimeError("boom")))
+        midi_map.register_action(exploding)
+        try:
+            row = self._cue(("explodes", {}), ("state", {"name": "tv_static"}))
+            self.assertIs(row.is_live(self._at(state="tv_static")), True)
+        finally:
+            del midi_map.ACTIONS["explodes"]
+
+    def test_no_show_is_no_opinion(self):
+        # A desk with no rig attached: the question cannot be asked.
+        cue = self._cue(("state", {"name": "tv_static"}))
+        self.assertIsNone(cue.is_live(midi_map.ActionContext(show=None)))
+
+
 class TheLampPainter(unittest.TestCase):
     """Which pads are lit, and which one is live."""
 
     def _map(self, *rows):
         return midi_map.MappingSet(list(rows))
+
+    def _at(self, pattern="mythos26", state=""):
+        """The context a check is asked against."""
+        return midi_map.ActionContext(show=_FakeRig(pattern, state))
 
     def _cue(self, number, state, colour=41, **kw):
         return midi_map.Mapping(label=state, kind="note", number=number,
@@ -4237,7 +4336,7 @@ class TheLampPainter(unittest.TestCase):
         painter = launchpad.LampPainter(
             self._map(self._cue(11, "tv_static"), self._cue(12, "beat_pulse")))
 
-        surface = painter.wanted("tv_static")
+        surface = painter.wanted(self._at(state="tv_static"))
 
         self.assertEqual(surface[11], (launchpad.PULSING, 41))
         self.assertEqual(surface[12], (launchpad.STATIC, 41))
@@ -4249,8 +4348,8 @@ class TheLampPainter(unittest.TestCase):
         painter = launchpad.LampPainter(
             self._map(self._cue(11, "tv_static"), self._cue(12, "beat_pulse")))
 
-        self.assertEqual(painter.wanted("beat_pulse")[12][0], launchpad.PULSING)
-        self.assertEqual(painter.wanted("beat_pulse")[11][0], launchpad.STATIC)
+        self.assertEqual(painter.wanted(self._at(state="beat_pulse"))[12][0], launchpad.PULSING)
+        self.assertEqual(painter.wanted(self._at(state="beat_pulse"))[11][0], launchpad.STATIC)
 
     def test_a_scene_only_pad_is_lit_but_never_pulses(self):
         # Synesthesia never reports back what it is showing, so a lamp that
@@ -4260,34 +4359,34 @@ class TheLampPainter(unittest.TestCase):
             midi_map.Mapping(kind="note", number=11, colour=53,
                              action="syn_scene", params={"scene": "Neon Grid"})))
 
-        surface = painter.wanted("tv_static")
+        surface = painter.wanted(self._at(state="tv_static"))
         self.assertEqual(surface[11], (launchpad.STATIC, 53))
 
     def test_a_disabled_mapping_is_dark(self):
         painter = launchpad.LampPainter(
             self._map(self._cue(11, "tv_static", enabled=False)))
-        self.assertEqual(painter.wanted("tv_static"), {})
+        self.assertEqual(painter.wanted(self._at(state="tv_static")), {})
 
     def test_a_pad_off_this_surface_is_skipped(self):
         painter = launchpad.LampPainter(self._map(self._cue(60, "tv_static")))
-        self.assertEqual(painter.wanted("tv_static"), {})
+        self.assertEqual(painter.wanted(self._at(state="tv_static")), {})
 
     def test_repainting_the_same_picture_sends_nothing(self):
         # The wire is shared with the beat; a repaint every tick would not be.
         painter = launchpad.LampPainter(
             self._map(self._cue(11, "tv_static"), self._cue(12, "beat_pulse")))
 
-        self.assertTrue(painter.frame("tv_static"))
-        self.assertEqual(painter.frame("tv_static"), [])
-        self.assertEqual(painter.frame("tv_static"), [])
+        self.assertTrue(painter.frame(self._at(state="tv_static")))
+        self.assertEqual(painter.frame(self._at(state="tv_static")), [])
+        self.assertEqual(painter.frame(self._at(state="tv_static")), [])
 
     def test_only_the_pads_that_changed_are_sent(self):
         mappings = self._map(self._cue(11, "tv_static"), self._cue(12, "beat_pulse"),
                              self._cue(13, "vu_pulse"))
         painter = launchpad.LampPainter(mappings)
-        painter.frame("tv_static")
+        painter.frame(self._at(state="tv_static"))
 
-        messages = painter.frame("beat_pulse")
+        messages = painter.frame(self._at(state="beat_pulse"))
 
         self.assertEqual(len(messages), 1)
         # header + command + two specs of three bytes + F7
@@ -4296,10 +4395,10 @@ class TheLampPainter(unittest.TestCase):
     def test_a_pad_that_lost_its_binding_goes_out(self):
         mappings = self._map(self._cue(11, "tv_static"), self._cue(12, "beat_pulse"))
         painter = launchpad.LampPainter(mappings)
-        painter.frame("tv_static")
+        painter.frame(self._at(state="tv_static"))
 
         del mappings.mappings[1]
-        messages = painter.frame("tv_static")
+        messages = painter.frame(self._at(state="tv_static"))
 
         self.assertEqual(len(messages), 1)
         # static, pad 12, colour 0 - the only change
@@ -4309,11 +4408,11 @@ class TheLampPainter(unittest.TestCase):
         # For after a mode switch, when the device has forgotten what it was
         # showing but the painter has not.
         painter = launchpad.LampPainter(self._map(self._cue(11, "tv_static")))
-        painter.frame("tv_static")
-        self.assertEqual(painter.frame("tv_static"), [])
+        painter.frame(self._at(state="tv_static"))
+        self.assertEqual(painter.frame(self._at(state="tv_static")), [])
 
         painter.forget()
-        self.assertTrue(painter.frame("tv_static"))
+        self.assertTrue(painter.frame(self._at(state="tv_static")))
 
     def test_the_live_pad_wins_when_two_bindings_share_it(self):
         # Old maps did this before actions were a list, and still load.
@@ -4322,14 +4421,42 @@ class TheLampPainter(unittest.TestCase):
             midi_map.Mapping(kind="cc", number=11, mode="value", colour=9,
                              action="master", params={"low": 0.0, "high": 1.0})))
 
-        self.assertEqual(painter.wanted("tv_static")[11][0], launchpad.PULSING)
+        self.assertEqual(painter.wanted(self._at(state="tv_static"))[11][0], launchpad.PULSING)
+
+    def test_a_machine_cue_pulses_only_when_both_halves_are_so(self):
+        # The pad that loads a machine and opens one of its looks. Lit on the
+        # wrong machine, lit on the right machine at the wrong look, pulsing
+        # only when it is actually what the rig is doing.
+        painter = launchpad.LampPainter(self._map(
+            midi_map.Mapping(kind="note", number=11, colour=41, actions=[
+                midi_map.Action("pattern", {"name": "jacket"}),
+                midi_map.Action("state", {"name": "campfire"})])))
+
+        self.assertEqual(painter.wanted(self._at("mythos26", "beat_pulse"))[11][0],
+                         launchpad.STATIC)
+        self.assertEqual(painter.wanted(self._at("jacket", "digital_void"))[11][0],
+                         launchpad.STATIC)
+        self.assertEqual(painter.wanted(self._at("jacket", "campfire"))[11][0],
+                         launchpad.PULSING)
+
+    def test_a_pad_that_only_loads_a_machine_pulses_on_any_of_its_looks(self):
+        painter = launchpad.LampPainter(self._map(
+            midi_map.Mapping(kind="note", number=12, colour=9,
+                             action="pattern", params={"name": "jacket"})))
+
+        self.assertEqual(painter.wanted(self._at("jacket", "campfire"))[12][0],
+                         launchpad.PULSING)
+        self.assertEqual(painter.wanted(self._at("jacket", "parrot"))[12][0],
+                         launchpad.PULSING)
+        self.assertEqual(painter.wanted(self._at("mythos26", "beat_pulse"))[12][0],
+                         launchpad.STATIC)
 
     def test_the_colour_is_the_mapping_s_own(self):
         painter = launchpad.LampPainter(self._map(
             self._cue(11, "tv_static", colour=launchpad.Colour.AMBER),
             self._cue(12, "beat_pulse", colour=launchpad.Colour.PINK)))
 
-        surface = painter.wanted("")
+        surface = painter.wanted(self._at())
         self.assertEqual(surface[11][1], launchpad.Colour.AMBER)
         self.assertEqual(surface[12][1], launchpad.Colour.PINK)
 

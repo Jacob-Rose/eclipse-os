@@ -219,17 +219,20 @@ class LampPainter:
       - **which pads mean something.** Every enabled mapping whose trigger
         number lands on a lamp gets lit in its own colour, so the surface
         shows what is bound without anyone having to remember.
-      - **which one is live.** A mapping is the live one when the rig is in a
-        state one of its actions sets, and it pulses instead of sitting
-        static. That comes off `STATE` - what the rig actually did - not off
-        what was last pressed here, so a state changed from the desk, a
-        keyboard shortcut or an OSC binding moves the lamp too.
+      - **which one is live.** A mapping pulses when everything it does is
+        already so - see `Mapping.is_live`. Nothing about that is written
+        into this file: each action in the registry answers for itself, and
+        the ones that cannot answer abstain. So "live" is whatever the
+        actions mean by it, and a new kind of binding that can report its own
+        state lights correctly here without this class being touched.
 
-    The Synesthesia half has no equivalent and deliberately does not pretend
-    to one: the visualiser never reports back what scene it is on, so a pad
-    that only sets a scene is lit as bound and never pulses. A lamp that
-    claimed to know would be wrong the first time a scene was changed from
-    Synesthesia's own window.
+    In practice that comes out as the state machine, because `rig: state` and
+    `rig: pattern` are the two that can answer - and it reads what the rig
+    actually did rather than what was last pressed here, so a state changed
+    from the desk, a shortcut or an OSC binding moves the lamp too. The
+    Synesthesia half abstains: the visualiser never reports back what scene
+    it is on, and a lamp that claimed to know would be wrong the first time a
+    scene was changed from Synesthesia's own window.
 
     Nothing here sends. `frame()` returns messages; the caller owns the port.
     """
@@ -243,10 +246,15 @@ class LampPainter:
         #: sends nothing. The wire is shared with the beat.
         self._painted: dict = {}
 
-    def wanted(self, current_state: str = "") -> dict:
+    def wanted(self, context) -> dict:
         """`{led index: (lighting type, colour)}` for the surface as it should
         be. Pure - no device, no state kept - so a test can assert the picture
-        rather than the bytes."""
+        rather than the bytes.
+
+        `context` is the ActionContext the dispatcher fires against, because
+        that is what an action's `check` is asked against: the surface and the
+        bindings have to be looking at the same rig.
+        """
         surface: dict = {}
         for mapping in self.mappings.mappings:
             if not mapping.enabled:
@@ -255,7 +263,9 @@ class LampPainter:
             if not is_lightable(index):
                 continue
 
-            live = bool(current_state) and current_state in mapping.state_names()
+            # None - nothing could answer - is lit but not pulsing, the same
+            # as a plain no. The difference matters to the caller, not here.
+            live = mapping.is_live(context) is True
             entry = (PULSING if live else STATIC, self._colour_of(mapping))
 
             # Two mappings can share a pad - that is how the map worked before
@@ -266,14 +276,14 @@ class LampPainter:
             surface[index] = entry
         return surface
 
-    def frame(self, current_state: str = "", force: bool = False) -> List[List[int]]:
+    def frame(self, context, force: bool = False) -> List[List[int]]:
         """The messages that move the surface from what it shows to what it
         should show. Empty when nothing changed.
 
         `force` repaints everything - for after a mode switch, when the device
         has forgotten what it was showing but this has not.
         """
-        surface = self.wanted(current_state)
+        surface = self.wanted(context)
 
         if force:
             self._painted = {}

@@ -417,6 +417,11 @@ class ShowController:
         self.state_names: List[str] = []
         #: The state showing now, or "" when the pattern has no states.
         self.current_state: str = ""
+        #: The pattern running now - which, for a state machine pattern, is
+        #: another way of saying *which machine* is loaded. Read off READY at
+        #: startup and off every PARAMS block after, so it costs no polling
+        #: and cannot drift: a look announces its own name whenever it opens.
+        self.current_pattern: str = ""
 
         #: Knobs the running look offers, in registration order. Replaced
         #: wholesale whenever the pattern or the state changes, so a UI can
@@ -784,6 +789,13 @@ class ShowController:
         # a UI knows to put its state buttons away.
         if line.startswith("STATES"):
             self.state_names = line.split()[1:]
+            if not self.state_names:
+                # A plain pattern announces an empty list and then never sends
+                # a STATE, so the last machine's look would sit here as the
+                # current one - and anything reading it (the cue buttons, a
+                # lit pad) would go on claiming a state the rig is no longer
+                # in, on a pattern that has none.
+                self.current_state = ""
         elif line.startswith("STATE "):
             self.current_state = line[len("STATE "):].strip()
 
@@ -796,6 +808,8 @@ class ShowController:
             parts = line.split()
             self._look_key = (parts[1] if len(parts) > 1 else "",
                               parts[2] if len(parts) > 2 else "")
+            if self._look_key[0]:
+                self.current_pattern = self._look_key[0]
             self._params_open = []
             self.params = self._params_open
             # curves belong to the same look as the knobs, so a new block
@@ -825,6 +839,13 @@ class ShowController:
 
         if line.startswith("READY"):
             self._ready = True
+            # `READY fixtures=356 devices=3 pattern=mythos26` - the opening
+            # pattern, before any look has announced its knobs. Without this a
+            # rig that starts on a plain pattern (no PARAMS at all) would
+            # report no pattern until something switched.
+            for word in line.split():
+                if word.startswith("pattern="):
+                    self.current_pattern = word[len("pattern="):]
 
         self._handle_reply_or_event(line)
 

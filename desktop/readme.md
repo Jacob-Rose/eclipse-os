@@ -235,16 +235,37 @@ is not the time for a dialog.
 ### lighting the pads
 
 `--midi-out SPEC` names a MIDI **output** and the surface starts showing the
-map: every bound pad lit in its own colour, and the pad for the state the rig
-is actually in **pulsing**. The **lamp** box in the editor is that colour, as
+map: every bound pad lit in its own colour, and the pad for what the rig is
+*already doing* **pulsing**. The **lamp** box in the editor is that colour, as
 a palette index — the controller's own numbering, out of its manual, rather
 than this desk inventing a second name for a colour the hardware has named.
 
-It follows the rig, not the pad you pressed. The lamp moves off `STATE`, the
-same announcement the cue buttons follow, so a state changed from a pad, a
-click, a keyboard shortcut or an OSC binding all move it. The Synesthesia half
-has no equivalent and does not pretend to one: the visualiser never says what
-scene it is on, so a scene-only pad is lit as bound and never pulses.
+**How a pad knows it is the live one.** An action in the registry may offer a
+`check` alongside its `run` — "is my effect in force right now?" — answering
+yes, no, or *cannot know*. A pad pulses when every action that can answer says
+yes. So it is a property of the actions, not of the state machine: a new kind
+of binding that can report its own state lights correctly with nothing in the
+lamp code changed.
+
+Three rules fall out of that, and all three are the point:
+
+- **Cannot-know abstains rather than vetoes.** Most of the registry is verbs
+  with no readback. If they counted as *no*, the commonest cue there is — a
+  scene on the visualiser beside a state on the rig — could never light.
+- **Everything that can answer has to agree.** A pad that loads a machine
+  *and* opens one of its looks is only live when both are true. That is what
+  makes `jacket / campfire` a cue rather than two buttons: on jacket at some
+  other look it is lit, not pulsing.
+- **Nothing to answer means no pulse.** A row of pure Synesthesia actions has
+  no answer available, and a lamp that pulsed anyway would be inventing one —
+  wrong the first time a scene was changed in Synesthesia's own window.
+
+Two actions answer today: `rig: state` compares the running look, and
+`rig: pattern` compares the running pattern — which for a state machine is
+another way of saying *which machine is loaded*. Both read what the rig
+actually did (`STATE`, and the `PARAMS` header), not what was last pressed
+here, so a state changed from a click, a shortcut or an OSC binding moves the
+lamp too.
 
 Three things worth knowing before switching it on:
 

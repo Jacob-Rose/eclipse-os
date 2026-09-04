@@ -2565,7 +2565,7 @@ class ViewerApp:
         if not self._lamps_open:
             return
         try:
-            for message in self._lamps.frame(self.show.current_state):
+            for message in self._lamps.frame(self._dispatcher.context):
                 self.show.midi_send(message)
         except ShowError as error:
             # One failed repaint closes the lamps rather than retrying thirty

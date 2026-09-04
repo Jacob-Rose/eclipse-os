@@ -177,6 +177,21 @@ class ActionSpec:
     fields: List[FieldSpec]
     run: Callable[[ActionContext, Dict[str, object], float], Optional[str]]
 
+    #: Optional: is this action's effect in force *right now*?
+    #:
+    #: `check(context, params)` answers True, False, or None for "cannot
+    #: know". None is the important one and the default: most actions are a
+    #: verb with no readback - Synesthesia never says what scene it is on -
+    #: and an action that guessed would be wrong the first time something
+    #: else changed it. A no-opinion action neither confirms nor denies; see
+    #: Mapping.is_live for how the votes are counted.
+    #:
+    #: This is what makes a lit surface a property of the registry rather
+    #: than of the state machine. Nothing about lamps is written into the
+    #: actions here - `check` says whether a thing is so, and the lamp code
+    #: is the only thing that cares why.
+    check: Optional[Callable[[ActionContext, Dict[str, object]], Optional[bool]]] = None
+
 
 #: The registry, in the order an editor should offer them.
 ACTIONS: Dict[str, ActionSpec] = {}
@@ -240,6 +255,19 @@ def _run_state(context, params, value):
     return f"state {name}"
 
 
+def _check_state(context, params):
+    name = str(params.get("name", "")).strip()
+    if not name or context.show is None:
+        return None
+    current = getattr(context.show, "current_state", None)
+    if not current:
+        # No state at all - a plain pattern is running. That is a real "no",
+        # not an absence of information: whatever this pad sets, the rig is
+        # certainly not in it.
+        return False
+    return current == name
+
+
 def _run_pattern(context, params, value):
     name = str(params.get("name", "")).strip()
     if not name:
@@ -248,6 +276,16 @@ def _run_pattern(context, params, value):
         return "pattern: no show"
     context.show.set_pattern(name)
     return f"pattern {name}"
+
+
+def _check_pattern(context, params):
+    name = str(params.get("name", "")).strip()
+    if not name or context.show is None:
+        return None
+    current = getattr(context.show, "current_pattern", None)
+    if current is None:
+        return None
+    return current == name
 
 
 def _run_param(context, params, value):
@@ -374,12 +412,15 @@ register_action(ActionSpec(
     key="state", label="rig: state",
     fields=[FieldSpec("name", "state", hint="a state of the running machine")],
     run=_run_state,
+    check=_check_state,
 ))
 
 register_action(ActionSpec(
     key="pattern", label="rig: pattern",
-    fields=[FieldSpec("name", "pattern")],
+    fields=[FieldSpec("name", "pattern",
+                      hint="a pattern; for a state machine, which machine is loaded")],
     run=_run_pattern,
+    check=_check_pattern,
 ))
 
 register_action(ActionSpec(
@@ -612,10 +653,8 @@ class Mapping:
     def state_names(self) -> List[str]:
         """Every state this mapping would put the rig into.
 
-        The lamp side of the map reads this: a pad is "the live one" when the
-        rig is in a state it sets. A list because a mapping may hold several
-        actions and more than one of them may be a state - unusual, and not
-        worth forbidding.
+        A list because a mapping may hold several actions and more than one of
+        them may be a state - unusual, and not worth forbidding.
         """
         names = []
         for action in self.actions:
@@ -624,6 +663,43 @@ class Mapping:
                 if name:
                     names.append(name)
         return names
+
+    def is_live(self, context: ActionContext) -> Optional[bool]:
+        """Is what this pad does already so?
+
+        Every action that can answer is asked, and they all have to agree:
+        a pad that loads a machine *and* opens one of its looks is only the
+        live one when both are true. That is what makes it a cue rather than
+        two buttons - "jacket / campfire" is not lit on jacket alone.
+
+        Actions that cannot know are not counted rather than counted as no.
+        Most of the registry is verbs with no readback, and the common cue is
+        a scene on the visualiser beside a state on the rig: if the scene -
+        which can never answer - vetoed, that pad could never be live and the
+        one thing this is for would not work.
+
+        Returns None when *nothing* could answer, which is a different thing
+        from False and is why this is not a bool. A row of pure Synesthesia
+        actions has no answer available, and a surface that pulsed one anyway
+        would be inventing it.
+        """
+        opinions: List[bool] = []
+        for action in self.actions:
+            spec = action.spec
+            if spec is None or spec.check is None:
+                continue
+            try:
+                verdict = spec.check(context, coerce_params(spec, action.params))
+            except Exception:
+                # Fenced like `run` is, and for the same reason: a check that
+                # throws must cost this pad its lamp, not the whole repaint.
+                verdict = None
+            if verdict is not None:
+                opinions.append(bool(verdict))
+
+        if not opinions:
+            return None
+        return all(opinions)
 
 
 # An InitVar with a default leaves that default sitting on the class, so
