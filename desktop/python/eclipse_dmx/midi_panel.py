@@ -212,6 +212,15 @@ class MidiMapPanel:
         self._colour_var = tk.StringVar(value="41")
         entry(row, self._colour_var, width=4).pack(side="left", padx=2)
 
+        # Which tab this row lives on. Blank means every tab, which is what a
+        # map with no pages is and what the tabs and arrows themselves are.
+        row = tk.Frame(self._editor, bg=PANEL)
+        row.pack(fill="x", pady=1)
+        dim_label(row, "page  ").pack(side="left")
+        self._page_var = tk.StringVar()
+        entry(row, self._page_var, width=16).pack(side="left")
+        dim_label(row, " blank = always").pack(side="left")
+
         # the trigger
         row = tk.Frame(self._editor, bg=PANEL)
         row.pack(fill="x", pady=1)
@@ -368,6 +377,7 @@ class MidiMapPanel:
             self._channel_var.set(str(mapping.channel))
             self._mode_var.set(mapping.mode)
             self._colour_var.set(str(mapping.colour))
+            self._page_var.set(mapping.page)
             self._rebuild_actions()
         finally:
             self._writing = False
@@ -388,6 +398,7 @@ class MidiMapPanel:
         mapping.channel = self._int_of(self._channel_var, mapping.channel, 0, 16)
         mapping.mode = self._mode_var.get()
         mapping.colour = self._int_of(self._colour_var, mapping.colour, 0, 127)
+        mapping.page = self._page_var.get().strip()
 
         # The action blocks, back onto the row. Zipped rather than indexed
         # because a commit can arrive from a focus-out *while* the editor is

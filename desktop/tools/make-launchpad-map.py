@@ -77,53 +77,67 @@ COLOUR = {
 }
 
 # The grid, bottom row first and left to right - the order a hand reads it.
+# Every page gets the whole grid, because a page is one machine and the
+# biggest machine is twenty-six looks.
 GRID = [lp.pad(row, col) for row in range(1, 9) for col in range(1, 9)]
-# Overflow goes to the top row, which sits directly above grid row 8 - so the
-# machine that spills off the top of the grid carries straight on.
-OVERFLOW = list(lp.TOP_ROW)
-# The scene-launch column: one button per machine, the classic bank selector.
-SELECTORS = list(lp.RIGHT_COLUMN)
+
+# The right column - the scene-launch buttons - are the tabs. One per machine,
+# always on the surface whatever page is showing.
+TABS = list(lp.RIGHT_COLUMN)
+
+# The top row is *not* free real estate. Measured off the device in Programmer
+# mode: 91 Up, 92 Down, 93 Left, 94 Right, then 95 Session, 96 Note, 97 Custom,
+# 98 Capture MIDI. The arrows are hardware with a meaning, and burying a look
+# under one is how a surface stops being readable.
+UP, DOWN, LEFT, RIGHT = 91, 92, 93, 94
 
 rows = []
-slots = GRID + OVERFLOW
-placed = 0
 
 for machine in ORDER:
-    for state in machines[machine]:
-        index = slots[placed]
-        placed += 1
-        # A pad has to work from any machine, so it loads the machine first
-        # and then opens the look. Re-issuing the pattern it is already on is
-        # free; leaving it out means the pad only works when scanner happens
-        # to be up already.
+    states = machines[machine]
+    if len(states) > len(GRID):
+        raise SystemExit(f"{machine} has {len(states)} looks; the grid holds {len(GRID)}")
+    for index, state in zip(GRID, states):
+        # The pattern action is kept even though the tab already switched the
+        # machine: it costs nothing to re-issue, and it means a pad still does
+        # the right thing if the rig is moved from the desk while a page is up.
         rows.append(mm.Mapping(
             label=f"{machine} - {state}",
-            kind="note" if index in lp.GRID else "cc",
-            channel=1, number=index, mode="press",
-            colour=COLOUR[machine],
+            kind="note", channel=1, number=index, mode="press",
+            page=machine, colour=COLOUR[machine],
             actions=[mm.Action("pattern", {"name": machine}),
                      mm.Action("state", {"name": state})]))
 
-for machine, index in zip(ORDER, SELECTORS):
-    # Pattern only: this one lights whenever its machine is loaded, whatever
-    # look is running - which is what makes it read as "you are in this bank".
+for machine, index in zip(ORDER, TABS):
+    # A tab changes the surface *and* the rig - the page so the grid shows this
+    # machine's looks, the pattern so the rig is on the machine those looks
+    # belong to. Both, because either alone is a lie: a page whose states the
+    # rig cannot take, or a machine whose looks are not on the surface.
     rows.append(mm.Mapping(
-        label=f"{machine} (machine)",
+        label=f"{machine} (tab)",
         kind="cc", channel=1, number=index, mode="press",
-        colour=COLOUR[machine],
-        actions=[mm.Action("pattern", {"name": machine})]))
+        page="", colour=COLOUR[machine],
+        actions=[mm.Action("page", {"name": machine}),
+                 mm.Action("pattern", {"name": machine})]))
 
-if placed > len(slots):
-    raise SystemExit(f"{placed} states will not fit in {len(slots)} buttons")
+# The two momentary inputs a look reads - a jacket's remote buttons, on a rig
+# that has none. Value mode, so the arrow is held rather than latched: a button
+# sends full going down and zero coming up, and one mapping covers both edges.
+for channel, index, colour in (("a", UP, lp.Colour.WHITE), ("b", DOWN, lp.Colour.WHITE)):
+    rows.append(mm.Mapping(
+        label=f"input {channel}",
+        kind="cc", channel=1, number=index, mode="value",
+        page="", colour=colour,
+        actions=[mm.Action("input", {"channel": channel})]))
 
 out = pathlib.Path(args.out)
-mm.MappingSet(rows).save(out)
+mm.MappingSet(rows, opens_on=ORDER[0]).save(out)
 
-on_grid = min(placed, len(GRID))
-overflowed = max(0, placed - len(GRID))
+pages = {m: sum(1 for r in rows if r.page == m) for m in ORDER}
 print(f"{len(rows)} rows -> {out}")
-print(f"  {placed} state pads: {on_grid} on the grid"
-      + (f", {overflowed} on the top row" if overflowed else ""))
-print(f"  {len(ORDER)} machine selectors on the right column")
-print(f"  spare: {len(OVERFLOW) - overflowed} of the top row, "
-      f"{len(SELECTORS) - len(ORDER)} of the right column")
+print(f"  opens on '{ORDER[0]}'")
+for machine, count in pages.items():
+    print(f"    page {machine:<10} {count:>2} looks")
+print(f"  {len(ORDER)} tabs on the right column, {len(TABS) - len(ORDER)} spare")
+print(f"  inputs a/b on Up ({UP}) and Down ({DOWN}); "
+      f"Left ({LEFT}) and Right ({RIGHT}) left alone")

@@ -426,6 +426,12 @@ class ShowController:
         #: and cannot drift: a look announces its own name whenever it opens.
         self.current_pattern: str = ""
 
+        #: The two momentary inputs, as this desk last set them. Write-only on
+        #: the rig's side - the executable never announces them back - so this
+        #: is what was asked for rather than what is, which for an input
+        #: nothing else can touch is the same thing.
+        self.inputs: Dict[str, bool] = {"a": False, "b": False}
+
         #: Knobs the running look offers, in registration order. Replaced
         #: wholesale whenever the pattern or the state changes, so a UI can
         #: watch `params_revision` and rebuild when it moves.
@@ -1016,6 +1022,7 @@ class ShowController:
         stays expressive on a rig that has none.
         """
         self.command(f"input {channel} {'on' if down else 'off'}")
+        self.inputs[channel.strip().lower()] = bool(down)
 
     def trigger(self, name: str) -> None:
         """Fires one of the running look's triggers - an impulse, by tag.

@@ -909,6 +909,9 @@ class ViewerApp:
         self._dispatcher = Dispatcher(self._midimap, ActionContext(
             show=self.show, osc_factory=self._map_osc, say=self._say,
             syn=self._syn_state))
+        # Which tab the map opens on. A map with no pages says nothing here
+        # and every row is on every page, which is how one without them works.
+        self._dispatcher.context.page = self._midimap.opens_on
 
         # The other input: a visualiser's audio analysis, bound to the same
         # actions the pads use. Built here and opened after the show starts -

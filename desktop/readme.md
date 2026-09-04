@@ -296,27 +296,51 @@ Three things worth knowing before switching it on:
   Launchpad's own Setup button, so a desk that exited without restoring Live
   mode would leave the box somewhere its front panel cannot get out of.
 
+### pages — a tab per machine
+
+Sixty-six looks do not fit on sixty-four pads, and cramming them in gives a
+surface nobody can read. So a mapping can name a **page**, and only the page
+showing is on the surface — the grid is one machine at a time.
+
+A page hides a row from the pad as well as from the lamp, and it has to:
+two pages put different rows on the same pad, so a tab is a way of *choosing*
+between them rather than of stacking them. Leave `page` blank and the row is
+on every page, which is what the tabs and the arrows are — and what every map
+written before pages is, so an old file behaves exactly as it did.
+
+`desk: page` is the action that switches, and it is the first action that
+touches neither the rig nor the visualiser — it changes what the controller
+is, not what the lights are doing. `opens_on` at the top of the file says
+which tab the desk starts on.
+
 ### the whole rig on one surface
 
-`config/midimaps/launchpad-all-states.json` is every state of every machine,
-laid out for a Launchpad X — 66 state pads, plus six machine selectors down
-the right column:
+`config/midimaps/launchpad-all-states.json` is every look of every machine,
+laid out for a Launchpad X:
 
 ```
 ./launch-mythos-set.sh -- --midimap config/midimaps/launchpad-all-states.json
 ```
 
-Each state pad carries **two** actions, `rig: pattern` then `rig: state`, so
-it works from wherever the rig happens to be rather than only when its machine
-is already loaded. The right column is `rig: pattern` alone — one button per
-machine, which lights whenever that machine is up whatever look is running, so
-the surface always says which bank you are in.
+- **The grid** is the page's machine, one look per pad — 7 for mythos26, 12
+  for jacket, 26 for scanner, and so on. Each pad carries `rig: pattern` then
+  `rig: state`, so it lands right even if the rig was moved from the desk
+  while the page was up.
+- **The right column** — the scene-launch buttons — are the tabs. Each is
+  `desk: page` *and* `rig: pattern`: the page so the grid shows that machine's
+  looks, the pattern so the rig is on the machine those looks belong to.
+  Either alone would be a lie, and the tab pulses only when both are true.
+- **Up and Down** are the two momentary inputs a look reads — a jacket's
+  remote buttons, on a rig that has none. Bound in `value` mode, so the arrow
+  is *held* rather than latched: a button sends full going down and zero
+  coming up, and one row covers both edges. Eight of jacket's twelve looks
+  read them. The lamp follows your finger.
+- **Left, Right and the four mode buttons are left alone.** They are hardware
+  with a meaning printed on them, and burying a look under one is how a
+  surface stops being readable.
 
-The five small machines total exactly forty, so `scanner` starts on a row
-boundary; everything else wraps mid-row like text, and the colour is what
-separates them — mythos26 cyan, jacket amber, obelisk blue, uv purple, generic
-green, scanner magenta. Scanner is two states bigger than the grid, so its
-tail runs onto the top row directly above it.
+Colour is the machine: mythos26 cyan, jacket amber, obelisk blue, uv purple,
+generic green, scanner magenta.
 
 It is generated rather than written, because seventy-odd rows of JSON have to
 agree with what the rig announces and the rig is the only authority on that:
@@ -325,8 +349,12 @@ agree with what the rig announces and the rig is the only authority on that:
 python tools/make-launchpad-map.py --probe
 ```
 
-Add a state to a machine and re-run it. Hand-edit the JSON and it is right
+Add a look to a machine and re-run it. Hand-edit the JSON and it is right
 until the next time.
+
+The button numbers were measured off the device in Programmer mode rather
+than read off a diagram: the grid is notes 11–88, and the top row is CC 91 Up,
+92 Down, 93 Left, 94 Right, then 95 Session, 96 Note, 97 Custom, 98 Capture.
 
 Underneath, the executable knows nothing about any of this. It grew one
 generic verb — `midi out <spec>` opens a port and `midi send F0 00 20 ...`

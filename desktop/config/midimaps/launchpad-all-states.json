@@ -1,5 +1,6 @@
 {
   "version": 2,
+  "opens_on": "mythos26",
   "mappings": [
     {
       "label": "mythos26 - beat_pulse",
@@ -24,6 +25,7 @@
         }
       ],
       "enabled": true,
+      "page": "mythos26",
       "colour": 41
     },
     {
@@ -49,6 +51,7 @@
         }
       ],
       "enabled": true,
+      "page": "mythos26",
       "colour": 41
     },
     {
@@ -74,6 +77,7 @@
         }
       ],
       "enabled": true,
+      "page": "mythos26",
       "colour": 41
     },
     {
@@ -99,6 +103,7 @@
         }
       ],
       "enabled": true,
+      "page": "mythos26",
       "colour": 41
     },
     {
@@ -124,6 +129,7 @@
         }
       ],
       "enabled": true,
+      "page": "mythos26",
       "colour": 41
     },
     {
@@ -149,6 +155,7 @@
         }
       ],
       "enabled": true,
+      "page": "mythos26",
       "colour": 41
     },
     {
@@ -174,6 +181,7 @@
         }
       ],
       "enabled": true,
+      "page": "mythos26",
       "colour": 41
     },
     {
@@ -181,7 +189,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 18
+        "number": 11
       },
       "mode": "press",
       "actions": [
@@ -199,6 +207,7 @@
         }
       ],
       "enabled": true,
+      "page": "jacket",
       "colour": 9
     },
     {
@@ -206,7 +215,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 21
+        "number": 12
       },
       "mode": "press",
       "actions": [
@@ -224,6 +233,7 @@
         }
       ],
       "enabled": true,
+      "page": "jacket",
       "colour": 9
     },
     {
@@ -231,7 +241,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 22
+        "number": 13
       },
       "mode": "press",
       "actions": [
@@ -249,6 +259,7 @@
         }
       ],
       "enabled": true,
+      "page": "jacket",
       "colour": 9
     },
     {
@@ -256,7 +267,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 23
+        "number": 14
       },
       "mode": "press",
       "actions": [
@@ -274,6 +285,7 @@
         }
       ],
       "enabled": true,
+      "page": "jacket",
       "colour": 9
     },
     {
@@ -281,7 +293,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 24
+        "number": 15
       },
       "mode": "press",
       "actions": [
@@ -299,6 +311,7 @@
         }
       ],
       "enabled": true,
+      "page": "jacket",
       "colour": 9
     },
     {
@@ -306,7 +319,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 25
+        "number": 16
       },
       "mode": "press",
       "actions": [
@@ -324,6 +337,7 @@
         }
       ],
       "enabled": true,
+      "page": "jacket",
       "colour": 9
     },
     {
@@ -331,7 +345,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 26
+        "number": 17
       },
       "mode": "press",
       "actions": [
@@ -349,6 +363,7 @@
         }
       ],
       "enabled": true,
+      "page": "jacket",
       "colour": 9
     },
     {
@@ -356,7 +371,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 27
+        "number": 18
       },
       "mode": "press",
       "actions": [
@@ -374,6 +389,7 @@
         }
       ],
       "enabled": true,
+      "page": "jacket",
       "colour": 9
     },
     {
@@ -381,7 +397,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 28
+        "number": 21
       },
       "mode": "press",
       "actions": [
@@ -399,6 +415,7 @@
         }
       ],
       "enabled": true,
+      "page": "jacket",
       "colour": 9
     },
     {
@@ -406,7 +423,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 31
+        "number": 22
       },
       "mode": "press",
       "actions": [
@@ -424,6 +441,7 @@
         }
       ],
       "enabled": true,
+      "page": "jacket",
       "colour": 9
     },
     {
@@ -431,7 +449,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 32
+        "number": 23
       },
       "mode": "press",
       "actions": [
@@ -449,6 +467,7 @@
         }
       ],
       "enabled": true,
+      "page": "jacket",
       "colour": 9
     },
     {
@@ -456,7 +475,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 33
+        "number": 24
       },
       "mode": "press",
       "actions": [
@@ -474,6 +493,7 @@
         }
       ],
       "enabled": true,
+      "page": "jacket",
       "colour": 9
     },
     {
@@ -481,7 +501,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 34
+        "number": 11
       },
       "mode": "press",
       "actions": [
@@ -499,6 +519,7 @@
         }
       ],
       "enabled": true,
+      "page": "obelisk",
       "colour": 45
     },
     {
@@ -506,7 +527,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 35
+        "number": 12
       },
       "mode": "press",
       "actions": [
@@ -524,6 +545,7 @@
         }
       ],
       "enabled": true,
+      "page": "obelisk",
       "colour": 45
     },
     {
@@ -531,7 +553,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 36
+        "number": 13
       },
       "mode": "press",
       "actions": [
@@ -549,6 +571,7 @@
         }
       ],
       "enabled": true,
+      "page": "obelisk",
       "colour": 45
     },
     {
@@ -556,7 +579,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 37
+        "number": 11
       },
       "mode": "press",
       "actions": [
@@ -574,6 +597,7 @@
         }
       ],
       "enabled": true,
+      "page": "uv",
       "colour": 49
     },
     {
@@ -581,7 +605,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 38
+        "number": 12
       },
       "mode": "press",
       "actions": [
@@ -599,6 +623,7 @@
         }
       ],
       "enabled": true,
+      "page": "uv",
       "colour": 49
     },
     {
@@ -606,7 +631,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 41
+        "number": 13
       },
       "mode": "press",
       "actions": [
@@ -624,6 +649,7 @@
         }
       ],
       "enabled": true,
+      "page": "uv",
       "colour": 49
     },
     {
@@ -631,7 +657,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 42
+        "number": 11
       },
       "mode": "press",
       "actions": [
@@ -649,6 +675,7 @@
         }
       ],
       "enabled": true,
+      "page": "generic",
       "colour": 21
     },
     {
@@ -656,7 +683,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 43
+        "number": 12
       },
       "mode": "press",
       "actions": [
@@ -674,6 +701,7 @@
         }
       ],
       "enabled": true,
+      "page": "generic",
       "colour": 21
     },
     {
@@ -681,7 +709,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 44
+        "number": 13
       },
       "mode": "press",
       "actions": [
@@ -699,6 +727,7 @@
         }
       ],
       "enabled": true,
+      "page": "generic",
       "colour": 21
     },
     {
@@ -706,7 +735,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 45
+        "number": 14
       },
       "mode": "press",
       "actions": [
@@ -724,6 +753,7 @@
         }
       ],
       "enabled": true,
+      "page": "generic",
       "colour": 21
     },
     {
@@ -731,7 +761,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 46
+        "number": 15
       },
       "mode": "press",
       "actions": [
@@ -749,6 +779,7 @@
         }
       ],
       "enabled": true,
+      "page": "generic",
       "colour": 21
     },
     {
@@ -756,7 +787,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 47
+        "number": 16
       },
       "mode": "press",
       "actions": [
@@ -774,6 +805,7 @@
         }
       ],
       "enabled": true,
+      "page": "generic",
       "colour": 21
     },
     {
@@ -781,7 +813,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 48
+        "number": 17
       },
       "mode": "press",
       "actions": [
@@ -799,6 +831,7 @@
         }
       ],
       "enabled": true,
+      "page": "generic",
       "colour": 21
     },
     {
@@ -806,7 +839,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 51
+        "number": 18
       },
       "mode": "press",
       "actions": [
@@ -824,6 +857,7 @@
         }
       ],
       "enabled": true,
+      "page": "generic",
       "colour": 21
     },
     {
@@ -831,7 +865,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 52
+        "number": 21
       },
       "mode": "press",
       "actions": [
@@ -849,6 +883,7 @@
         }
       ],
       "enabled": true,
+      "page": "generic",
       "colour": 21
     },
     {
@@ -856,7 +891,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 53
+        "number": 22
       },
       "mode": "press",
       "actions": [
@@ -874,6 +909,7 @@
         }
       ],
       "enabled": true,
+      "page": "generic",
       "colour": 21
     },
     {
@@ -881,7 +917,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 54
+        "number": 23
       },
       "mode": "press",
       "actions": [
@@ -899,6 +935,7 @@
         }
       ],
       "enabled": true,
+      "page": "generic",
       "colour": 21
     },
     {
@@ -906,7 +943,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 55
+        "number": 24
       },
       "mode": "press",
       "actions": [
@@ -924,6 +961,7 @@
         }
       ],
       "enabled": true,
+      "page": "generic",
       "colour": 21
     },
     {
@@ -931,7 +969,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 56
+        "number": 25
       },
       "mode": "press",
       "actions": [
@@ -949,6 +987,7 @@
         }
       ],
       "enabled": true,
+      "page": "generic",
       "colour": 21
     },
     {
@@ -956,7 +995,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 57
+        "number": 26
       },
       "mode": "press",
       "actions": [
@@ -974,6 +1013,7 @@
         }
       ],
       "enabled": true,
+      "page": "generic",
       "colour": 21
     },
     {
@@ -981,7 +1021,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 58
+        "number": 27
       },
       "mode": "press",
       "actions": [
@@ -999,6 +1039,7 @@
         }
       ],
       "enabled": true,
+      "page": "generic",
       "colour": 21
     },
     {
@@ -1006,7 +1047,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 61
+        "number": 11
       },
       "mode": "press",
       "actions": [
@@ -1024,6 +1065,7 @@
         }
       ],
       "enabled": true,
+      "page": "scanner",
       "colour": 53
     },
     {
@@ -1031,7 +1073,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 62
+        "number": 12
       },
       "mode": "press",
       "actions": [
@@ -1049,6 +1091,7 @@
         }
       ],
       "enabled": true,
+      "page": "scanner",
       "colour": 53
     },
     {
@@ -1056,7 +1099,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 63
+        "number": 13
       },
       "mode": "press",
       "actions": [
@@ -1074,6 +1117,7 @@
         }
       ],
       "enabled": true,
+      "page": "scanner",
       "colour": 53
     },
     {
@@ -1081,7 +1125,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 64
+        "number": 14
       },
       "mode": "press",
       "actions": [
@@ -1099,6 +1143,7 @@
         }
       ],
       "enabled": true,
+      "page": "scanner",
       "colour": 53
     },
     {
@@ -1106,7 +1151,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 65
+        "number": 15
       },
       "mode": "press",
       "actions": [
@@ -1124,6 +1169,7 @@
         }
       ],
       "enabled": true,
+      "page": "scanner",
       "colour": 53
     },
     {
@@ -1131,7 +1177,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 66
+        "number": 16
       },
       "mode": "press",
       "actions": [
@@ -1149,6 +1195,7 @@
         }
       ],
       "enabled": true,
+      "page": "scanner",
       "colour": 53
     },
     {
@@ -1156,7 +1203,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 67
+        "number": 17
       },
       "mode": "press",
       "actions": [
@@ -1174,6 +1221,7 @@
         }
       ],
       "enabled": true,
+      "page": "scanner",
       "colour": 53
     },
     {
@@ -1181,7 +1229,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 68
+        "number": 18
       },
       "mode": "press",
       "actions": [
@@ -1199,6 +1247,7 @@
         }
       ],
       "enabled": true,
+      "page": "scanner",
       "colour": 53
     },
     {
@@ -1206,7 +1255,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 71
+        "number": 21
       },
       "mode": "press",
       "actions": [
@@ -1224,6 +1273,7 @@
         }
       ],
       "enabled": true,
+      "page": "scanner",
       "colour": 53
     },
     {
@@ -1231,7 +1281,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 72
+        "number": 22
       },
       "mode": "press",
       "actions": [
@@ -1249,6 +1299,7 @@
         }
       ],
       "enabled": true,
+      "page": "scanner",
       "colour": 53
     },
     {
@@ -1256,7 +1307,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 73
+        "number": 23
       },
       "mode": "press",
       "actions": [
@@ -1274,6 +1325,7 @@
         }
       ],
       "enabled": true,
+      "page": "scanner",
       "colour": 53
     },
     {
@@ -1281,7 +1333,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 74
+        "number": 24
       },
       "mode": "press",
       "actions": [
@@ -1299,6 +1351,7 @@
         }
       ],
       "enabled": true,
+      "page": "scanner",
       "colour": 53
     },
     {
@@ -1306,7 +1359,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 75
+        "number": 25
       },
       "mode": "press",
       "actions": [
@@ -1324,6 +1377,7 @@
         }
       ],
       "enabled": true,
+      "page": "scanner",
       "colour": 53
     },
     {
@@ -1331,7 +1385,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 76
+        "number": 26
       },
       "mode": "press",
       "actions": [
@@ -1349,6 +1403,7 @@
         }
       ],
       "enabled": true,
+      "page": "scanner",
       "colour": 53
     },
     {
@@ -1356,7 +1411,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 77
+        "number": 27
       },
       "mode": "press",
       "actions": [
@@ -1374,6 +1429,7 @@
         }
       ],
       "enabled": true,
+      "page": "scanner",
       "colour": 53
     },
     {
@@ -1381,7 +1437,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 78
+        "number": 28
       },
       "mode": "press",
       "actions": [
@@ -1399,6 +1455,7 @@
         }
       ],
       "enabled": true,
+      "page": "scanner",
       "colour": 53
     },
     {
@@ -1406,7 +1463,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 81
+        "number": 31
       },
       "mode": "press",
       "actions": [
@@ -1424,6 +1481,7 @@
         }
       ],
       "enabled": true,
+      "page": "scanner",
       "colour": 53
     },
     {
@@ -1431,7 +1489,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 82
+        "number": 32
       },
       "mode": "press",
       "actions": [
@@ -1449,6 +1507,7 @@
         }
       ],
       "enabled": true,
+      "page": "scanner",
       "colour": 53
     },
     {
@@ -1456,7 +1515,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 83
+        "number": 33
       },
       "mode": "press",
       "actions": [
@@ -1474,6 +1533,7 @@
         }
       ],
       "enabled": true,
+      "page": "scanner",
       "colour": 53
     },
     {
@@ -1481,7 +1541,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 84
+        "number": 34
       },
       "mode": "press",
       "actions": [
@@ -1499,6 +1559,7 @@
         }
       ],
       "enabled": true,
+      "page": "scanner",
       "colour": 53
     },
     {
@@ -1506,7 +1567,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 85
+        "number": 35
       },
       "mode": "press",
       "actions": [
@@ -1524,6 +1585,7 @@
         }
       ],
       "enabled": true,
+      "page": "scanner",
       "colour": 53
     },
     {
@@ -1531,7 +1593,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 86
+        "number": 36
       },
       "mode": "press",
       "actions": [
@@ -1549,6 +1611,7 @@
         }
       ],
       "enabled": true,
+      "page": "scanner",
       "colour": 53
     },
     {
@@ -1556,7 +1619,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 87
+        "number": 37
       },
       "mode": "press",
       "actions": [
@@ -1574,6 +1637,7 @@
         }
       ],
       "enabled": true,
+      "page": "scanner",
       "colour": 53
     },
     {
@@ -1581,7 +1645,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 88
+        "number": 38
       },
       "mode": "press",
       "actions": [
@@ -1599,14 +1663,15 @@
         }
       ],
       "enabled": true,
+      "page": "scanner",
       "colour": 53
     },
     {
       "label": "scanner - audio_playback_recording",
       "trigger": {
-        "kind": "cc",
+        "kind": "note",
         "channel": 1,
-        "number": 91
+        "number": 41
       },
       "mode": "press",
       "actions": [
@@ -1624,14 +1689,15 @@
         }
       ],
       "enabled": true,
+      "page": "scanner",
       "colour": 53
     },
     {
       "label": "scanner - void",
       "trigger": {
-        "kind": "cc",
+        "kind": "note",
         "channel": 1,
-        "number": 92
+        "number": 42
       },
       "mode": "press",
       "actions": [
@@ -1649,10 +1715,11 @@
         }
       ],
       "enabled": true,
+      "page": "scanner",
       "colour": 53
     },
     {
-      "label": "mythos26 (machine)",
+      "label": "mythos26 (tab)",
       "trigger": {
         "kind": "cc",
         "channel": 1,
@@ -1661,6 +1728,12 @@
       "mode": "press",
       "actions": [
         {
+          "action": "page",
+          "params": {
+            "name": "mythos26"
+          }
+        },
+        {
           "action": "pattern",
           "params": {
             "name": "mythos26"
@@ -1668,10 +1741,11 @@
         }
       ],
       "enabled": true,
+      "page": "",
       "colour": 41
     },
     {
-      "label": "jacket (machine)",
+      "label": "jacket (tab)",
       "trigger": {
         "kind": "cc",
         "channel": 1,
@@ -1680,6 +1754,12 @@
       "mode": "press",
       "actions": [
         {
+          "action": "page",
+          "params": {
+            "name": "jacket"
+          }
+        },
+        {
           "action": "pattern",
           "params": {
             "name": "jacket"
@@ -1687,10 +1767,11 @@
         }
       ],
       "enabled": true,
+      "page": "",
       "colour": 9
     },
     {
-      "label": "obelisk (machine)",
+      "label": "obelisk (tab)",
       "trigger": {
         "kind": "cc",
         "channel": 1,
@@ -1699,6 +1780,12 @@
       "mode": "press",
       "actions": [
         {
+          "action": "page",
+          "params": {
+            "name": "obelisk"
+          }
+        },
+        {
           "action": "pattern",
           "params": {
             "name": "obelisk"
@@ -1706,10 +1793,11 @@
         }
       ],
       "enabled": true,
+      "page": "",
       "colour": 45
     },
     {
-      "label": "uv (machine)",
+      "label": "uv (tab)",
       "trigger": {
         "kind": "cc",
         "channel": 1,
@@ -1718,6 +1806,12 @@
       "mode": "press",
       "actions": [
         {
+          "action": "page",
+          "params": {
+            "name": "uv"
+          }
+        },
+        {
           "action": "pattern",
           "params": {
             "name": "uv"
@@ -1725,10 +1819,11 @@
         }
       ],
       "enabled": true,
+      "page": "",
       "colour": 49
     },
     {
-      "label": "generic (machine)",
+      "label": "generic (tab)",
       "trigger": {
         "kind": "cc",
         "channel": 1,
@@ -1737,6 +1832,12 @@
       "mode": "press",
       "actions": [
         {
+          "action": "page",
+          "params": {
+            "name": "generic"
+          }
+        },
+        {
           "action": "pattern",
           "params": {
             "name": "generic"
@@ -1744,10 +1845,11 @@
         }
       ],
       "enabled": true,
+      "page": "",
       "colour": 21
     },
     {
-      "label": "scanner (machine)",
+      "label": "scanner (tab)",
       "trigger": {
         "kind": "cc",
         "channel": 1,
@@ -1756,6 +1858,12 @@
       "mode": "press",
       "actions": [
         {
+          "action": "page",
+          "params": {
+            "name": "scanner"
+          }
+        },
+        {
           "action": "pattern",
           "params": {
             "name": "scanner"
@@ -1763,7 +1871,48 @@
         }
       ],
       "enabled": true,
+      "page": "",
       "colour": 53
+    },
+    {
+      "label": "input a",
+      "trigger": {
+        "kind": "cc",
+        "channel": 1,
+        "number": 91
+      },
+      "mode": "value",
+      "actions": [
+        {
+          "action": "input",
+          "params": {
+            "channel": "a"
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "",
+      "colour": 3
+    },
+    {
+      "label": "input b",
+      "trigger": {
+        "kind": "cc",
+        "channel": 1,
+        "number": 92
+      },
+      "mode": "value",
+      "actions": [
+        {
+          "action": "input",
+          "params": {
+            "channel": "b"
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "",
+      "colour": 3
     }
   ]
 }

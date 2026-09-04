@@ -259,6 +259,11 @@ class LampPainter:
         for mapping in self.mappings.mappings:
             if not mapping.enabled:
                 continue
+            # Same filter the dispatcher applies, and it has to be the same
+            # one: a pad that cannot be pressed must not be lit, or the
+            # surface is advertising bindings that do nothing.
+            if not mapping.on_page(getattr(context, "page", "")):
+                continue
             index = mapping.number
             if not is_lightable(index):
                 continue

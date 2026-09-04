@@ -4372,6 +4372,205 @@ class TheActionChecks(unittest.TestCase):
         self.assertIsNone(cue.is_live(midi_map.ActionContext(show=None)))
 
 
+class ThePages(unittest.TestCase):
+    """Tabs: one machine's looks at a time, so sixty-six fit on sixty-four.
+
+    A page governs firing as well as lighting, and the tests that matter are
+    the ones about that: two pages put different rows on the same pad, and a
+    tab has to be a way of choosing between them rather than stacking them.
+    """
+
+    def _rig(self):
+        return _RecorderRig()
+
+    def _ctx(self, rig=None, page=""):
+        context = midi_map.ActionContext(show=rig if rig is not None else self._rig())
+        context.page = page
+        return context
+
+    def _paged(self):
+        return midi_map.MappingSet([
+            midi_map.Mapping(label="jacket look", kind="note", number=11, page="jacket",
+                             action="state", params={"name": "campfire"}),
+            midi_map.Mapping(label="scanner look", kind="note", number=11, page="scanner",
+                             action="state", params={"name": "boot"}),
+            midi_map.Mapping(label="always", kind="note", number=12,
+                             action="state", params={"name": "everywhere"}),
+        ])
+
+    def test_a_row_with_no_page_is_on_every_page(self):
+        row = midi_map.Mapping()
+        self.assertTrue(row.on_page(""))
+        self.assertTrue(row.on_page("scanner"))
+
+    def test_a_paged_row_is_only_on_its_own(self):
+        row = midi_map.Mapping(page="scanner")
+        self.assertTrue(row.on_page("scanner"))
+        self.assertFalse(row.on_page("jacket"))
+        self.assertFalse(row.on_page(""))
+
+    def test_only_the_showing_page_fires(self):
+        rig = self._rig()
+        context = self._ctx(rig, page="jacket")
+        dispatcher = midi_map.Dispatcher(self._paged(), context)
+
+        dispatcher.handle(midi_map.parse_midi_line("ch=1 note_on 11 100"))
+
+        self.assertEqual(rig.states, ["campfire"], "the scanner row must not fire")
+
+    def test_the_same_pad_means_something_else_on_another_page(self):
+        rig = self._rig()
+        context = self._ctx(rig, page="scanner")
+        dispatcher = midi_map.Dispatcher(self._paged(), context)
+
+        dispatcher.handle(midi_map.parse_midi_line("ch=1 note_on 11 100"))
+
+        self.assertEqual(rig.states, ["boot"])
+
+    def test_a_pageless_row_fires_from_anywhere(self):
+        rig = self._rig()
+        dispatcher = midi_map.Dispatcher(self._paged(), self._ctx(rig, page="scanner"))
+        dispatcher.handle(midi_map.parse_midi_line("ch=1 note_on 12 100"))
+        self.assertEqual(rig.states, ["everywhere"])
+
+    def test_an_off_page_pad_is_dark_as_well_as_dead(self):
+        # A pad that cannot be pressed must not be lit, or the surface is
+        # advertising bindings that do nothing.
+        painter = launchpad.LampPainter(self._paged())
+
+        surface = painter.wanted(self._ctx(page="jacket"))
+
+        self.assertIn(11, surface)
+        self.assertIn(12, surface)
+        self.assertEqual(len(surface), 2, "only one of the two page-11 rows")
+
+    def test_a_pad_the_new_page_does_not_use_goes_dark(self):
+        # The failure this guards: jacket's extra pad left lit under scanner,
+        # claiming a binding that is no longer reachable.
+        mappings = midi_map.MappingSet([
+            midi_map.Mapping(label="jacket 11", kind="note", number=11, page="jacket",
+                             action="state", params={"name": "campfire"}),
+            midi_map.Mapping(label="jacket 13", kind="note", number=13, page="jacket",
+                             action="state", params={"name": "parrot"}),
+            midi_map.Mapping(label="scanner 11", kind="note", number=11, page="scanner",
+                             action="state", params={"name": "boot"}),
+        ])
+        painter = launchpad.LampPainter(mappings)
+        context = self._ctx(page="jacket")
+        painter.frame(context)
+        self.assertEqual(sorted(painter.wanted(context)), [11, 13])
+
+        context.page = "scanner"
+        messages = painter.frame(context)
+
+        self.assertEqual(sorted(painter.wanted(context)), [11])
+        self.assertEqual(len(messages), 1)
+        # static, pad 13, colour 0 - the only change on the wire
+        self.assertEqual(messages[0][7:10],
+                         [launchpad.STATIC, 13, launchpad.Colour.OFF])
+
+    def test_an_identical_picture_across_a_page_change_sends_nothing(self):
+        # Two pages whose pads happen to look the same: the surface is already
+        # right, and the wire is shared with the beat.
+        painter = launchpad.LampPainter(self._paged())
+        context = self._ctx(page="jacket")
+        painter.frame(context)
+
+        context.page = "scanner"
+        self.assertEqual(painter.frame(context), [])
+
+    def test_the_page_action_moves_the_surface_and_says_so(self):
+        context = self._ctx(page="mythos26")
+        spec = midi_map.ACTIONS["page"]
+
+        self.assertEqual(spec.run(context, {"name": "scanner"}, 1.0), "page scanner")
+        self.assertEqual(context.page, "scanner")
+        # pressed again it is already there and says nothing
+        self.assertIsNone(spec.run(context, {"name": "scanner"}, 1.0))
+
+    def test_a_tab_lights_when_its_page_is_showing(self):
+        context = self._ctx(page="scanner")
+        spec = midi_map.ACTIONS["page"]
+        self.assertIs(spec.check(context, {"name": "scanner"}), True)
+        self.assertIs(spec.check(context, {"name": "jacket"}), False)
+
+    def test_a_tab_is_live_only_when_both_halves_are(self):
+        # A tab changes the surface and the rig. Either alone is a lie: a page
+        # whose looks the rig cannot take, or a machine not on the surface.
+        tab = midi_map.Mapping(kind="cc", number=89, actions=[
+            midi_map.Action("page", {"name": "jacket"}),
+            midi_map.Action("pattern", {"name": "jacket"})])
+
+        rig = _FakeRig(pattern="jacket")
+        both = midi_map.ActionContext(show=rig); both.page = "jacket"
+        self.assertIs(tab.is_live(both), True)
+
+        half = midi_map.ActionContext(show=_FakeRig(pattern="mythos26"))
+        half.page = "jacket"
+        self.assertIs(tab.is_live(half), False)
+
+    def test_the_file_remembers_which_tab_it_opens_on(self):
+        ms = midi_map.MappingSet(self._paged().mappings, opens_on="scanner")
+        back = midi_map.MappingSet.from_dict(json.loads(json.dumps(ms.to_dict())))
+        self.assertEqual(back.opens_on, "scanner")
+        self.assertEqual(back.pages(), ["jacket", "scanner"])
+
+    def test_a_map_written_before_pages_behaves_as_it_did(self):
+        # Every row pageless, so every row is on the empty page the desk opens
+        # with - which is what a map with no tabs has always done.
+        back = midi_map.MappingSet.from_dict(
+            {"version": 1, "mappings": [
+                {"trigger": {"kind": "note", "number": 36},
+                 "action": "state", "params": {"name": "campfire"}}]})
+        self.assertEqual(back.opens_on, "")
+        self.assertEqual(back.pages(), [])
+        self.assertTrue(back.mappings[0].on_page(""))
+
+
+class TheMomentaryInput(unittest.TestCase):
+    """The two inputs a look reads - a jacket's remote buttons, on a rig that
+    has none. Bound in value mode, which is what makes an arrow a hold."""
+
+    def _ctx(self):
+        rig = _RecorderRig()
+        rig.inputs = {"a": False, "b": False}
+        rig.set_input = lambda ch, down: rig.inputs.__setitem__(ch, down)
+        return midi_map.ActionContext(show=rig), rig
+
+    def test_an_arrow_held_is_the_input_held(self):
+        context, rig = self._ctx()
+        row = midi_map.Mapping(kind="cc", number=91, mode="value",
+                               action="input", params={"channel": "a"})
+        dispatcher = midi_map.Dispatcher(midi_map.MappingSet([row]), context)
+
+        dispatcher.handle(midi_map.parse_midi_line("ch=1 cc 91 127"))
+        self.assertTrue(rig.inputs["a"])
+
+        dispatcher.handle(midi_map.parse_midi_line("ch=1 cc 91 0"))
+        self.assertFalse(rig.inputs["a"], "the release has to let go")
+
+    def test_the_lamp_follows_the_finger(self):
+        context, rig = self._ctx()
+        spec = midi_map.ACTIONS["input"]
+
+        self.assertIs(spec.check(context, {"channel": "a"}), False)
+        spec.run(context, {"channel": "a"}, 1.0)
+        self.assertIs(spec.check(context, {"channel": "a"}), True)
+        self.assertIs(spec.check(context, {"channel": "b"}), False)
+
+    def test_only_a_and_b_exist(self):
+        context, _rig = self._ctx()
+        said = midi_map.ACTIONS["input"].run(context, {"channel": "c"}, 1.0)
+        self.assertIn("a or b", said)
+
+    def test_it_says_nothing_on_either_edge(self):
+        # Both edges of every press would bury the header.
+        context, _rig = self._ctx()
+        spec = midi_map.ACTIONS["input"]
+        self.assertIsNone(spec.run(context, {"channel": "a"}, 1.0))
+        self.assertIsNone(spec.run(context, {"channel": "a"}, 0.0))
+
+
 class TheSynesthesiaState(unittest.TestCase):
     """What the visualiser is doing, and how sure we are of it.
 

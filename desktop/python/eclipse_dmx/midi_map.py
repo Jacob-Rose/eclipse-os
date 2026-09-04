@@ -242,6 +242,15 @@ class ActionContext:
         self.say = say or (lambda message: None)
         self.syn = syn if syn is not None else SynesthesiaState()
 
+        #: Which page of the map the surface is showing. "" shows only the
+        #: mappings that belong to no page, which is every map written before
+        #: pages existed - so an old file behaves exactly as it did.
+        #:
+        #: Lives here rather than on the MappingSet because an action has to
+        #: be able to change it, and an action is handed a context and nothing
+        #: else. See the `page` action, and Mapping.on_page.
+        self.page: str = ""
+
     def osc(self):
         if self._osc is None:
             if self._osc_factory is None:
@@ -493,6 +502,57 @@ def _run_bpm(context, params, value):
     return None
 
 
+def _run_input(context, params, value):
+    """One of the two momentary inputs a look can read - a jacket's remote
+    buttons, on a rig that has none.
+
+    Bound in **value** mode against a pad or an arrow, which is what makes it
+    momentary: a button sends full on the way down and zero on the way up, so
+    one mapping covers the hold and the release. In press mode it would latch
+    on and never let go.
+    """
+    channel = str(params.get("channel", "a")).strip().lower()
+    if channel not in ("a", "b"):
+        return "input: channel is a or b"
+    if context.show is None:
+        return "input: no show"
+    context.show.set_input(channel, value > 0.5)
+    return None  # both edges of every press would bury the header
+
+
+def _check_input(context, params):
+    channel = str(params.get("channel", "a")).strip().lower()
+    if channel not in ("a", "b") or context.show is None:
+        return None
+    inputs = getattr(context.show, "inputs", None)
+    if inputs is None:
+        return None
+    return bool(inputs.get(channel, False))
+
+
+def _run_page(context, params, value):
+    """Which page of the map the surface shows.
+
+    The one action that does nothing to the rig at all - it changes what the
+    controller is, not what the lights are doing. Which is why it is `desk:`
+    rather than `rig:` or `syn:`, and why it has no effect on a headless run.
+    """
+    name = str(params.get("name", "")).strip()
+    if not name:
+        return "page: no page named"
+    if context.page == name:
+        return None  # already there; a tab pressed twice says nothing
+    context.page = name
+    return f"page {name}"
+
+
+def _check_page(context, params):
+    name = str(params.get("name", "")).strip()
+    if not name:
+        return None
+    return context.page == name
+
+
 def _run_command(context, params, value):
     line = str(params.get("line", "")).strip()
     if not line:
@@ -589,6 +649,22 @@ register_action(ActionSpec(
 ))
 
 register_action(ActionSpec(
+    key="input", label="rig: momentary input (value)",
+    fields=[FieldSpec("channel", "input", default="a",
+                      hint="a or b - the two a look can read. Bind in value mode")],
+    run=_run_input,
+    check=_check_input,
+))
+
+register_action(ActionSpec(
+    key="page", label="desk: page",
+    fields=[FieldSpec("name", "page",
+                      hint="which page of this map the surface shows")],
+    run=_run_page,
+    check=_check_page,
+))
+
+register_action(ActionSpec(
     key="command", label="rig: protocol line",
     fields=[FieldSpec("line", "line", hint="any protocol command, e.g. `bpm 128`")],
     run=_run_command,
@@ -675,6 +751,14 @@ class Mapping:
     actions: List[Action] = field(default_factory=list)
     enabled: bool = True
 
+    #: Which page of the map this row belongs to, or "" for every page.
+    #:
+    #: A page is a tab: one machine's looks at a time, so sixty-six states fit
+    #: on sixty-four pads by not all being there at once. A row with no page
+    #: is furniture - the tabs themselves, and the arrows - and is always both
+    #: live and lit.
+    page: str = ""
+
     #: The colour this pad is lit, as a palette index the controller knows
     #: (0..127; see launchpad.Colour). One number rather than two, because the
     #: lit and live states are the same colour in different lighting types -
@@ -739,6 +823,7 @@ class Mapping:
             "mode": self.mode,
             "actions": [action.to_dict() for action in self.actions],
             "enabled": self.enabled,
+            "page": self.page,
             "colour": self.colour,
         }
 
@@ -765,6 +850,7 @@ class Mapping:
             mode=str(data.get("mode", "press")),
             actions=[Action.from_dict(entry) for entry in entries],
             enabled=bool(data.get("enabled", True)),
+            page=str(data.get("page", "")),
             colour=int(data.get("colour", 41)),
         )
         if mapping.kind not in TRIGGER_KINDS:
@@ -773,6 +859,16 @@ class Mapping:
             mapping.mode = "press"
         mapping.colour = max(0, min(127, mapping.colour))
         return mapping
+
+    def on_page(self, page: str) -> bool:
+        """Is this row on the surface right now?
+
+        Governs firing as well as lighting, and it has to: two pages put two
+        different mappings on the same pad, and a press that fired both would
+        make a tab a way of adding bindings rather than of choosing between
+        them.
+        """
+        return not self.page or self.page == page
 
     def describe_trigger(self) -> str:
         channel = "any" if self.channel == 0 else str(self.channel)
@@ -855,8 +951,13 @@ class MappingSet:
     the file format has one owner.
     """
 
-    def __init__(self, mappings: Optional[List[Mapping]] = None) -> None:
+    def __init__(self, mappings: Optional[List[Mapping]] = None,
+                 opens_on: str = "") -> None:
         self.mappings: List[Mapping] = mappings or []
+        #: Which page the surface shows when the desk opens. A static
+        #: property of the file, not the live page - that is on the context,
+        #: because an action changes it and the file does not.
+        self.opens_on: str = opens_on
 
     #: Bumped when `actions` became a list. Version 1 files still load - see
     #: Mapping.from_dict - and are rewritten in this shape when next saved.
@@ -864,11 +965,22 @@ class MappingSet:
 
     def to_dict(self) -> Dict[str, object]:
         return {"version": self.VERSION,
+                "opens_on": self.opens_on,
                 "mappings": [m.to_dict() for m in self.mappings]}
 
     @classmethod
     def from_dict(cls, data: Dict[str, object]) -> "MappingSet":
-        return cls([Mapping.from_dict(entry) for entry in data.get("mappings", [])])
+        return cls([Mapping.from_dict(entry) for entry in data.get("mappings", [])],
+                   opens_on=str(data.get("opens_on", "")))
+
+    def pages(self) -> List[str]:
+        """Every page this map uses, in the order the rows first mention them.
+        Rows with no page are not a page; they are on all of them."""
+        seen: List[str] = []
+        for mapping in self.mappings:
+            if mapping.page and mapping.page not in seen:
+                seen.append(mapping.page)
+        return seen
 
     def save(self, path: Union[str, Path]) -> None:
         path = Path(path)
@@ -901,6 +1013,12 @@ class Dispatcher:
         said: List[str] = []
         for mapping in self.mappings.mappings:
             if not mapping.enabled:
+                continue
+            # A page hides a row from the pad as well as from the lamp. Two
+            # pages put different mappings on the same pad, and a press that
+            # fired both would make a tab a way of stacking bindings rather
+            # than of choosing between them.
+            if not mapping.on_page(self.context.page):
                 continue
             value = mapping.fires_on(event)
             if value is None:
