@@ -35,6 +35,10 @@
 // The obelisk's own looks, for their machine and a borrowed generic cue.
 #include "relics/obelisk/state_obelisk.h"
 
+// Written here rather than borrowed from a relic: the static looks, which are
+// stage looks like the rest of the generic list and sit in it.
+#include "edmx/mythos26.h"
+
 using namespace edmx;
 
 // ============================================================================
@@ -510,6 +514,21 @@ namespace
         };
         return def;
     }
+
+    /// Static, in greys or in colour. One class, and the flag is the whole
+    /// difference between the two cues.
+    StateDef staticLook(const char* name, bool monochrome)
+    {
+        StateDef def;
+        def.name = name;
+        def.make = [monochrome]() -> std::shared_ptr<eanim::GeneratorHSV> {
+            auto pattern = std::make_shared<Pattern_Mythos_TvStatic>();
+            pattern->monochrome = monochrome;
+            pattern->init();
+            return pattern;
+        };
+        return def;
+    }
 }
 
 std::unique_ptr<StateMachinePattern> edmx::makeScannerStateMachine()
@@ -624,6 +643,11 @@ std::unique_ptr<StateMachinePattern> edmx::makeGenericStateMachine()
         // the stage's coordinates reach, so they sit in the generic list too
         plainLook<Pattern_Obelisk_Theater>("theater"),
         plainLook<Pattern_Obelisk_Blobs>("blobs"),
+        // the static pair: written for the rig rather than recreated from
+        // WLED, but free-standing looks with no game and no beat, which is
+        // what this list is - see Pattern_Mythos_TvStatic
+        staticLook("tv_static_mono", true),
+        staticLook("tv_static", false),
     };
 
     CoordFrame frame;

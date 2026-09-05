@@ -28,7 +28,7 @@
   // edmx/audio_meter.h. It is an instrument, not a look, and it is here as the
   // opening pattern only while the Synesthesia wire is being trusted.
   //
-  // Put the show back by changing these two lines to mythos26 / beat_pulse, or
+  // Put the show back by changing these two lines to mythos26 / slot_1, or
   // at the surface without editing anything: the launchpad's mythos26 tab
   // (cc 89) sends `pattern mythos26` and restores the three hit layers, which
   // the audio tab (cc 29) switches off so the meter is not being read through

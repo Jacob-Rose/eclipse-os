@@ -2205,7 +2205,7 @@ namespace
     /// wholesale. A client rebuilds on the PARAMS line and fills from the PARAM
     /// lines under it.
     ///
-    ///   PARAMS mythos26 beat_pulse
+    ///   PARAMS uv flash
     ///   PARAM attack f 0.2 0 1
     ///   PARAM hold b 1 0 1
     ///   PARAM color c #ffffff 0 1
@@ -2251,7 +2251,7 @@ namespace
         emitParamsFor(show.pattern.get(), "");
     }
 
-    /// `MOD base_gain bass 0 1 0.1 ok`, one per modulation.
+    /// `MOD intensity bass 0 1 0.1 ok`, one per modulation.
     ///
     /// The trailing word is whether the knob it names exists on the look that
     /// is running *now*. A mod survives a cue change - that is the point, the
@@ -4595,7 +4595,7 @@ int main(int argc, char** argv)
         if (!sinkMode)
         {
             // The bus, into the knobs, before anything reads them. A look does
-            // not know it is being modulated: `base_gain` is just its own field
+            // not know it is being modulated: `intensity` is just its own field
             // and it was already going to read it this frame.
             applyMods(*show.pattern, show.mods, sharedAudioLevel(), audioNow, deltaTime);
             show.pattern->tick(deltaTime);

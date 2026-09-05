@@ -121,7 +121,7 @@ namespace edmx
     /// One knob, driven by one channel of the audio bus.
     ///
     /// The whole of "use the analysis as a parameter". A modulation names a
-    /// property the running look already reflects — `base_gain`, `attack`,
+    /// property the running look already reflects — `intensity`, `attack`,
     /// `level`, anything in a reflect() — and a channel to drive it from, and
     /// every frame the engine writes `low + (high - low) * bus.get(channel)`
     /// into it. Nothing in any pattern changes, and a knob written next year
@@ -151,10 +151,10 @@ namespace edmx
         bool enabled{true};
 
         /// Seconds to close most of a gap to a new bus value, 0 to follow it
-        /// exactly. A symmetric low-pass, the same shape as vu_pulse's
-        /// base_smoothing and for the same reason: an asymmetric one keeps
-        /// every transient on the way up, which is a second pulse rather than
-        /// a smoothing. Left at 0 for hits, which are already an envelope.
+        /// exactly. A symmetric low-pass, for the reason a wash that follows
+        /// the meter wants one: an asymmetric one keeps every transient on the
+        /// way up, which is a second pulse rather than a smoothing. Left at 0
+        /// for hits, which are already an envelope.
         float slew{0.0f};
     };
 

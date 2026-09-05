@@ -99,6 +99,7 @@ class MidiMapPanel:
 
         self._selected: Optional[Mapping] = None
         self._learning = False
+        self._finding = False
         self._dirty = False
         #: guards the editor's variable traces while the editor itself is
         #: being written to - the same trick as the viewer's param panel
@@ -162,6 +163,14 @@ class MidiMapPanel:
         # and makes the mapping it is about to bind.
         self._add_learn_button = _button(row, "+ learn", self._add_and_learn)
         self._add_learn_button.pack(side="right", padx=2)
+
+        # Learn read backwards: hit the pad, and the mapping it fires is the
+        # one selected. The question at a surface with eighty pads on it is
+        # usually "what is this one bound to", and answering it by reading
+        # `ch=1 note 81` off a row and hunting for the pad is the wrong way
+        # round. See take_find.
+        self._find_button = _button(row, "find", self._toggle_find)
+        self._find_button.pack(side="right", padx=2)
 
     def _build_editor(self) -> None:
         self._editor = tk.Frame(self.frame, bg=PANEL)
@@ -343,6 +352,12 @@ class MidiMapPanel:
         if self._learning:
             self._stop_learn()
             self._say("midi learn: cancelled")
+        # Same for find: a click is the answer to the question find was
+        # asking, so leaving it armed would move the selection again on the
+        # next pad hit.
+        if self._finding:
+            self._stop_find()
+            self._say("midi find: cancelled")
         selection = self._list.curselection()
         self._select_index(selection[0] if selection else None, from_list=True)
 
@@ -534,6 +549,8 @@ class MidiMapPanel:
         self._begin_learn()
 
     def _begin_learn(self) -> None:
+        if self._finding:
+            self._stop_find()
         self._learning = True
         self._learn_button.configure(bg=BUTTON_BG_ACTIVE, text="hit it")
         self._add_learn_button.configure(bg=BUTTON_BG_ACTIVE)
@@ -566,6 +583,65 @@ class MidiMapPanel:
         self._load_editor()
         self._refresh_list(keep_selection=True)
         self._say(f"learned {mapping.describe_trigger()}")
+        return True
+
+    # -- find --------------------------------------------------------------
+
+    def _toggle_find(self) -> None:
+        """Arm the next pad hit to select its mapping instead of firing it."""
+        if self._finding:
+            self._stop_find()
+            return
+        if self._learning:
+            self._stop_learn()
+        self._finding = True
+        self._find_button.configure(bg=BUTTON_BG_ACTIVE, text="hit it")
+        # Said as well as shown, for the same reason learn says it: the thing
+        # to do next happens off screen, on the controller.
+        self._say("midi find: hit a pad to select what it does")
+
+    def _stop_find(self) -> None:
+        self._finding = False
+        self._find_button.configure(bg=BUTTON_BG, text="find")
+
+    def take_find(self, event: MidiEvent) -> bool:
+        """Offered every event while armed, before the dispatcher sees it.
+
+        Swallowed rather than passed on, both halves of the pad: asking what a
+        button does should not also do it - on a show surface that could be
+        the blackout - and the release would otherwise fire the binding that
+        the press just selected.
+        """
+        if not self._finding:
+            return False
+        folded = fold_kind(event.kind)
+        if folded is None:
+            return False
+        if event.kind == "note_off" or (folded != "program" and event.data2 == 0):
+            return True  # the up-stroke of the pad being found; eat it
+
+        rows = self.mappings.mappings
+        matches = [index for index, mapping in enumerate(rows)
+                   if mapping.matches(event)]
+        self._stop_find()
+        if not matches:
+            self._say(f"midi find: nothing bound to {event.describe()}")
+            return True
+
+        # One pad with several bindings is normal - one per page - so the
+        # selection steps: arm find again, hit the same pad, get the next one.
+        # By identity rather than by value, because two rows that do the same
+        # thing on different pages are equal as dataclasses.
+        index = matches[0]
+        current = next((i for i, mapping in enumerate(rows)
+                        if mapping is self._selected), -1)
+        if current in matches:
+            index = matches[(matches.index(current) + 1) % len(matches)]
+
+        self._select_index(index)
+        mapping = rows[index]
+        where = f" ({matches.index(index) + 1} of {len(matches)})" if len(matches) > 1 else ""
+        self._say(f"found: {mapping.label} · {mapping.describe_actions()}{where}")
         return True
 
     # -- traffic, shown ----------------------------------------------------

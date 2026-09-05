@@ -180,7 +180,7 @@ launch-mythos-set.sh - the mythos26 set, on this machine
                        picture crosses the network instead of its cues.
   --config PATH        a different show (default config/mythos26.json)
   --bpm N              opening tempo, and the fallback if the beat goes quiet
-  --state NAME         the look to open on (beat_pulse, vu_pulse, tv_static...)
+  --state NAME         the look to open on (slot_1, beat_pulse, tv_static...)
   --                   everything after this is passed to eclipse_dmx as-is
   -h, --help           this
 

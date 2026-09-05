@@ -290,21 +290,20 @@ whatever the DJ software is sending. Two properties are deliberate: it
 second, and it *free-runs*, because a rig that drifts out of time is a much
 better failure than one that goes dark when the link drops.
 
-Seven states, of which four are written:
+**The show's own list is empty again**: `slot_1`–`slot_12`, twelve placeholders
+waiting for a look, because the show is being written from scratch. The looks
+that were on it are still here, on the lists they belong to:
 
-| state | what it does |
+| look | where it is |
 | --- | --- |
-| `beat_pulse` | the whole rig swells white on the beat, on an automation curve |
-| `vu_pulse` | the same flash over a backdrop that follows the track's loudness — both colours pickable, red under white to open on |
-| `tv_static_mono` | every fixture a new grey, every frame |
-| `tv_static` | every fixture a new colour, every frame |
-| `slot_5`–`slot_7` | placeholders |
+| `beat_pulse` | a cue on the `audio` machine — the whole rig swells white on the beat, on an automation curve |
+| `tv_static_mono`, `tv_static` | cues on `generic` — every fixture a new grey, or a new colour, every frame |
+| `vu_pulse` | removed; the flash over a loudness backdrop is in the history below and in git |
 
-Both beat looks open on the beat. What tells them apart is the envelope, and it
-is stated in the cue list beside the name — `beat_pulse` opens at 0.15/0.60,
-`vu_pulse` shorter and sharper at 0.10/0.45 because it sits over a lit wash.
-Attack and decay are what a beat look *is*, so they belong there rather than in
-a constructor; they stay live knobs at the desk once it is running.
+A beat look opens on the beat, and its envelope is stated where the cue is made
+rather than inside the look — `beat_pulse` opens at 0.15/0.60. Attack and decay
+are what a beat look *is*, so they belong there rather than in a constructor;
+they stay live knobs at the desk once it is running.
 
 **How often a look hits is a `rate` knob** beside them, in hits per beat: 0.25,
 0.5, 1 or 2, snapped, because a slider will otherwise hand over 1.37 and 1.37
@@ -372,8 +371,10 @@ now a property of any curve rather than a hand-rolled special case in one look.
 
 ### the loudness backdrop, and getting it wrong twice
 
-`vu_pulse` is a white flash over a red wash that tracks how loud the track is.
-Worth recording how that went, because both wrong answers were plausible.
+`vu_pulse` was a white flash over a red wash that tracked how loud the track is.
+The look has gone with the rest of the show's cue list, but the wiring under it
+has not, and both wrong answers were plausible enough to be worth recording -
+the next thing that reads the meter will meet them again.
 
 **First wrong answer: VU ballistics.** Fast attack, limited release — how a
 meter is *drawn*. Because it snaps upward it keeps every transient it is
@@ -392,7 +393,7 @@ name rather than by note number:
 | `VuSource` | note | what it is |
 | --- | --- | --- |
 | `Instant` | 64 | the level now — peaks on every kick |
-| `Average` | 68 | ~2s average — what `vu_pulse` uses |
+| `Average` | 68 | ~2s average — the loudness of the track |
 | `Meter` | 69 | a meter bar, quantised |
 
 **Both colours are knobs** — `base_color` for the wash, `color` for the flash,
@@ -1521,17 +1522,16 @@ And, for mythos26 and the beat clock:
 - a tap relights the rig within a frame, mid-gap
 - with free-run off and nothing driving it, the rig settles dark rather than
   holding a level
-- all seven states are announced in table order, and the six placeholders render
-  visibly and differently from each other
+- all twelve states are announced in table order, and every placeholder renders
+  visibly and differently from the others
 - `BEAT` lines do not accumulate in the controller's event list, the same way
   frame lines do not
 - a bad tempo, and a MIDI port that is not there, are both rejected without
   killing the show
 - the viewer's tempo readout, its tap/bpm/division buttons and the master
   brightness slider all take, and the slider and the arrow keys stay in step
-- both beat looks fire on every beat, and each opens on the attack and decay its
-  line in the cue list gives it - 0.15/0.60 and 0.10/0.45 - which stay live
-  knobs at the desk
+- the beat look fires on every beat, and opens on the attack and decay its line
+  in the cue list gives it - 0.15/0.60 - which stay live knobs at the desk
 - `tv_static_mono` is grey on every fixture of every frame, `tv_static` is not,
   fixtures differ from each other, and consecutive frames differ
 - `--midi-selftest`: 23 checks over a synthesised Mixxx stream, a bare clock

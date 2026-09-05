@@ -222,114 +222,6 @@ namespace edmx
     };
 
 
-    /// The beat in white over the loudness in red.
-    ///
-    /// Two layers doing different jobs. The lower one is continuous and follows
-    /// the VU meter, so the rig has a floor that breathes with the music
-    /// instead of going black between hits. The upper one is the same envelope
-    /// as beat_pulse on top of it.
-    ///
-    /// Both colours are knobs — `base_color` for the wash and `color` for the
-    /// flash, the same name beat_pulse gives its own — so red under white is
-    /// what it opens on rather than what it is. The `base_` prefix is how the
-    /// pair reads: everything the wash owns carries it, and everything the
-    /// flash owns is named the way beat_pulse names it.
-    ///
-    /// They are composited by blending *chroma vectors* — through the middle of
-    /// the colour wheel rather than around its rim. For the white flash this
-    /// opens on that is exactly the desaturation it has always done: at full
-    /// flash the red has become white, where adding white to red would have
-    /// given you pink. For a flash with a colour of its own it is what stops
-    /// blue over red going through green on the way. See mixLayers(), which is
-    /// where both of those failures are written down.
-    class Pattern_Mythos_VuPulse : public eanim::GeneratorHSV
-    {
-    public:
-        Pattern_Mythos_VuPulse();
-
-        void init();
-
-        virtual void tick(float deltaTime) override;
-        virtual void render(eio::HSVStripNode* node, ecore::HSV& inOutColor) const override;
-        virtual void reflect(ecore::PropertyBag& bag) override;
-        virtual void reflectCurves(eanim::CurveBag& bag) override;
-
-        /// The flash. Same shape, colour and rate knobs as beat_pulse.
-        Pattern_Mythos_BeatPulse pulse;
-
-        /// Entry reaches the flash, the way tick() does. The wash underneath
-        /// has nothing to re-seat: it follows the meter, which is where it was.
-        void onEnter() { pulse.onEnter(); }
-        void setHitOnEntry(bool bHit) { pulse.setHitOnEntry(bHit); }
-
-        /// The layer underneath: a backdrop that follows how loud the track is.
-        ///
-        /// Red to open on, and a `base_color` swatch at the desk. Its own value
-        /// is a ceiling on the wash, so picking a dark colour gives a dark
-        /// wash — the meter scales it rather than replacing it.
-        ecore::HSV baseColor{0.0f, 1.0f, 1.0f}; ///< red
-
-        /// Which loudness signal drives it. The two-second average, because a
-        /// backdrop should hold still — VuSource::Instant peaks on every kick
-        /// and turns the wash into a second pulse. Switchable so a look that
-        /// *wants* that can have it.
-        VuSource baseSource{VuSource::Average};
-
-        /// What a full-scale meter reading maps to. 1 tracks the level
-        /// literally; lower it to leave the flash more headroom above the wash.
-        float baseGain{1.0f};
-
-        /// Lifts the wash off black while the meter is live. Zero by default,
-        /// so silence really is dark.
-        float baseFloor{0.0f};
-
-        /// Seconds for the backdrop to close most of a gap to a new reading.
-        /// Zero follows the meter exactly.
-        ///
-        /// This has been wrong twice, so it is worth writing down what it is
-        /// for. It is *not* VU ballistics — an asymmetric fast-attack slow-
-        /// release, which is how a meter is drawn, keeps every transient on the
-        /// way up and so still flashes on each kick. It is a symmetric
-        /// low-pass: equally slow in both directions, which is what actually
-        /// removes beat-rate pulsing and leaves the shape of the track.
-        ///
-        /// Modest by default because the meter this reads is already averaged
-        /// upstream (see midi.vu_note). Raise it if the source is the
-        /// instantaneous level instead.
-        float baseSmoothing{0.25f};
-
-        /// The flash's envelope and rate, forwarded, so a cue list can shape a
-        /// vu_pulse the same way it shapes a beat_pulse. See beatLook in
-        /// mythos26.cpp.
-        void setEnvelope(float attackSeconds, float decaySeconds)
-        {
-            pulse.setEnvelope(attackSeconds, decaySeconds);
-        }
-
-        void setPulseRate(float pulsesPerBeat) { pulse.setPulseRate(pulsesPerBeat); }
-
-        /// The wash level right now, for tests.
-        float getBaseLevel() const { return baseLevel; }
-
-        /// The colour the two layers came to this frame, for tests.
-        const ecore::HSV& getMixColor() const { return mixColor; }
-
-    private:
-        /// Puts the wash and the flash together into one colour and one level.
-        ///
-        /// Done once a frame in tick() rather than per fixture in render(),
-        /// because the whole rig is one colour here and render() is called for
-        /// every one of them.
-        void mixLayers();
-
-        AudioLevel* meter{nullptr};
-        float baseLevel{0.0f};
-
-        ecore::HSV mixColor{0.0f, 1.0f, 1.0f};
-        float mixLevel{0.0f};
-    };
-
-
     /// Every fixture a new random value, every frame.
     ///
     /// No smoothing, no motion, no beat — deliberately. The look is the
@@ -417,6 +309,11 @@ namespace edmx
     };
 
 
-    /// The show's seven states, in the order a UI shows them.
+    /// The show's twelve slots, in the order a UI shows them.
+    ///
+    /// All empty for now - the show is being written from scratch. The looks
+    /// that were on this list are still here: the static pair are cues on the
+    /// generic machine, and the beat flash is one on the audio bus. See
+    /// makeGenericStateMachine and beatPulseState.
     std::unique_ptr<StateMachinePattern> makeMythos26StateMachine();
 }

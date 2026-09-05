@@ -228,6 +228,14 @@ Three details that are the point of it:
 - **A knob binds as a `cc`** and a pad as a `note`, off the message itself,
   so nothing depends on reading a controller's chart.
 
+**And learn read backwards: find.** Press **find**, hit a pad, and the mapping
+that pad fires is the one selected in the list. On a surface with eighty-odd
+pads the usual question is *what does this one do*, and answering it by
+reading `ch=1 note 81` off a row and hunting for the pad is the wrong way
+round. Like learn it takes the whole pad — press and release — so asking what
+a button does never does it. A pad bound once per page steps: arm **find**
+again, hit the same pad, get the next binding on it.
+
 The map is `midimaps/default.json` beside the config, or `--midimap FILE`, and
 an evening's bindings are saved on the way out rather than asked about — a set
 is not the time for a dialog.
@@ -744,9 +752,9 @@ already has a clock.
 A **mod** points a knob the running look already has at a channel:
 
 ```
-mod base_gain bass 0 1              # the show's look
+mod intensity bass 0 1              # the running look's own knob
 layer hit_ring mod level bass_hits  # a layer's
-mod base_gain off
+mod intensity off
 mods                                # what is driving what
 ```
 
@@ -763,7 +771,7 @@ exactly.
 A mod can be declared in the config, which is the show's opening state:
 
 ```json
-"mods": { "base_gain": "bass" },
+"mods": { "intensity": "bass" },
 "layers": [
   { "name": "hit_ring", "fixtures": ["scanner_ring/*"], "pattern": "solid",
     "blend": "add", "color": "#ff0000", "mods": { "level": "bass_hits" } }
@@ -938,7 +946,7 @@ not to any one device.
 ```json
 {
   "master":  { "brightness": 1.0, "gamma": 2.2 },
-  "pattern": { "name": "mythos26", "state": "beat_pulse" },
+  "pattern": { "name": "audio", "state": "beat_pulse" },
   "devices": [
     { "device": "obelisk",         "offset": [0, 0],  "view_scale": [0.3, 1.0] },
     { "device": "uking_par36_x10", "offset": [10, 0], "view_scale": [1.7, 0.45] }
@@ -1358,15 +1366,19 @@ things follow from that: the coordinate space is the rig itself (`coord.y` runs
 0..1 from the first fixture to the last, with none of the stretching a relic
 look needs), and they can read the beat.
 
-Seven states, in the order the buttons show them:
+**Twelve empty slots, for now.** The show is being written from scratch, so
+`slot_1` … `slot_12` are all there is: a dim tinted breath apiece, a different
+hue each, so a cue change is visible on the rig before there is a look in it.
+Twelve because that is a page of the surface, not because twelve is a number
+the show needs.
 
-| state | what it does |
+The looks that used to be here have not gone anywhere:
+
+| look | where it is now |
 | --- | --- |
-| `beat_pulse` | the whole rig swells white on each beat |
-| `vu_pulse` | the same flash, over a red layer that follows the VU meter |
-| `tv_static_mono` | every fixture a new grey, every frame |
-| `tv_static` | every fixture a new colour, every frame |
-| `slot_5` … `slot_7` | placeholders — a dim tinted breath, waiting for a look |
+| `tv_static_mono`, `tv_static` | the `generic` machine — free-standing stage looks with no beat and no game, which is what those two are |
+| `beat_pulse` | a cue on [the audio bus](#the-audio-bus), the nearest thing to a home for a look that fires on the beat |
+| `vu_pulse` | gone for now; it is in the history if the new show wants it back |
 
 The placeholders are there so the cue buttons, the cross-fades and the config
 all work before the looks exist. Writing one for real is a `GeneratorHSV` in
@@ -1378,24 +1390,24 @@ rename it in three places — there, `MYTHOS26_STATES` in
 
 ##### the shape of a hit, and how often
 
-Both beat looks open on the beat. What makes them different is the envelope,
-and that — with the rate — is stated in the cue list beside the name:
+A beat look opens on the beat. What shapes it is the envelope, and that — with
+the rate — is stated where the cue is made rather than inside the look:
 
 ```cpp
 //                                          attack  decay  rate
 beatLook<Pattern_Mythos_BeatPulse>("beat_pulse", 0.15f, 0.60f, 1.0f),
-beatLook<Pattern_Mythos_VuPulse>  ("vu_pulse",   0.10f, 0.45f, 1.0f),
 ```
 
 Attack and decay are what a beat look *is* — a crack and a trail, or a swell and
 a long fall — so they belong where the cue list is rather than buried in a
 constructor. They stay live knobs once it is running; these are what it opens
-on. `vu_pulse` opens shorter and sharper because it sits over a lit wash.
+on. The UV par's `flash` is the same class dressed with its own three numbers,
+and `beatPulseState()` is that one line handed to whichever list wants it —
+the audio bus's, while the show is empty.
 
 `intensity` is how hard the hit lands, and it scales the envelope rather than
 the whole look: at a lifted `floor` it brings the flash down toward the level
 between hits instead of dimming the rig, so 0 means *no flash*, not no light.
-On `vu_pulse` it is the knob that buys the wash room underneath.
 
 ##### half time, quarter time and double time
 
@@ -1449,52 +1461,18 @@ On the beat and double time cannot land wrong: they fall on the same instants
 whatever whole beat they are counted from. Only the slow rates have a choice to
 make.
 
-##### `vu_pulse`
+##### the VU meter, and what reads it
 
-Two layers doing different jobs. Underneath, a wash that follows Mixxx's VU
-meter, so the rig has a floor that breathes with the music instead of going
-black between hits. On top, the same envelope as `beat_pulse`. If a lit wash
-plus a hit on every beat is too much light for the track, this is the look to
-put in half time.
+Nothing in the show reads the VU meter today — `vu_pulse`, the white flash over
+a red wash that followed it, went with the rest of the show's cue list. The
+wiring stayed: Mixxx's meter still lands on the bus, and the `level_instant`
+and `level_meter` cues on the [audio bus](#the-audio-bus) are how you look at
+it. This is here because getting it wrong twice is what these paragraphs are
+for.
 
-**Both colours are knobs.** `base_color` is the wash and `color` is the flash —
-the same name `beat_pulse` gives its own, because the flash is `beat_pulse`.
-Everything the wash owns carries the `base_` prefix and everything the flash
-owns does not, which is how the pane reads at a glance. Red under white is what
-the look opens on, not what it is; the swatches are in the knob pane and the
-picker is the system's.
-
-Each colour's own brightness is a ceiling on its layer, so a dark red picked
-out of the wheel is a dark wash — the meter scales it rather than replacing it.
-
-They composite by blending **chroma vectors** — hue as an angle, saturation as
-a radius, interpolated through the middle of the colour wheel rather than
-around its rim. Two obvious versions are wrong and both were tried here:
-
-- *Adding* the flash to the wash gives you pink for white over red.
-- *Lerping the hue* walks the rim, so blue over red goes through **green** —
-  a colour nobody put in the look.
-
-Through the middle has neither problem. Two hues far apart lose saturation on
-the way between them and pass close to white, which is what a flash washing a
-colour out actually looks like: red to blue goes red, pale magenta, blue.
-
-And it is not a replacement for the desaturation this look always did — it *is*
-that. White has no chroma at all, so the vector shrinks straight to the origin,
-the hue never moves, and the wash arrives at exactly white. That case falls out
-of the same arithmetic rather than being special-cased.
-
-The mix is computed once per frame in `tick()`, not per fixture in `render()`:
-the whole rig is one colour here, and `render()` runs 356 times a frame on
-mythos26.
-
-**The wash follows the loudness of the track, not the waveform.** That
-distinction is the whole difficulty, and getting it wrong twice is what these
-two paragraphs are here to save you from.
-
-*Which meter.* Mixxx sends several and they behave differently, so all three
-useful ones are read and kept apart — a look picks one by name, never by note
-number:
+**A wash wants the loudness of the track, not the waveform.** Mixxx sends
+several meters and they behave differently, so all three useful ones are read
+and kept apart — a look picks one by name, never by note number:
 
 | `VuSource` | note | what it is |
 | --- | --- | --- |
@@ -1502,32 +1480,34 @@ number:
 | `Average` | 68 | the same averaged over ~2 seconds — the loudness of the *track* |
 | `Meter` | 69 | a meter bar, quantised — moves in visible steps |
 
-`vu_pulse`'s backdrop uses `Average`, and that is the whole fix for a wash that
-flashes: `Instant` peaks on every kick, so a backdrop driven from it pulses at
-beat rate no matter what you do downstream. `Average` is also one of the few VU
-options the mapping enables by default. Reach for `Instant` when you want
+`Average` is the one a backdrop wants, and that is the whole fix for a wash
+that flashes: `Instant` peaks on every kick, so anything driven from it pulses
+at beat rate no matter what you do downstream. `Average` is also one of the few
+VU options the mapping enables by default. Reach for `Instant` when you want
 something to *hit* on transients, which is a different look, not a broken one.
 
-*How it is smoothed.* `baseSmoothing` is a symmetric one-pole — equally slow up
-and down. It is deliberately not VU ballistics (fast attack, limited release):
-that is how a meter is *drawn*, and because it snaps upward it keeps every
-transient it is supposed to be removing. Default is a light 0.25s, because the
-signal it reads is already averaged upstream; raise it if you point `baseSource`
-at `Instant`. Zero follows the meter exactly.
+*How a reading is smoothed.* Take a symmetric one-pole — equally slow up and
+down. Deliberately not VU ballistics (fast attack, limited release): that is
+how a meter is *drawn*, and because it snaps upward it keeps every transient it
+is supposed to be removing. A light 0.25s is plenty, because the signal is
+already averaged upstream; raise it if you point at `Instant`.
 
-`baseGain` of 1 maps a full-scale reading to full brightness; lower it to buy
-the flash headroom above the wash.
+*How long a reading lasts.* It is held flat for 0.35s and then fades out over
+the next 0.45s. The hold is so anything sampling it every frame does not ripple
+with how long ago the last message landed; the fade is a dead-man's switch,
+because a level held up forever after the link dropped would be the rig lying
+about having a signal.
 
-A reading is held flat for 0.35s and then fades out over the next 0.45s. The
-hold is so a backdrop sampled every frame does not ripple with how long ago the
-last message landed; the fade is a dead-man's switch, because a level held up
-forever after the link dropped would be the rig lying about having a signal.
-
-This needs **Enable VU mono current** ticked in the mapping's settings — note
-64, and the one VU option worth having on. Without it the red layer simply
-stays dark and the flash still works.
+Any of this needs **Enable VU mono current** ticked in the mapping's settings —
+note 64, and the one VU option worth having on. Without it the meter cues sit
+at their dead-channel blink and everything else still works.
 
 ##### the static looks
+
+`tv_static_mono` and `tv_static`, which are cues on the `generic` machine now
+rather than on the show's list — a look with no beat and no game under it
+belongs in the free-standing pile. The class is still `mythos26.h`'s, because
+it was written for this rig rather than borrowed from a relic.
 
 Every fixture a new random value every frame, in greys or in hue. No smoothing
 and no motion, deliberately: the moment consecutive frames relate to each other
@@ -1933,7 +1913,7 @@ Notes, **not** beat clock, on the mapping's Midi Channel:
 | 0x32 | 50 | **the beat**, velocity 100 |
 | 0x34 | 52 | **the tempo**, velocity = bpm − 50 |
 | 0x40 | 64 | VU mono **current** — instantaneous, every 40ms |
-| 0x44 | 68 | VU mono **2-second average** — what `vu_pulse` reads |
+| 0x44 | 68 | VU mono **2-second average** — the loudness of the track |
 | 0x45 | 69 | first VU **meter bar** |
 | 0x46+ | 70+ | the rest of the meter bars |
 
@@ -2212,7 +2192,7 @@ print(list_midi_ports())
 
 with ShowController("config/mythos26.json", on_beat=print) as show:
     show.midi_open("loopMIDI")     # or leave it to the config
-    show.set_state("beat_pulse")
+    show.set_state("beat_pulse")   # a cue on the audio bus, while the show is empty
     show.wait(seconds=60)
 
     show.set_bpm(128)              # no MIDI? drive it by hand

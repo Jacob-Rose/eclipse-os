@@ -144,153 +144,6 @@ void Pattern_Mythos_BeatPulse::render(eio::HSVStripNode* node, ecore::HSV& inOut
 }
 
 // ============================================================================
-// vu_pulse
-// ============================================================================
-
-Pattern_Mythos_VuPulse::Pattern_Mythos_VuPulse()
-    : meter(&sharedAudioLevel())
-{
-    // The flash sits over a lit wash here, so it wants a shorter, sharper
-    // envelope than beat_pulse's - see the cue list, which is where both
-    // looks' opening shapes live.
-}
-
-void Pattern_Mythos_VuPulse::reflect(ecore::PropertyBag& bag)
-{
-    // The flash's own knobs first, under the names beat_pulse gives them, so
-    // the same look tunes the same way whichever state you are in. `color` is
-    // the flash's, and every `base_` below belongs to the wash.
-    pulse.reflect(bag);
-
-    bag.add("base_color", baseColor);
-    bag.add("base_gain", baseGain, 0.0f, 2.0f);
-    bag.add("base_floor", baseFloor, 0.0f, 1.0f);
-    bag.add("base_smoothing", baseSmoothing, 0.0f, 2.0f);
-}
-
-void Pattern_Mythos_VuPulse::reflectCurves(eanim::CurveBag& bag)
-{
-    // the flash's envelope, same name as on beat_pulse - one shape, drawable
-    // from either state
-    pulse.reflectCurves(bag);
-}
-
-void Pattern_Mythos_VuPulse::init()
-{
-    pulse.init();
-    baseLevel = 0.0f;
-    mixLayers();
-}
-
-void Pattern_Mythos_VuPulse::tick(float deltaTime)
-{
-    pulse.tick(deltaTime);
-
-    const double now = nowSeconds();
-
-    // The floor only applies while the meter is actually reporting. Holding a
-    // dim red up when the link is dead would be the rig lying about having a
-    // signal, and it is the one state where "looks fine" is the wrong answer.
-    const float floorValue = meter->isLive(baseSource, now)
-        ? std::clamp(baseFloor, 0.0f, 1.0f)
-        : 0.0f;
-    const float target = std::clamp(
-        floorValue + (meter->get(baseSource, now) * baseGain), 0.0f, 1.0f);
-
-    if (baseSmoothing <= 0.0f || deltaTime <= 0.0f)
-    {
-        baseLevel = target;
-    }
-    else
-    {
-        // Symmetric one-pole, framed in seconds rather than as a per-frame
-        // coefficient so the look does not change with the frame rate. Equally
-        // slow in both directions on purpose: an asymmetric filter that snaps
-        // upward keeps every transient it is supposed to be removing.
-        const float rate = 1.0f - std::exp(-deltaTime / baseSmoothing);
-        baseLevel += (target - baseLevel) * rate;
-    }
-
-    // Both layers are now where they are for this frame, so put them together
-    // once - see mixLayers().
-    mixLayers();
-}
-
-void Pattern_Mythos_VuPulse::mixLayers()
-{
-    const float flash = std::clamp(pulse.getLevel(), 0.0f, 1.0f);
-    const ecore::HSV& flashColor = pulse.pulseColor;
-
-    // Blend the two layers as *chroma vectors* — hue as an angle, saturation as
-    // a radius — rather than as a hue and a saturation apiece.
-    //
-    // This is the whole composite, and it is worth understanding before
-    // touching it, because the obvious version is wrong in two different ways
-    // and this one is wrong in neither.
-    //
-    // Adding the flash to the wash gives pink for white over red. Lerping the
-    // hue instead walks the long way round the wheel: blue over red goes
-    // through *green*, a colour nobody put in the look. Both were tried here.
-    //
-    // Interpolating the chroma vector has neither failure, because it goes
-    // through the middle of the wheel rather than around the rim. Two hues far
-    // apart lose saturation on the way between them and pass through something
-    // near white, which is what a flash washing a colour out actually looks
-    // like — red to blue goes red, pale magenta, blue.
-    //
-    // And it *is* the desaturation this look always did, not a replacement for
-    // it: white has no chroma at all, so the vector shrinks straight to the
-    // origin, the hue never moves, and the wash fades to exactly white. That
-    // case comes out of this arithmetic unchanged rather than being special
-    // cased, which is the reason to prefer it over a branch on "is the flash
-    // achromatic".
-    const float baseAngle  = baseColor.getHueFloat() * 0.01745329252f;
-    const float flashAngle = flashColor.getHueFloat() * 0.01745329252f;
-
-    const float baseSat  = baseColor.getSatFloat();
-    const float flashSat = flashColor.getSatFloat();
-
-    const float x = (baseSat * std::cos(baseAngle))
-                  + (((flashSat * std::cos(flashAngle)) - (baseSat * std::cos(baseAngle))) * flash);
-    const float y = (baseSat * std::sin(baseAngle))
-                  + (((flashSat * std::sin(flashAngle)) - (baseSat * std::sin(baseAngle))) * flash);
-
-    const float saturation = std::min(std::sqrt((x * x) + (y * y)), 1.0f);
-
-    // Hold the wash's hue when there is no chroma left to take one from. At
-    // that saturation nothing on the rig can tell, but a hue that jumps to
-    // whatever atan2(0, 0) returns would show the moment it came back.
-    float hue = baseColor.getHueFloat();
-    if (saturation > 0.0005f)
-    {
-        hue = std::atan2(y, x) * 57.2957795131f;
-        if (hue < 0.0f)
-        {
-            hue += 360.0f;
-        }
-    }
-
-    mixColor = ecore::HSV(hue, saturation, 1.0f);
-
-    // Each layer's own value is its ceiling, so a picked colour that is dark is
-    // dark on the rig: the meter scales the wash's, the envelope the flash's.
-    mixLevel = std::max(baseLevel * baseColor.getValFloat(),
-                        flash * flashColor.getValFloat());
-}
-
-void Pattern_Mythos_VuPulse::render(eio::HSVStripNode* node, ecore::HSV& inOutColor) const
-{
-    (void)node;
-
-    // Mixed once in tick() rather than here. The whole rig is one colour, and
-    // this runs per fixture per frame - 356 of them on mythos26 - so the two
-    // trig calls and the square root would otherwise be paid 356 times for one
-    // answer.
-    inOutColor = mixColor;
-    inOutColor.setBrightnessAlpha(mixLevel);
-}
-
-// ============================================================================
 // tv static
 // ============================================================================
 
@@ -499,20 +352,6 @@ namespace
         return def;
     }
 
-    /// Static, in greys or in colour.
-    StateDef staticLook(const char* name, bool monochrome)
-    {
-        StateDef def;
-        def.name = name;
-        def.make = [monochrome]() -> std::shared_ptr<eanim::GeneratorHSV> {
-            auto pattern = std::make_shared<Pattern_Mythos_TvStatic>();
-            pattern->monochrome = monochrome;
-            pattern->init();
-            return pattern;
-        };
-        return def;
-    }
-
     /// An empty slot, tinted so the states are told apart on the rig.
     StateDef placeholder(const char* name, float hue)
     {
@@ -562,6 +401,14 @@ void Pattern_Mythos_Solid::reflect(ecore::PropertyBag& bag)
     bag.add("level", level, 0.0f, 1.0f);
 }
 
+StateDef edmx::beatPulseState()
+{
+    // The same numbers the show's cue opened on - a 0.15s rise into a 0.60s
+    // fall, on the beat - because the look is unchanged; only the list holding
+    // it is. See the note on beatLook for what the three of them are.
+    return beatLook<Pattern_Mythos_BeatPulse>("beat_pulse", 0.15f, 0.60f, 1.0f);
+}
+
 std::unique_ptr<StateMachinePattern> edmx::makeUvStateMachine()
 {
     // The UV par's three modes, as a layer's machine. `flash` is the show's
@@ -593,23 +440,16 @@ std::unique_ptr<StateMachinePattern> edmx::makeMythos26StateMachine()
     // ------------------------------------------------------------------
     // The show, one line per state, in the order a UI shows them.
     //
-    // Writing a look means adding a GeneratorHSV to mythos26.h/.cpp and
-    // changing its line here; nothing else in the runner, the protocol or the
-    // UI needs to know. The remaining slot_* are placeholders.
+    // Twelve empty slots, which is the size of the surface's page rather than
+    // a guess: the show is being written from scratch, and a slot that exists
+    // is a cue that can be switched to, mapped to a button and seen on the rig
+    // before there is a look in it. The looks that were here have gone to the
+    // generic list - see makeGenericStateMachine - because a look with no beat
+    // and no show around it belongs in the free-standing pile.
     //
-    // The first two numbers on a beatLook are its envelope: how long the hit
-    // takes to reach full, and how long it takes to fall back. They are the
-    // difference between a crack and a swell. The third is its rate: 0.5 half
-    // time, 1 on the beat, 2 double time. All three are live knobs at the desk
-    // once it is running - these are what the cue opens on.
-    //
-    // Both open on the beat. Half time is a rate rather than a return of the
-    // beat divider that used to live here: that offered 4 as well, and the
-    // clock counts beats with no idea which of them is the one, so "on 4" fired
-    // at the right rate on an arbitrary beat of the bar with no usable way to
-    // move it. A pair has a usable way - setting the rate, or entering the cue,
-    // seats it on the beat you did that on - which is exactly what a bar's
-    // worth of beats did not.
+    // Writing one means adding a GeneratorHSV to mythos26.h/.cpp and changing
+    // its line here; nothing else in the runner, the protocol or the UI needs
+    // to know. The hues are only so the empty slots are told apart on the rig.
     //
     // Renaming a state means renaming it in three places: here,
     // MYTHOS26_STATES in python/eclipse_dmx/config.py, and the button table in
@@ -618,16 +458,18 @@ std::unique_ptr<StateMachinePattern> edmx::makeMythos26StateMachine()
     // without one running.
     // ------------------------------------------------------------------
     std::vector<StateDef> states = {
-        //                                          attack  decay  rate
-        beatLook<Pattern_Mythos_BeatPulse>("beat_pulse", 0.15f, 0.60f, 1.0f),
-        beatLook<Pattern_Mythos_VuPulse>  ("vu_pulse",   0.10f, 0.45f, 1.0f),
-
-        staticLook("tv_static_mono", true),
-        staticLook("tv_static", false),
-
-        placeholder("slot_5", 210.0f),
-        placeholder("slot_6", 275.0f),
-        placeholder("slot_7", 320.0f),
+        placeholder("slot_1", 0.0f),
+        placeholder("slot_2", 30.0f),
+        placeholder("slot_3", 60.0f),
+        placeholder("slot_4", 90.0f),
+        placeholder("slot_5", 120.0f),
+        placeholder("slot_6", 150.0f),
+        placeholder("slot_7", 180.0f),
+        placeholder("slot_8", 210.0f),
+        placeholder("slot_9", 240.0f),
+        placeholder("slot_10", 270.0f),
+        placeholder("slot_11", 300.0f),
+        placeholder("slot_12", 330.0f),
     };
 
     // ------------------------------------------------------------------

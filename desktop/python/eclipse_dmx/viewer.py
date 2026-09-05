@@ -79,8 +79,6 @@ OSC_SILENCE_GRACE = 8.0
 # a group can hold looks from more than one machine.
 
 STATE_GROUPS: List[Tuple[str, List[Tuple[str, Tuple[str, str]]]]] = [
-    # slot_5 onwards are still placeholders. Rename them here when they are
-    # renamed in makeMythos26StateMachine().
     # The audio bus, one cue per channel. An instrument rather than a look -
     # see edmx/audio_meter.h - and first because while the analysis wire is
     # being trusted it is the thing you actually want in front of you.
@@ -110,15 +108,32 @@ STATE_GROUPS: List[Tuple[str, List[Tuple[str, Tuple[str, str]]]]] = [
         ("intensity", ("state", "intensity")),
         ("level_instant", ("state", "level_instant")),
         ("level_meter", ("state", "level_meter")),
+        # not a channel: the show's beat look, parked on this list while
+        # mythos26 is empty. Labelled with the state's own name like every
+        # row above it - TheAudioMeter holds the two together.
+        ("beat_pulse", ("state", "beat_pulse")),
     ]),
+    # The show, which is twelve empty slots while it is being written. Rename
+    # them here when they are renamed in makeMythos26StateMachine().
     ("mythos26", [
-        ("pulse", ("state", "beat_pulse")),
-        ("vu pulse", ("state", "vu_pulse")),
-        ("static b/w", ("state", "tv_static_mono")),
-        ("static rgb", ("state", "tv_static")),
+        ("slot 1", ("state", "slot_1")),
+        ("slot 2", ("state", "slot_2")),
+        ("slot 3", ("state", "slot_3")),
+        ("slot 4", ("state", "slot_4")),
         ("slot 5", ("state", "slot_5")),
         ("slot 6", ("state", "slot_6")),
         ("slot 7", ("state", "slot_7")),
+        ("slot 8", ("state", "slot_8")),
+        ("slot 9", ("state", "slot_9")),
+        ("slot 10", ("state", "slot_10")),
+        ("slot 11", ("state", "slot_11")),
+        ("slot 12", ("state", "slot_12")),
+    ]),
+    # The static pair moved here with the machine that holds them - the rest
+    # of the generic list is left to the generated buttons.
+    ("generic", [
+        ("static b/w", ("state", "tv_static_mono")),
+        ("static rgb", ("state", "tv_static")),
     ]),
     ("jacket", [
         ("void", ("state", "digital_void")),
@@ -2025,14 +2040,17 @@ class ViewerApp:
             self._midi_events.append(event)
 
     def _drain_midi(self) -> None:
-        """Every queued event, through learn first and then the mappings.
-        On the tk thread, from _pump."""
+        """Every queued event, through learn and find first and then the
+        mappings. On the tk thread, from _pump."""
         last_event = None
         fired: List[str] = []
         while self._midi_events:
             event = self._midi_events.popleft()
             last_event = event
-            if self.midi_panel.take_learn(event):
+            # Either of the panel's two armed modes takes the event whole:
+            # a pad being learned must not also fire, and neither must one
+            # being asked about.
+            if self.midi_panel.take_learn(event) or self.midi_panel.take_find(event):
                 continue
             fired.extend(self._dispatcher.handle(event))
         if last_event is not None:

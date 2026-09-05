@@ -185,6 +185,15 @@ namespace edmx
     /// spawned here and put at the same state draws the same pixels.
     std::shared_ptr<eanim::GeneratorHSV> makeObeliskLook(const std::string& name);
 
+    /// The beat flash as a cue for someone else's list, with the shape it
+    /// used to open on in the show.
+    ///
+    /// The show is twelve empty slots for now, and a look that fires on the
+    /// beat still wants somewhere to be switched to; the audio bus is the
+    /// nearest thing to a home - see makeAudioStateMachine. In mythos26.cpp,
+    /// where the look and the beatLook that dresses it both live.
+    StateDef beatPulseState();
+
     /// The UV par's own machine, for a layer: `off`, `flash` (a beat pulse
     /// with its envelope drawable at the desk) and `on`. Three modes for one
     /// light, run over the show rather than as part of it. In mythos26.cpp,

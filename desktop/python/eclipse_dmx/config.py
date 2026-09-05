@@ -126,25 +126,36 @@ AUDIO_CHANNELS = (
 )
 
 #: The `audio` pattern's cues, in machine order - one per channel, named after
-#: it. The same tuple rather than a copy, because the executable builds that
-#: cue list straight off the channel table too: a channel added to
-#: AudioChannel is a cue there and a cue here with nothing edited in either
-#: place. See makeAudioStateMachine and edmx/audio_meter.h.
-AUDIO_STATES = AUDIO_CHANNELS
+#: it, and then the beat flash. The channels are the same tuple rather than a
+#: copy, because the executable builds that part of its cue list straight off
+#: the channel table too: a channel added to AudioChannel is a cue there and a
+#: cue here with nothing edited in either place.
+#:
+#: `beat_pulse` is on the end and is not a channel. It is the show's old beat
+#: look, parked here while mythos26 is empty - a look that fires on the beat
+#: belongs nearer the bus than the free-standing pile. See makeAudioStateMachine
+#: and edmx/audio_meter.h.
+AUDIO_STATES = AUDIO_CHANNELS + ("beat_pulse",)
 
 #: mythos26's states, in the order its state machine lists them. Must stay in
 #: step with makeMythos26StateMachine() in desktop/src/mythos26.cpp.
 #:
-#: slot_5 onwards are placeholders waiting for a look. Rename them here when
-#: you rename them there.
+#: Twelve placeholders waiting for a look - the show is being written from
+#: scratch, and the looks that used to be here are in GENERIC_STATES. Rename a
+#: slot here when you rename it there.
 MYTHOS26_STATES = (
-    "beat_pulse",
-    "vu_pulse",
-    "tv_static_mono",
-    "tv_static",
+    "slot_1",
+    "slot_2",
+    "slot_3",
+    "slot_4",
     "slot_5",
     "slot_6",
     "slot_7",
+    "slot_8",
+    "slot_9",
+    "slot_10",
+    "slot_11",
+    "slot_12",
 )
 
 #: The generic looks' states, in machine order. Must stay in step with
@@ -165,6 +176,8 @@ GENERIC_STATES = (
     "chase",
     "theater",
     "blobs",
+    "tv_static_mono",
+    "tv_static",
 )
 
 #: The obelisk machine's states. Must stay in step with

@@ -17,7 +17,12 @@ import argparse, json, pathlib, subprocess, sys
 from eclipse_dmx import launchpad as lp
 from eclipse_dmx import midi_map as mm
 
-MACHINES = ["mythos26", "jacket", "obelisk", "uv", "generic", "scanner"]
+MACHINES = ["mythos26", "jacket", "obelisk", "uv", "generic", "scanner", "audio"]
+
+#: The page the surface comes up on. The bus rather than the show while the
+#: show's own list is twelve empty slots - the same call config/mythos26.json
+#: makes with its opening pattern.
+OPENS_ON = "audio"
 
 
 def probe(executable, config):
@@ -60,11 +65,10 @@ else:
 # bottom left, where a hand starts; scanner last because it is the biggest and
 # is the one that spills off the top of the grid onto the row above it.
 #
-# The five small machines happen to total exactly forty - five full rows - so
-# scanner begins on a row boundary. That is luck rather than design, and the
-# only boundary available: no other arrangement of 7/12/3/3/15 lands on a
-# multiple of eight. Everything else wraps mid-row like text, which is what
-# the colours are for.
+# Every page gets the whole grid, so a machine's looks wrap mid-row like text
+# and the colours are what tell one page from the next. audio is last, and so
+# takes the last tab: it is an instrument rather than a look, and the tab a
+# hand finds first should be a show.
 ORDER = MACHINES
 
 COLOUR = {
@@ -74,6 +78,7 @@ COLOUR = {
     "uv":       lp.Colour.PURPLE,
     "generic":  lp.Colour.GREEN,
     "scanner":  lp.Colour.MAGENTA,
+    "audio":    lp.Colour.WHITE,
 }
 
 # The grid, bottom row first and left to right - the order a hand reads it.
@@ -131,11 +136,11 @@ for channel, index, colour in (("a", UP, lp.Colour.WHITE), ("b", DOWN, lp.Colour
         actions=[mm.Action("input", {"channel": channel})]))
 
 out = pathlib.Path(args.out)
-mm.MappingSet(rows, opens_on=ORDER[0]).save(out)
+mm.MappingSet(rows, opens_on=OPENS_ON).save(out)
 
 pages = {m: sum(1 for r in rows if r.page == m) for m in ORDER}
 print(f"{len(rows)} rows -> {out}")
-print(f"  opens on '{ORDER[0]}'")
+print(f"  opens on '{OPENS_ON}'")
 for machine, count in pages.items():
     print(f"    page {machine:<10} {count:>2} looks")
 print(f"  {len(ORDER)} tabs on the right column, {len(TABS) - len(ORDER)} spare")

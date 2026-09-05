@@ -705,11 +705,11 @@ class TheShippedOscMap(unittest.TestCase):
         for binding in self.bindings:
             self.assertIn(binding.mode, osc_input.MODES, binding.label)
 
-    def test_the_enabled_ones_name_knobs_mythos26_has(self):
-        # The knobs beat_pulse announces; see readme.md, "mythos26 - the show".
+    def test_the_enabled_ones_name_knobs_a_look_here_has(self):
+        # The knobs the beat flash and the static pair announce; see
+        # readme.md, "the looks".
         known = {"attack", "decay", "intensity", "floor", "hold", "rate",
-                 "entry_hit", "color", "base_color", "base_gain", "base_floor",
-                 "base_smoothing", "monochrome"}
+                 "entry_hit", "color", "monochrome"}
         for binding in self.bindings:
             if binding.enabled and binding.action == "param":
                 self.assertIn(binding.params.get("name"), known, binding.label)
@@ -1703,13 +1703,11 @@ class TheAudioBus(unittest.TestCase):
         """
         executable_or_skip()
         frames = []
-        show = ShowController(SHOW, dry_run=True, pattern="mythos26", midi="", bpm=120.0,
+        show = ShowController(SHOW, dry_run=True, pattern="audio", midi="", bpm=120.0,
                               on_frame=frames.append, emit_rate=40.0)
         try:
-            # The config opens on the audio meter now, so the show's own cue
-            # has to be asked for - see the note by "pattern" in
-            # config/mythos26.json.
-            show.set_pattern("mythos26")
+            # The bus opens on `level`, so the flash has to be asked for: it is
+            # a cue on this list while the show is empty - see beatPulseState.
             show.set_state("beat_pulse")
             time.sleep(2.0)
         finally:
@@ -2101,7 +2099,11 @@ class TheAudioMeter(unittest.TestCase):
         self.assertEqual(tuple(named), AUDIO_STATES)
 
     def test_the_python_mirror_matches_the_executable(self):
-        self.assertEqual(AUDIO_STATES, AUDIO_CHANNELS)
+        """A cue per channel, in the channel table's order - and then the beat
+        flash, which is not a channel and is parked here while the show's own
+        list is empty. See beatPulseState."""
+        self.assertEqual(AUDIO_STATES[:len(AUDIO_CHANNELS)], AUDIO_CHANNELS)
+        self.assertEqual(AUDIO_STATES[len(AUDIO_CHANNELS):], ("beat_pulse",))
 
     def test_the_viewers_buttons_match_too(self):
         from eclipse_dmx.viewer import STATE_GROUPS
@@ -2151,7 +2153,7 @@ class TheAudioMeter(unittest.TestCase):
 
     # -- the surface --------------------------------------------------------
 
-    def test_the_launchpad_has_a_pad_per_channel(self):
+    def test_the_launchpad_has_a_pad_per_cue(self):
         import json
         data = json.loads((DESKTOP / "config" / "midimaps"
                            / "launchpad-all-states.json").read_text())
@@ -2424,11 +2426,15 @@ class SharedBeatTriggers(unittest.TestCase):
         """
         for offset in (0.13, 0.31):
             frames = []
-            show = ShowController(SHOW, dry_run=True, pattern="mythos26", midi="", bpm=120.0,
+            show = ShowController(SHOW, dry_run=True, pattern="audio", midi="", bpm=120.0,
                                   on_frame=lambda f: frames.append((time.time(), f)),
                                   emit_rate=40.0)
             try:
-                show.set_state("tv_static")
+                # From a cue that is not the flash, so what is measured is the
+                # entry and not whatever was already on the rig. `level` with
+                # nothing feeding it is the meter's dim amber breath - lit, but
+                # nowhere near a hit, and too slow to read as a rising edge.
+                show.set_state("level")
                 time.sleep(1.0 + offset)
                 entered = time.time()
                 show.set_state("beat_pulse")
@@ -2464,10 +2470,10 @@ class SharedBeatTriggers(unittest.TestCase):
         finally:
             show.stop()
 
-        # and the show's own beat look is the other way round - a different
-        # config, because beat_pulse is mythos26's cue and the UV is the
+        # and a cue on a list is the other way round - a different config,
+        # because beat_pulse is a cue the rig comes up on and the UV is the
         # scanner stage's layer
-        show = ShowController(SHOW, dry_run=True, pattern="mythos26", midi="", bpm=120.0,
+        show = ShowController(SHOW, dry_run=True, pattern="audio", midi="", bpm=120.0,
                               on_frame=lambda f: None, emit_rate=20.0)
         try:
             show.set_state("beat_pulse")
@@ -3042,7 +3048,7 @@ class MidiSettings(unittest.TestCase):
 
     def test_unknown_mythos_state_is_rejected(self):
         config = Config.load(SHOW)
-        config.pattern.state = "slot_9"
+        config.pattern.state = "slot_13"     # twelve of them, and no more
         with self.assertRaises(ConfigError):
             config.validate()
 
@@ -3068,7 +3074,20 @@ class Mythos26(unittest.TestCase):
         show.set_pattern("mythos26")
         return show
 
-    def test_seven_states_in_table_order(self):
+    def _beat_show(self, **kwargs):
+        """The beat look, wherever it is living.
+
+        The show's own cue list is twelve empty slots for now, so the flash
+        these tests are about is a cue on the audio bus rather than the show's
+        opening state - see beatPulseState. What is being tested is the look
+        and the clock under it, neither of which moved.
+        """
+        show = self._show(**kwargs)
+        show.set_pattern("audio")
+        show.set_state("beat_pulse")
+        return show
+
+    def test_twelve_states_in_table_order(self):
         show = self._show(on_frame=lambda f: None)
         try:
             time.sleep(0.5)
@@ -3087,7 +3106,7 @@ class Mythos26(unittest.TestCase):
     def test_it_pulses_white_on_the_beat(self):
         """Full white once a beat, well down between, and every fixture together."""
         frames = []
-        show = self._show(on_frame=frames.append, bpm=120.0, emit_rate=40.0)
+        show = self._beat_show(on_frame=frames.append, bpm=120.0, emit_rate=40.0)
         try:
             time.sleep(2.5)  # five beats at 120
         finally:
@@ -3130,7 +3149,7 @@ class Mythos26(unittest.TestCase):
 
         def count_pulses(bpm):
             frames = []
-            show = self._show(on_frame=frames.append, bpm=bpm, emit_rate=40.0)
+            show = self._beat_show(on_frame=frames.append, bpm=bpm, emit_rate=40.0)
             try:
                 time.sleep(seconds)
             finally:
@@ -3162,7 +3181,7 @@ class Mythos26(unittest.TestCase):
 
     def test_tapping_a_beat_relights_the_rig(self):
         frames = []
-        show = self._show(on_frame=frames.append, bpm=40.0, emit_rate=40.0)
+        show = self._beat_show(on_frame=frames.append, bpm=40.0, emit_rate=40.0)
         try:
             time.sleep(1.2)  # well past the 200ms fall, and before the next beat
             self.assertEqual(max(frames[-1][0]), 0)
@@ -3206,7 +3225,7 @@ class Mythos26(unittest.TestCase):
     def test_free_run_off_stops_the_pulse(self):
         """With nothing driving it and free-run off, the rig should settle dark."""
         frames = []
-        show = self._show(on_frame=frames.append, bpm=120.0, emit_rate=40.0)
+        show = self._beat_show(on_frame=frames.append, bpm=120.0, emit_rate=40.0)
         try:
             show.set_free_run(False)
             time.sleep(1.5)
@@ -3215,19 +3234,20 @@ class Mythos26(unittest.TestCase):
             show.stop()
 
     def test_the_placeholders_are_visible_and_distinct(self):
-        """slot_5, slot_6 and slot_7 - every empty slot in the machine."""
+        """Every slot in the machine, which is all twelve of them for now."""
         frames = []
         show = self._show(on_frame=frames.append, emit_rate=20.0)
         try:
             seen = []
-            for state in ("slot_5", "slot_6", "slot_7"):
+            for state in MYTHOS26_STATES:
                 show.set_state(state)
                 time.sleep(0.8)  # past the 0.25s cross-fade
                 seen.append(tuple(frames[-1]))
 
             for frame in seen:
                 self.assertGreater(max(max(f) for f in frame), 0, "a slot rendered black")
-            self.assertEqual(len(set(seen)), 3, "two slots look the same")
+            self.assertEqual(len(set(seen)), len(MYTHOS26_STATES),
+                             "two slots look the same")
         finally:
             show.stop()
 
@@ -3268,7 +3288,7 @@ class BeatLooks(unittest.TestCase):
     def _count(self, state, seconds=4.0, bpm=120.0, params=None):
         frames = []
         show = ShowController(
-            SHOW, dry_run=True, pattern="mythos26", midi="", bpm=bpm,
+            SHOW, dry_run=True, pattern="audio", midi="", bpm=bpm,
             on_frame=frames.append, emit_rate=40.0
         )
         try:
@@ -3285,33 +3305,21 @@ class BeatLooks(unittest.TestCase):
         beats = 120.0 / 60.0 * 4.0
         self.assertAlmostEqual(self._count("beat_pulse"), beats, delta=2.0)
 
-    def test_vu_pulse_fires_on_every_beat_too(self):
-        """It used to open on twos. Without a divider there is one answer."""
-        beats = 120.0 / 60.0 * 4.0
-        self.assertAlmostEqual(self._count("vu_pulse"), beats, delta=2.0)
-
     def test_the_cue_list_sets_the_envelope(self):
         """beatLook's two numbers are what the look opens on."""
-        show = ShowController(SHOW, dry_run=True, pattern="mythos26", midi="", on_frame=lambda f: None)
+        show = ShowController(SHOW, dry_run=True, pattern="audio", midi="", on_frame=lambda f: None)
         try:
             show.set_state("beat_pulse")
             time.sleep(0.4)
             knobs = {p.name: p.value for p in show.params}
             self.assertAlmostEqual(knobs["attack"], 0.15, places=3)
             self.assertAlmostEqual(knobs["decay"], 0.60, places=3)
-
-            # vu_pulse opens shorter and sharper, over its lit wash.
-            show.set_state("vu_pulse")
-            time.sleep(0.4)
-            knobs = {p.name: p.value for p in show.params}
-            self.assertAlmostEqual(knobs["attack"], 0.10, places=3)
-            self.assertAlmostEqual(knobs["decay"], 0.45, places=3)
         finally:
             show.stop()
 
     def test_the_envelope_is_still_live(self):
         """Stated in the cue list, tunable at the desk - both, not either."""
-        show = ShowController(SHOW, dry_run=True, pattern="mythos26", midi="", on_frame=lambda f: None)
+        show = ShowController(SHOW, dry_run=True, pattern="audio", midi="", on_frame=lambda f: None)
         try:
             show.set_state("beat_pulse")
             time.sleep(0.4)
@@ -3356,7 +3364,7 @@ class BeatLooks(unittest.TestCase):
         """
         period = 0.30
         stamped = []
-        show = ShowController(SHOW, dry_run=True, pattern="mythos26", midi="",
+        show = ShowController(SHOW, dry_run=True, pattern="audio", midi="",
                               on_frame=lambda frame: stamped.append(
                                   (time.monotonic(), max(frame[0]) > 128)),
                               emit_rate=40.0)
@@ -3399,7 +3407,7 @@ class BeatLooks(unittest.TestCase):
         bpm = 200.0
         beat = 60.0 / bpm      # a bar every 1.2s, so four of them is quick
         stamped = []
-        show = ShowController(SHOW, dry_run=True, pattern="mythos26", midi="", bpm=bpm,
+        show = ShowController(SHOW, dry_run=True, pattern="audio", midi="", bpm=bpm,
                               on_frame=lambda frame: stamped.append(
                                   (time.monotonic(), max(frame[0]) > 128)),
                               emit_rate=40.0)
@@ -3432,7 +3440,7 @@ class BeatLooks(unittest.TestCase):
         """
         bpm = 120.0
         stamped = []
-        show = ShowController(SHOW, dry_run=True, pattern="mythos26", midi="", bpm=bpm,
+        show = ShowController(SHOW, dry_run=True, pattern="audio", midi="", bpm=bpm,
                               on_frame=lambda frame: stamped.append(
                                   (time.monotonic(), max(frame[0]) > 128)),
                               emit_rate=40.0)
@@ -3456,20 +3464,19 @@ class BeatLooks(unittest.TestCase):
                         "the hit should land on the align, not on the old grid")
 
     def test_the_cue_list_sets_the_rate(self):
-        """Both looks open on the beat; the rate is a live knob from there."""
-        show = ShowController(SHOW, dry_run=True, pattern="mythos26", midi="", on_frame=lambda f: None)
+        """It opens on the beat; the rate is a live knob from there."""
+        show = ShowController(SHOW, dry_run=True, pattern="audio", midi="", on_frame=lambda f: None)
         try:
-            for state in ("beat_pulse", "vu_pulse"):
-                show.set_state(state)
-                time.sleep(0.4)
-                knobs = {p.name: p.value for p in show.params}
-                self.assertAlmostEqual(knobs["rate"], 1.0, places=3, msg=state)
+            show.set_state("beat_pulse")
+            time.sleep(0.4)
+            knobs = {p.name: p.value for p in show.params}
+            self.assertAlmostEqual(knobs["rate"], 1.0, places=3)
         finally:
             show.stop()
 
     def test_the_rate_snaps_to_the_musical_ones(self):
         """A slider will hand over 1.37. Nobody wants 1.37 hits a beat."""
-        show = ShowController(SHOW, dry_run=True, pattern="mythos26", midi="", on_frame=lambda f: None)
+        show = ShowController(SHOW, dry_run=True, pattern="audio", midi="", on_frame=lambda f: None)
         try:
             show.set_state("beat_pulse")
             time.sleep(0.4)
@@ -3483,7 +3490,7 @@ class BeatLooks(unittest.TestCase):
             show.stop()
 
     def test_beat_div_is_gone(self):
-        show = ShowController(SHOW, dry_run=True, pattern="mythos26", midi="", on_frame=lambda f: None)
+        show = ShowController(SHOW, dry_run=True, pattern="audio", midi="", on_frame=lambda f: None)
         try:
             with self.assertRaises(ShowError):
                 show.command("beat div 2")
@@ -3502,12 +3509,12 @@ class TvStatic(unittest.TestCase):
     def _frames(self, state, seconds=1.5):
         frames = []
         show = ShowController(
-            SHOW, dry_run=True, pattern="mythos26", midi="",
+            SHOW, dry_run=True, pattern="generic", midi="",
             on_frame=frames.append, emit_rate=40.0
         )
         try:
             show.set_state(state)
-            time.sleep(0.5)     # past the cross-fade
+            time.sleep(0.9)     # past the generic machine's 0.5s cross-fade
             frames.clear()
             time.sleep(seconds)
         finally:
@@ -3921,7 +3928,10 @@ class MidiLearn(unittest.TestCase):
         self.scratch = tempfile.TemporaryDirectory()
         scratch_map = Path(self.scratch.name) / "default.json"
 
-        self.app = ViewerApp(SHOW, pattern="mythos26", midi="", bpm=120.0, midimap=scratch_map)
+        # `generic`, because the mapping these tests fire opens `tv_static`,
+        # which is a cue on that machine - on a pattern that does not offer it
+        # "the cue did not open" would be true whatever learn did.
+        self.app = ViewerApp(SHOW, pattern="generic", midi="", bpm=120.0, midimap=scratch_map)
 
         # The panel saves on the way out when it is dirty, and learning makes
         # it dirty. `path` cleared so the save goes through default_dir, which
@@ -4028,6 +4038,152 @@ class MidiLearn(unittest.TestCase):
         self.assertTrue(written.exists(), "learned bindings were not kept")
         reloaded = midi_map.MappingSet.load(written)
         self.assertEqual(reloaded.mappings[-1].number, 36)
+
+
+class MidiFind(unittest.TestCase):
+    """Learn read backwards: hit a pad, and its mapping is the one selected.
+
+    Down the same path as learn - monitor line, reader thread, pump - because
+    the half of this that can break is the same half: the event has to reach
+    the panel before the dispatcher, and it has to be eaten rather than passed
+    on once it does.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        executable_or_skip()
+        try:
+            import tkinter
+        except ImportError as error:
+            raise unittest.SkipTest(f"no tkinter: {error}")
+        try:
+            tkinter.Tk().destroy()
+        except Exception as error:
+            raise unittest.SkipTest(f"no display: {error}")
+
+    def setUp(self):
+        import tempfile
+        from eclipse_dmx.viewer import ViewerApp
+
+        self.scratch = tempfile.TemporaryDirectory()
+        scratch_map = Path(self.scratch.name) / "default.json"
+        self.app = ViewerApp(SHOW, pattern="generic", midi="", bpm=120.0,
+                             midimap=scratch_map)
+        self.panel = self.app.midi_panel
+        self.panel.path = None
+        self.panel.default_dir = Path(self.scratch.name)
+
+    def tearDown(self):
+        self.app._quit()
+        self.scratch.cleanup()
+
+    def settle(self, seconds=0.5):
+        end = time.monotonic() + seconds
+        while time.monotonic() < end:
+            self.app.root.update()
+            time.sleep(0.02)
+
+    def hit(self, *lines):
+        for line in lines:
+            self.app._on_midi_line(line)
+        self.settle(0.3)
+
+    def bind(self, *triggers):
+        """Mappings on the panel's map, in the order given."""
+        from eclipse_dmx.midi_map import Mapping
+
+        for label, channel, number, state, page in triggers:
+            self.panel.mappings.mappings.append(
+                Mapping(label=label, kind="note", channel=channel, number=number,
+                        page=page, action="state", params={"name": state}))
+        self.panel._refresh_list()
+        self.panel._select_index(0)
+        self.settle(0.4)
+
+    def test_hitting_a_pad_selects_its_mapping(self):
+        self.bind(("first", 1, 40, "tv_static", ""),
+                  ("second", 1, 41, "tv_static_mono", ""))
+
+        self.panel._toggle_find()
+        self.assertTrue(self.panel._finding)
+
+        self.hit("ch=1 note_on 41 100", "ch=1 note_off 41 0")
+
+        self.assertIs(self.panel._selected, self.panel.mappings.mappings[1])
+        self.assertEqual(self.panel._list.curselection(), (1,))
+        self.assertFalse(self.panel._finding, "one pad, then disarmed")
+
+    def test_the_pad_being_found_does_not_also_fire(self):
+        """Asking what a button does must not do it."""
+        self.bind(("cue", 3, 41, "tv_static", ""))
+        opened = self.app.show.current_state
+
+        self.panel._toggle_find()
+        self.hit("ch=3 note_on 41 100", "ch=3 note_off 41 0")
+
+        self.assertEqual(self.app.show.current_state, opened)
+
+    def test_an_unbound_pad_says_so_and_disarms(self):
+        self.bind(("first", 1, 40, "tv_static", ""))
+
+        self.panel._toggle_find()
+        self.hit("ch=1 note_on 77 100", "ch=1 note_off 77 0")
+
+        self.assertFalse(self.panel._finding)
+        self.assertIn("nothing bound", self.app._status)
+
+    def test_one_pad_with_two_bindings_steps_through_them(self):
+        """A pad bound once per page is normal; find walks the pair."""
+        self.bind(("on the show page", 1, 41, "tv_static", "generic"),
+                  ("on the audio page", 1, 41, "tv_static_mono", "audio"))
+
+        self.panel._toggle_find()
+        self.hit("ch=1 note_on 41 100", "ch=1 note_off 41 0")
+        first = self.panel._selected
+
+        self.panel._toggle_find()
+        self.hit("ch=1 note_on 41 100", "ch=1 note_off 41 0")
+        second = self.panel._selected
+
+        self.assertIsNot(first, second, "the same row twice, not the pair")
+        self.assertEqual({id(first), id(second)},
+                         {id(row) for row in self.panel.mappings.mappings})
+
+    def test_a_knob_finds_its_cc_binding(self):
+        from eclipse_dmx.midi_map import Mapping
+
+        self.panel.mappings.mappings.append(
+            Mapping(label="fader", kind="cc", channel=1, number=74, mode="value",
+                    action="master", params={}))
+        self.panel._refresh_list()
+        self.settle(0.3)
+
+        self.panel._toggle_find()
+        self.hit("ch=1 cc 74 64")
+
+        self.assertIs(self.panel._selected, self.panel.mappings.mappings[0])
+
+    def test_selecting_a_row_cancels_the_arm(self):
+        self.bind(("first", 1, 40, "tv_static", ""),
+                  ("second", 1, 41, "tv_static_mono", ""))
+
+        self.panel._toggle_find()
+        self.panel._list.selection_clear(0, "end")
+        self.panel._list.selection_set(0)
+        self.panel._on_select()
+        self.settle(0.2)
+
+        self.assertFalse(self.panel._finding)
+
+    def test_arming_learn_disarms_find(self):
+        """Two armed modes on one wire is one mode too many."""
+        self.bind(("first", 1, 40, "tv_static", ""))
+
+        self.panel._toggle_find()
+        self.panel._toggle_learn()
+
+        self.assertTrue(self.panel._learning)
+        self.assertFalse(self.panel._finding)
 
 
 class MidiMapEditorActions(unittest.TestCase):
@@ -4485,7 +4641,12 @@ class ViewerOnTheShow(unittest.TestCase):
     def setUp(self):
         from eclipse_dmx.viewer import ViewerApp
 
-        self.app = ViewerApp(SHOW, pattern="mythos26", midi="", bpm=120.0)
+        # Opened on the audio bus and put straight onto the beat flash: the
+        # panel tests below read a look with a float, a bool and a colour on
+        # it, and while the show's own list is twelve empty slots the flash is
+        # a cue here - see beatPulseState.
+        self.app = ViewerApp(SHOW, pattern="audio", midi="", bpm=120.0)
+        self.app._run_button(("state", "beat_pulse"))
 
     def tearDown(self):
         self.app._quit()
@@ -4570,12 +4731,13 @@ class ViewerOnTheShow(unittest.TestCase):
 
     def test_a_cue_change_rebuilds_the_panel(self):
         self.settle(1.0)
-        self.assertNotIn("base_gain", self.app._param_widgets)
+        self.assertNotIn("gain", self.app._param_widgets)
 
-        self.app._run_button(("state", "vu_pulse"))
+        self.app._run_button(("state", "level"))
         self.settle(1.0)
 
-        self.assertIn("base_gain", self.app._param_widgets)
+        self.assertIn("gain", self.app._param_widgets)
+        self.assertNotIn("attack", self.app._param_widgets)
         self.assertEqual(self.app._status, "")
 
     def test_a_colour_knob_gets_a_swatch_of_its_own_colour(self):
@@ -4664,8 +4826,13 @@ class LookParams(unittest.TestCase):
         executable_or_skip()
 
     def _show(self, **kwargs):
-        return ShowController(SHOW, dry_run=True, pattern="mythos26", midi="", on_frame=lambda f: None,
+        # Read off the beat flash, which has one of everything - a float, a
+        # bool and a colour. It is a cue on the audio bus while the show's own
+        # list is empty, so it is asked for rather than opened on.
+        show = ShowController(SHOW, dry_run=True, pattern="audio", midi="", on_frame=lambda f: None,
                               emit_rate=20.0, **kwargs)
+        show.set_state("beat_pulse")
+        return show
 
     def test_the_running_look_announces_its_knobs(self):
         show = self._show()
@@ -4690,14 +4857,14 @@ class LookParams(unittest.TestCase):
             time.sleep(0.6)
             first = show.params_revision
 
-            show.set_state("vu_pulse")
+            self.assertIn("attack", [param.name for param in show.params])
+
+            show.set_state("level")
             time.sleep(0.5)
             self.assertGreater(show.params_revision, first)
-            self.assertIn("base_gain", [param.name for param in show.params])
-
-            show.set_state("tv_static")
-            time.sleep(0.5)
-            self.assertEqual([param.name for param in show.params], ["monochrome", "floor"])
+            names = [param.name for param in show.params]
+            self.assertIn("gain", names)
+            self.assertNotIn("attack", names, "the flash's knobs stayed behind")
         finally:
             show.stop()
 
@@ -4743,9 +4910,10 @@ class LookParams(unittest.TestCase):
     def test_a_knob_reaches_the_render(self):
         """The point of the whole thing: the value is the look's own field."""
         frames = []
-        show = ShowController(SHOW, dry_run=True, pattern="mythos26", midi="", bpm=128.0,
+        show = ShowController(SHOW, dry_run=True, pattern="audio", midi="", bpm=128.0,
                               on_frame=frames.append, emit_rate=40.0)
         try:
+            show.set_state("beat_pulse")
             time.sleep(1.0)
             frames.clear()
             time.sleep(0.8)
@@ -4764,11 +4932,11 @@ class LookParams(unittest.TestCase):
 
     def test_a_bool_takes_on_off_and_reaches_the_render(self):
         frames = []
-        show = ShowController(SHOW, dry_run=True, pattern="mythos26", midi="", on_frame=frames.append,
+        show = ShowController(SHOW, dry_run=True, pattern="generic", midi="", on_frame=frames.append,
                               emit_rate=40.0)
         try:
             show.set_state("tv_static_mono")
-            time.sleep(0.8)
+            time.sleep(1.0)     # past the generic machine's 0.5s cross-fade
             self.assertTrue(show.get_param("monochrome").value)
 
             show.set_param("monochrome", False)
@@ -4817,7 +4985,7 @@ class LookParams(unittest.TestCase):
     def _peak_colour(self, state, knobs):
         """The lit frame's colour, on the rig, with those knobs set."""
         frames = []
-        show = ShowController(SHOW, dry_run=True, pattern="mythos26", midi="", bpm=128.0,
+        show = ShowController(SHOW, dry_run=True, pattern="audio", midi="", bpm=128.0,
                               on_frame=frames.append, emit_rate=40.0)
         try:
             show.set_state(state)
@@ -4836,85 +5004,6 @@ class LookParams(unittest.TestCase):
         self.assertGreater(green, 200)
         self.assertLess(red, 40)
         self.assertLess(blue, 40)
-
-    def test_a_flash_colour_survives_the_vu_composite(self):
-        """The layer above the wash is the flash's colour, not white.
-
-        The composite desaturates rather than blends, which arrives at exactly
-        white for the white it opens on. A flash with a hue of its own has to
-        arrive at *that*, or the picker is a lie on this look.
-        """
-        red, green, blue = self._peak_colour("vu_pulse", {"color": "#00ff00"})
-        self.assertGreater(green, 200)
-        self.assertLess(red, 40)
-        self.assertLess(blue, 40)
-
-    def test_flash_intensity_takes_the_hit_down_not_the_rig(self):
-        """It scales the hit, and the floor holding the rig up is left alone."""
-        def peak(knobs):
-            frames = []
-            show = ShowController(SHOW, dry_run=True, pattern="mythos26", midi="", bpm=128.0,
-                                  on_frame=frames.append, emit_rate=40.0)
-            try:
-                show.set_state("vu_pulse")
-                for name, value in knobs.items():
-                    show.set_param(name, value)
-                time.sleep(0.8)
-                frames.clear()
-                time.sleep(1.0)
-            finally:
-                show.stop()
-            self.assertTrue(frames, "no frames arrived")
-            return (max(max(frame[0]) for frame in frames),
-                    min(max(frame[0]) for frame in frames))
-
-        full, _ = peak({})
-        half, _ = peak({"intensity": 0.5})
-        none, floor_lit = peak({"intensity": 0.0, "floor": 0.6})
-
-        self.assertGreater(full, 200)
-
-        # Half the hit is dimmer, but not by half on the wire: the show's
-        # master gamma of 2.2 sits between the two, so 0.5 arrives at about
-        # 0.5^2.2. The bounds are loose because what is being tested is that
-        # the knob reaches the render, not what gamma does.
-        self.assertLess(half, full * 0.75)
-        self.assertGreater(half, full * 0.10)
-
-        # No flash left, but the floor is still lighting the rig - and flat,
-        # because there is no hit on top of it to move it.
-        self.assertGreater(floor_lit, 60)
-        self.assertLess(none - floor_lit, 20)
-
-    def test_the_composite_never_invents_a_third_colour(self):
-        """Blue over red went through *green* on the way. Nobody put green here.
-
-        The regression that took the composite from lerping hues to blending
-        chroma vectors: red to blue around the rim of the wheel passes through
-        green, and through the middle it passes through pale magenta - which is
-        what a flash washing a colour out looks like, and is also exactly the
-        desaturation this look does with the white it opens on.
-        """
-        frames = []
-        show = ShowController(SHOW, dry_run=True, pattern="mythos26", midi="", bpm=128.0,
-                              on_frame=frames.append, emit_rate=40.0)
-        try:
-            show.set_state("vu_pulse")
-            show.set_param("color", "#0000ff")
-            time.sleep(1.0)     # past the cue's cross-fade, which blends its own way
-            frames.clear()
-            time.sleep(1.5)
-        finally:
-            show.stop()
-
-        self.assertTrue(frames, "no frames arrived")
-
-        # Green-dominant, and bright enough that it is a colour rather than
-        # rounding on a nearly dark fixture.
-        greenish = [colour for colour in (frame[0] for frame in frames)
-                    if colour[1] > colour[0] and colour[1] > colour[2] and colour[1] > 24]
-        self.assertFalse(greenish,
-                         f"green between a red wash and a blue flash: {greenish[:6]}")
 
     def test_a_colour_that_is_not_one_is_rejected_without_dying(self):
         show = self._show()
@@ -5092,24 +5181,25 @@ class TheCurveProtocol(unittest.TestCase):
         executable_or_skip()
 
     def test_the_pulse_announces_its_envelope(self):
-        show = ShowController(SHOW, dry_run=True, pattern="mythos26", midi="", on_frame=lambda f: None,
+        show = ShowController(SHOW, dry_run=True, pattern="audio", midi="", on_frame=lambda f: None,
                               emit_rate=20.0)
         try:
+            # The shape under test is the beat flash's, which is a cue on the
+            # bus while the show's own list is empty - see beatPulseState.
+            show.set_state("beat_pulse")
             time.sleep(0.6)
             self.assertIn("envelope", show.curves)
             self.assertGreaterEqual(len(show.curves["envelope"]), 3)
-
-            # vu_pulse forwards the same flash, so the same shape shows there
-            show.set_state("vu_pulse")
-            time.sleep(0.5)
-            self.assertIn("envelope", show.curves)
         finally:
             show.stop()
 
     def test_a_drawn_shape_lands_and_echoes(self):
-        show = ShowController(SHOW, dry_run=True, pattern="mythos26", midi="", on_frame=lambda f: None,
+        show = ShowController(SHOW, dry_run=True, pattern="audio", midi="", on_frame=lambda f: None,
                               emit_rate=20.0)
         try:
+            # The shape under test is the beat flash's, which is a cue on the
+            # bus while the show's own list is empty - see beatPulseState.
+            show.set_state("beat_pulse")
             time.sleep(0.6)
             show.set_curve("envelope", [
                 (0.0, 0.0, None),
@@ -5149,9 +5239,12 @@ class TheCurveProtocol(unittest.TestCase):
             show.stop()
 
     def test_an_unknown_curve_is_refused_without_dying(self):
-        show = ShowController(SHOW, dry_run=True, pattern="mythos26", midi="", on_frame=lambda f: None,
+        show = ShowController(SHOW, dry_run=True, pattern="audio", midi="", on_frame=lambda f: None,
                               emit_rate=20.0)
         try:
+            # The shape under test is the beat flash's, which is a cue on the
+            # bus while the show's own list is empty - see beatPulseState.
+            show.set_state("beat_pulse")
             time.sleep(0.6)
             with self.assertRaises(ShowError):
                 show.set_curve("not_a_curve", [(0.0, 0.0, None), (1.0, 1.0, None)])
@@ -5166,9 +5259,12 @@ class TheCurveProtocol(unittest.TestCase):
         could rebuild from a half-filled list and a just-cleared curve dict -
         which read as the envelope target flickering out of the aim menu.
         """
-        show = ShowController(SHOW, dry_run=True, pattern="mythos26", midi="", on_frame=lambda f: None,
+        show = ShowController(SHOW, dry_run=True, pattern="audio", midi="", on_frame=lambda f: None,
                               emit_rate=20.0)
         try:
+            # The shape under test is the beat flash's, which is a cue on the
+            # bus while the show's own list is empty - see beatPulseState.
+            show.set_state("beat_pulse")
             for _ in range(100):
                 if show.params_revision > 0:
                     break
@@ -5183,12 +5279,13 @@ class TheCurveProtocol(unittest.TestCase):
 
     def test_reset_restores_the_cue(self):
         """Tune a knob and redraw the envelope; reset puts both back."""
-        show = ShowController(SHOW, dry_run=True, pattern="mythos26", midi="", on_frame=lambda f: None,
+        show = ShowController(SHOW, dry_run=True, pattern="audio", midi="", on_frame=lambda f: None,
                               emit_rate=20.0)
         try:
+            # The shape under test is the beat flash's, which is a cue on the
+            # bus while the show's own list is empty - see beatPulseState.
+            show.set_state("beat_pulse")
             time.sleep(0.6)
-            show.set_state("vu_pulse")
-            time.sleep(0.5)
 
             show.set_param("attack", 0.4)
             show.set_curve("envelope", [(0.0, 0.0, None), (0.9, 1.0, None),
@@ -5197,17 +5294,20 @@ class TheCurveProtocol(unittest.TestCase):
 
             show.reset_look()
 
-            # the vu cue constructs attack 0.1; reset is the cue, not zero
-            self.assertAlmostEqual(show.get_param("attack").value, 0.1, places=3)
-            self.assertAlmostEqual(show.curves["envelope"][1][0], 0.1, places=3)
+            # the cue constructs attack 0.15; reset is the cue, not zero
+            self.assertAlmostEqual(show.get_param("attack").value, 0.15, places=3)
+            self.assertAlmostEqual(show.curves["envelope"][1][0], 0.15, places=3)
         finally:
             show.stop()
 
     def test_a_ninth_key_is_refused_whole(self):
         """Too many keys rejects the message; the look keeps its old shape."""
-        show = ShowController(SHOW, dry_run=True, pattern="mythos26", midi="", on_frame=lambda f: None,
+        show = ShowController(SHOW, dry_run=True, pattern="audio", midi="", on_frame=lambda f: None,
                               emit_rate=20.0)
         try:
+            # The shape under test is the beat flash's, which is a cue on the
+            # bus while the show's own list is empty - see beatPulseState.
+            show.set_state("beat_pulse")
             time.sleep(0.6)
             before = show.curves["envelope"]
             with self.assertRaises(ShowError):
@@ -6147,7 +6247,7 @@ class TheLampPainter(unittest.TestCase):
 
     def test_only_the_pads_that_changed_are_sent(self):
         mappings = self._map(self._cue(11, "tv_static"), self._cue(12, "beat_pulse"),
-                             self._cue(13, "vu_pulse"))
+                             self._cue(13, "tv_static_mono"))
         painter = launchpad.LampPainter(mappings)
         painter.frame(self._at(state="tv_static"))
 

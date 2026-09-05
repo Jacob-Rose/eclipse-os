@@ -183,6 +183,11 @@ std::unique_ptr<StateMachinePattern> edmx::makeAudioStateMachine()
         states.push_back(channelLook(static_cast<AudioChannel>(index)));
     }
 
+    // And the beat flash on the end, which is not a channel and is not
+    // generated: the show that owned it is empty for now, and of the lists
+    // here this is the one a beat-driven look belongs in. See beatPulseState.
+    states.push_back(beatPulseState());
+
     // The show's own space. Nothing here is spatial, so this only has to be
     // something; it is mythos26's so that switching between the two does not
     // re-cut the stage underneath the layers.

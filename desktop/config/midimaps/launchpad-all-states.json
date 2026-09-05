@@ -3,7 +3,7 @@
   "opens_on": "audio",
   "mappings": [
     {
-      "label": "mythos26 - beat_pulse",
+      "label": "mythos26 - slot_1",
       "trigger": {
         "kind": "note",
         "channel": 1,
@@ -20,7 +20,7 @@
         {
           "action": "state",
           "params": {
-            "name": "beat_pulse"
+            "name": "slot_1"
           }
         }
       ],
@@ -29,7 +29,7 @@
       "colour": 41
     },
     {
-      "label": "mythos26 - vu_pulse",
+      "label": "mythos26 - slot_2",
       "trigger": {
         "kind": "note",
         "channel": 1,
@@ -46,7 +46,7 @@
         {
           "action": "state",
           "params": {
-            "name": "vu_pulse"
+            "name": "slot_2"
           }
         }
       ],
@@ -55,7 +55,7 @@
       "colour": 41
     },
     {
-      "label": "mythos26 - tv_static_mono",
+      "label": "mythos26 - slot_3",
       "trigger": {
         "kind": "note",
         "channel": 1,
@@ -72,7 +72,7 @@
         {
           "action": "state",
           "params": {
-            "name": "tv_static_mono"
+            "name": "slot_3"
           }
         }
       ],
@@ -81,7 +81,7 @@
       "colour": 41
     },
     {
-      "label": "mythos26 - tv_static",
+      "label": "mythos26 - slot_4",
       "trigger": {
         "kind": "note",
         "channel": 1,
@@ -98,7 +98,7 @@
         {
           "action": "state",
           "params": {
-            "name": "tv_static"
+            "name": "slot_4"
           }
         }
       ],
@@ -177,6 +177,136 @@
           "action": "state",
           "params": {
             "name": "slot_7"
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "mythos26",
+      "colour": 41
+    },
+    {
+      "label": "mythos26 - slot_8",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 18
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "mythos26"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "slot_8"
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "mythos26",
+      "colour": 41
+    },
+    {
+      "label": "mythos26 - slot_9",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 21
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "mythos26"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "slot_9"
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "mythos26",
+      "colour": 41
+    },
+    {
+      "label": "mythos26 - slot_10",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 22
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "mythos26"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "slot_10"
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "mythos26",
+      "colour": 41
+    },
+    {
+      "label": "mythos26 - slot_11",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 23
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "mythos26"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "slot_11"
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "mythos26",
+      "colour": 41
+    },
+    {
+      "label": "mythos26 - slot_12",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 24
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "mythos26"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "slot_12"
           }
         }
       ],
@@ -1043,6 +1173,58 @@
       "colour": 21
     },
     {
+      "label": "generic - tv_static_mono",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 28
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "generic"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "tv_static_mono"
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "generic",
+      "colour": 21
+    },
+    {
+      "label": "generic - tv_static",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 31
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "generic"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "tv_static"
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "generic",
+      "colour": 21
+    },
+    {
       "label": "scanner - none",
       "trigger": {
         "kind": "note",
@@ -1797,176 +1979,6 @@
       "colour": 53
     },
     {
-      "label": "jacket (tab)",
-      "trigger": {
-        "kind": "cc",
-        "channel": 1,
-        "number": 79
-      },
-      "mode": "press",
-      "actions": [
-        {
-          "action": "page",
-          "params": {
-            "name": "jacket"
-          }
-        },
-        {
-          "action": "pattern",
-          "params": {
-            "name": "jacket"
-          }
-        }
-      ],
-      "enabled": true,
-      "page": "",
-      "colour": 9
-    },
-    {
-      "label": "obelisk (tab)",
-      "trigger": {
-        "kind": "cc",
-        "channel": 1,
-        "number": 69
-      },
-      "mode": "press",
-      "actions": [
-        {
-          "action": "page",
-          "params": {
-            "name": "obelisk"
-          }
-        },
-        {
-          "action": "pattern",
-          "params": {
-            "name": "obelisk"
-          }
-        }
-      ],
-      "enabled": true,
-      "page": "",
-      "colour": 45
-    },
-    {
-      "label": "uv (tab)",
-      "trigger": {
-        "kind": "cc",
-        "channel": 1,
-        "number": 59
-      },
-      "mode": "press",
-      "actions": [
-        {
-          "action": "page",
-          "params": {
-            "name": "uv"
-          }
-        },
-        {
-          "action": "pattern",
-          "params": {
-            "name": "uv"
-          }
-        }
-      ],
-      "enabled": true,
-      "page": "",
-      "colour": 49
-    },
-    {
-      "label": "generic (tab)",
-      "trigger": {
-        "kind": "cc",
-        "channel": 1,
-        "number": 49
-      },
-      "mode": "press",
-      "actions": [
-        {
-          "action": "page",
-          "params": {
-            "name": "generic"
-          }
-        },
-        {
-          "action": "pattern",
-          "params": {
-            "name": "generic"
-          }
-        }
-      ],
-      "enabled": true,
-      "page": "",
-      "colour": 21
-    },
-    {
-      "label": "scanner (tab)",
-      "trigger": {
-        "kind": "cc",
-        "channel": 1,
-        "number": 39
-      },
-      "mode": "press",
-      "actions": [
-        {
-          "action": "page",
-          "params": {
-            "name": "scanner"
-          }
-        },
-        {
-          "action": "pattern",
-          "params": {
-            "name": "scanner"
-          }
-        }
-      ],
-      "enabled": true,
-      "page": "",
-      "colour": 53
-    },
-    {
-      "label": "input a",
-      "trigger": {
-        "kind": "cc",
-        "channel": 1,
-        "number": 91
-      },
-      "mode": "value",
-      "actions": [
-        {
-          "action": "input",
-          "params": {
-            "channel": "a"
-          }
-        }
-      ],
-      "enabled": true,
-      "page": "",
-      "colour": 3
-    },
-    {
-      "label": "input b",
-      "trigger": {
-        "kind": "cc",
-        "channel": 1,
-        "number": 92
-      },
-      "mode": "value",
-      "actions": [
-        {
-          "action": "input",
-          "params": {
-            "channel": "b"
-          }
-        }
-      ],
-      "enabled": true,
-      "page": "",
-      "colour": 3
-    },
-    {
       "label": "audio - level",
       "trigger": {
         "kind": "note",
@@ -2120,7 +2132,7 @@
       ],
       "enabled": true,
       "page": "audio",
-      "colour": 5
+      "colour": 3
     },
     {
       "label": "audio - bass_hits",
@@ -2146,7 +2158,7 @@
       ],
       "enabled": true,
       "page": "audio",
-      "colour": 5
+      "colour": 3
     },
     {
       "label": "audio - mid_hits",
@@ -2172,7 +2184,7 @@
       ],
       "enabled": true,
       "page": "audio",
-      "colour": 5
+      "colour": 3
     },
     {
       "label": "audio - midhigh_hits",
@@ -2198,7 +2210,7 @@
       ],
       "enabled": true,
       "page": "audio",
-      "colour": 5
+      "colour": 3
     },
     {
       "label": "audio - high_hits",
@@ -2224,7 +2236,7 @@
       ],
       "enabled": true,
       "page": "audio",
-      "colour": 5
+      "colour": 3
     },
     {
       "label": "audio - presence",
@@ -2250,7 +2262,7 @@
       ],
       "enabled": true,
       "page": "audio",
-      "colour": 45
+      "colour": 3
     },
     {
       "label": "audio - bass_presence",
@@ -2276,7 +2288,7 @@
       ],
       "enabled": true,
       "page": "audio",
-      "colour": 45
+      "colour": 3
     },
     {
       "label": "audio - mid_presence",
@@ -2302,7 +2314,7 @@
       ],
       "enabled": true,
       "page": "audio",
-      "colour": 45
+      "colour": 3
     },
     {
       "label": "audio - midhigh_presence",
@@ -2328,7 +2340,7 @@
       ],
       "enabled": true,
       "page": "audio",
-      "colour": 45
+      "colour": 3
     },
     {
       "label": "audio - high_presence",
@@ -2354,7 +2366,7 @@
       ],
       "enabled": true,
       "page": "audio",
-      "colour": 45
+      "colour": 3
     },
     {
       "label": "audio - beat",
@@ -2380,7 +2392,7 @@
       ],
       "enabled": true,
       "page": "audio",
-      "colour": 21
+      "colour": 3
     },
     {
       "label": "audio - bpm",
@@ -2406,7 +2418,7 @@
       ],
       "enabled": true,
       "page": "audio",
-      "colour": 21
+      "colour": 3
     },
     {
       "label": "audio - bpm_confidence",
@@ -2432,7 +2444,7 @@
       ],
       "enabled": true,
       "page": "audio",
-      "colour": 21
+      "colour": 3
     },
     {
       "label": "audio - intensity",
@@ -2458,7 +2470,7 @@
       ],
       "enabled": true,
       "page": "audio",
-      "colour": 21
+      "colour": 3
     },
     {
       "label": "audio - level_instant",
@@ -2484,7 +2496,7 @@
       ],
       "enabled": true,
       "page": "audio",
-      "colour": 9
+      "colour": 3
     },
     {
       "label": "audio - level_meter",
@@ -2510,33 +2522,33 @@
       ],
       "enabled": true,
       "page": "audio",
-      "colour": 9
+      "colour": 3
     },
     {
-      "label": "audio (tab)",
+      "label": "audio - beat_pulse",
       "trigger": {
-        "kind": "cc",
+        "kind": "note",
         "channel": 1,
-        "number": 29
+        "number": 36
       },
       "mode": "press",
       "actions": [
-        {
-          "action": "page",
-          "params": {
-            "name": "audio"
-          }
-        },
         {
           "action": "pattern",
           "params": {
             "name": "audio"
           }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "beat_pulse"
+          }
         }
       ],
       "enabled": true,
-      "page": "",
-      "colour": 5
+      "page": "audio",
+      "colour": 3
     },
     {
       "label": "mythos26 (tab)",
@@ -2563,6 +2575,202 @@
       "enabled": true,
       "page": "",
       "colour": 41
+    },
+    {
+      "label": "jacket (tab)",
+      "trigger": {
+        "kind": "cc",
+        "channel": 1,
+        "number": 79
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "page",
+          "params": {
+            "name": "jacket"
+          }
+        },
+        {
+          "action": "pattern",
+          "params": {
+            "name": "jacket"
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "",
+      "colour": 9
+    },
+    {
+      "label": "obelisk (tab)",
+      "trigger": {
+        "kind": "cc",
+        "channel": 1,
+        "number": 69
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "page",
+          "params": {
+            "name": "obelisk"
+          }
+        },
+        {
+          "action": "pattern",
+          "params": {
+            "name": "obelisk"
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "",
+      "colour": 45
+    },
+    {
+      "label": "uv (tab)",
+      "trigger": {
+        "kind": "cc",
+        "channel": 1,
+        "number": 59
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "page",
+          "params": {
+            "name": "uv"
+          }
+        },
+        {
+          "action": "pattern",
+          "params": {
+            "name": "uv"
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "",
+      "colour": 49
+    },
+    {
+      "label": "generic (tab)",
+      "trigger": {
+        "kind": "cc",
+        "channel": 1,
+        "number": 49
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "page",
+          "params": {
+            "name": "generic"
+          }
+        },
+        {
+          "action": "pattern",
+          "params": {
+            "name": "generic"
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "",
+      "colour": 21
+    },
+    {
+      "label": "scanner (tab)",
+      "trigger": {
+        "kind": "cc",
+        "channel": 1,
+        "number": 39
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "page",
+          "params": {
+            "name": "scanner"
+          }
+        },
+        {
+          "action": "pattern",
+          "params": {
+            "name": "scanner"
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "",
+      "colour": 53
+    },
+    {
+      "label": "audio (tab)",
+      "trigger": {
+        "kind": "cc",
+        "channel": 1,
+        "number": 29
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "page",
+          "params": {
+            "name": "audio"
+          }
+        },
+        {
+          "action": "pattern",
+          "params": {
+            "name": "audio"
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "",
+      "colour": 3
+    },
+    {
+      "label": "input a",
+      "trigger": {
+        "kind": "cc",
+        "channel": 1,
+        "number": 91
+      },
+      "mode": "value",
+      "actions": [
+        {
+          "action": "input",
+          "params": {
+            "channel": "a"
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "",
+      "colour": 3
+    },
+    {
+      "label": "input b",
+      "trigger": {
+        "kind": "cc",
+        "channel": 1,
+        "number": 92
+      },
+      "mode": "value",
+      "actions": [
+        {
+          "action": "input",
+          "params": {
+            "channel": "b"
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "",
+      "colour": 3
     }
   ]
 }
