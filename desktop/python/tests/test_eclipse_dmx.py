@@ -4320,27 +4320,6 @@ class ViewerOnTheShow(GuiTest):
                     f"status {self.app._status!r}, "
                     f"clock {self.app.show.bpm} {self.app.show.beat_source}")
 
-    def clock_running(self, beats=2):
-        """Wait until the show's clock has actually counted a few beats.
-
-        Not padding, and not politeness. A `bpm` sent inside the first beat is
-        taken - the reply is OK and `status` reports the new tempo - but the
-        free-run clock then stops emitting BEAT lines altogether, so nothing
-        downstream ever hears the tempo it just accepted. Reproducible on the
-        controller alone, with no viewer in it:
-
-            show.set_state("beat_pulse")
-            wait for the first BEAT line, then `bpm 100`
-            -> status says bpm=100, and no beat ever arrives again
-
-        Waiting out a beat or two first is what the old flat `settle(0.8)`
-        here was doing without saying so. It is written down now because the
-        next person to tighten this wait will otherwise find the same wall.
-        """
-        return self.settle_until(lambda: self.app.show.beat >= beats,
-                                 message=lambda: f"the clock to count {beats} beats "
-                                                 f"(at {self.app.show.beat})")
-
     def param(self, name):
         """What the executable currently holds for the knob `name`."""
         return self.app.show.get_param(name).value
@@ -4360,7 +4339,14 @@ class ViewerOnTheShow(GuiTest):
         self.header_says("120.0 bpm")
 
     def test_the_tempo_buttons_take(self):
-        self.clock_running()
+        """Including on the first beat of the show, which used to stop the clock.
+
+        The tempo was taken and reported, and the grid then stopped emitting
+        beats entirely, so this end sat on the old number - see the anchor
+        sentinel in beat_clock.h. Pressed as early as the header will let us
+        rather than after a settling sleep, because early is the case.
+        """
+        self.header_says("120.0 bpm")
         self.app._run_button(("bpm", "100"))
         self.header_says("100.0 bpm")
         self.assertNoComplaint()
@@ -4373,7 +4359,7 @@ class ViewerOnTheShow(GuiTest):
         away. Waited out rather than slept past, because the one sleep that
         always wins the race does not exist.
         """
-        self.clock_running()
+        self.header_says("120.0 bpm")
         self.app._run_button(("beat", ""))
         self.assertNoComplaint()
         self.header_says("manual")

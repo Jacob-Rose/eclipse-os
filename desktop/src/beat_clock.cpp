@@ -292,7 +292,11 @@ double BeatClock::beatPosition(double now) const
 
     // Nothing has ever driven us. Sit at the top of beat zero rather than
     // inventing a phase; the first markBeat starts the grid for real.
-    if (last < 0.0)
+    //
+    // Asked as "is it the sentinel", not "is it negative": an anchor before
+    // zero is a real one, on any tempo set inside the first beat. See
+    // kNoAnchor.
+    if (std::isnan(last))
     {
         return static_cast<double>(number);
     }

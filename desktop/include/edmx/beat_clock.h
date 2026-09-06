@@ -6,6 +6,7 @@
 #pragma once
 
 #include <atomic>
+#include <limits>
 #include <string>
 
 ///
@@ -242,6 +243,19 @@ namespace edmx
         /// stalled clock decays to a steady value instead of retriggering.
         static constexpr double kHeldPhase = 0.999;
 
+        /// The anchor's "the grid has never been started" value.
+        ///
+        /// NaN, and not the negative number it used to be, because a negative
+        /// anchor is a real one. setBpm() holds the phase across a tempo change
+        /// by moving the anchor *back* by the part of the beat already elapsed,
+        /// and nowSeconds() is zeroed at first use - so a tempo set inside the
+        /// process's first beat legitimately lands the anchor before zero.
+        /// Read as "never started", that stopped the clock dead: beatPosition()
+        /// returned the same beat forever, no BEAT line was emitted again, and
+        /// the desk sat showing the old tempo while this held the new one. The
+        /// arithmetic either side was always fine; only the sentinel was.
+        static constexpr double kNoAnchor = std::numeric_limits<double>::quiet_NaN();
+
         /// Folds one measured beat-to-beat gap into the tempo, if it could
         /// plausibly be one beat. Smoothed, never taken raw.
         void learnPeriod(double interval);
@@ -260,7 +274,7 @@ namespace edmx
         void takeBeat(double when, long long steps, Advance advance = Advance::Grid);
 
         std::atomic<double> period{60.0 / 128.0};
-        std::atomic<double> anchor{-1.0}; ///< when the current beat started
+        std::atomic<double> anchor{kNoAnchor}; ///< when the current beat started
         std::atomic<long long> beatNumber{0};
 
         /// The last beat we *accepted*, and its number.

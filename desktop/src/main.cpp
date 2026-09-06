@@ -1024,6 +1024,37 @@ namespace
             }
         };
 
+        // ---- a tempo set inside the process's first beat -------------------
+        //
+        // The regression: setBpm() holds the phase by moving the anchor back by
+        // the elapsed part of the beat, and nowSeconds() is zeroed at first
+        // use, so early enough in a run that lands the anchor before zero. A
+        // negative anchor used to mean "the grid has never started", and the
+        // clock stopped dead - the tempo was taken and reported, and no beat
+        // ever came again. Driven in synthetic time here at the times that
+        // actually did it, which is the whole reason setBpm takes a `when`.
+        {
+            BeatClock clock;
+
+            // The show, coming up on its config's tempo at t=0.
+            clock.setBpm(120.0f, BeatSource::Internal, 0.0);
+
+            // Someone reaches for the tempo 0.4s in - most of the way through
+            // the first beat, and slower, so the phase-hold reaches furthest
+            // back: 0.4 - (0.8 * 0.6) is -0.08.
+            clock.setBpm(100.0f, BeatSource::Internal, 0.4);
+
+            check("early tempo takes", clock.getBpm(), 100.0, 0.01);
+
+            // The phase it was holding, unmoved by the change.
+            check("early tempo holds the phase",
+                  clock.beatPosition(0.4), 0.8, 0.01);
+
+            // And the grid keeps counting. Six seconds at 100bpm is ten beats.
+            check("the clock still runs after an early tempo",
+                  std::floor(clock.beatPosition(6.4)), 10.0, 0.0);
+        }
+
         // ---- a Mixxx MIDI-for-light stream, with everything it sends -------
         {
             BeatClock clock;
