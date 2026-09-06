@@ -2778,6 +2778,55 @@ and the audio listener is local.
 - **Stereo VU.** Only the mono meters are read. The mapping sends left and
   right separately, which a rig split into two halves could use.
 
+## Tests
+
+```sh
+./test.sh                 # all of it
+./test.sh Viewer          # only names containing "Viewer"
+./test.sh Viewer Midi     # either
+```
+
+Runnable from anywhere, and it needs nothing installed — plain unittest, plus
+the built executable for the tests that drive it. Anything needing the
+executable or a display skips itself when there is not one, so this stays
+runnable on a build machine and on a show laptop.
+
+**Use a name while you are working.** A full run drives the executable a few
+hundred times and opens a few dozen windows; a single class is seconds. Run the
+whole thing before you commit, not before you look at a diff.
+
+`python/tests/harness.py` holds what the suite skips on and how it waits.
+`settle_until(predicate)` is the wait worth knowing about: it pumps the event
+loop until the thing being waited for has happened, and only spends its full
+timeout when the test is about to fail anyway. `settle(seconds)` is for the
+other case — letting a span of *show* time pass, where arriving early would
+mean measuring the wrong moment.
+
+### The windows a run opens
+
+The viewer cannot be tested headless: the assertions read geometry and pixel
+colour back off a live tk canvas, which only exists once a window manager has
+mapped it. So a run opens real windows on whatever desktop you are sitting at.
+
+They announce themselves under the WM class `Eclipse-dmx-tests` (set by the
+harness through `ECLIPSE_DMX_WM_CLASS`, which the viewer reads — a real viewer
+is `Eclipse-dmx`), so a compositor can tell a test run from your actual viewer
+and put the run somewhere harmless. On hyprland, in `custom/rules.lua`:
+
+```lua
+local TESTS = "^(Eclipse-dmx-tests)$"
+hl.window_rule({match = {class = TESTS}, workspace = "special:tests silent"})
+hl.window_rule({match = {class = TESTS}, float = true})
+hl.window_rule({match = {class = TESTS}, no_initial_focus = true})
+
+-- and to look at the run while it is going
+hl.bind("SUPER + ALT + T", hl.dsp.workspace.toggle_special("tests"))
+```
+
+Any compositor wants the same three ideas: a workspace of its own, floating,
+no focus. Floating is not only politeness — a tiled window ignores the size a
+test asked for, so the geometry tests all quietly ran at one tile size.
+
 ## Layout
 
 ```
@@ -2788,6 +2837,8 @@ desktop/
   config/          environments — rooms with devices in them, and the show
   scenes/          Synesthesia scenes that take their colour from the rig
   python/          the wrapper package, the viewer, and the OSC sender
+  python/tests/    the suite; harness.py is the shared scaffolding
+  test.sh          run it, all of it or one name's worth
   tools/           toolchain setup, one script per platform
   CMakeLists.txt   builds only the slice of the library that is off-Arduino clean
 ```

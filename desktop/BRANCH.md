@@ -226,6 +226,7 @@ desktop/
   scenes/          Synesthesia scenes that take their colour from the rig
   python/          the wrapper package, the viewer, and the OSC sender
   python/tests/    unittest suite, runnable with nothing installed
+  test.sh          run it, all of it or one name's worth
   tools/           toolchain setup, one script per platform
   readme.md        the real docs - config schema, protocol, patterns, MIDI
   BRANCH.md        this file
@@ -1667,11 +1668,15 @@ There is now a suite for all of this, which there was not before:
 
 ```sh
 cd desktop
-python -m unittest discover -s python/tests -v      # 161 tests
+./test.sh                # all of it
+./test.sh Viewer         # only names containing "Viewer"
 ```
 
 It needs nothing installed. Anything requiring the executable or a display
-skips itself when there is not one.
+skips itself when there is not one. `python/tests/harness.py` holds what it
+skips on, how it waits, and the WM class the run's windows announce themselves
+under so a tiling compositor can keep them off your workspace - see **Tests**
+in the readme.
 
 **Confirmed against a real Mixxx**, over loopMIDI, on the rig. The note map was
 derived from the mapping's source rather than off a cable, and it was right.

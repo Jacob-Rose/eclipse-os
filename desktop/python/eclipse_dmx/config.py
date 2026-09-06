@@ -1642,39 +1642,19 @@ def _resolve_device_path(base_dir: Optional[Path], reference: str) -> Optional[P
     return None
 
 
+#: A complete JSON string literal, or a ``//`` comment to the end of its line.
+#: Alternation order is what keeps a `//` inside a string safe: the string
+#: pattern is tried first at every position, so by the time the comment branch
+#: is reached the scanner is provably outside a literal.
+_STRING_OR_COMMENT = re.compile(r'"(?:\\.|[^"\\])*"|//[^\n]*')
+
+
 def _strip_line_comments(text: str) -> str:
-    """Removes ``//`` comments that are not inside a string literal."""
-    out = []
-    in_string = False
-    escaped = False
-    index = 0
+    """Removes ``//`` comments that are not inside a string literal.
 
-    while index < len(text):
-        char = text[index]
-
-        if in_string:
-            out.append(char)
-            if escaped:
-                escaped = False
-            elif char == "\\":
-                escaped = True
-            elif char == '"':
-                in_string = False
-            index += 1
-            continue
-
-        if char == '"':
-            in_string = True
-            out.append(char)
-            index += 1
-            continue
-
-        if char == "/" and index + 1 < len(text) and text[index + 1] == "/":
-            while index < len(text) and text[index] != "\n":
-                index += 1
-            continue
-
-        out.append(char)
-        index += 1
-
-    return "".join(out)
+    Comments are not JSON, but a rig file that cannot say *why* a fixture is
+    patched where it is gets those reasons written somewhere nobody reads. So
+    they are stripped here and the rest is handed to a strict parser.
+    """
+    return _STRING_OR_COMMENT.sub(
+        lambda match: "" if match.group()[0] == "/" else match.group(), text)

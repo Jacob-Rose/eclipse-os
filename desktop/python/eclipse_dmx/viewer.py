@@ -21,6 +21,7 @@ tkinter, so there is nothing to install.
 from __future__ import annotations
 
 import math
+import os
 import threading
 import time
 import tkinter as tk
@@ -43,6 +44,11 @@ from .osc_panel import OscPanel, OscTraffic
 from .patterns import list_patterns
 
 RGB = Tuple[int, int, int]
+
+#: WM class the viewer's window announces itself under, so a window manager
+#: can be told where to put it. tkinter title-cases this, so a compositor sees
+#: "Eclipse-dmx". Overridden by ECLIPSE_DMX_WM_CLASS.
+WM_CLASS = "eclipse-dmx"
 
 #: Seconds to wait before saying the OSC input is not landing. Long enough that
 #: a visualiser started alongside the show is not accused of being off while it
@@ -1050,7 +1056,13 @@ class ViewerApp:
     # -- window ------------------------------------------------------------
 
     def _build_window(self, width: int, height: int) -> None:
-        self.root = tk.Tk()
+        # The window class is what a tiling compositor matches its rules on,
+        # and tkinter's default is the bare "Tk" every python GUI shares. Name
+        # it, so a rule can find this window and nothing else. The test suite
+        # overrides the name so a run's windows can be parked out of the way
+        # instead of landing on whatever workspace is in front - see
+        # tests/harness.py, and "Tests" in the readme.
+        self.root = tk.Tk(className=os.environ.get("ECLIPSE_DMX_WM_CLASS", WM_CLASS))
         where = f"  @ {self.host}" if self.host else ""
         self.root.title(f"eclipse-dmx  -  {self.config_path.name}{where}")
         self.root.configure(bg=PANEL)

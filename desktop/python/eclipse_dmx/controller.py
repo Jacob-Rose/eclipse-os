@@ -242,13 +242,29 @@ class LayerView:
             param = _parse_param(line)
             if param is None:
                 pass
-            elif self._params_open is not None:
+            elif self._in_block(param):
                 self._params_open.append(param)
             else:
-                for index, existing in enumerate(self.params):
-                    if existing.name == param.name:
-                        self.params[index] = param
-                        break
+                self._update_param(param)
+
+    def _in_block(self, param: Param) -> bool:
+        """Whether this PARAM line is part of an open announcement.
+
+        A repeat of a name already in the block is not: a look declares each
+        knob once. See ShowController._in_block, which this mirrors.
+        """
+        return (self._params_open is not None
+                and not any(existing.name == param.name
+                            for existing in self._params_open))
+
+    def _update_param(self, param: Param) -> None:
+        """An echo: replace the knob in place, closing an open block first."""
+        if self._params_open is not None:
+            self._finalize_params()
+        for index, existing in enumerate(self.params):
+            if existing.name == param.name:
+                self.params[index] = param
+                break
 
     def _finalize_params(self) -> None:
         self._params_open = None
@@ -864,16 +880,13 @@ class ShowController:
             param = _parse_param(line)
             if param is None:
                 pass
-            elif self._params_open is not None:
+            elif self._in_block(param):
                 self._params_open.append(param)
             else:
                 # A lone PARAM is the echo after a `param` command, carrying
                 # what the value actually landed on once clamped. Updated in
                 # place so a UI does not rebuild every time a slider moves.
-                for index, existing in enumerate(self.params):
-                    if existing.name == param.name:
-                        self.params[index] = param
-                        break
+                self._update_param(param)
 
         if line.startswith("READY"):
             self._ready = True
@@ -886,6 +899,41 @@ class ShowController:
                     self.current_pattern = word[len("pattern="):]
 
         self._handle_reply_or_event(line)
+
+    def _in_block(self, param: Param) -> bool:
+        """Whether this PARAM line is part of an open announcement block.
+
+        A block is normally closed by the first line that is not part of it,
+        which is almost always a frame. Almost: a `param` sent straight after
+        a cue change can be answered before the next frame is written, and
+        then the echo arrives with the block still open. A repeat of a name
+        the block already carries is what gives it away - a look declares each
+        knob exactly once - so a second `PARAM decay` is an answer, not a
+        ninth knob on an eight-knob look.
+
+        Left to append, that duplicate is what a desk reads back: the stale
+        announced value sits after the echo in the list, and `get_param` walks
+        from the front, so a slider moved in that window reports the value it
+        had before the move.
+        """
+        return (self._params_open is not None
+                and not any(existing.name == param.name
+                            for existing in self._params_open))
+
+    def _update_param(self, param: Param) -> None:
+        """Replace a knob in place, closing an open block first.
+
+        Closed rather than left open because the block *is* finished - the
+        echo proved it - and finalizing is what bumps the revision and takes
+        the look's defaults snapshot. The snapshot lands before the echo is
+        applied, so a value the desk just set is not mistaken for a default.
+        """
+        if self._params_open is not None:
+            self._finalize_params()
+        for index, existing in enumerate(self.params):
+            if existing.name == param.name:
+                self.params[index] = param
+                break
 
     def _finalize_params(self) -> None:
         """The announcement block is whole: publish it, and remember firsts.

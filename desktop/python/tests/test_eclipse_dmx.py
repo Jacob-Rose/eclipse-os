@@ -3,10 +3,18 @@
 Plain unittest, so this needs nothing installed:
 
     cd desktop
-    python -m unittest discover -s python/tests -v
+    python -m unittest discover -s python/tests -v          # all of it
+    python -m unittest discover -s python/tests -k Viewer   # one corner
+
+Reach for `-k` while you are working. Most of this suite drives the real
+executable and half of it opens a real window, so a full run is minutes; a
+single class is seconds, and `-k` takes a class name, a test name or any
+substring of either.
 
 Anything that needs the executable or a display skips itself when there is not
-one, so this stays runnable on a build machine and on a show laptop.
+one, so this stays runnable on a build machine and on a show laptop. What that
+skip is, and how these tests wait, both live in `harness.py` - along with the
+window-manager note, if a run keeps landing on top of what you are doing.
 """
 
 from __future__ import annotations
@@ -15,15 +23,15 @@ import io
 import json
 import socket
 import struct
+import subprocess
 import sys
 import time
 import unittest
 from pathlib import Path
 
-DESKTOP = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(DESKTOP / "python"))
-
-from eclipse_dmx.binary import BinaryNotFoundError, find_executable  # noqa: E402
+from harness import (ANSWER_FRAMES, PATIENCE, BinaryNotFoundError,  # noqa: E402
+                     DESKTOP, GuiTest, ShowTest, executable_or_skip, run_show,
+                     run_show_paced)
 from eclipse_dmx.config import (  # noqa: E402
     AUDIO_CHANNELS,
     AUDIO_STATES,
@@ -63,13 +71,6 @@ OBELISK_STRIPS = 8
 OBELISK_PIXELS = OBELISK_SIDE_LENGTH * OBELISK_STRIPS
 
 
-def executable_or_skip():
-    try:
-        return find_executable()
-    except BinaryNotFoundError as error:
-        raise unittest.SkipTest(f"eclipse-dmx is not built: {error}")
-
-
 class FrameParsing(unittest.TestCase):
     """A malformed frame must never take the viewer down with it."""
 
@@ -97,7 +98,6 @@ class OscEncoding(unittest.TestCase):
     does not move looks exactly the same as a visualiser that was never running.
     These tests are the only place the format gets to be wrong out loud.
     """
-
     def test_padding_and_layout(self):
         packet = osc.encode("/controls/global/color/1", 1.0, 0.5, 0.0)
 
@@ -210,7 +210,6 @@ class OscResolution(unittest.TestCase):
     up - a test suite that needs a name on the network is a test suite that
     fails on the build machine.
     """
-
     def setUp(self):
         self.real_resolve = osc.resolve
         self.receivers = []
@@ -367,7 +366,6 @@ class OscDecoding(unittest.TestCase):
     agreeing with OSC 1.0 - and hand-built bytes for the things the encoder
     never produces: bundles, and damage.
     """
-
     def test_round_trip(self):
         packet = osc.encode("/controls/global/color/1", 1.0, 0.5, 0.0)
         (address, arguments), = osc.decode(packet)
@@ -505,7 +503,6 @@ class OscInputActions(unittest.TestCase):
     to a blocking send would not fail anything, it would just quietly make the
     desk stutter under a bass line.
     """
-
     class FakeShow:
         def __init__(self):
             self.calls = []
@@ -686,7 +683,6 @@ class TheShippedOscMap(unittest.TestCase):
     A binding naming an action that does not exist, or a knob no look has, is
     a binding that does nothing and says nothing until someone plays a track.
     """
-
     MAP = DESKTOP / "config" / "oscmaps" / "synesthesia.json"
 
     def setUp(self):
@@ -793,7 +789,6 @@ class TheScenes(unittest.TestCase):
     assumptions that can be checked on paper, and they are exactly the ones that
     break silently.
     """
-
     SCENES = sorted((DESKTOP / "scenes").glob("*.synScene"))
 
     def manifest(self, scene: Path) -> dict:
@@ -1028,7 +1023,6 @@ class TheObelisk(unittest.TestCase):
     Not a DMX rig: 344 pixels at three channels each is 1032, twice a universe,
     and legal exactly because nothing is putting it on a DMX wire.
     """
-
     def test_loads_clean(self):
         config = Config.load(OBELISK)
         self.assertEqual(config.validate(), [])
@@ -1139,7 +1133,6 @@ class OverSsh(unittest.TestCase):
     None of this needs a host or the binary: it checks what would be run, not
     that it ran. The far end is exercised by pointing a viewer at the pi.
     """
-
     def _remote(self, config=SCANNER, **kwargs):
         return ShowController(config, remote="scanner-pi", autostart=False,
                               on_frame=lambda f: None, **kwargs)
@@ -1223,7 +1216,7 @@ class TheScannerStage(unittest.TestCase):
         self.assertEqual(self.config.validate(strict_overlap=False), [])
 
 
-class TheUvLayer(unittest.TestCase):
+class TheUvLayer(ShowTest):
     """A second pattern on one named fixture, over the show."""
 
     def test_the_stage_config_declares_it(self):
@@ -1280,34 +1273,29 @@ class TheUvLayer(unittest.TestCase):
         and the show's knobs are not the layer's."""
         import time
 
-        executable_or_skip()
         frames = []
-        show = ShowController(DESKTOP / "config" / "scanner_stage.json", dry_run=True,
-                              on_frame=frames.append, emit_rate=30.0)
-        try:
-            show.set_state("scan_idle")
-            time.sleep(0.8)
-            uv = show.layers["uv"]
-            self.assertEqual(uv.fixtures, [389])
-            self.assertEqual(frames[-1][389], (0, 0, 0))
+        show = self.running_show(DESKTOP / "config" / "scanner_stage.json", on_frame=frames.append, emit_rate=30.0)
+        show.set_state("scan_idle")
+        time.sleep(0.8)
+        uv = show.layers["uv"]
+        self.assertEqual(uv.fixtures, [389])
+        self.assertEqual(frames[-1][389], (0, 0, 0))
 
-            uv.set_state("on")
-            time.sleep(0.5)
-            self.assertEqual(frames[-1][389], (255, 255, 255))
-            # the par beside it is still the show's - dark in scan_idle
-            self.assertEqual(frames[-1][388], (0, 0, 0))
+        uv.set_state("on")
+        time.sleep(0.5)
+        self.assertEqual(frames[-1][389], (255, 255, 255))
+        # the par beside it is still the show's - dark in scan_idle
+        self.assertEqual(frames[-1][388], (0, 0, 0))
 
-            uv.set_state("flash")
-            time.sleep(0.2)
-            self.assertIn("envelope", uv.curves)
-            self.assertIsNotNone(uv.get_param("rate"))
-            self.assertEqual(show.current_state, "scan_idle")
-            self.assertIsNone(show.get_param("rate"))
-        finally:
-            show.stop()
+        uv.set_state("flash")
+        time.sleep(0.2)
+        self.assertIn("envelope", uv.curves)
+        self.assertIsNotNone(uv.get_param("rate"))
+        self.assertEqual(show.current_state, "scan_idle")
+        self.assertIsNone(show.get_param("rate"))
 
 
-class TheAudioBus(unittest.TestCase):
+class TheAudioBus(ShowTest):
     """Analysis in, as an ordinary parameter.
 
     The bus is the one place a number about the *sound* lives. Mixxx's VU notes
@@ -1319,61 +1307,16 @@ class TheAudioBus(unittest.TestCase):
     """
 
     # -- talking to the executable -----------------------------------------
+    # Both of these are the harness's, bound here so the tests below read as
+    # `self._protocol(...)` and default to this rig.
 
     @staticmethod
-    def _protocol(script, frames=60, config=None):
-        """Run the show on `script` and hand back every line it printed.
-
-        ShowController.command returns only the OK line, because that is what a
-        caller waiting on a command wants. These assertions are about the
-        announcement lines *around* it - CHANNEL, MOD - so this reads the
-        stream directly rather than through the wrapper.
-
-        Everything is written at once, so it all lands before the first frame
-        renders. That is fine for anything the command handler answers on the
-        spot, and wrong for anything a frame has to run to produce - see
-        _protocol_paced.
-        """
-        executable = executable_or_skip()
-        import subprocess
-        result = subprocess.run(
-            [str(executable), "--config", str(config or SHOW), "--dry-run",
-             "--midi", "", "--frames", str(frames)],
-            input="\n".join(script) + "\n",
-            capture_output=True, text=True, timeout=60,
-        )
-        return result.stdout.splitlines()
+    def _protocol(script, frames=ANSWER_FRAMES, config=None):
+        return run_show(script, frames=frames, config=config or SHOW)
 
     @staticmethod
     def _protocol_paced(script, pause=0.05, config=None):
-        """The same, with frames actually rendering between the lines.
-
-        The bus is read by the *frame loop*, not by the command handler: an
-        `audio` line only reaches the beat clock when a frame runs after it. So
-        anything asking what the bus did has to leave room for one, which piping
-        the whole script in at once does not.
-        """
-        executable = executable_or_skip()
-        import subprocess
-        process = subprocess.Popen(
-            [str(executable), "--config", str(config or SHOW), "--dry-run",
-             "--midi", "", "--frames", "0"],
-            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-            text=True,
-        )
-        try:
-            for line in script:
-                process.stdin.write(line + "\n")
-                process.stdin.flush()
-                time.sleep(pause)
-            process.stdin.write("quit\n")
-            process.stdin.flush()
-            out, _ = process.communicate(timeout=30)
-        finally:
-            if process.poll() is None:
-                process.kill()
-                process.communicate()
-        return out.splitlines()
+        return run_show_paced(script, pause=pause, config=config or SHOW)
 
     # -- the channel list ---------------------------------------------------
 
@@ -1682,16 +1625,12 @@ class TheAudioBus(unittest.TestCase):
     def test_a_layer_resolves_to_its_section_and_nothing_else(self):
         """The wildcard, against the real rig: 35 ring pixels, 344 obelisk, and
         10 pars without the UV on the end of them."""
-        executable_or_skip()
-        show = ShowController(LAYERS, dry_run=True, midi="", on_frame=lambda f: None)
-        try:
-            time.sleep(0.6)
-            self.assertEqual(len(show.layers["hit_ring"].fixtures), 35)
-            self.assertEqual(len(show.layers["hit_obelisk"].fixtures),
-                             OBELISK_PIXELS)
-            self.assertEqual(len(show.layers["hit_pars"].fixtures), 10)
-        finally:
-            show.stop()
+        show = self.running_show(LAYERS, midi="")
+        time.sleep(0.6)
+        self.assertEqual(len(show.layers["hit_ring"].fixtures), 35)
+        self.assertEqual(len(show.layers["hit_obelisk"].fixtures),
+                         OBELISK_PIXELS)
+        self.assertEqual(len(show.layers["hit_pars"].fixtures), 10)
 
     def test_an_unfed_additive_layer_is_invisible(self):
         """The guarantee that makes these safe to leave patched.
@@ -1701,17 +1640,13 @@ class TheAudioBus(unittest.TestCase):
         with no visualiser costs the hits and nothing else. Checked on
         beat_pulse, whose white hit would show any tint immediately.
         """
-        executable_or_skip()
         frames = []
-        show = ShowController(SHOW, dry_run=True, pattern="audio", midi="", bpm=120.0,
+        show = self.running_show(SHOW, pattern="audio", midi="", bpm=120.0,
                               on_frame=frames.append, emit_rate=40.0)
-        try:
-            # The bus opens on `level`, so the flash has to be asked for: it is
-            # a cue on this list while the show is empty - see beatPulseState.
-            show.set_state("beat_pulse")
-            time.sleep(2.0)
-        finally:
-            show.stop()
+        # The bus opens on `level`, so the flash has to be asked for: it is
+        # a cue on this list while the show is empty - see beatPulseState.
+        show.set_state("beat_pulse")
+        time.sleep(2.0)
 
         peaks = [f for f in frames if max(f[0]) > 200]
         self.assertTrue(peaks, "the rig never reached full brightness")
@@ -1722,35 +1657,31 @@ class TheAudioBus(unittest.TestCase):
     def test_a_fed_channel_drives_its_layer(self):
         """End to end: a value onto the bus, through a mod, into an ordinary
         knob, out as light on one section and not the others."""
-        executable_or_skip()
         frames = []
-        show = ShowController(LAYERS, dry_run=True, midi="",
+        show = self.running_show(LAYERS, midi="",
                               on_frame=frames.append, emit_rate=40.0)
-        try:
-            time.sleep(0.5)
+        time.sleep(0.5)
 
-            ring = show.layers["hit_ring"].fixtures[0]
-            obelisk = show.layers["hit_obelisk"].fixtures[0]
-            par = show.layers["hit_pars"].fixtures[0]
+        ring = show.layers["hit_ring"].fixtures[0]
+        obelisk = show.layers["hit_obelisk"].fixtures[0]
+        par = show.layers["hit_pars"].fixtures[0]
 
-            # The bus decays a reading it has not heard from in 0.8s - a
-            # dead-man's switch, not an effect - so this is held up rather
-            # than set once.
-            deadline = time.time() + 1.2
-            while time.time() < deadline:
-                show.command("audio bass_hits 1.0", expect_reply=False)
-                time.sleep(0.05)
+        # The bus decays a reading it has not heard from in 0.8s - a
+        # dead-man's switch, not an effect - so this is held up rather
+        # than set once.
+        deadline = time.time() + 1.2
+        while time.time() < deadline:
+            show.command("audio bass_hits 1.0", expect_reply=False)
+            time.sleep(0.05)
 
-            frame = frames[-1]
-            self.assertGreater(frame[ring][0], 200, "the ring did not go red")
-            self.assertEqual(frame[ring][1], 0)
-            self.assertEqual(frame[ring][2], 0)
+        frame = frames[-1]
+        self.assertGreater(frame[ring][0], 200, "the ring did not go red")
+        self.assertEqual(frame[ring][1], 0)
+        self.assertEqual(frame[ring][2], 0)
 
-            # The other two sections were never fed, so they are still dark.
-            self.assertEqual(frame[obelisk], (0, 0, 0))
-            self.assertEqual(frame[par], (0, 0, 0))
-        finally:
-            show.stop()
+        # The other two sections were never fed, so they are still dark.
+        self.assertEqual(frame[obelisk], (0, 0, 0))
+        self.assertEqual(frame[par], (0, 0, 0))
 
     def test_the_config_declares_the_mods_the_desk_reports(self):
         lines = [line for line in self._protocol(["mods"], config=LAYERS) if " MOD " in line]
@@ -1825,7 +1756,6 @@ class TheBindingKeepsTheBusAlive(unittest.TestCase):
     directly, which is not the path a set uses - so the binding's rate limiting
     was never in the loop. These go through the binding.
     """
-
     def binding(self, channel="bass_hits"):
         return next(b for b in osc_input.BindingSet.load(
             DESKTOP / "config" / "oscmaps" / "synesthesia.json").bindings
@@ -1890,7 +1820,6 @@ class TheOscInputSaysWhenItIsNotLanding(unittest.TestCase):
     So the two states that are otherwise indistinguishable from fine get named
     in the status line, without anyone having to know to open the panel.
     """
-
     def setUp(self):
         import tempfile
         from eclipse_dmx import viewer as viewer_module
@@ -1960,7 +1889,6 @@ class TheFirewallNote(unittest.TestCase):
     found by hand on the rig it was written for, after the port had already
     swallowed an evening.
     """
-
     def note(self, port=7000):
         from eclipse_dmx.cli import _firewall_note
         return _firewall_note(port)
@@ -1996,7 +1924,7 @@ class TheFirewallNote(unittest.TestCase):
         self.assertIsNone(self.note(22))
 
 
-class CommandsSurviveTheAudioStream(unittest.TestCase):
+class CommandsSurviveTheAudioStream(ShowTest):
     """A cue fired while the bus is streaming must still get its reply.
 
     `audio` lines come off the OSC listener's thread at a couple of hundred a
@@ -2012,16 +1940,10 @@ class CommandsSurviveTheAudioStream(unittest.TestCase):
     Found on a live rig, as `no reply to 'layer hit_obelisk mod level off'
     within 5.0s` - from a command that had actually worked.
     """
-
-    @classmethod
-    def setUpClass(cls):
-        executable_or_skip()
-
     def test_a_command_replies_under_a_flood_of_streamed_lines(self):
         import threading
 
-        show = ShowController(SHOW, dry_run=True, midi="",
-                              on_frame=lambda f: None, emit_rate=30.0)
+        show = self.running_show(SHOW, midi="", emit_rate=30.0)
         stop = threading.Event()
 
         def flood():
@@ -2050,20 +1972,16 @@ class CommandsSurviveTheAudioStream(unittest.TestCase):
     def test_a_streamed_line_does_not_wait(self):
         """The other half of why it is expect_reply=False: a knob driven at
         frame rate cannot afford a round trip per value."""
-        show = ShowController(SHOW, dry_run=True, midi="",
-                              on_frame=lambda f: None)
-        try:
-            time.sleep(1.0)
-            started = time.monotonic()
-            for _ in range(200):
-                show.command("audio bass 0.5", expect_reply=False)
-            elapsed = time.monotonic() - started
-            self.assertLess(elapsed, 1.0, "streamed lines are blocking")
-        finally:
-            show.stop()
+        show = self.running_show(SHOW, midi="")
+        time.sleep(1.0)
+        started = time.monotonic()
+        for _ in range(200):
+            show.command("audio bass 0.5", expect_reply=False)
+        elapsed = time.monotonic() - started
+        self.assertLess(elapsed, 1.0, "streamed lines are blocking")
 
 
-class TheAudioMeter(unittest.TestCase):
+class TheAudioMeter(ShowTest):
     """The bus, as cues: one per channel, for reading it with your eyes.
 
     Every other look in this rig is a show. This one is an instrument, and it
@@ -2074,19 +1992,9 @@ class TheAudioMeter(unittest.TestCase):
     written against.
     """
 
-    @classmethod
-    def setUpClass(cls):
-        executable_or_skip()
-
     @staticmethod
-    def _protocol(script, frames=60):
-        import subprocess
-        return subprocess.run(
-            [str(find_executable()), "--config", str(SHOW), "--dry-run",
-             "--midi", "", "--frames", str(frames)],
-            input="\n".join(script) + "\n",
-            capture_output=True, text=True, timeout=60,
-        ).stdout.splitlines()
+    def _protocol(script, frames=ANSWER_FRAMES):
+        return run_show(script, frames=frames, config=SHOW)
 
     # -- the cue list -------------------------------------------------------
 
@@ -2214,7 +2122,6 @@ class TheOscInputHints(unittest.TestCase):
     is 127.0.0.1, which on a rig where the visualiser sits on a different
     machine means "into my own loopback" and is completely silent about it.
     """
-
     def hints(self, port=7000):
         from eclipse_dmx.cli import osc_input_hints
         return osc_input_hints(port)
@@ -2332,7 +2239,7 @@ class TheOscPanel(unittest.TestCase):
             link.close()
 
 
-class SharedBeatTriggers(unittest.TestCase):
+class SharedBeatTriggers(ShowTest):
     """When a hit lands, decided once for the whole rig.
 
     Every beat look used to work this out privately - read the clock, watch the
@@ -2347,11 +2254,6 @@ class SharedBeatTriggers(unittest.TestCase):
     actually broken: a look entered off the beat joins the grid instead of
     starting one of its own.
     """
-
-    @classmethod
-    def setUpClass(cls):
-        executable_or_skip()
-
     def _uv_hits(self, enter_offset, bpm=120.0, settle=2.0):
         """UV hit instants, and the moment `flash` was asked for.
 
@@ -2359,18 +2261,15 @@ class SharedBeatTriggers(unittest.TestCase):
         point: at 120bpm a beat is 500ms and 0.13 into one is nowhere near it.
         """
         frames = []
-        show = ShowController(STAGE, dry_run=True, midi="", bpm=bpm,
-                              on_frame=lambda f: frames.append((time.time(), f)),
-                              emit_rate=40.0)
-        try:
-            show.set_state("scan_idle")
-            time.sleep(1.0)
-            time.sleep(enter_offset)
-            entered = time.time()
-            show.layers["uv"].set_state("flash")
-            time.sleep(settle)
-        finally:
-            show.stop()
+        show = self.running_show(STAGE, midi="", bpm=bpm,
+                                 on_frame=lambda f: frames.append((time.time(), f)),
+                                 emit_rate=40.0)
+        show.set_state("scan_idle")
+        time.sleep(1.0)
+        time.sleep(enter_offset)
+        entered = time.time()
+        show.layers["uv"].set_state("flash")
+        time.sleep(settle)
 
         uv = show.layers["uv"].fixtures[0]
         levels = [(t, f[uv][0]) for t, f in frames if len(f) > uv]
@@ -2454,33 +2353,25 @@ class SharedBeatTriggers(unittest.TestCase):
                             f"cue waited for the grid at +{offset}")
 
     def test_entry_hit_is_a_knob_and_the_uv_opens_with_it_off(self):
-        show = ShowController(STAGE, dry_run=True, midi="", bpm=120.0,
-                              on_frame=lambda f: None, emit_rate=20.0)
-        try:
-            time.sleep(0.8)
-            uv = show.layers["uv"]
-            uv.set_state("flash")
-            time.sleep(0.5)
+        show = self.running_show(STAGE, midi="", bpm=120.0, emit_rate=20.0)
+        time.sleep(0.8)
+        uv = show.layers["uv"]
+        uv.set_state("flash")
+        time.sleep(0.5)
 
-            entry = uv.get_param("entry_hit")
-            self.assertIsNotNone(entry, "the UV flash has no entry_hit knob")
-            self.assertTrue(entry.is_bool)
-            self.assertFalse(entry.value, "the UV should join the grid, not start one")
+        entry = uv.get_param("entry_hit")
+        self.assertIsNotNone(entry, "the UV flash has no entry_hit knob")
+        self.assertTrue(entry.is_bool)
+        self.assertFalse(entry.value, "the UV should join the grid, not start one")
 
-        finally:
-            show.stop()
 
         # and a cue on a list is the other way round - a different config,
         # because beat_pulse is a cue the rig comes up on and the UV is the
         # scanner stage's layer
-        show = ShowController(SHOW, dry_run=True, pattern="audio", midi="", bpm=120.0,
-                              on_frame=lambda f: None, emit_rate=20.0)
-        try:
-            show.set_state("beat_pulse")
-            time.sleep(0.8)
-            self.assertTrue(show.get_param("entry_hit").value)
-        finally:
-            show.stop()
+        show = self.running_show(SHOW, pattern="audio", midi="", bpm=120.0, emit_rate=20.0)
+        show.set_state("beat_pulse")
+        time.sleep(0.8)
+        self.assertTrue(show.get_param("entry_hit").value)
 
 
 class TheStageGeometry(unittest.TestCase):
@@ -2491,7 +2382,6 @@ class TheStageGeometry(unittest.TestCase):
     afterglow's eclipse_engine.py. Nothing checks them against each other at
     runtime, so this does.
     """
-
     HEADER = DESKTOP.parent / "src" / "relics" / "scanner" / "scanner_patterns.h"
 
     def _constant(self, name: str) -> float:
@@ -2557,7 +2447,7 @@ class TheStageGeometry(unittest.TestCase):
         self.assertAlmostEqual(float(centre_y.group(1)), cy)
 
 
-class TheLinkProtocol(unittest.TestCase):
+class TheLinkProtocol(ShowTest):
     """The wire format and the relic's end of it, exercised by the executable.
 
     `--link-selftest` drives elink and a real ObeliskCore with no hardware:
@@ -2565,11 +2455,8 @@ class TheLinkProtocol(unittest.TestCase):
     code, so this is the closest thing to testing the sculpture that exists
     without flashing one.
     """
-
     def test_selftest_passes(self):
-        import subprocess
-
-        executable = executable_or_skip()
+        executable = self.executable
         result = subprocess.run(
             [str(executable), "--link-selftest"],
             capture_output=True, text=True, timeout=120,
@@ -2582,9 +2469,7 @@ class TheLinkProtocol(unittest.TestCase):
 
     def test_selftest_covers_the_obelisks_own_frame(self):
         """A 344-pixel frame is the thing that will actually be sent."""
-        import subprocess
-
-        executable = executable_or_skip()
+        executable = self.executable
         result = subprocess.run(
             [str(executable), "--link-selftest"],
             capture_output=True, text=True, timeout=120,
@@ -2598,23 +2483,17 @@ class TheLinkProtocol(unittest.TestCase):
     def test_link_commands_are_refused_off_a_link(self):
         """A DMX show has nothing to hand over, and should say so rather than
         pretend."""
-        show = ShowController(RIG, dry_run=True, on_frame=lambda f: None)
-        try:
-            time.sleep(0.4)
-            with self.assertRaises(ShowError):
-                show.set_link_mode("cue")
-            # And the show survives being asked.
-            self.assertTrue(show.is_running)
-        finally:
-            show.stop()
+        show = self.running_show(RIG)
+        time.sleep(0.4)
+        with self.assertRaises(ShowError):
+            show.set_link_mode("cue")
+        # And the show survives being asked.
+        self.assertTrue(show.is_running)
 
     def test_a_bad_link_mode_is_caught_before_the_wire(self):
-        show = ShowController(RIG, dry_run=True, on_frame=lambda f: None)
-        try:
-            with self.assertRaises(ShowError):
-                show.set_link_mode("sideways")
-        finally:
-            show.stop()
+        show = self.running_show(RIG)
+        with self.assertRaises(ShowError):
+            show.set_link_mode("sideways")
 
     def test_probe_does_not_claim_a_dmx_widget(self):
         """The whole point of probing rather than guessing at port names.
@@ -2622,9 +2501,7 @@ class TheLinkProtocol(unittest.TestCase):
         Passes trivially with nothing attached; the case it guards is a machine
         with a widget on it, which is this one.
         """
-        import subprocess
-
-        executable = executable_or_skip()
+        executable = self.executable
         result = subprocess.run(
             [str(executable), "--probe-relics"],
             capture_output=True, text=True, timeout=120,
@@ -2732,111 +2609,81 @@ class PatternRegistry(unittest.TestCase):
         self.assertEqual(sorted(list_patterns()), sorted(PATTERN_NAMES))
 
 
-class FrameStream(unittest.TestCase):
+class FrameStream(ShowTest):
     """--emit-frames, end to end, with no hardware."""
-
-    @classmethod
-    def setUpClass(cls):
-        executable_or_skip()
 
     def test_frames_arrive_and_move(self):
         frames = []
-        show = ShowController(RIG, dry_run=True, on_frame=frames.append, emit_rate=30.0)
-        try:
-            show.set_pattern("obelisk_seasons")
-            time.sleep(1.5)
-        finally:
-            show.stop()
+        show = self.running_show(RIG, on_frame=frames.append, emit_rate=30.0)
+        show.set_pattern("obelisk_seasons")
+        time.sleep(1.5)
 
         self.assertGreater(len(frames), 20)
         self.assertTrue(all(len(frame) == 10 for frame in frames))
         self.assertGreater(len({tuple(frame) for frame in frames}), 5)
 
     def test_fixture_names_are_reported(self):
-        show = ShowController(RIG, dry_run=True, on_frame=lambda f: None)
-        try:
-            time.sleep(0.5)
-            self.assertEqual(show.fixture_names, [f"par_{i}" for i in range(1, 11)])
-        finally:
-            show.stop()
+        show = self.running_show(RIG)
+        time.sleep(0.5)
+        self.assertEqual(show.fixture_names, [f"par_{i}" for i in range(1, 11)])
 
     def test_frames_do_not_pile_up_in_events(self):
         """A show left running for an hour must not grow a list per frame."""
         frames = []
-        show = ShowController(RIG, dry_run=True, on_frame=frames.append)
-        try:
-            time.sleep(1.2)
-        finally:
-            show.stop()
+        show = self.running_show(RIG, on_frame=frames.append)
+        time.sleep(1.2)
 
         self.assertGreater(len(frames), 20)
         self.assertLess(len(show.events), 20)
 
     def test_blackout_reaches_the_wire(self):
         frames = []
-        show = ShowController(RIG, dry_run=True, on_frame=frames.append)
-        try:
-            show.set_pattern("obelisk_mono")
-            time.sleep(0.5)
-            show.blackout(True)
-            time.sleep(0.6)
-            self.assertTrue(all(colour == (0, 0, 0) for colour in frames[-1]))
+        show = self.running_show(RIG, on_frame=frames.append)
+        show.set_pattern("obelisk_mono")
+        time.sleep(0.5)
+        show.blackout(True)
+        time.sleep(0.6)
+        self.assertTrue(all(colour == (0, 0, 0) for colour in frames[-1]))
 
-            show.blackout(False)
-            time.sleep(0.6)
-            self.assertTrue(any(colour != (0, 0, 0) for colour in frames[-1]))
-        finally:
-            show.stop()
+        show.blackout(False)
+        time.sleep(0.6)
+        self.assertTrue(any(colour != (0, 0, 0) for colour in frames[-1]))
 
     def test_master_dims_the_wire(self):
         frames = []
-        show = ShowController(RIG, dry_run=True, on_frame=frames.append)
-        try:
-            show.set_pattern("obelisk_mono")
-            time.sleep(0.5)
-            full = frames[-1][0]
-            show.set_master(0.25)
-            time.sleep(0.5)
-            dim = frames[-1][0]
-        finally:
-            show.stop()
+        show = self.running_show(RIG, on_frame=frames.append)
+        show.set_pattern("obelisk_mono")
+        time.sleep(0.5)
+        full = frames[-1][0]
+        show.set_master(0.25)
+        time.sleep(0.5)
+        dim = frames[-1][0]
 
         self.assertLess(sum(dim), sum(full))
 
     def test_emit_rate_is_honoured(self):
         """Asking for 20 must give 20, not whatever the render loop rounds to."""
         stamps = []
-        show = ShowController(
-            RIG, dry_run=True, on_frame=lambda f: stamps.append(time.monotonic()), emit_rate=20.0
-        )
-        try:
-            time.sleep(0.4)
-            stamps.clear()
-            start = time.monotonic()
-            time.sleep(2.0)
-            measured = len(stamps) / (time.monotonic() - start)
-        finally:
-            show.stop()
+        show = self.running_show(
+            RIG, on_frame=lambda f: stamps.append(time.monotonic()), emit_rate=20.0)
+        time.sleep(0.4)
+        stamps.clear()
+        start = time.monotonic()
+        time.sleep(2.0)
+        measured = len(stamps) / (time.monotonic() - start)
 
         self.assertAlmostEqual(measured, 20.0, delta=20.0 * 0.15)
 
 
-class ObeliskOnTheDesk(unittest.TestCase):
+class ObeliskOnTheDesk(ShowTest):
     """The sculpture's own looks, rendered on the sculpture's own shape."""
-
-    @classmethod
-    def setUpClass(cls):
-        cls.executable = executable_or_skip()
 
     def _last_frame(self, pattern):
         """One settled frame of `pattern`, as 344 (r, g, b)."""
         frames = []
-        show = ShowController(OBELISK, dry_run=True, on_frame=frames.append, emit_rate=20.0)
-        try:
-            show.set_pattern(pattern)
-            time.sleep(1.2)
-        finally:
-            show.stop()
+        show = self.running_show(OBELISK, on_frame=frames.append, emit_rate=20.0)
+        show.set_pattern(pattern)
+        time.sleep(1.2)
 
         self.assertTrue(frames, "no frames arrived")
         return frames[-1]
@@ -2848,12 +2695,9 @@ class ObeliskOnTheDesk(unittest.TestCase):
         must not be one for a rig that was never going to touch a wire.
         """
         frames = []
-        show = ShowController(OBELISK, dry_run=False, on_frame=frames.append)
-        try:
-            time.sleep(1.0)
-            self.assertTrue(show.is_running)
-        finally:
-            show.stop()
+        show = self.running_show(OBELISK, dry_run=False, on_frame=frames.append)
+        time.sleep(1.0)
+        self.assertTrue(show.is_running)
 
         self.assertTrue(frames)
 
@@ -2865,8 +2709,6 @@ class ObeliskOnTheDesk(unittest.TestCase):
 
     def test_the_patch_matches_what_python_resolved(self):
         """Both sides parse this file, so they can disagree. Catch it."""
-        import subprocess
-
         result = subprocess.run(
             [str(self.executable), "--config", str(OBELISK), "--show-patch"],
             capture_output=True, text=True, timeout=60,
@@ -2898,82 +2740,60 @@ class ObeliskOnTheDesk(unittest.TestCase):
         self.assertGreater(len(set(run)), 1)
 
 
-class JacketStateMachine(unittest.TestCase):
+class JacketStateMachine(ShowTest):
     """The jacket's looks, driven over the protocol instead of by buttons."""
 
-    @classmethod
-    def setUpClass(cls):
-        executable_or_skip()
-
     def test_states_are_announced(self):
-        show = ShowController(RIG, dry_run=True, on_frame=lambda f: None)
-        try:
-            show.command("pattern jacket")
-            time.sleep(0.5)
-            self.assertIn("digital_void", show.state_names)
-            self.assertEqual(len(show.state_names), 12)
-        finally:
-            show.stop()
+        show = self.running_show(RIG)
+        show.command("pattern jacket")
+        time.sleep(0.5)
+        self.assertIn("digital_void", show.state_names)
+        self.assertEqual(len(show.state_names), 12)
 
     def test_config_opens_on_its_chosen_state(self):
         """The rig config names a state; digital_void is nearly black."""
-        show = ShowController(RIG, dry_run=True, on_frame=lambda f: None)
-        try:
-            time.sleep(0.5)
-            self.assertEqual(show.current_state, Config.load(RIG).pattern.state)
-        finally:
-            show.stop()
+        show = self.running_show(RIG)
+        time.sleep(0.5)
+        self.assertEqual(show.current_state, Config.load(RIG).pattern.state)
 
     def test_switching_state_changes_the_rig(self):
         frames = []
-        show = ShowController(RIG, dry_run=True, on_frame=frames.append, emit_rate=20.0)
-        try:
-            show.command("pattern jacket")
-            seen = []
-            for state in ("parrot", "blue_magic", "campfire"):
-                show.set_state(state)
-                time.sleep(1.0)          # past the 0.4s cross-fade
-                seen.append(tuple(frames[-1]))
-            self.assertEqual(len(set(seen)), 3)
-        finally:
-            show.stop()
+        show = self.running_show(RIG, on_frame=frames.append, emit_rate=20.0)
+        show.command("pattern jacket")
+        seen = []
+        for state in ("parrot", "blue_magic", "campfire"):
+            show.set_state(state)
+            time.sleep(1.0)          # past the 0.4s cross-fade
+            seen.append(tuple(frames[-1]))
+        self.assertEqual(len(set(seen)), 3)
 
     def test_unknown_state_is_rejected_without_dying(self):
-        show = ShowController(RIG, dry_run=True, on_frame=lambda f: None)
-        try:
-            show.command("pattern jacket")
-            time.sleep(0.4)
-            with self.assertRaises(ShowError):
-                show.set_state("not_a_look")
-            self.assertTrue(show.is_running)
-        finally:
-            show.stop()
+        show = self.running_show(RIG)
+        show.command("pattern jacket")
+        time.sleep(0.4)
+        with self.assertRaises(ShowError):
+            show.set_state("not_a_look")
+        self.assertTrue(show.is_running)
 
     def test_state_needs_a_state_machine(self):
-        show = ShowController(RIG, dry_run=True, on_frame=lambda f: None)
-        try:
-            show.command("pattern obelisk_seasons")
-            time.sleep(0.4)
-            self.assertEqual(show.state_names, [])
-            with self.assertRaises(ShowError):
-                show.set_state("campfire")
-        finally:
-            show.stop()
+        show = self.running_show(RIG)
+        show.command("pattern obelisk_seasons")
+        time.sleep(0.4)
+        self.assertEqual(show.state_names, [])
+        with self.assertRaises(ShowError):
+            show.set_state("campfire")
 
     def test_input_modulates_the_look(self):
         frames = []
-        show = ShowController(RIG, dry_run=True, on_frame=frames.append, emit_rate=20.0)
-        try:
-            show.command("pattern jacket")
-            show.set_state("digital_void")
-            time.sleep(1.0)
-            before = tuple(frames[-1])
-            show.set_input("a", True)
-            time.sleep(1.2)
-            after = tuple(frames[-1])
-            self.assertNotEqual(before, after)
-        finally:
-            show.stop()
+        show = self.running_show(RIG, on_frame=frames.append, emit_rate=20.0)
+        show.command("pattern jacket")
+        show.set_state("digital_void")
+        time.sleep(1.0)
+        before = tuple(frames[-1])
+        show.set_input("a", True)
+        time.sleep(1.2)
+        after = tuple(frames[-1])
+        self.assertNotEqual(before, after)
 
 
 class MidiSettings(unittest.TestCase):
@@ -3053,12 +2873,8 @@ class MidiSettings(unittest.TestCase):
             config.validate()
 
 
-class Mythos26(unittest.TestCase):
+class Mythos26(ShowTest):
     """The show, driven over the protocol."""
-
-    @classmethod
-    def setUpClass(cls):
-        executable_or_skip()
 
     def _show(self, **kwargs):
         # --midi "" so the test never opens a device that happens to be
@@ -3070,7 +2886,7 @@ class Mythos26(unittest.TestCase):
         # list, so they ask for it rather than inheriting whatever is default
         # this week.
         kwargs.setdefault("midi", "")
-        show = ShowController(SHOW, dry_run=True, **kwargs)
+        show = self.running_show(SHOW, **kwargs)
         show.set_pattern("mythos26")
         return show
 
@@ -3089,28 +2905,19 @@ class Mythos26(unittest.TestCase):
 
     def test_twelve_states_in_table_order(self):
         show = self._show(on_frame=lambda f: None)
-        try:
-            time.sleep(0.5)
-            self.assertEqual(show.state_names, list(MYTHOS26_STATES))
-        finally:
-            show.stop()
+        time.sleep(0.5)
+        self.assertEqual(show.state_names, list(MYTHOS26_STATES))
 
     def test_the_static_list_matches_the_executable(self):
         show = self._show(on_frame=lambda f: None)
-        try:
-            time.sleep(0.5)
-            self.assertEqual(tuple(show.state_names), MYTHOS26_STATES)
-        finally:
-            show.stop()
+        time.sleep(0.5)
+        self.assertEqual(tuple(show.state_names), MYTHOS26_STATES)
 
     def test_it_pulses_white_on_the_beat(self):
         """Full white once a beat, well down between, and every fixture together."""
         frames = []
         show = self._beat_show(on_frame=frames.append, bpm=120.0, emit_rate=40.0)
-        try:
-            time.sleep(2.5)  # five beats at 120
-        finally:
-            show.stop()
+        time.sleep(2.5)  # five beats at 120
 
         self.assertTrue(frames, "no frames arrived")
 
@@ -3171,85 +2978,67 @@ class Mythos26(unittest.TestCase):
 
     def test_bpm_is_reported_back(self):
         show = self._show(on_frame=lambda f: None, bpm=90.0)
-        try:
-            time.sleep(1.5)
-            self.assertAlmostEqual(show.bpm, 90.0, delta=1.0)
-            self.assertFalse(show.beat_locked, "nothing external is driving it")
-            self.assertIn("bpm=90", show.status())
-        finally:
-            show.stop()
+        time.sleep(1.5)
+        self.assertAlmostEqual(show.bpm, 90.0, delta=1.0)
+        self.assertFalse(show.beat_locked, "nothing external is driving it")
+        self.assertIn("bpm=90", show.status())
 
     def test_tapping_a_beat_relights_the_rig(self):
         frames = []
         show = self._beat_show(on_frame=frames.append, bpm=40.0, emit_rate=40.0)
-        try:
-            time.sleep(1.2)  # well past the 200ms fall, and before the next beat
-            self.assertEqual(max(frames[-1][0]), 0)
+        time.sleep(1.2)  # well past the 200ms fall, and before the next beat
+        self.assertEqual(max(frames[-1][0]), 0)
 
-            # Take the peak across the frames that follow rather than sampling
-            # one a fixed wait later: the pulse is 200ms wide, a frame is 25ms,
-            # and a loaded machine will happily put those two out of step.
-            mark = len(frames)
-            show.tap_beat()
+        # Take the peak across the frames that follow rather than sampling
+        # one a fixed wait later: the pulse is 200ms wide, a frame is 25ms,
+        # and a loaded machine will happily put those two out of step.
+        mark = len(frames)
+        show.tap_beat()
 
-            peak = 0
-            deadline = time.monotonic() + 1.0
-            while time.monotonic() < deadline and peak <= 128:
-                for frame in frames[mark:]:
-                    peak = max(peak, max(frame[0]))
-                time.sleep(0.02)
+        peak = 0
+        deadline = time.monotonic() + 1.0
+        while time.monotonic() < deadline and peak <= 128:
+            for frame in frames[mark:]:
+                peak = max(peak, max(frame[0]))
+            time.sleep(0.02)
 
-            self.assertGreater(peak, 128)
-        finally:
-            show.stop()
+        self.assertGreater(peak, 128)
 
     def test_a_bad_tempo_is_rejected_without_dying(self):
         show = self._show(on_frame=lambda f: None)
-        try:
-            with self.assertRaises(ShowError):
-                show.set_bpm(5.0)
-            self.assertTrue(show.is_running)
-        finally:
-            show.stop()
+        with self.assertRaises(ShowError):
+            show.set_bpm(5.0)
+        self.assertTrue(show.is_running)
 
     def test_beat_lines_do_not_pile_up_in_events(self):
         """Same reason frame lines do not: a show runs for hours."""
         show = self._show(on_frame=lambda f: None, bpm=240.0)
-        try:
-            time.sleep(1.5)
-            self.assertFalse([e for e in show.events if e.startswith("BEAT")])
-            self.assertGreater(show.beat, 0)
-        finally:
-            show.stop()
+        time.sleep(1.5)
+        self.assertFalse([e for e in show.events if e.startswith("BEAT")])
+        self.assertGreater(show.beat, 0)
 
     def test_free_run_off_stops_the_pulse(self):
         """With nothing driving it and free-run off, the rig should settle dark."""
         frames = []
         show = self._beat_show(on_frame=frames.append, bpm=120.0, emit_rate=40.0)
-        try:
-            show.set_free_run(False)
-            time.sleep(1.5)
-            self.assertEqual(max(frames[-1][0]), 0)
-        finally:
-            show.stop()
+        show.set_free_run(False)
+        time.sleep(1.5)
+        self.assertEqual(max(frames[-1][0]), 0)
 
     def test_the_placeholders_are_visible_and_distinct(self):
         """Every slot in the machine, which is all twelve of them for now."""
         frames = []
         show = self._show(on_frame=frames.append, emit_rate=20.0)
-        try:
-            seen = []
-            for state in MYTHOS26_STATES:
-                show.set_state(state)
-                time.sleep(0.8)  # past the 0.25s cross-fade
-                seen.append(tuple(frames[-1]))
+        seen = []
+        for state in MYTHOS26_STATES:
+            show.set_state(state)
+            time.sleep(0.8)  # past the 0.25s cross-fade
+            seen.append(tuple(frames[-1]))
 
-            for frame in seen:
-                self.assertGreater(max(max(f) for f in frame), 0, "a slot rendered black")
-            self.assertEqual(len(set(seen)), len(MYTHOS26_STATES),
-                             "two slots look the same")
-        finally:
-            show.stop()
+        for frame in seen:
+            self.assertGreater(max(max(f) for f in frame), 0, "a slot rendered black")
+        self.assertEqual(len(set(seen)), len(MYTHOS26_STATES),
+                         "two slots look the same")
 
 
 def _rising_edges(frames, threshold=128):
@@ -3262,7 +3051,7 @@ def _rising_edges(frames, threshold=128):
     return sum(1 for i in range(1, len(lit)) if lit[i] and not lit[i - 1])
 
 
-class BeatLooks(unittest.TestCase):
+class BeatLooks(ShowTest):
     """The looks that fire on the beat: their envelope, and their rate.
 
     There used to be a divider here - on 1 / on 2 / on 4 - and it went, because
@@ -3280,25 +3069,17 @@ class BeatLooks(unittest.TestCase):
     that is the trade, and it is the right way round. Double time never had the
     problem - it lands on the beat and between them, whichever beat it is.
     """
-
-    @classmethod
-    def setUpClass(cls):
-        executable_or_skip()
-
     def _count(self, state, seconds=4.0, bpm=120.0, params=None):
         frames = []
-        show = ShowController(
-            SHOW, dry_run=True, pattern="audio", midi="", bpm=bpm,
+        show = self.running_show(
+            SHOW,pattern="audio", midi="", bpm=bpm,
             on_frame=frames.append, emit_rate=40.0
         )
-        try:
-            show.set_state(state)
-            for name, value in (params or {}).items():
-                show.set_param(name, value)
-            frames.clear()          # drop the cross-fade
-            time.sleep(seconds)
-        finally:
-            show.stop()
+        show.set_state(state)
+        for name, value in (params or {}).items():
+            show.set_param(name, value)
+        frames.clear()          # drop the cross-fade
+        time.sleep(seconds)
         return _rising_edges(frames)
 
     def test_beat_pulse_fires_on_every_beat(self):
@@ -3307,28 +3088,22 @@ class BeatLooks(unittest.TestCase):
 
     def test_the_cue_list_sets_the_envelope(self):
         """beatLook's two numbers are what the look opens on."""
-        show = ShowController(SHOW, dry_run=True, pattern="audio", midi="", on_frame=lambda f: None)
-        try:
-            show.set_state("beat_pulse")
-            time.sleep(0.4)
-            knobs = {p.name: p.value for p in show.params}
-            self.assertAlmostEqual(knobs["attack"], 0.15, places=3)
-            self.assertAlmostEqual(knobs["decay"], 0.60, places=3)
-        finally:
-            show.stop()
+        show = self.running_show(SHOW, pattern="audio", midi="")
+        show.set_state("beat_pulse")
+        time.sleep(0.4)
+        knobs = {p.name: p.value for p in show.params}
+        self.assertAlmostEqual(knobs["attack"], 0.15, places=3)
+        self.assertAlmostEqual(knobs["decay"], 0.60, places=3)
 
     def test_the_envelope_is_still_live(self):
         """Stated in the cue list, tunable at the desk - both, not either."""
-        show = ShowController(SHOW, dry_run=True, pattern="audio", midi="", on_frame=lambda f: None)
-        try:
-            show.set_state("beat_pulse")
-            time.sleep(0.4)
-            show.set_param("decay", 1.25)
-            time.sleep(0.3)
-            knobs = {p.name: p.value for p in show.params}
-            self.assertAlmostEqual(knobs["decay"], 1.25, places=3)
-        finally:
-            show.stop()
+        show = self.running_show(SHOW, pattern="audio", midi="")
+        show.set_state("beat_pulse")
+        time.sleep(0.4)
+        show.set_param("decay", 1.25)
+        time.sleep(0.3)
+        knobs = {p.name: p.value for p in show.params}
+        self.assertAlmostEqual(knobs["decay"], 1.25, places=3)
 
     def test_half_time_hits_on_every_second_beat(self):
         beats = 120.0 / 60.0 * 4.0
@@ -3364,29 +3139,26 @@ class BeatLooks(unittest.TestCase):
         """
         period = 0.30
         stamped = []
-        show = ShowController(SHOW, dry_run=True, pattern="audio", midi="",
-                              on_frame=lambda frame: stamped.append(
-                                  (time.monotonic(), max(frame[0]) > 128)),
-                              emit_rate=40.0)
-        try:
-            show.set_state("beat_pulse")
-            show.set_param("rate", 0.5)
-            show.set_param("decay", 0.12)   # a hit that ends inside one beat
-            show.set_param("attack", 0.02)
+        show = self.running_show(SHOW, pattern="audio", midi="",
+                                 on_frame=lambda frame: stamped.append(
+                                     (time.monotonic(), max(frame[0]) > 128)),
+                                 emit_rate=40.0)
+        show.set_state("beat_pulse")
+        show.set_param("rate", 0.5)
+        show.set_param("decay", 0.12)   # a hit that ends inside one beat
+        show.set_param("attack", 0.02)
 
-            # Ten to settle the tempo onto the tap - the clock closes a
-            # quarter of the gap per beat, so ten is well inside a percent -
-            # and then twelve to measure the spacing of.
-            for _ in range(10):
-                show.command("beat")
-                time.sleep(period)
-            stamped.clear()
+        # Ten to settle the tempo onto the tap - the clock closes a
+        # quarter of the gap per beat, so ten is well inside a percent -
+        # and then twelve to measure the spacing of.
+        for _ in range(10):
+            show.command("beat")
+            time.sleep(period)
+        stamped.clear()
 
-            for _ in range(12):
-                show.command("beat")
-                time.sleep(period)
-        finally:
-            show.stop()
+        for _ in range(12):
+            show.command("beat")
+            time.sleep(period)
 
         edges = [now for index, (now, lit) in enumerate(stamped)
                  if lit and index > 0 and not stamped[index - 1][1]]
@@ -3407,20 +3179,17 @@ class BeatLooks(unittest.TestCase):
         bpm = 200.0
         beat = 60.0 / bpm      # a bar every 1.2s, so four of them is quick
         stamped = []
-        show = ShowController(SHOW, dry_run=True, pattern="audio", midi="", bpm=bpm,
-                              on_frame=lambda frame: stamped.append(
-                                  (time.monotonic(), max(frame[0]) > 128)),
-                              emit_rate=40.0)
-        try:
-            show.set_state("beat_pulse")
-            show.set_param("rate", 0.25)
-            show.set_param("decay", 0.12)   # a hit that ends inside one beat
-            show.set_param("attack", 0.02)
-            time.sleep(0.5)                 # past the cue's own opening hit
-            stamped.clear()
-            time.sleep(5.0)
-        finally:
-            show.stop()
+        show = self.running_show(SHOW, pattern="audio", midi="", bpm=bpm,
+                                 on_frame=lambda frame: stamped.append(
+                                     (time.monotonic(), max(frame[0]) > 128)),
+                                 emit_rate=40.0)
+        show.set_state("beat_pulse")
+        show.set_param("rate", 0.25)
+        show.set_param("decay", 0.12)   # a hit that ends inside one beat
+        show.set_param("attack", 0.02)
+        time.sleep(0.5)                 # past the cue's own opening hit
+        stamped.clear()
+        time.sleep(5.0)
 
         edges = [now for index, (now, lit) in enumerate(stamped)
                  if lit and index > 0 and not stamped[index - 1][1]]
@@ -3440,22 +3209,19 @@ class BeatLooks(unittest.TestCase):
         """
         bpm = 120.0
         stamped = []
-        show = ShowController(SHOW, dry_run=True, pattern="audio", midi="", bpm=bpm,
-                              on_frame=lambda frame: stamped.append(
-                                  (time.monotonic(), max(frame[0]) > 128)),
-                              emit_rate=40.0)
-        try:
-            show.set_state("beat_pulse")
-            show.set_param("rate", 0.25)
-            show.set_param("decay", 0.12)
-            show.set_param("attack", 0.02)
-            time.sleep(1.4)                 # somewhere mid-bar, hit or not
-            stamped.clear()
-            show.command("midi align")
-            aligned = time.monotonic()
-            time.sleep(0.6)                 # well inside the two-second bar
-        finally:
-            show.stop()
+        show = self.running_show(SHOW, pattern="audio", midi="", bpm=bpm,
+                                 on_frame=lambda frame: stamped.append(
+                                     (time.monotonic(), max(frame[0]) > 128)),
+                                 emit_rate=40.0)
+        show.set_state("beat_pulse")
+        show.set_param("rate", 0.25)
+        show.set_param("decay", 0.12)
+        show.set_param("attack", 0.02)
+        time.sleep(1.4)                 # somewhere mid-bar, hit or not
+        stamped.clear()
+        show.command("midi align")
+        aligned = time.monotonic()
+        time.sleep(0.6)                 # well inside the two-second bar
 
         edges = [now for index, (now, lit) in enumerate(stamped)
                  if lit and index > 0 and not stamped[index - 1][1]]
@@ -3465,60 +3231,44 @@ class BeatLooks(unittest.TestCase):
 
     def test_the_cue_list_sets_the_rate(self):
         """It opens on the beat; the rate is a live knob from there."""
-        show = ShowController(SHOW, dry_run=True, pattern="audio", midi="", on_frame=lambda f: None)
-        try:
-            show.set_state("beat_pulse")
-            time.sleep(0.4)
-            knobs = {p.name: p.value for p in show.params}
-            self.assertAlmostEqual(knobs["rate"], 1.0, places=3)
-        finally:
-            show.stop()
+        show = self.running_show(SHOW, pattern="audio", midi="")
+        show.set_state("beat_pulse")
+        time.sleep(0.4)
+        knobs = {p.name: p.value for p in show.params}
+        self.assertAlmostEqual(knobs["rate"], 1.0, places=3)
 
     def test_the_rate_snaps_to_the_musical_ones(self):
         """A slider will hand over 1.37. Nobody wants 1.37 hits a beat."""
-        show = ShowController(SHOW, dry_run=True, pattern="audio", midi="", on_frame=lambda f: None)
-        try:
-            show.set_state("beat_pulse")
-            time.sleep(0.4)
-            for sent, landed in ((0.25, 0.25), (0.3, 0.25), (0.45, 0.5),
-                                 (0.5, 0.5), (0.7, 0.5), (0.9, 1.0),
-                                 (1.37, 1.0), (1.6, 2.0), (2.0, 2.0)):
-                show.set_param("rate", sent)
-                self.assertAlmostEqual(show.get_param("rate").value, landed, places=3,
-                                       msg=f"sent {sent}")
-        finally:
-            show.stop()
+        show = self.running_show(SHOW, pattern="audio", midi="")
+        show.set_state("beat_pulse")
+        time.sleep(0.4)
+        for sent, landed in ((0.25, 0.25), (0.3, 0.25), (0.45, 0.5),
+                             (0.5, 0.5), (0.7, 0.5), (0.9, 1.0),
+                             (1.37, 1.0), (1.6, 2.0), (2.0, 2.0)):
+            show.set_param("rate", sent)
+            self.assertAlmostEqual(show.get_param("rate").value, landed, places=3,
+                                   msg=f"sent {sent}")
 
     def test_beat_div_is_gone(self):
-        show = ShowController(SHOW, dry_run=True, pattern="audio", midi="", on_frame=lambda f: None)
-        try:
-            with self.assertRaises(ShowError):
-                show.command("beat div 2")
-            self.assertTrue(show.is_running)
-        finally:
-            show.stop()
+        show = self.running_show(SHOW, pattern="audio", midi="")
+        with self.assertRaises(ShowError):
+            show.command("beat div 2")
+        self.assertTrue(show.is_running)
 
 
-class TvStatic(unittest.TestCase):
+class TvStatic(ShowTest):
     """Every fixture a new value every frame."""
-
-    @classmethod
-    def setUpClass(cls):
-        executable_or_skip()
 
     def _frames(self, state, seconds=1.5):
         frames = []
-        show = ShowController(
-            SHOW, dry_run=True, pattern="generic", midi="",
+        show = self.running_show(
+            SHOW,pattern="generic", midi="",
             on_frame=frames.append, emit_rate=40.0
         )
-        try:
-            show.set_state(state)
-            time.sleep(0.9)     # past the generic machine's 0.5s cross-fade
-            frames.clear()
-            time.sleep(seconds)
-        finally:
-            show.stop()
+        show.set_state(state)
+        time.sleep(0.9)     # past the generic machine's 0.5s cross-fade
+        frames.clear()
+        time.sleep(seconds)
         self.assertTrue(frames, "no frames arrived")
         return frames
 
@@ -3563,10 +3313,7 @@ class MidiMessageHandling(unittest.TestCase):
     the messages its mapping documents, do we produce the right beats at the
     right tempo, and ignore everything else on the cable.
     """
-
     def test_selftest_passes(self):
-        import subprocess
-
         binary = executable_or_skip()
         result = subprocess.run(
             [str(binary), "--midi-selftest"], capture_output=True, text=True, timeout=30
@@ -3579,8 +3326,6 @@ class MidiMessageHandling(unittest.TestCase):
 
     def test_it_actually_checks_things(self):
         """A self-test that asserts nothing would pass just as quietly."""
-        import subprocess
-
         binary = executable_or_skip()
         result = subprocess.run(
             [str(binary), "--midi-selftest"], capture_output=True, text=True, timeout=30
@@ -3617,10 +3362,8 @@ class IgnoredDevices(unittest.TestCase):
         """Better a warning and free-run than a rig following a pad press."""
         executable_or_skip()
 
-        import subprocess
-
         result = subprocess.run(
-            [str(find_executable()), "--config", str(SHOW), "--dry-run",
+            [str(executable_or_skip()), "--config", str(SHOW), "--dry-run",
              "--frames", "2", "--no-stdin"],
             capture_output=True, text=True, timeout=30,
         )
@@ -3633,12 +3376,8 @@ class IgnoredDevices(unittest.TestCase):
             self.assertNotIn("MIDI-OPEN", result.stdout)
 
 
-class MidiDiscovery(unittest.TestCase):
+class MidiDiscovery(ShowTest):
     """Enumeration only - there is no guarantee of a device on any machine."""
-
-    @classmethod
-    def setUpClass(cls):
-        executable_or_skip()
 
     def test_listing_midi_inputs_does_not_fail(self):
         from eclipse_dmx.ports import list_midi_ports
@@ -3649,29 +3388,14 @@ class MidiDiscovery(unittest.TestCase):
             self.assertIsInstance(port.index, int)
 
     def test_opening_a_port_that_is_not_there_is_an_error_not_a_crash(self):
-        show = ShowController(SHOW, dry_run=True, pattern="mythos26", midi="", on_frame=lambda f: None)
-        try:
-            with self.assertRaises(ShowError):
-                show.midi_open("definitely-not-a-midi-port")
-            self.assertTrue(show.is_running)
-        finally:
-            show.stop()
+        show = self.running_show(SHOW, pattern="mythos26", midi="")
+        with self.assertRaises(ShowError):
+            show.midi_open("definitely-not-a-midi-port")
+        self.assertTrue(show.is_running)
 
 
-class ViewerWindow(unittest.TestCase):
+class ViewerWindow(GuiTest):
     """Geometry, read back off the real canvas rather than eyeballed."""
-
-    @classmethod
-    def setUpClass(cls):
-        executable_or_skip()
-        try:
-            import tkinter
-        except ImportError as error:
-            raise unittest.SkipTest(f"no tkinter: {error}")
-        try:
-            tkinter.Tk().destroy()
-        except Exception as error:
-            raise unittest.SkipTest(f"no display: {error}")
 
     def setUp(self):
         from eclipse_dmx.viewer import ViewerApp
@@ -3681,25 +3405,55 @@ class ViewerWindow(unittest.TestCase):
     def tearDown(self):
         self.app._quit()
 
-    def settle(self, seconds=0.8):
-        end = time.monotonic() + seconds
-        while time.monotonic() < end:
-            self.app.root.update()
-            time.sleep(0.02)
+    # -- reading the canvas -------------------------------------------------
+
+    @property
+    def panel(self):
+        """The rig's panel. Only valid after `ready()`."""
+        return self.app._panels[0]
+
+    def ready(self):
+        """Wait until the rig is on the canvas.
+
+        Two steps, and both are somebody else's clock: the panel itself is not
+        built until the executable has announced what is in the show, and its
+        discs are not laid out until the window manager has said how big the
+        canvas is. Everything below reads one or the other, so everything below
+        starts here.
+        """
+        self.settle_until(lambda: self.app._panels,
+                          message="the executable to announce the rig")
+        self.settle_until(lambda: len(self.panel._items) == 10,
+                          message="ten discs on the canvas")
+
+    def discs(self):
+        """The discs' bounding boxes, once they are laid out."""
+        self.ready()
+        return [self.panel.canvas.coords(item["core"]) for item in self.panel._items]
+
+    def fills(self):
+        return [self.panel.canvas.itemcget(item["core"], "fill")
+                for item in self.panel._items]
 
     def test_every_fixture_fits_at_any_window_size(self):
         from eclipse_dmx.viewer import GLOW_EXTENT
 
+        self.ready()
         for width, height in [(1000, 420), (640, 320), (1600, 900)]:
             with self.subTest(size=(width, height)):
                 self.app.root.geometry(f"{width}x{height}")
-                self.settle(0.6)
+                # The resize is a request; the answer comes back from the
+                # window manager, so wait for the canvas to actually be the
+                # size that was asked for rather than for a fixed moment.
+                self.settle_until(
+                    lambda: self.panel.canvas.winfo_width() > 1
+                            and abs(self.panel.canvas.winfo_width() - width) < width,
+                    message=f"the canvas to be resized towards {width}x{height}")
 
-                canvas_w = self.app._panels[0].canvas.winfo_width()
-                canvas_h = self.app._panels[0].canvas.winfo_height()
-                self.assertEqual(len(self.app._panels[0]._items), 10)
+                canvas_w = self.panel.canvas.winfo_width()
+                canvas_h = self.panel.canvas.winfo_height()
 
-                cores = [self.app._panels[0].canvas.coords(item["core"]) for item in self.app._panels[0]._items]
+                cores = self.discs()
                 radius = (cores[0][2] - cores[0][0]) / 2
                 glow = radius * GLOW_EXTENT
 
@@ -3713,8 +3467,7 @@ class ViewerWindow(unittest.TestCase):
     def test_glows_meet_but_do_not_overlap(self):
         from eclipse_dmx.viewer import GLOW_EXTENT
 
-        self.settle(0.6)
-        cores = [self.app._panels[0].canvas.coords(item["core"]) for item in self.app._panels[0]._items]
+        cores = self.discs()
         centres = [((x0 + x1) / 2, (y0 + y1) / 2) for x0, y0, x1, y1 in cores]
         glow = (cores[0][2] - cores[0][0]) / 2 * GLOW_EXTENT
 
@@ -3727,42 +3480,30 @@ class ViewerWindow(unittest.TestCase):
     def test_colour_reaches_the_canvas(self):
         from eclipse_dmx.viewer import BACKGROUND
 
-        self.settle(1.5)
-        fills = [self.app._panels[0].canvas.itemcget(item["core"], "fill") for item in self.app._panels[0]._items]
+        self.discs()
         background = "#%02x%02x%02x" % BACKGROUND
-        self.assertGreaterEqual(sum(1 for fill in fills if fill != background), 8)
-        self.assertGreater(len(set(fills)), 2)
+        self.settle_until(
+            lambda: sum(1 for fill in self.fills() if fill != background) >= 8,
+            message="the frames to reach eight of the ten discs")
+        self.assertGreater(len(set(self.fills())), 2)
 
     def test_blackout_paints_the_rig_dark(self):
-        self.settle(0.8)
+        self.discs()
         self.app._toggle_blackout()
-        self.settle(0.8)
-        fills = [self.app._panels[0].canvas.itemcget(item["core"], "fill") for item in self.app._panels[0]._items]
-        self.assertTrue(all(fill == "#000000" for fill in fills))
+        self.settle_until(lambda: all(fill == "#000000" for fill in self.fills()),
+                          message="every disc to go dark")
 
     def test_pattern_cycling(self):
-        self.settle(0.5)
+        self.discs()
         before = self.app.current_pattern
         self.app._step_pattern(1)
-        self.settle(0.4)
-        self.assertNotEqual(self.app.current_pattern, before)
+        self.settle_until(lambda: self.app.current_pattern != before,
+                          message="the next pattern to come up")
         self.assertEqual(self.app._status, "")
 
 
-class ViewerOnTheObelisk(unittest.TestCase):
+class ViewerOnTheObelisk(GuiTest):
     """344 pixels in a window that was built for ten pars."""
-
-    @classmethod
-    def setUpClass(cls):
-        executable_or_skip()
-        try:
-            import tkinter
-        except ImportError as error:
-            raise unittest.SkipTest(f"no tkinter: {error}")
-        try:
-            tkinter.Tk().destroy()
-        except Exception as error:
-            raise unittest.SkipTest(f"no display: {error}")
 
     def setUp(self):
         from eclipse_dmx.viewer import ViewerApp
@@ -3772,31 +3513,55 @@ class ViewerOnTheObelisk(unittest.TestCase):
     def tearDown(self):
         self.app._quit()
 
-    def settle(self, seconds=1.2):
-        end = time.monotonic() + seconds
-        while time.monotonic() < end:
-            self.app.root.update()
-            time.sleep(0.02)
+    # -- reading the canvas -------------------------------------------------
+
+    @property
+    def panel(self):
+        """The sculpture's panel. Only valid after `ready()`."""
+        return self.app._panels[0]
+
+    def ready(self):
+        """Wait until all 344 pixels are on the canvas.
+
+        The panel is not built until the executable has announced the rig, and
+        its pixels are not laid out until the window manager has said how big
+        the canvas is - two waits on somebody else's clock, which is why this
+        is a condition rather than a number.
+        """
+        self.settle_until(lambda: self.app._panels,
+                          message="the executable to announce the sculpture")
+        self.settle_until(lambda: len(self.panel._items) == OBELISK_PIXELS,
+                          message=lambda: f"{OBELISK_PIXELS} pixels on the canvas "
+                                          f"(have {len(self.panel._items)})")
+
+    def fills(self):
+        return [self.panel.canvas.itemcget(item["core"], "fill")
+                for item in self.panel._items]
 
     def test_every_pixel_is_drawn_once(self):
-        self.settle(0.8)
-        self.assertEqual(len(self.app._panels[0]._items), OBELISK_PIXELS)
+        self.ready()
 
     def test_dense_rigs_drop_the_glow(self):
         """3096 canvas items per repaint does not fit in a frame."""
-        self.settle(0.8)
-        self.assertTrue(all(not item["rings"] for item in self.app._panels[0]._items))
+        self.ready()
+        self.assertTrue(all(not item["rings"] for item in self.panel._items))
 
     def test_pixels_stay_inside_the_canvas(self):
+        self.ready()
         for width, height in [(1000, 600), (640, 320), (1600, 900)]:
             with self.subTest(size=(width, height)):
                 self.app.root.geometry(f"{width}x{height}")
-                self.settle(0.6)
+                # The resize is a request the window manager answers, so wait
+                # for the canvas to have moved rather than for a fixed moment.
+                self.settle_until(
+                    lambda: self.panel.canvas.winfo_width() > 1
+                            and abs(self.panel.canvas.winfo_width() - width) < width,
+                    message=f"the canvas to be resized towards {width}x{height}")
 
-                canvas_w = self.app._panels[0].canvas.winfo_width()
-                canvas_h = self.app._panels[0].canvas.winfo_height()
-                for item in self.app._panels[0]._items:
-                    x0, y0, x1, y1 = self.app._panels[0].canvas.coords(item["core"])
+                canvas_w = self.panel.canvas.winfo_width()
+                canvas_h = self.panel.canvas.winfo_height()
+                for item in self.panel._items:
+                    x0, y0, x1, y1 = self.panel.canvas.coords(item["core"])
                     self.assertGreaterEqual(x0, -0.5)
                     self.assertLessEqual(x1, canvas_w + 0.5)
                     self.assertGreaterEqual(y0, -0.5)
@@ -3806,61 +3571,57 @@ class ViewerOnTheObelisk(unittest.TestCase):
         """The picture shows what the coordinates promised."""
         from eclipse_dmx.viewer import BACKGROUND
 
-        self.settle(2.0)
-        fills = [self.app._panels[0].canvas.itemcget(item["core"], "fill") for item in self.app._panels[0]._items]
-        self.assertNotEqual(fills[0], "#%02x%02x%02x" % BACKGROUND)
+        self.ready()
+        background = "#%02x%02x%02x" % BACKGROUND
 
-        sides = [fills[side * 2 * OBELISK_SIDE_LENGTH + 20] for side in range(4)]
-        self.assertEqual(len(set(sides)), 4, f"sides are not distinct: {sides}")
+        def four_seasons():
+            fills = self.fills()
+            if fills[0] == background:
+                return None
+            sides = [fills[side * 2 * OBELISK_SIDE_LENGTH + 20] for side in range(4)]
+            return sides if len(set(sides)) == 4 else None
+
+        # The seasons are a gradient around the sculpture and the look opens
+        # dark, so this is waiting for the rig to be lit *and* for the four
+        # sides to have pulled apart - which is the assertion, said once.
+        self.settle_until(four_seasons,
+                          message=lambda: "four distinct sides, got "
+                                          f"{[self.fills()[s * 2 * OBELISK_SIDE_LENGTH + 20] for s in range(4)]}")
 
     def test_a_repeated_frame_is_not_repainted(self):
         """The pump runs at 60Hz over a 30fps stream; half of it is redundant."""
-        self.settle(1.0)
-        painted = self.app._painted
-        self.assertIsNotNone(painted)
+        self.ready()
+        painted = self.settle_until(lambda: self.app._painted,
+                                    message="a frame to be painted")
 
         self.app._paint(painted)
         self.assertIs(self.app._painted, painted)
 
     def test_the_link_row_is_only_there_for_a_relic(self):
         """A dead row of buttons on a DMX rig is furniture that does nothing."""
-        self.settle(0.8)
+        self.ready()
         self.assertFalse(self.app.link_row.winfo_ismapped())
 
     def test_runs_are_labelled_rather_than_pixels(self):
         """Eight legends, not 344."""
-        self.settle(0.8)
-        texts = [
-            self.app._panels[0].canvas.itemcget(item, "text")
-            for item in self.app._panels[0].canvas.find_all()
-            if self.app._panels[0].canvas.type(item) == "text"
-        ]
-        self.assertEqual(
-            sorted(texts),
-            ["a_down", "a_up", "b_down", "b_up", "c_down", "c_up", "d_down", "d_up"],
-        )
+        self.ready()
+        canvas = self.panel.canvas
+        self.settle_until(
+            lambda: sorted(canvas.itemcget(item, "text")
+                           for item in canvas.find_all()
+                           if canvas.type(item) == "text")
+                    == ["a_down", "a_up", "b_down", "b_up",
+                        "c_down", "c_up", "d_down", "d_up"],
+            message="one legend per run, and only those")
 
 
-class ViewerOnARelic(unittest.TestCase):
+class ViewerOnARelic(GuiTest):
     """The relic row, on a config that names one.
 
     Dry-run, so no cable is opened and the executable is on `console` - the row
     is drawn from the *config*, which is what a desk needs to see before it
     plugs anything in.
     """
-
-    @classmethod
-    def setUpClass(cls):
-        executable_or_skip()
-        try:
-            import tkinter
-        except ImportError as error:
-            raise unittest.SkipTest(f"no tkinter: {error}")
-        try:
-            tkinter.Tk().destroy()
-        except Exception as error:
-            raise unittest.SkipTest(f"no display: {error}")
-
     def setUp(self):
         from eclipse_dmx.viewer import ViewerApp
 
@@ -3868,12 +3629,6 @@ class ViewerOnARelic(unittest.TestCase):
 
     def tearDown(self):
         self.app._quit()
-
-    def settle(self, seconds=1.0):
-        end = time.monotonic() + seconds
-        while time.monotonic() < end:
-            self.app.root.update()
-            time.sleep(0.02)
 
     def test_the_row_is_shown(self):
         self.settle(0.8)
@@ -3894,7 +3649,7 @@ class ViewerOnARelic(unittest.TestCase):
         self.assertEqual(self.app._link_buttons["release"]["bg"], BUTTON_BG)
 
 
-class MidiLearn(unittest.TestCase):
+class MidiLearn(GuiTest):
     """Binding a pad by hitting it, down the path a real pad takes.
 
     Events are fed as monitor lines rather than as MidiEvents, because that is
@@ -3903,19 +3658,6 @@ class MidiLearn(unittest.TestCase):
     mappings. A test that skipped to take_learn would not cover the half of
     this that has ever been wrong.
     """
-
-    @classmethod
-    def setUpClass(cls):
-        executable_or_skip()
-        try:
-            import tkinter
-        except ImportError as error:
-            raise unittest.SkipTest(f"no tkinter: {error}")
-        try:
-            tkinter.Tk().destroy()
-        except Exception as error:
-            raise unittest.SkipTest(f"no display: {error}")
-
     def setUp(self):
         import tempfile
         from eclipse_dmx.viewer import ViewerApp
@@ -3945,12 +3687,6 @@ class MidiLearn(unittest.TestCase):
     def tearDown(self):
         self.app._quit()
         self.scratch.cleanup()
-
-    def settle(self, seconds=0.5):
-        end = time.monotonic() + seconds
-        while time.monotonic() < end:
-            self.app.root.update()
-            time.sleep(0.02)
 
     def hit(self, *lines):
         for line in lines:
@@ -4040,7 +3776,7 @@ class MidiLearn(unittest.TestCase):
         self.assertEqual(reloaded.mappings[-1].number, 36)
 
 
-class MidiFind(unittest.TestCase):
+class MidiFind(GuiTest):
     """Learn read backwards: hit a pad, and its mapping is the one selected.
 
     Down the same path as learn - monitor line, reader thread, pump - because
@@ -4048,19 +3784,6 @@ class MidiFind(unittest.TestCase):
     the panel before the dispatcher, and it has to be eaten rather than passed
     on once it does.
     """
-
-    @classmethod
-    def setUpClass(cls):
-        executable_or_skip()
-        try:
-            import tkinter
-        except ImportError as error:
-            raise unittest.SkipTest(f"no tkinter: {error}")
-        try:
-            tkinter.Tk().destroy()
-        except Exception as error:
-            raise unittest.SkipTest(f"no display: {error}")
-
     def setUp(self):
         import tempfile
         from eclipse_dmx.viewer import ViewerApp
@@ -4076,12 +3799,6 @@ class MidiFind(unittest.TestCase):
     def tearDown(self):
         self.app._quit()
         self.scratch.cleanup()
-
-    def settle(self, seconds=0.5):
-        end = time.monotonic() + seconds
-        while time.monotonic() < end:
-            self.app.root.update()
-            time.sleep(0.02)
 
     def hit(self, *lines):
         for line in lines:
@@ -4186,7 +3903,7 @@ class MidiFind(unittest.TestCase):
         self.assertFalse(self.panel._finding)
 
 
-class MidiMapEditorActions(unittest.TestCase):
+class MidiMapEditorActions(GuiTest):
     """A mapping that does several things, driven through the editor.
 
     The list is the point of the shape - one pad, a scene on the visualiser
@@ -4194,19 +3911,6 @@ class MidiMapEditorActions(unittest.TestCase):
     second block: that it lands on the second action rather than the first,
     that removing it puts the row back, and that the last one cannot go.
     """
-
-    @classmethod
-    def setUpClass(cls):
-        executable_or_skip()
-        try:
-            import tkinter
-        except ImportError as error:
-            raise unittest.SkipTest(f"no tkinter: {error}")
-        try:
-            tkinter.Tk().destroy()
-        except Exception as error:
-            raise unittest.SkipTest(f"no display: {error}")
-
     def setUp(self):
         import tempfile
         from eclipse_dmx.viewer import ViewerApp
@@ -4226,12 +3930,6 @@ class MidiMapEditorActions(unittest.TestCase):
     def tearDown(self):
         self.app._quit()
         self.scratch.cleanup()
-
-    def settle(self, seconds=0.3):
-        end = time.monotonic() + seconds
-        while time.monotonic() < end:
-            self.app.root.update()
-            time.sleep(0.02)
 
     def block(self, index):
         return self.panel._action_rows[index]
@@ -4322,7 +4020,7 @@ class MidiMapEditorActions(unittest.TestCase):
         self.assertIn("2 actions", line)
 
 
-class TheFrameSink(unittest.TestCase):
+class TheFrameSink(ShowTest):
     """Client mode's far end, run locally: paint what arrives, render nothing.
 
     The contract is that a frame survives the trip byte for byte. It has to:
@@ -4330,11 +4028,6 @@ class TheFrameSink(unittest.TestCase):
     already through master, brightness and gamma, and anything this end did to
     it again would darken the rig by a curve on every hop.
     """
-
-    @classmethod
-    def setUpClass(cls):
-        executable_or_skip()
-
     def setUp(self):
         self.frames = []
         self.events = []
@@ -4349,11 +4042,6 @@ class TheFrameSink(unittest.TestCase):
             self.sink.stop()
         except Exception:
             pass
-
-    def settle(self, seconds):
-        end = time.monotonic() + seconds
-        while time.monotonic() < end:
-            time.sleep(0.02)
 
     def fixture_count(self):
         line = next(e for e in self.events if e.startswith("SINK "))
@@ -4406,7 +4094,7 @@ class TheFrameSink(unittest.TestCase):
             show.send_frame([(0, 0, 0)])
 
 
-class ViewerGivesTheDevicesBack(unittest.TestCase):
+class ViewerGivesTheDevicesBack(GuiTest):
     """What the desk lets go of on the way out.
 
     Closing the window was never the only door: Ctrl-C is what the launcher
@@ -4415,19 +4103,6 @@ class ViewerGivesTheDevicesBack(unittest.TestCase):
     map still lit and its own Setup button disabled - a controller you have to
     unplug to get back.
     """
-
-    @classmethod
-    def setUpClass(cls):
-        executable_or_skip()
-        try:
-            import tkinter
-        except ImportError as error:
-            raise unittest.SkipTest(f"no tkinter: {error}")
-        try:
-            tkinter.Tk().destroy()
-        except Exception as error:
-            raise unittest.SkipTest(f"no display: {error}")
-
     def setUp(self):
         import tempfile
         from eclipse_dmx.viewer import ViewerApp
@@ -4454,12 +4129,6 @@ class ViewerGivesTheDevicesBack(unittest.TestCase):
     def tearDown(self):
         self.app._quit()
         self.scratch.cleanup()
-
-    def settle(self, seconds=0.3):
-        end = time.monotonic() + seconds
-        while time.monotonic() < end:
-            self.app.root.update()
-            time.sleep(0.02)
 
     def test_it_puts_the_controller_back_in_live_mode(self):
         self.app._release_devices()
@@ -4506,7 +4175,7 @@ class ViewerGivesTheDevicesBack(unittest.TestCase):
         self.assertIn("midi close", self.commands, "the input is still handed back")
 
 
-class ViewerAgainstAnotherRig(unittest.TestCase):
+class ViewerAgainstAnotherRig(GuiTest):
     """A rig whose device list is not this config's.
 
     Which is what `--host` is: the executable runs on the pi, out of the pi's
@@ -4519,19 +4188,6 @@ class ViewerAgainstAnotherRig(unittest.TestCase):
     one was never an index into the other. That drew every panel one device
     early: the obelisk panel showing the ring's pixels.
     """
-
-    @classmethod
-    def setUpClass(cls):
-        executable_or_skip()
-        try:
-            import tkinter
-        except ImportError as error:
-            raise unittest.SkipTest(f"no tkinter: {error}")
-        try:
-            tkinter.Tk().destroy()
-        except Exception as error:
-            raise unittest.SkipTest(f"no display: {error}")
-
     def setUp(self):
         import tempfile
         from eclipse_dmx.viewer import ViewerApp
@@ -4543,12 +4199,6 @@ class ViewerAgainstAnotherRig(unittest.TestCase):
     def tearDown(self):
         self.app._quit()
         self.scratch.cleanup()
-
-    def settle(self, seconds=0.4):
-        end = time.monotonic() + seconds
-        while time.monotonic() < end:
-            self.app.root.update()
-            time.sleep(0.02)
 
     def test_the_local_rig_draws_each_panel_its_own_slice(self):
         spans = list(self.app.show.devices)
@@ -4623,20 +4273,8 @@ class ViewerAgainstAnotherRig(unittest.TestCase):
             self.assertEqual(len(got), span.count)
 
 
-class ViewerOnTheShow(unittest.TestCase):
+class ViewerOnTheShow(GuiTest):
     """The tempo controls, driven the way a click drives them."""
-
-    @classmethod
-    def setUpClass(cls):
-        executable_or_skip()
-        try:
-            import tkinter
-        except ImportError as error:
-            raise unittest.SkipTest(f"no tkinter: {error}")
-        try:
-            tkinter.Tk().destroy()
-        except Exception as error:
-            raise unittest.SkipTest(f"no display: {error}")
 
     def setUp(self):
         from eclipse_dmx.viewer import ViewerApp
@@ -4651,77 +4289,126 @@ class ViewerOnTheShow(unittest.TestCase):
     def tearDown(self):
         self.app._quit()
 
-    def settle(self, seconds=0.8):
-        end = time.monotonic() + seconds
-        while time.monotonic() < end:
-            self.app.root.update()
-            time.sleep(0.02)
+    # -- what every test here starts by waiting for -------------------------
+
+    def knobs(self):
+        """Wait until the cue's knobs have reached the panel.
+
+        The widgets are built from what the executable announces about the
+        cue, which is a round trip away, so nothing below can touch a knob
+        until this has happened. It is the same wait every time, so it is
+        written once and named for what it is waiting for.
+        """
+        return self.settle_until(lambda: self.app._param_widgets,
+                                 message="the cue's knobs to reach the panel")
+
+    #: The header's tempo is redrawn off BEAT lines, so its floor is a beat or
+    #: two of the *show's* clock rather than anything this test controls - and
+    #: several, on a machine also running the rest of the suite. Waiting longer
+    #: costs nothing when it lands early, which is the normal case; the ceiling
+    #: only decides how quickly a genuine failure is called.
+    HEADER_PATIENCE = 8.0
+
+    def header_says(self, text, timeout=HEADER_PATIENCE):
+        return self.settle_until(
+            lambda: text in self.app.header.cget("text"), timeout,
+            # What it says instead, and whether the desk complained: a tempo
+            # the executable refused and one it simply has not announced yet
+            # look identical from here otherwise.
+            lambda: f"the header to say {text!r} - it says "
+                    f"{self.app.header.cget('text')!r}, "
+                    f"status {self.app._status!r}, "
+                    f"clock {self.app.show.bpm} {self.app.show.beat_source}")
+
+    def clock_running(self, beats=2):
+        """Wait until the show's clock has actually counted a few beats.
+
+        Not padding, and not politeness. A `bpm` sent inside the first beat is
+        taken - the reply is OK and `status` reports the new tempo - but the
+        free-run clock then stops emitting BEAT lines altogether, so nothing
+        downstream ever hears the tempo it just accepted. Reproducible on the
+        controller alone, with no viewer in it:
+
+            show.set_state("beat_pulse")
+            wait for the first BEAT line, then `bpm 100`
+            -> status says bpm=100, and no beat ever arrives again
+
+        Waiting out a beat or two first is what the old flat `settle(0.8)`
+        here was doing without saying so. It is written down now because the
+        next person to tighten this wait will otherwise find the same wall.
+        """
+        return self.settle_until(lambda: self.app.show.beat >= beats,
+                                 message=lambda: f"the clock to count {beats} beats "
+                                                 f"(at {self.app.show.beat})")
+
+    def param(self, name):
+        """What the executable currently holds for the knob `name`."""
+        return self.app.show.get_param(name).value
+
+    def assertNoComplaint(self):
+        self.assertEqual(self.app._status, "")
+
+    # -- the tempo controls -------------------------------------------------
 
     def test_the_show_states_have_buttons(self):
-        self.settle(0.8)
-        for state in MYTHOS26_STATES:
-            self.assertIn(state, self.app._state_buttons)
+        self.settle_until(
+            lambda: all(state in self.app._state_buttons
+                        for state in MYTHOS26_STATES),
+            message="a button for every state the show declares")
 
     def test_the_tempo_reaches_the_header(self):
-        self.settle(1.5)
-        self.assertIn("120.0 bpm", self.app.header.cget("text"))
+        self.header_says("120.0 bpm")
 
     def test_the_tempo_buttons_take(self):
-        self.settle(0.8)
+        self.clock_running()
         self.app._run_button(("bpm", "100"))
-        self.settle(1.2)
-        self.assertEqual(self.app._status, "")
-        self.assertIn("100.0 bpm", self.app.header.cget("text"))
+        self.header_says("100.0 bpm")
+        self.assertNoComplaint()
 
     def test_tapping_does_not_error(self):
         """And the header picks up that the clock is following the tap.
 
-        Settled past a beat rather than half of one: a tap counts as exactly
-        one beat, so a tap landing on the beat free-run had already predicted
-        moves the count no further and emits no line of its own. The source is
-        on every beat line after it, which at 120bpm is 500ms away.
+        The beat line re-announces on its own cadence, so "manual" lands in
+        the header a beat or two after the tap - at 120bpm, up to a second
+        away. Waited out rather than slept past, because the one sleep that
+        always wins the race does not exist.
         """
-        self.settle(0.4)
+        self.clock_running()
         self.app._run_button(("beat", ""))
-        self.assertEqual(self.app._status, "")
-
-        # The beat line re-announces on its own cadence, so "manual" lands in
-        # the header a beat or two after the tap - poll rather than guess the
-        # one sleep that always wins the race.
-        for _ in range(12):
-            self.settle(0.5)
-            if "manual" in self.app.header.cget("text"):
-                break
-        self.assertIn("manual", self.app.header.cget("text"))
+        self.assertNoComplaint()
+        self.header_says("manual")
 
     def test_the_master_slider_reaches_the_rig(self):
-        self.settle(0.8)
+        self.knobs()
         self.app._on_master_slider("40")
-        self.settle(0.5)
-        self.assertEqual(self.app._status, "")
-        self.assertAlmostEqual(self.app._master, 0.4, places=2)
+        self.settle_until(lambda: abs(self.app._master - 0.4) < 0.005,
+                          message="the master to reach 0.4")
+        self.assertNoComplaint()
         self.assertIn("master=0.4", self.app.show.status())
 
     def test_the_arrow_keys_and_the_slider_agree(self):
         """Two controls on one value; they must not drift apart."""
-        self.settle(0.8)
+        self.knobs()
         self.app._on_master_slider("50")
-        self.settle(0.3)
+        self.settle_until(lambda: abs(self.app._master - 0.5) < 0.005,
+                          message="the master to reach 0.5")
         self.app._nudge_master(0.1)
-        self.settle(0.3)
-        self.assertAlmostEqual(self.app._master, 0.6, places=2)
+        self.settle_until(lambda: abs(self.app._master - 0.6) < 0.005,
+                          message="the nudge to reach the master")
         self.assertAlmostEqual(self.app._master_var.get(), 60.0, delta=1.0)
 
     def test_dragging_the_slider_does_not_feed_itself(self):
         """_set_master writes the variable back, which re-enters the handler."""
-        self.settle(0.5)
+        self.knobs()
         self.app._on_master_slider("70")
-        self.settle(0.3)
-        self.assertAlmostEqual(self.app._master, 0.7, places=2)
-        self.assertEqual(self.app._status, "")
+        self.settle_until(lambda: abs(self.app._master - 0.7) < 0.005,
+                          message="the master to reach 0.7")
+        self.assertNoComplaint()
+
+    # -- the knobs ----------------------------------------------------------
 
     def test_the_looks_knobs_get_controls(self):
-        self.settle(1.0)
+        self.knobs()
         self.assertIn("attack", self.app._param_widgets)
         self.assertIn("hold", self.app._param_widgets)
 
@@ -4730,18 +4417,18 @@ class ViewerOnTheShow(unittest.TestCase):
         self.assertIsNone(self.app._param_widgets["hold"][1])
 
     def test_a_cue_change_rebuilds_the_panel(self):
-        self.settle(1.0)
+        self.knobs()
         self.assertNotIn("gain", self.app._param_widgets)
 
         self.app._run_button(("state", "level"))
-        self.settle(1.0)
+        self.settle_until(lambda: "gain" in self.app._param_widgets,
+                          message="the new cue's knobs to replace the old ones")
 
-        self.assertIn("gain", self.app._param_widgets)
         self.assertNotIn("attack", self.app._param_widgets)
-        self.assertEqual(self.app._status, "")
+        self.assertNoComplaint()
 
     def test_a_colour_knob_gets_a_swatch_of_its_own_colour(self):
-        self.settle(1.0)
+        self.knobs()
         _, swatch = self.app._param_widgets["color"]
         self.assertIsNotNone(swatch)
         self.assertEqual(str(swatch.cget("bg")), "#ffffff")
@@ -4750,7 +4437,7 @@ class ViewerOnTheShow(unittest.TestCase):
         """The picker itself is the system's; everything either side is ours."""
         from eclipse_dmx import viewer
 
-        self.settle(1.0)
+        self.knobs()
         picked = []
 
         def fake_picker(*args, **kwargs):
@@ -4761,123 +4448,208 @@ class ViewerOnTheShow(unittest.TestCase):
         viewer.colorchooser.askcolor = fake_picker
         try:
             self.app._pick_color("color")
-            self.settle(0.5)
+            self.settle_until(lambda: self.param("color") == "#0040ff",
+                              message="the picked colour to reach the look")
         finally:
             viewer.colorchooser.askcolor = original
 
         # Opened on the colour the look is actually showing, not on a default.
         self.assertEqual(picked, ["#ffffff"])
-        self.assertEqual(self.app.show.get_param("color").value, "#0040ff")
         self.assertEqual(str(self.app._param_widgets["color"][1].cget("bg")), "#0040ff")
-        self.assertEqual(self.app._status, "")
+        self.assertNoComplaint()
 
     def test_a_cancelled_pick_changes_nothing(self):
         from eclipse_dmx import viewer
 
-        self.settle(1.0)
-        before = self.app.show.get_param("color").value
+        self.knobs()
+        before = self.param("color")
 
         original = viewer.colorchooser.askcolor
         viewer.colorchooser.askcolor = lambda *args, **kwargs: (None, None)
         try:
             self.app._pick_color("color")
+            # No condition to wait for: the assertion is that nothing happens,
+            # so this one has to spend the time and look afterwards.
             self.settle(0.4)
         finally:
             viewer.colorchooser.askcolor = original
 
-        self.assertEqual(self.app.show.get_param("color").value, before)
+        self.assertEqual(self.param("color"), before)
 
     def test_a_slider_reaches_the_look(self):
-        self.settle(1.0)
+        self.knobs()
         self.app._on_param_slider("floor", "0.75")
-        self.settle(0.5)
-        self.assertEqual(self.app._status, "")
-        self.assertAlmostEqual(self.app.show.get_param("floor").value, 0.75, places=2)
+        self.settle_until(lambda: abs(self.param("floor") - 0.75) < 0.005,
+                          message="the slider to reach the look")
+        self.assertNoComplaint()
 
     def test_the_box_takes_a_value_the_slider_cannot_land_on(self):
         """The whole reason there is a box beside the slider."""
-        self.settle(1.0)
+        self.knobs()
         _, entry = self.app._param_widgets["decay"]
         entry.delete(0, "end")
         entry.insert(0, "0.137")
         self.app._on_param_entry("decay")
-        self.settle(0.5)
-        self.assertAlmostEqual(self.app.show.get_param("decay").value, 0.137, places=3)
+        self.settle_until(lambda: abs(self.param("decay") - 0.137) < 0.0005,
+                          message="the typed value to reach the look")
 
     def test_nonsense_in_the_box_puts_the_real_value_back(self):
-        self.settle(1.0)
+        self.knobs()
         _, entry = self.app._param_widgets["decay"]
-        live = self.app.show.get_param("decay").value
+        live = self.param("decay")
 
         entry.delete(0, "end")
         entry.insert(0, "banana")
         self.app._on_param_entry("decay")
-        self.settle(0.4)
+        # The box is put back on the spot, but the pump is what runs the
+        # handler's redraw, so it still needs a turn or two of the loop.
+        self.settle_until(lambda: entry.get() != "banana",
+                          message="the box to put the real value back")
 
         self.assertAlmostEqual(float(entry.get()), live, places=3)
-        self.assertAlmostEqual(self.app.show.get_param("decay").value, live, places=3)
+        self.assertAlmostEqual(self.param("decay"), live, places=3)
 
 
-class LookParams(unittest.TestCase):
+class TheEchoAgainstTheAnnouncement(unittest.TestCase):
+    """A `param` answered before the cue's announcement has been closed off.
+
+    A look announces its knobs as a block - `PARAMS`, then one `PARAM` a knob -
+    and the block is closed by the first line that is not part of it. That is
+    almost always a frame, so it was left at that. Almost: a knob set straight
+    after a cue change can be answered before the next frame is written, and
+    then the echo arrives with the block still open and is read as another
+    knob rather than as an answer about one already there.
+
+    Fed line by line rather than through the executable, because the whole
+    point is the *order* of two lines with nothing in between - which a real
+    show only produces on a race that a test cannot ask for.
+    """
+
+    def feed(self, *lines):
+        show = ShowController(SHOW, dry_run=True, autostart=False,
+                              on_frame=lambda frame: None)
+        for line in lines:
+            show._handle_stdout(line)
+        return show
+
+    ANNOUNCEMENT = (
+        "PARAMS audio beat_pulse",
+        "PARAM attack f 0.15 0 1",
+        "PARAM decay f 0.60 0 4",
+    )
+
+    def test_an_echo_inside_the_block_is_not_a_second_knob(self):
+        show = self.feed(*self.ANNOUNCEMENT, "PARAM decay f 0.11 0 4")
+        self.assertEqual([param.name for param in show.params],
+                         ["attack", "decay"])
+
+    def test_the_desk_reads_back_the_value_it_just_set(self):
+        """The bug this is here for: `get_param` takes the first match, so the
+        duplicate left the *announced* value in front of the echo and a slider
+        moved in that window reported where it had been."""
+        show = self.feed(*self.ANNOUNCEMENT, "PARAM decay f 0.11 0 4")
+        self.assertAlmostEqual(show.get_param("decay").value, 0.11, places=3)
+
+    def test_the_echo_closes_the_block(self):
+        """It proved the announcement was over, so the revision moves and the
+        defaults snapshot lands - the same as if a frame had closed it."""
+        show = self.feed(*self.ANNOUNCEMENT, "PARAM decay f 0.11 0 4")
+        self.assertEqual(show.params_revision, 1)
+
+    def test_the_defaults_are_the_announced_values_not_the_echo(self):
+        """reset_look() replays the cue's own construction. A value the desk
+        set a moment later is not part of it."""
+        show = self.feed(*self.ANNOUNCEMENT, "PARAM decay f 0.11 0 4")
+        defaults, _curves = show._look_defaults[("audio", "beat_pulse")]
+        self.assertAlmostEqual(defaults["decay"], 0.60, places=3)
+
+    def test_a_frame_still_closes_the_block_the_way_it_always_did(self):
+        show = self.feed(*self.ANNOUNCEMENT, "F 0 0 0")
+        self.assertEqual(show.params_revision, 1)
+        self.assertEqual([param.name for param in show.params],
+                         ["attack", "decay"])
+
+    def test_a_new_knob_inside_the_block_is_still_a_knob(self):
+        """The name is what tells an echo from an announcement, so a block
+        with distinct names has to keep behaving as one."""
+        show = self.feed(*self.ANNOUNCEMENT, "PARAM floor f 0.0 0 1")
+        self.assertEqual([param.name for param in show.params],
+                         ["attack", "decay", "floor"])
+        self.assertEqual(show.params_revision, 0, "the block is not over yet")
+
+    def test_a_layer_reads_its_own_block_the_same_way(self):
+        """LayerView carries its own copy of this, and so its own copy of the
+        bug: an additive layer's knobs are set from the same desk."""
+        show = self.feed(
+            "LAYER uv PARAMS audio flash",
+            "LAYER uv PARAM gain f 0.50 0 1",
+            "LAYER uv PARAM gain f 0.25 0 1",
+        )
+        layer = show.layers["uv"]
+        self.assertEqual([param.name for param in layer.params], ["gain"])
+        self.assertAlmostEqual(layer.get_param("gain").value, 0.25, places=3)
+
+
+class LookParams(ShowTest):
     """The per-look tuning surface, over the protocol."""
 
-    @classmethod
-    def setUpClass(cls):
-        executable_or_skip()
+    #: The beat flash's knobs, in the order the look declares them. Named once
+    #: because it is both what one test asserts and what every other test has
+    #: to wait for: a cue change is announced knob by knob, so "some knobs have
+    #: arrived" is a list with half of the old cue's still in it.
+    FLASH_KNOBS = ["attack", "decay", "intensity", "floor",
+                   "hold", "rate", "entry_hit", "color"]
 
     def _show(self, **kwargs):
-        # Read off the beat flash, which has one of everything - a float, a
-        # bool and a colour. It is a cue on the audio bus while the show's own
-        # list is empty, so it is asked for rather than opened on.
-        show = ShowController(SHOW, dry_run=True, pattern="audio", midi="", on_frame=lambda f: None,
-                              emit_rate=20.0, **kwargs)
+        """The beat flash, running, with its knobs already announced.
+
+        Read off the beat flash, which has one of everything - a float, a bool
+        and a colour. It is a cue on the audio bus while the show's own list is
+        empty, so it is asked for rather than opened on.
+
+        The wait for the announcement lives here rather than at the top of
+        every test: the knobs are the whole subject, so there is nothing any of
+        them can do before it has happened, and waiting for the announcement
+        beats sleeping the six-tenths that used to stand in for it.
+        """
+        show = self.running_show(SHOW, pattern="audio", midi="",
+                                 emit_rate=20.0, **kwargs)
+        since = show.params_revision
         show.set_state("beat_pulse")
+        self.until_knobs(show, self.FLASH_KNOBS, since)
         return show
 
     def test_the_running_look_announces_its_knobs(self):
         show = self._show()
-        try:
-            time.sleep(0.6)
-            names = [param.name for param in show.params]
-            self.assertEqual(names, ["attack", "decay", "intensity", "floor",
-                                     "hold", "rate", "entry_hit", "color"])
+        names = [param.name for param in show.params]
+        self.assertEqual(names, self.FLASH_KNOBS)
 
-            attack = show.get_param("attack")
-            self.assertEqual(attack.kind, "f")
-            self.assertFalse(attack.is_bool)
-            self.assertTrue(show.get_param("hold").is_bool)
-            self.assertTrue(show.get_param("color").is_color)
-        finally:
-            show.stop()
+        attack = show.get_param("attack")
+        self.assertEqual(attack.kind, "f")
+        self.assertFalse(attack.is_bool)
+        self.assertTrue(show.get_param("hold").is_bool)
+        self.assertTrue(show.get_param("color").is_color)
 
     def test_a_cue_change_replaces_the_set(self):
         """The knobs belong to the look, not to the pattern."""
         show = self._show()
-        try:
-            time.sleep(0.6)
-            first = show.params_revision
+        first = show.params_revision
 
-            self.assertIn("attack", [param.name for param in show.params])
+        self.assertIn("attack", [param.name for param in show.params])
 
-            show.set_state("level")
-            time.sleep(0.5)
-            self.assertGreater(show.params_revision, first)
-            names = [param.name for param in show.params]
-            self.assertIn("gain", names)
-            self.assertNotIn("attack", names, "the flash's knobs stayed behind")
-        finally:
-            show.stop()
+        show.set_state("level")
+        self.settle_until(lambda: show.params_revision > first,
+                          message="the new cue's knobs to replace the old ones")
+        names = [param.name for param in show.params]
+        self.assertIn("gain", names)
+        self.assertNotIn("attack", names, "the flash's knobs stayed behind")
 
     def test_a_value_out_of_range_is_clamped_not_refused(self):
         show = self._show()
-        try:
-            time.sleep(0.6)
-            show.set_param("attack", 99.0)
-            self.assertAlmostEqual(show.get_param("attack").value, 1.0, places=3)
-            show.set_param("attack", -5.0)
-            self.assertAlmostEqual(show.get_param("attack").value, 0.0, places=3)
-        finally:
-            show.stop()
+        show.set_param("attack", 99.0)
+        self.assertAlmostEqual(show.get_param("attack").value, 1.0, places=3)
+        show.set_param("attack", -5.0)
+        self.assertAlmostEqual(show.get_param("attack").value, 0.0, places=3)
 
     def test_the_echo_lands_before_the_reply(self):
         """A client that waits on OK and then reads must see the new value.
@@ -4886,116 +4658,95 @@ class LookParams(unittest.TestCase):
         the worst kind of protocol bug to own.
         """
         show = self._show()
-        try:
-            time.sleep(0.6)
-            for target in (0.11, 0.22, 0.33, 0.44):
-                show.set_param("decay", target)
-                self.assertAlmostEqual(show.get_param("decay").value, target, places=3)
-        finally:
-            show.stop()
+        for target in (0.11, 0.22, 0.33, 0.44):
+            show.set_param("decay", target)
+            self.assertAlmostEqual(show.get_param("decay").value, target, places=3)
 
     def test_setting_a_knob_does_not_duplicate_the_set(self):
         """The echo updates in place; it does not append to the list."""
         show = self._show()
-        try:
-            time.sleep(0.8)          # frame lines between the set and the echo
-            before = len(show.params)
-            show.set_param("floor", 0.5)
-            show.set_param("floor", 0.6)
-            time.sleep(0.3)
-            self.assertEqual(len(show.params), before)
-        finally:
-            show.stop()
+        before = len(show.params)
+        show.set_param("floor", 0.5)
+        show.set_param("floor", 0.6)
+        # The echo rides the frame stream, so a duplicate would show up a beat
+        # late rather than never. Wait for the second value to land, then count.
+        self.settle_until(lambda: show.get_param("floor").value == 0.6,
+                          message="the second set to echo back")
+        self.assertEqual(len(show.params), before)
 
     def test_a_knob_reaches_the_render(self):
         """The point of the whole thing: the value is the look's own field."""
         frames = []
-        show = ShowController(SHOW, dry_run=True, pattern="audio", midi="", bpm=128.0,
-                              on_frame=frames.append, emit_rate=40.0)
-        try:
-            show.set_state("beat_pulse")
-            time.sleep(1.0)
-            frames.clear()
-            time.sleep(0.8)
-            dark = min(max(frame[0]) for frame in frames)
+        show = self.running_show(SHOW, pattern="audio", midi="", bpm=128.0,
+                                 on_frame=frames.append, emit_rate=40.0)
+        since = show.params_revision
+        show.set_state("beat_pulse")
+        self.until_knobs(show, self.FLASH_KNOBS, since)
 
-            show.set_param("floor", 0.8)
-            time.sleep(0.3)
-            frames.clear()
-            time.sleep(0.8)
-            lifted = min(max(frame[0]) for frame in frames)
+        # Both readings are a *minimum over a window*, because the floor is the
+        # trough of the envelope - so the window has to be real show time.
+        # 0.8s at 128bpm is a beat and a half of it. Only the coming-up either
+        # side is waited for rather than slept through.
+        frames.clear()
+        self.settle(0.8)
+        dark = min(max(frame[0]) for frame in frames)
 
-            self.assertLess(dark, 40)
-            self.assertGreater(lifted, 120)
-        finally:
-            show.stop()
+        show.set_param("floor", 0.8)
+        frames.clear()
+        self.settle(0.8)
+        lifted = min(max(frame[0]) for frame in frames)
+
+        self.assertLess(dark, 40)
+        self.assertGreater(lifted, 120)
 
     def test_a_bool_takes_on_off_and_reaches_the_render(self):
         frames = []
-        show = ShowController(SHOW, dry_run=True, pattern="generic", midi="", on_frame=frames.append,
-                              emit_rate=40.0)
-        try:
-            show.set_state("tv_static_mono")
-            time.sleep(1.0)     # past the generic machine's 0.5s cross-fade
-            self.assertTrue(show.get_param("monochrome").value)
+        show = self.running_show(SHOW, pattern="generic", midi="",
+                                 on_frame=frames.append, emit_rate=40.0)
+        show.set_state("tv_static_mono")
+        self.settle(1.0)     # past the generic machine's 0.5s cross-fade
+        self.assertTrue(show.get_param("monochrome").value)
 
-            show.set_param("monochrome", False)
-            time.sleep(0.3)
-            frames.clear()
-            time.sleep(0.5)
+        show.set_param("monochrome", False)
+        time.sleep(0.3)
+        frames.clear()
+        time.sleep(0.5)
 
-            self.assertFalse(show.get_param("monochrome").value)
-            self.assertTrue(any(len(set(colour)) > 1 for frame in frames for colour in frame),
-                            "still grey after monochrome was turned off")
-        finally:
-            show.stop()
+        self.assertFalse(show.get_param("monochrome").value)
+        self.assertTrue(any(len(set(colour)) > 1 for frame in frames for colour in frame),
+                        "still grey after monochrome was turned off")
 
     def test_a_name_that_is_not_a_knob_is_rejected_without_dying(self):
         show = self._show()
-        try:
-            time.sleep(0.6)
-            with self.assertRaises(ShowError):
-                show.set_param("not_a_knob", 1.0)
-            self.assertTrue(show.is_running)
-        finally:
-            show.stop()
+        with self.assertRaises(ShowError):
+            show.set_param("not_a_knob", 1.0)
+        self.assertTrue(show.is_running)
 
     def test_dump_is_the_running_look_as_json(self):
         show = self._show()
-        try:
-            time.sleep(0.6)
-            show.set_param("attack", 0.25)
-            dump = json.loads(show.dump_params())
-            self.assertAlmostEqual(dump["attack"], 0.25, places=3)
-            self.assertIsInstance(dump["hold"], bool)
-        finally:
-            show.stop()
+        show.set_param("attack", 0.25)
+        dump = json.loads(show.dump_params())
+        self.assertAlmostEqual(dump["attack"], 0.25, places=3)
+        self.assertIsInstance(dump["hold"], bool)
 
     def test_a_colour_knob_round_trips_as_hex(self):
         show = self._show()
-        try:
-            time.sleep(0.6)
-            self.assertEqual(show.get_param("color").value, "#ffffff")
+        self.assertEqual(show.get_param("color").value, "#ffffff")
 
-            show.set_param("color", "#0040ff")
-            self.assertEqual(show.get_param("color").value, "#0040ff")
-        finally:
-            show.stop()
+        show.set_param("color", "#0040ff")
+        self.assertEqual(show.get_param("color").value, "#0040ff")
 
     def _peak_colour(self, state, knobs):
         """The lit frame's colour, on the rig, with those knobs set."""
         frames = []
-        show = ShowController(SHOW, dry_run=True, pattern="audio", midi="", bpm=128.0,
-                              on_frame=frames.append, emit_rate=40.0)
-        try:
-            show.set_state(state)
-            for name, value in knobs.items():
-                show.set_param(name, value)
-            time.sleep(0.8)         # past the cross-fade
-            frames.clear()
-            time.sleep(1.0)
-        finally:
-            show.stop()
+        show = self.running_show(SHOW, pattern="audio", midi="", bpm=128.0,
+                                 on_frame=frames.append, emit_rate=40.0)
+        show.set_state(state)
+        for name, value in knobs.items():
+            show.set_param(name, value)
+        self.settle(0.8)         # past the cross-fade
+        frames.clear()
+        self.settle(1.0)         # a beat and change, to catch a lit frame
         self.assertTrue(frames, "no frames arrived")
         return max(frames, key=lambda frame: max(frame[0]))[0]
 
@@ -5007,167 +4758,134 @@ class LookParams(unittest.TestCase):
 
     def test_a_colour_that_is_not_one_is_rejected_without_dying(self):
         show = self._show()
-        try:
-            time.sleep(0.6)
-            with self.assertRaises(ShowError):
-                show.set_param("color", "banana")
-            self.assertTrue(show.is_running)
+        with self.assertRaises(ShowError):
+            show.set_param("color", "banana")
+        self.assertTrue(show.is_running)
 
-            # And the other way round: a number is not a colour either.
-            with self.assertRaises(ShowError):
-                show.set_param("color", 0.5)
-            self.assertTrue(show.is_running)
-        finally:
-            show.stop()
+        # And the other way round: a number is not a colour either.
+        with self.assertRaises(ShowError):
+            show.set_param("color", 0.5)
+        self.assertTrue(show.is_running)
 
     def test_a_hex_string_is_not_a_number_knob(self):
         """`param attack #ff0000` is a mistake, not a conversion."""
         show = self._show()
-        try:
-            time.sleep(0.6)
-            with self.assertRaises(ShowError):
-                show.set_param("attack", "#ff0000")
-            self.assertTrue(show.is_running)
-        finally:
-            show.stop()
+        with self.assertRaises(ShowError):
+            show.set_param("attack", "#ff0000")
+        self.assertTrue(show.is_running)
 
     def test_dump_keeps_a_colour_as_a_string(self):
         """The point of a dump is that it can be pasted back into a config."""
         show = self._show()
-        try:
-            time.sleep(0.6)
-            show.set_param("color", "#123456")
-            dump = json.loads(show.dump_params())
-            self.assertEqual(dump["color"], "#123456")
-        finally:
-            show.stop()
+        show.set_param("color", "#123456")
+        dump = json.loads(show.dump_params())
+        self.assertEqual(dump["color"], "#123456")
 
     def test_a_plain_pattern_offers_the_three_it_has(self):
         show = self._show()
-        try:
-            time.sleep(0.6)
-            show.set_pattern("rainbow")
-            time.sleep(0.5)
-            self.assertEqual([param.name for param in show.params],
-                             ["speed", "width", "brightness"])
-        finally:
-            show.stop()
+        show.set_pattern("rainbow")
+        self.settle_until(
+            lambda: [param.name for param in show.params] ==
+                    ["speed", "width", "brightness"],
+            message="the plain pattern's three knobs")
 
 
-class ScannerKnobs(unittest.TestCase):
+class ScannerKnobs(ShowTest):
     """The scanner looks' tuning surface - the knobs the curve editor drives."""
 
-    @classmethod
-    def setUpClass(cls):
-        executable_or_skip()
-
     def _show(self, **kwargs):
-        return ShowController(SCANNER, dry_run=True, midi="", on_frame=lambda f: None,
-                              emit_rate=20.0, **kwargs)
+        return self.running_show(SCANNER, midi="", emit_rate=20.0, **kwargs)
+
+    def cue(self, show, state, knobs):
+        """Put `show` on `state` and wait for exactly `knobs` to be announced.
+
+        Which is also the assertion: `until_knobs` fails, with both lists in
+        the message, if the cue announces anything else. It used to be a flat
+        0.8s sleep and an assertEqual, which cost the same whether the
+        announcement took 60ms or nearly all of it.
+        """
+        since = show.params_revision
+        show.set_state(state)
+        self.until_knobs(show, knobs, since)
 
     def test_the_boot_swell_has_two_independent_knobs(self):
-        show = self._show()
-        try:
-            show.set_state("boot")
-            time.sleep(0.8)
-            self.assertEqual([param.name for param in show.params],
-                             ["boot_time", "noise"])
-        finally:
-            show.stop()
+        self.cue(self._show(), "boot", ["boot_time", "noise"])
 
     def test_the_recording_states_share_one_wave_and_its_knobs(self):
         """Unified look, unified surface: both states offer the same wave."""
+        wave = ["wave_scale", "rise_speed"]
         show = self._show()
-        try:
-            show.set_state("scan_item_detected_filter")
-            time.sleep(0.8)
-            wave = [param.name for param in show.params]
-            self.assertEqual(wave, ["wave_scale", "rise_speed"])
-
-            show.set_state("audio_playback_recording")
-            time.sleep(0.8)
-            self.assertEqual([param.name for param in show.params], wave)
-        finally:
-            show.stop()
+        self.cue(show, "scan_item_detected_filter", wave)
+        self.cue(show, "audio_playback_recording", wave)
 
     def test_the_recording_flow_offers_its_shapes(self):
         show = self._show()
-        try:
-            # the breath, and how much of the tower it gives to the shadow
-            show.set_state("record_arm")
-            time.sleep(0.8)
-            self.assertEqual([param.name for param in show.params],
-                             ["rate", "floor", "gain", "shadow"])
 
-            # the fire's own knobs, plus the douse the game cues
-            show.set_state("cleanse_arm")
-            time.sleep(0.8)
-            self.assertEqual([param.name for param in show.params],
-                             ["cooling", "sparking", "spread", "rise", "emitter", "douse"])
+        # the breath, and how much of the tower it gives to the shadow
+        self.cue(show, "record_arm", ["rate", "floor", "gain", "shadow"])
 
-            show.set_state("record_active")
-            time.sleep(0.8)
-            self.assertEqual([param.name for param in show.params],
-                             ["orbit_rate", "tail"])
+        # the fire's own knobs, plus the douse the game cues
+        self.cue(show, "cleanse_arm",
+                 ["cooling", "sparking", "spread", "rise", "emitter", "douse"])
 
-            show.set_state("record_countdown")
-            time.sleep(0.8)
-            self.assertEqual([param.name for param in show.params],
-                             ["sweep", "edge", "floor"])
-        finally:
-            show.stop()
+        self.cue(show, "record_active", ["orbit_rate", "tail"])
+        self.cue(show, "record_countdown", ["sweep", "edge", "floor"])
 
     def test_a_scanner_knob_reaches_the_render(self):
         """floor 1, gain 0 flattens record_saved's breath to a steady green."""
         frames = []
-        show = ShowController(SCANNER, dry_run=True, midi="", on_frame=frames.append,
-                              emit_rate=20.0)
-        try:
-            show.set_state("record_saved")
-            time.sleep(1.2)          # past the cue blend
-            show.set_param("floor", 1.0)
-            show.set_param("gain", 0.0)
-            time.sleep(0.3)
-            frames.clear()
-            time.sleep(0.8)
+        show = self._show(on_frame=frames.append)
+        self.cue(show, "record_saved", ["rate", "floor", "gain", "shadow"])
 
-            greens = [frame[0][1] for frame in frames]
-            self.assertGreater(min(greens), 200, "not at full green")
-            self.assertLessEqual(max(greens) - min(greens), 2, "still breathing")
-        finally:
-            show.stop()
+        show.set_param("floor", 1.0)
+        show.set_param("gain", 0.0)
+
+        # The knobs are announced before the cue has finished blending in, so
+        # the flat green has to be waited for rather than assumed - and only
+        # then is the span worth measuring. "Steady" is a claim about a span,
+        # so that part still has to watch one.
+        self.settle_until(lambda: frames and frames[-1][0][1] > 200,
+                          timeout=6.0, message="the cue to blend up to full green")
+        frames.clear()
+        self.settle(0.8)
+
+        greens = [frame[0][1] for frame in frames]
+        self.assertGreater(min(greens), 200, "not at full green")
+        self.assertLessEqual(max(greens) - min(greens), 2, "still breathing")
 
     def test_the_countdown_fills_the_ring_and_the_douse_puts_the_fire_out(self):
         """The ring's top pixel lights first and its last pixel last; after
         the douse cue nothing new ignites, so the fire goes dark."""
         frames = []
-        show = ShowController(SCANNER, dry_run=True, midi="", on_frame=frames.append,
-                              emit_rate=20.0)
-        try:
-            show.set_state("record_countdown")
-            time.sleep(0.6)
-            early = frames[-1]
-            # pixel 0 is the top of the ring, pixel 34 just before it
-            self.assertGreater(early[0][0], 100, "the top pixel is not lit early")
-            self.assertLess(early[34][0], 40, "the last pixel is lit early")
-            time.sleep(2.8)
-            late = frames[-1]
-            self.assertGreater(late[34][0], 200, "the ring did not fill")
+        show = self._show(on_frame=frames.append)
 
-            show.set_state("cleanse_arm")
-            time.sleep(1.0)
-            show.trigger("scanner.cleanse.douse")
-            time.sleep(4.5)          # the longest flame burns out
-            frames.clear()
-            time.sleep(0.5)
-            brightest = max(max(channel for pixel in frame[:35] for channel in pixel)
-                            for frame in frames)
-            self.assertLess(brightest, 8, "the fire is still burning after the douse")
-        finally:
-            show.stop()
+        self.cue(show, "record_countdown", ["sweep", "edge", "floor"])
+        # pixel 0 is the top of the ring, pixel 34 just before it
+        early = self.settle_until(lambda: frames and frames[-1][0][0] > 100,
+                                  message="the top pixel to light")
+        self.assertLess(frames[-1][34][0], 40, "the last pixel is lit early")
+
+        # The fill is the look's own three seconds; there is nothing to do but
+        # watch it happen.
+        self.settle_until(lambda: frames[-1][34][0] > 200, timeout=6.0,
+                          message="the ring to fill")
+
+        self.cue(show, "cleanse_arm",
+                 ["cooling", "sparking", "spread", "rise", "emitter", "douse"])
+        self.settle(1.0)             # let the fire catch before dousing it
+        show.trigger("scanner.cleanse.douse")
+
+        # Nothing new ignites after the douse, so this is the longest flame
+        # already alight burning out - real time, and no event to wait on.
+        self.settle(4.5)
+        frames.clear()
+        self.settle(0.5)
+        brightest = max(max(channel for pixel in frame[:35] for channel in pixel)
+                        for frame in frames)
+        self.assertLess(brightest, 8, "the fire is still burning after the douse")
 
 
-class TheCurveProtocol(unittest.TestCase):
+class TheCurveProtocol(ShowTest):
     """Live shapes over the wire: CURVE announcements and the `curve` command.
 
     The point of the whole channel: a look's envelope is an AutomationCurve,
@@ -5175,82 +4893,62 @@ class TheCurveProtocol(unittest.TestCase):
     back - so the protocol must announce shapes with the knobs and accept a
     whole shape at once.
     """
-
-    @classmethod
-    def setUpClass(cls):
-        executable_or_skip()
-
     def test_the_pulse_announces_its_envelope(self):
-        show = ShowController(SHOW, dry_run=True, pattern="audio", midi="", on_frame=lambda f: None,
-                              emit_rate=20.0)
-        try:
-            # The shape under test is the beat flash's, which is a cue on the
-            # bus while the show's own list is empty - see beatPulseState.
-            show.set_state("beat_pulse")
-            time.sleep(0.6)
-            self.assertIn("envelope", show.curves)
-            self.assertGreaterEqual(len(show.curves["envelope"]), 3)
-        finally:
-            show.stop()
+        show = self.running_show(SHOW, pattern="audio", midi="", emit_rate=20.0)
+        # The shape under test is the beat flash's, which is a cue on the
+        # bus while the show's own list is empty - see beatPulseState.
+        show.set_state("beat_pulse")
+        time.sleep(0.6)
+        self.assertIn("envelope", show.curves)
+        self.assertGreaterEqual(len(show.curves["envelope"]), 3)
 
     def test_a_drawn_shape_lands_and_echoes(self):
-        show = ShowController(SHOW, dry_run=True, pattern="audio", midi="", on_frame=lambda f: None,
-                              emit_rate=20.0)
-        try:
-            # The shape under test is the beat flash's, which is a cue on the
-            # bus while the show's own list is empty - see beatPulseState.
-            show.set_state("beat_pulse")
-            time.sleep(0.6)
-            show.set_curve("envelope", [
-                (0.0, 0.0, None),
-                (0.1, 1.0, "EaseOutCubic"),
-                (0.6, 0.0, None),
-            ])
+        show = self.running_show(SHOW, pattern="audio", midi="", emit_rate=20.0)
+        # The shape under test is the beat flash's, which is a cue on the
+        # bus while the show's own list is empty - see beatPulseState.
+        show.set_state("beat_pulse")
+        time.sleep(0.6)
+        show.set_curve("envelope", [
+            (0.0, 0.0, None),
+            (0.1, 1.0, "EaseOutCubic"),
+            (0.6, 0.0, None),
+        ])
 
-            keys = show.curves["envelope"]
-            self.assertEqual(len(keys), 3)
-            self.assertAlmostEqual(keys[1][0], 0.1, places=4)
-            self.assertAlmostEqual(keys[1][1], 1.0, places=4)
-            self.assertEqual(keys[1][2], "EaseOutCubic")
-            self.assertIsNone(keys[0][2])
-        finally:
-            show.stop()
+        keys = show.curves["envelope"]
+        self.assertEqual(len(keys), 3)
+        self.assertAlmostEqual(keys[1][0], 0.1, places=4)
+        self.assertAlmostEqual(keys[1][1], 1.0, places=4)
+        self.assertEqual(keys[1][2], "EaseOutCubic")
+        self.assertIsNone(keys[0][2])
 
     def test_a_shape_reaches_the_render(self):
         """Flatten the boot swell's brightness curve to zero: the rig darkens."""
         frames = []
-        show = ShowController(SCANNER, dry_run=True, midi="", on_frame=frames.append,
+        show = self.running_show(SCANNER, midi="", on_frame=frames.append,
                               emit_rate=20.0)
-        try:
-            show.set_state("boot")
-            time.sleep(1.2)
-            self.assertIn("brightness", show.curves)
-            self.assertIn("noise", show.curves)
+        show.set_state("boot")
+        time.sleep(1.2)
+        self.assertIn("brightness", show.curves)
+        self.assertIn("noise", show.curves)
 
-            show.set_curve("brightness", [(0.0, 0.0, None), (1.0, 0.0, None)])
-            time.sleep(0.3)
-            frames.clear()
-            time.sleep(0.5)
+        show.set_curve("brightness", [(0.0, 0.0, None), (1.0, 0.0, None)])
+        time.sleep(0.3)
+        frames.clear()
+        time.sleep(0.5)
 
-            self.assertTrue(frames)
-            self.assertLess(max(max(color) for frame in frames for color in frame), 20,
-                            "still lit after the swell was drawn flat")
-        finally:
-            show.stop()
+        self.assertTrue(frames)
+        self.assertLess(max(max(color) for frame in frames for color in frame), 20,
+                        "still lit after the swell was drawn flat")
 
     def test_an_unknown_curve_is_refused_without_dying(self):
-        show = ShowController(SHOW, dry_run=True, pattern="audio", midi="", on_frame=lambda f: None,
-                              emit_rate=20.0)
-        try:
-            # The shape under test is the beat flash's, which is a cue on the
-            # bus while the show's own list is empty - see beatPulseState.
-            show.set_state("beat_pulse")
-            time.sleep(0.6)
-            with self.assertRaises(ShowError):
-                show.set_curve("not_a_curve", [(0.0, 0.0, None), (1.0, 1.0, None)])
-            self.assertTrue(show.is_running)
-        finally:
-            show.stop()
+        show = self.running_show(SHOW, pattern="audio", midi="", emit_rate=20.0)
+        # The shape under test is the beat flash's, which is a cue on the
+        # bus while the show's own list is empty - see beatPulseState.
+        show.set_state("beat_pulse")
+        time.sleep(0.6)
+        with self.assertRaises(ShowError):
+            show.set_curve("not_a_curve", [(0.0, 0.0, None), (1.0, 1.0, None)])
+        self.assertTrue(show.is_running)
 
     def test_the_announcement_lands_whole(self):
         """When the revision moves, the knobs AND curves are all there.
@@ -5259,63 +4957,51 @@ class TheCurveProtocol(unittest.TestCase):
         could rebuild from a half-filled list and a just-cleared curve dict -
         which read as the envelope target flickering out of the aim menu.
         """
-        show = ShowController(SHOW, dry_run=True, pattern="audio", midi="", on_frame=lambda f: None,
-                              emit_rate=20.0)
-        try:
-            # The shape under test is the beat flash's, which is a cue on the
-            # bus while the show's own list is empty - see beatPulseState.
-            show.set_state("beat_pulse")
-            for _ in range(100):
-                if show.params_revision > 0:
-                    break
-                time.sleep(0.05)
+        show = self.running_show(SHOW, pattern="audio", midi="", emit_rate=20.0)
+        # The shape under test is the beat flash's, which is a cue on the
+        # bus while the show's own list is empty - see beatPulseState.
+        show.set_state("beat_pulse")
+        for _ in range(100):
+            if show.params_revision > 0:
+                break
+            time.sleep(0.05)
 
-            self.assertGreater(show.params_revision, 0)
-            self.assertTrue(show.params, "revision moved before the knobs landed")
-            self.assertIn("envelope", show.curves,
-                          "revision moved before the curves landed")
-        finally:
-            show.stop()
+        self.assertGreater(show.params_revision, 0)
+        self.assertTrue(show.params, "revision moved before the knobs landed")
+        self.assertIn("envelope", show.curves,
+                      "revision moved before the curves landed")
 
     def test_reset_restores_the_cue(self):
         """Tune a knob and redraw the envelope; reset puts both back."""
-        show = ShowController(SHOW, dry_run=True, pattern="audio", midi="", on_frame=lambda f: None,
-                              emit_rate=20.0)
-        try:
-            # The shape under test is the beat flash's, which is a cue on the
-            # bus while the show's own list is empty - see beatPulseState.
-            show.set_state("beat_pulse")
-            time.sleep(0.6)
+        show = self.running_show(SHOW, pattern="audio", midi="", emit_rate=20.0)
+        # The shape under test is the beat flash's, which is a cue on the
+        # bus while the show's own list is empty - see beatPulseState.
+        show.set_state("beat_pulse")
+        time.sleep(0.6)
 
-            show.set_param("attack", 0.4)
-            show.set_curve("envelope", [(0.0, 0.0, None), (0.9, 1.0, None),
-                                        (2.0, 0.0, None)])
-            self.assertAlmostEqual(show.get_param("attack").value, 0.4, places=3)
+        show.set_param("attack", 0.4)
+        show.set_curve("envelope", [(0.0, 0.0, None), (0.9, 1.0, None),
+                                    (2.0, 0.0, None)])
+        self.assertAlmostEqual(show.get_param("attack").value, 0.4, places=3)
 
-            show.reset_look()
+        show.reset_look()
 
-            # the cue constructs attack 0.15; reset is the cue, not zero
-            self.assertAlmostEqual(show.get_param("attack").value, 0.15, places=3)
-            self.assertAlmostEqual(show.curves["envelope"][1][0], 0.15, places=3)
-        finally:
-            show.stop()
+        # the cue constructs attack 0.15; reset is the cue, not zero
+        self.assertAlmostEqual(show.get_param("attack").value, 0.15, places=3)
+        self.assertAlmostEqual(show.curves["envelope"][1][0], 0.15, places=3)
 
     def test_a_ninth_key_is_refused_whole(self):
         """Too many keys rejects the message; the look keeps its old shape."""
-        show = ShowController(SHOW, dry_run=True, pattern="audio", midi="", on_frame=lambda f: None,
-                              emit_rate=20.0)
-        try:
-            # The shape under test is the beat flash's, which is a cue on the
-            # bus while the show's own list is empty - see beatPulseState.
-            show.set_state("beat_pulse")
-            time.sleep(0.6)
-            before = show.curves["envelope"]
-            with self.assertRaises(ShowError):
-                show.set_curve("envelope",
-                               [(i * 0.1, 0.5, None) for i in range(9)])
-            self.assertEqual(show.curves["envelope"], before)
-        finally:
-            show.stop()
+        show = self.running_show(SHOW, pattern="audio", midi="", emit_rate=20.0)
+        # The shape under test is the beat flash's, which is a cue on the
+        # bus while the show's own list is empty - see beatPulseState.
+        show.set_state("beat_pulse")
+        time.sleep(0.6)
+        before = show.curves["envelope"]
+        with self.assertRaises(ShowError):
+            show.set_curve("envelope",
+                           [(i * 0.1, 0.5, None) for i in range(9)])
+        self.assertEqual(show.curves["envelope"], before)
 
 
 class TheCurveMirror(unittest.TestCase):
@@ -5324,7 +5010,6 @@ class TheCurveMirror(unittest.TestCase):
     The editor previews what the sculpture will play, so any drift between the
     two is a curve that was tuned against the wrong maths.
     """
-
     def test_an_empty_curve_is_zero(self):
         self.assertEqual(Curve().evaluate(1.0), 0.0)
 
@@ -5718,7 +5403,6 @@ class TheLaunchpad(unittest.TestCase):
     of keeping the protocol here rather than in the executable: the device is
     the part you cannot rely on having in front of you.
     """
-
     def test_programmer_mode_is_the_manual_s_bytes(self):
         # F0 00 20 29 02 0C 0E <mode> F7, mode 1 for Programmer, 0 for Live.
         self.assertEqual(launchpad.programmer_mode(True),
@@ -5788,7 +5472,6 @@ class TheActionChecks(unittest.TestCase):
     action answers for itself, the votes are counted in Mapping.is_live, and
     the only thing that cares *why* is whatever is drawing the picture.
     """
-
     def _at(self, pattern="mythos26", state="", syn=None):
         return midi_map.ActionContext(show=_FakeRig(pattern, state), syn=syn)
 
@@ -5886,7 +5569,6 @@ class ThePages(unittest.TestCase):
     the ones about that: two pages put different rows on the same pad, and a
     tab has to be a way of choosing between them rather than stacking them.
     """
-
     def _rig(self):
         return _RecorderRig()
 
@@ -6084,7 +5766,6 @@ class TheSynesthesiaState(unittest.TestCase):
     Two sources that do not rank equally: what this desk asked for, which is
     always available, and what the app announced, which is true.
     """
-
     def _at(self, syn):
         return midi_map.ActionContext(show=None, syn=syn)
 
