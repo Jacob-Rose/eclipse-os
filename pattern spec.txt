@@ -1,0 +1,75 @@
+ok, change, were going to have 16 patterns. this will be a new configuration called mythos-show.json
+these states should trigger synesthesia stages as well.
+optional and additive layers for bpm flashes and uv (or any others) should have a gui hookup, and having easy ways to customize per usage is good.
+
+each pattern should have three levels of intensity mapped to midi buttons as well, for low, medium, and high. (maybe do this instead of bpm enabled/disabled?)
+
+1. 
+pattern
+ desc - simple blue green noise pattern matching the cyan to dark blue in the scene.
+
+synesthesia ~ 
+ scene - Neuron Proximitors
+ media - none
+
+
+
+2. 
+pattern
+ desc - one parameter react to presence of song, with optional bpm flash control on midi.
+param ~ (synesthesia ~ mid presence) -> red background layer ( clamp to 0.2 alpha lowest)
+additional layer ~ bpm matched flash with curve and bpm trigger system, ability to set color
+uv -> off
+synesthesia ~ 
+ scene - voronoi geode
+ media - none
+
+3. 
+pattern -
+ matrix rain effect, possibly make multicolored rain
+ uv -> cycle pattern between rgb rainbow so its fluxuating but always on.
+synesthesia ~ VideoFX_1 (an empty scene)
+media -> video (alien-message.mp4)
+
+4.
+pattern ~ fire pattern 2012 effect
+additional layer ~ 
+uv ~ off
+synesthesia ~ dynamical flame
+ 
+
+5.
+pattern - 
+  on kick hit change color
+
+synesthesia - 
+  glitch
+  media -> video (alien-message.mp4)
+
+6.
+pattern
+ simple pink / purple noise (match shader aesthetic)
+additionl layer ~ white flash on bpm.
+synesthesia - Fire Tunnel
+
+
+7. pattern ~ purple/pink default based on presence, with a min of 0.3f. flashes green on kick hit. (try to match shader aesthetic)
+additional layer ~ 
+uv ~ on kick
+synesthesia ~ Filter Blown v2
+media - 275593_medium.mp4
+
+9. pattern ~ punk purple white gradient strobe effect bpm reactive, pretty bright (try to match shader aesthetic)
+additional layer - bpm kick layers and on beat layers for various gradient flashes
+uv ~ on kick
+synesthesia - Milk, Honey, Smoke, Bile
+
+
+
+
+11. pattern ~ cycling wave gradients moving top down with canyon orange browns greens and blues as we fly through the area.
+param - on bpm hit we fade to a rainbow effect among all the lights.
+additional layer ~ 
+uv ~
+synesthesia ~ Vibe Thresholds
+media - 361331_medium.mp4

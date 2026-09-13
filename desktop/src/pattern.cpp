@@ -504,9 +504,14 @@ namespace
             return std::unique_ptr<Pattern>(makeObeliskStateMachine().release());
         };
 
-        // --- the UV par's three modes, for a layer over the show --------
+        // --- the UV par's modes, for a layer over the show ---------------
         table["uv"] = []() {
             return std::unique_ptr<Pattern>(makeUvStateMachine().release());
+        };
+
+        // --- the bpm flash, for an additive layer over the whole rig -----
+        table["flash"] = []() {
+            return std::unique_ptr<Pattern>(makeFlashStateMachine().release());
         };
 
         // --- the audio bus, as cues: one per channel -----------------------

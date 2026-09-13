@@ -82,8 +82,10 @@ PATTERN_NAMES = (
     "obelisk",
     # the show: written for this rig, and beat-driven
     "mythos26",
-    # the UV par's three modes, for a layer over the show
+    # the UV par's modes, for a layer over the show
     "uv",
+    # the bpm flash, for an additive layer over the whole rig
+    "flash",
     # the audio bus, one cue per channel: an instrument rather than a look.
     # See edmx/audio_meter.h and AUDIO_STATES.
     "audio",
@@ -140,22 +142,26 @@ AUDIO_STATES = AUDIO_CHANNELS + ("beat_pulse",)
 #: mythos26's states, in the order its state machine lists them. Must stay in
 #: step with makeMythos26StateMachine() in desktop/src/mythos26.cpp.
 #:
-#: Twelve placeholders waiting for a look - the show is being written from
-#: scratch, and the looks that used to be here are in GENERIC_STATES. Rename a
-#: slot here when you rename it there.
+#: Sixteen cues, numbered the way "pattern spec.txt" numbers them; the ones
+#: the spec has not named yet are placeholders. Rename a slot here when you
+#: rename it there.
 MYTHOS26_STATES = (
-    "slot_1",
-    "slot_2",
-    "slot_3",
-    "slot_4",
-    "slot_5",
-    "slot_6",
-    "slot_7",
-    "slot_8",
+    "neuron",    # 1. cyan into deep blue noise
+    "geode",     # 2. red riding the mid presence, the flash layer on
+    "rain",      # 3. matrix rain, every drop its own colour
+    "fire",      # 4. fire 2012
+    "glitch",    # 5. a new colour on every kick
+    "tunnel",    # 6. pink into purple noise, the flash layer on
+    "blown",     # 7. purple riding the mids, green on the kick, the UV on the kick
+    "punk",      # 8. purple into white, strobing on the beat, the flash and UV on
     "slot_9",
-    "slot_10",
+    "canyon",    # 10. canyon bands pouring down, a rainbow on the beat
     "slot_11",
     "slot_12",
+    "slot_13",
+    "slot_14",
+    "slot_15",
+    "slot_16",
 )
 
 #: The generic looks' states, in machine order. Must stay in step with
@@ -194,6 +200,15 @@ UV_STATES = (
     "off",
     "flash",
     "on",
+    "kick",
+    "rainbow",
+)
+
+#: The bpm flash layer's modes. Must stay in step with
+#: makeFlashStateMachine() in desktop/src/mythos26.cpp.
+FLASH_STATES = (
+    "off",
+    "flash",
 )
 
 #: Which patterns are state machines, and what states each offers. Used to
@@ -205,6 +220,7 @@ STATE_MACHINE_STATES = {
     "generic": GENERIC_STATES,
     "obelisk": OBELISK_STATES,
     "uv": UV_STATES,
+    "flash": FLASH_STATES,
 }
 
 ADDRESSING_MODES = ("one", "zero")
@@ -871,6 +887,91 @@ class Device:
 
 
 @dataclass
+class Cue:
+    """What one state of the show asks of the rest of the room.
+
+    A state is a look on the rig and nothing else; this is the rest of the
+    cue - the visualiser's scene and media, and where each layer should be.
+    Assembled at the desk rather than in the executable because two of the
+    three are OSC to another machine, which the executable does not speak,
+    and the third is a protocol line it already takes.
+
+    `layers` is by layer name. A layer left out is left alone, which is the
+    difference between "this cue does not care about the UV" and "this cue
+    turns the UV off"; the show's own table names every layer on every cue
+    for exactly that reason.
+    """
+
+    state: str = ""
+    scene: str = ""
+    media: str = ""
+    layers: Dict[str, str] = field(default_factory=dict)
+
+    @classmethod
+    def from_dict(cls, state: str, data: Any, layer_names: Sequence[str]) -> "Cue":
+        if not isinstance(data, dict):
+            raise ConfigError(f"cues['{state}'] must be an object")
+        unknown = set(data) - {"scene", "media", "layers"}
+        if unknown:
+            raise ConfigError(
+                f"cues['{state}']: unexpected keys {sorted(unknown)}; expected scene, media, layers")
+        layers_raw = data.get("layers") or {}
+        if not isinstance(layers_raw, dict):
+            raise ConfigError(f"cues['{state}'].layers must be an object of layer -> state")
+        layers: Dict[str, str] = {}
+        for layer, wanted in layers_raw.items():
+            if layer not in layer_names:
+                raise ConfigError(
+                    f"cues['{state}'] names layer '{layer}', which this config does not declare"
+                    + (f" (have: {', '.join(layer_names)})" if layer_names else ""))
+            layers[str(layer)] = str(wanted)
+        return cls(state=state,
+                   scene=str(data.get("scene", "") or ""),
+                   media=str(data.get("media", "") or ""),
+                   layers=layers)
+
+    def to_dict(self) -> Dict[str, Any]:
+        out: Dict[str, Any] = {}
+        if self.scene:
+            out["scene"] = self.scene
+        if self.media:
+            out["media"] = self.media
+        if self.layers:
+            out["layers"] = dict(self.layers)
+        return out
+
+    def actions(self, pattern: str = "") -> List[Dict[str, Any]]:
+        """The cue as the actions a pad fires, in the order they should run.
+
+        The same shape midi_map.Action.to_dict writes, so a map can carry a
+        cue verbatim and the viewer can run one through the same registry:
+        the machine, the state, each layer's state, then the visualiser -
+        the rig first, because a dead visualiser must not cost it the cue.
+        """
+        out: List[Dict[str, Any]] = []
+        if pattern:
+            out.append({"action": "pattern", "params": {"name": pattern}})
+        if self.state:
+            out.append({"action": "state", "params": {"name": self.state}})
+        for layer, wanted in self.layers.items():
+            out.append({"action": "layer", "params": {"layer": layer, "name": wanted}})
+        if self.scene:
+            out.append({"action": "syn_scene", "params": {"scene": self.scene, "preset": ""}})
+        if self.media:
+            out.append({"action": "syn_media", "params": {"name": self.media}})
+        return out
+
+
+def cue_actions(config: "Config", state: str) -> List[Dict[str, Any]]:
+    """The actions for `state` under `config`: its cue if it has one, else
+    the state alone. What the surface and the viewer both fire."""
+    cue = config.cues.get(state)
+    if cue is None:
+        cue = Cue(state=state)
+    return cue.actions(pattern=config.pattern.name)
+
+
+@dataclass
 class Config:
     """An environment: the devices in a room, and the show running on them.
 
@@ -902,6 +1003,13 @@ class Config:
     #: dicts (param, channel, low, high, slew). The layers carry their own in
     #: their entries. See ModConfig in desktop/include/edmx/config.h.
     mods: List[Dict[str, Any]] = field(default_factory=list)
+
+    #: The cue table: what each state of the show asks of the rest of the
+    #: room, by state name - the Synesthesia scene and media, and the state
+    #: each layer takes. See `Cue`, and cue_actions() for how one becomes the
+    #: actions a pad or a button fires. The executable never reads this: a
+    #: state is a look on the rig, and the cue around it is the desk's.
+    cues: Dict[str, "Cue"] = field(default_factory=dict)
 
     # -- the single-device view -------------------------------------------
     #
@@ -1063,6 +1171,27 @@ class Config:
         self.midi.validate()
         self.pattern.validate()
 
+        # A cue names a state of the show's own machine. Checked only when the
+        # machine is one this package knows the states of; the executable is
+        # the authority on any other.
+        known_states = STATE_MACHINE_STATES.get(self.pattern.name)
+        if known_states is not None:
+            for state in self.cues:
+                if state not in known_states:
+                    raise ConfigError(
+                        f"cues: '{state}' is not a state of '{self.pattern.name}' "
+                        f"(have: {', '.join(known_states)})")
+        layer_states = {layer["name"]: STATE_MACHINE_STATES.get(layer["pattern"])
+                        for layer in self.layers}
+        for state, cue in self.cues.items():
+            for layer, wanted in cue.layers.items():
+                known = layer_states.get(layer)
+                if known is not None and wanted not in known:
+                    raise ConfigError(
+                        f"cues: '{state}' puts layer '{layer}' at '{wanted}', which is not "
+                        f"a state of its '{next(l['pattern'] for l in self.layers if l['name'] == layer)}' "
+                        f"(have: {', '.join(known)})")
+
         if not self.devices:
             raise ConfigError("an environment needs at least one device")
         if not self.fixtures:
@@ -1135,6 +1264,8 @@ class Config:
             show["mods"] = [dict(mod) for mod in self.mods]
         if self.layers:
             show["layers"] = [dict(layer) for layer in self.layers]
+        if self.cues:
+            show["cues"] = {name: cue.to_dict() for name, cue in self.cues.items()}
 
         # One device round-trips as the single-rig shape, because that is what
         # it is and writing it as an environment would mean emitting a separate
@@ -1428,6 +1559,15 @@ class Config:
                 )
             config.layers.append(layer)
 
+        # The cue table, checked against the layers above and, once the show
+        # is known, its states - see validate().
+        config.cues = {}
+        raw_cues = data.get("cues") or {}
+        if not isinstance(raw_cues, dict):
+            raise ConfigError("cues must be an object of state name -> cue")
+        layer_names = [layer["name"] for layer in config.layers]
+        for state, entry in raw_cues.items():
+            config.cues[str(state)] = Cue.from_dict(str(state), entry, layer_names)
 
         # ---- devices ----------------------------------------------------
         stated_devices = data.get("devices")

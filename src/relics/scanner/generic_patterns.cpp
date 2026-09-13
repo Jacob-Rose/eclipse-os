@@ -45,26 +45,25 @@ namespace
         return HSV(60.0f, 1.0f - (h - 2.0f / 3.0f) * 3.0f * 0.7f, 1.0f);
     }
 
-    /* Two-lattice value noise to 0..1, smooth in both axes - hash01 on the
-    * integer corners, smoothstepped bilinear between them. */
-    float valueNoise(float x, float y)
-    {
-        const int ix = static_cast<int>(std::floor(x));
-        const int iy = static_cast<int>(std::floor(y));
-        float fx = x - ix;
-        float fy = y - iy;
-        fx = fx * fx * (3.0f - 2.0f * fx);
-        fy = fy * fy * (3.0f - 2.0f * fy);
+}
 
-        const auto corner = [&](int cx, int cy) {
-            return hash01(static_cast<uint32_t>(cx * 311 + cy * 57));
-        };
+float scanner::valueNoise(float x, float y)
+{
+    const int ix = static_cast<int>(std::floor(x));
+    const int iy = static_cast<int>(std::floor(y));
+    float fx = x - ix;
+    float fy = y - iy;
+    fx = fx * fx * (3.0f - 2.0f * fx);
+    fy = fy * fy * (3.0f - 2.0f * fy);
 
-        return lerp(
-            lerp(corner(ix, iy),     corner(ix + 1, iy),     fx),
-            lerp(corner(ix, iy + 1), corner(ix + 1, iy + 1), fx),
-            fy);
-    }
+    const auto corner = [&](int cx, int cy) {
+        return hash01(static_cast<uint32_t>(cx * 311 + cy * 57));
+    };
+
+    return lerp(
+        lerp(corner(ix, iy),     corner(ix + 1, iy),     fx),
+        lerp(corner(ix, iy + 1), corner(ix + 1, iy + 1), fx),
+        fy);
 }
 
 // ============================================================================
@@ -207,10 +206,14 @@ void Pattern_Generic_MatrixRain::render(HSVStripNode* inNode, HSV& inOutColor) c
         + static_cast<uint32_t>(glyphCell * 7 + churnStep * 131));
     const float churn = 1.0f - churnHash * flicker;
 
+    // the drop's own hue: the green, pushed round the wheel by a hash of
+    // the drop so the tail and head agree, as far as hue_spread allows
+    const float hue = std::fmod(120.0f + hueSpread * 360.0f * hash01(litSeed * 7u + 3u), 360.0f);
+
     // the head is the freshly written glyph: white-hot, never churned, and
     // blending on headness so it fades out smoothly in both axes
     inOutColor = HSV(
-        120.0f,
+        hue,
         lerp(1.0f, 0.35f, headness),
         brightness * lerp(0.8f * churn, 1.0f, headness));
 }
@@ -223,6 +226,7 @@ void Pattern_Generic_MatrixRain::reflect(ecore::PropertyBag& bag)
     bag.add("width", dropWidth, 0.3f, 2.0f);
     bag.add("flicker", flicker, 0.0f, 1.0f);
     bag.add("churn_rate", churnRate, 1.0f, 20.0f);
+    bag.add("hue_spread", hueSpread, 0.0f, 1.0f);
 }
 
 // ============================================================================

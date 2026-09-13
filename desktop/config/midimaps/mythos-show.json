@@ -1,0 +1,851 @@
+{
+  "version": 2,
+  "opens_on": "",
+  "mappings": [
+    {
+      "label": "mythos26 - neuron",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 11
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "mythos26"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "neuron"
+          }
+        },
+        {
+          "action": "layer",
+          "params": {
+            "layer": "flash",
+            "name": "off"
+          }
+        },
+        {
+          "action": "layer",
+          "params": {
+            "layer": "uv",
+            "name": "off"
+          }
+        },
+        {
+          "action": "syn_scene",
+          "params": {
+            "scene": "Neuron Proximitors",
+            "preset": ""
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "",
+      "colour": 41
+    },
+    {
+      "label": "mythos26 - geode",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 12
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "mythos26"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "geode"
+          }
+        },
+        {
+          "action": "layer",
+          "params": {
+            "layer": "flash",
+            "name": "flash"
+          }
+        },
+        {
+          "action": "layer",
+          "params": {
+            "layer": "uv",
+            "name": "off"
+          }
+        },
+        {
+          "action": "syn_scene",
+          "params": {
+            "scene": "Voronoi Geode",
+            "preset": ""
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "",
+      "colour": 41
+    },
+    {
+      "label": "mythos26 - rain",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 13
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "mythos26"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "rain"
+          }
+        },
+        {
+          "action": "layer",
+          "params": {
+            "layer": "flash",
+            "name": "off"
+          }
+        },
+        {
+          "action": "layer",
+          "params": {
+            "layer": "uv",
+            "name": "rainbow"
+          }
+        },
+        {
+          "action": "syn_scene",
+          "params": {
+            "scene": "VideoFX_1",
+            "preset": ""
+          }
+        },
+        {
+          "action": "syn_media",
+          "params": {
+            "name": "alien-message.mp4"
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "",
+      "colour": 41
+    },
+    {
+      "label": "mythos26 - fire",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 14
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "mythos26"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "fire"
+          }
+        },
+        {
+          "action": "layer",
+          "params": {
+            "layer": "flash",
+            "name": "off"
+          }
+        },
+        {
+          "action": "layer",
+          "params": {
+            "layer": "uv",
+            "name": "off"
+          }
+        },
+        {
+          "action": "syn_scene",
+          "params": {
+            "scene": "Dynamical Flame",
+            "preset": ""
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "",
+      "colour": 41
+    },
+    {
+      "label": "mythos26 - glitch",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 15
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "mythos26"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "glitch"
+          }
+        },
+        {
+          "action": "layer",
+          "params": {
+            "layer": "flash",
+            "name": "off"
+          }
+        },
+        {
+          "action": "layer",
+          "params": {
+            "layer": "uv",
+            "name": "off"
+          }
+        },
+        {
+          "action": "syn_scene",
+          "params": {
+            "scene": "Glitch",
+            "preset": ""
+          }
+        },
+        {
+          "action": "syn_media",
+          "params": {
+            "name": "alien-message.mp4"
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "",
+      "colour": 41
+    },
+    {
+      "label": "mythos26 - tunnel",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 16
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "mythos26"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "tunnel"
+          }
+        },
+        {
+          "action": "layer",
+          "params": {
+            "layer": "flash",
+            "name": "flash"
+          }
+        },
+        {
+          "action": "layer",
+          "params": {
+            "layer": "uv",
+            "name": "off"
+          }
+        },
+        {
+          "action": "syn_scene",
+          "params": {
+            "scene": "Fire Tunnel",
+            "preset": ""
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "",
+      "colour": 41
+    },
+    {
+      "label": "mythos26 - blown",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 17
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "mythos26"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "blown"
+          }
+        },
+        {
+          "action": "layer",
+          "params": {
+            "layer": "flash",
+            "name": "off"
+          }
+        },
+        {
+          "action": "layer",
+          "params": {
+            "layer": "uv",
+            "name": "kick"
+          }
+        },
+        {
+          "action": "syn_scene",
+          "params": {
+            "scene": "Filter Blown v2",
+            "preset": ""
+          }
+        },
+        {
+          "action": "syn_media",
+          "params": {
+            "name": "275593_medium.mp4"
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "",
+      "colour": 41
+    },
+    {
+      "label": "mythos26 - punk",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 18
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "mythos26"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "punk"
+          }
+        },
+        {
+          "action": "layer",
+          "params": {
+            "layer": "flash",
+            "name": "flash"
+          }
+        },
+        {
+          "action": "layer",
+          "params": {
+            "layer": "uv",
+            "name": "kick"
+          }
+        },
+        {
+          "action": "syn_scene",
+          "params": {
+            "scene": "Milk, Honey, Smoke, Bile",
+            "preset": ""
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "",
+      "colour": 41
+    },
+    {
+      "label": "mythos26 - slot_9",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 21
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "mythos26"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "slot_9"
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "",
+      "colour": 41
+    },
+    {
+      "label": "mythos26 - canyon",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 22
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "mythos26"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "canyon"
+          }
+        },
+        {
+          "action": "layer",
+          "params": {
+            "layer": "flash",
+            "name": "off"
+          }
+        },
+        {
+          "action": "layer",
+          "params": {
+            "layer": "uv",
+            "name": "off"
+          }
+        },
+        {
+          "action": "syn_scene",
+          "params": {
+            "scene": "Vibe Thresholds",
+            "preset": ""
+          }
+        },
+        {
+          "action": "syn_media",
+          "params": {
+            "name": "361331_medium.mp4"
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "",
+      "colour": 41
+    },
+    {
+      "label": "mythos26 - slot_11",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 23
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "mythos26"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "slot_11"
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "",
+      "colour": 41
+    },
+    {
+      "label": "mythos26 - slot_12",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 24
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "mythos26"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "slot_12"
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "",
+      "colour": 41
+    },
+    {
+      "label": "mythos26 - slot_13",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 25
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "mythos26"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "slot_13"
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "",
+      "colour": 41
+    },
+    {
+      "label": "mythos26 - slot_14",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 26
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "mythos26"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "slot_14"
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "",
+      "colour": 41
+    },
+    {
+      "label": "mythos26 - slot_15",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 27
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "mythos26"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "slot_15"
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "",
+      "colour": 41
+    },
+    {
+      "label": "mythos26 - slot_16",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 28
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "mythos26"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "slot_16"
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "",
+      "colour": 41
+    },
+    {
+      "label": "mythos26 - intensity low",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 41
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "param",
+          "params": {
+            "name": "intensity",
+            "low": 0.0,
+            "high": 0.33,
+            "layer": ""
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "",
+      "colour": 9
+    },
+    {
+      "label": "mythos26 - intensity mid",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 42
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "param",
+          "params": {
+            "name": "intensity",
+            "low": 0.0,
+            "high": 0.66,
+            "layer": ""
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "",
+      "colour": 13
+    },
+    {
+      "label": "mythos26 - intensity high",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 43
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "param",
+          "params": {
+            "name": "intensity",
+            "low": 0.0,
+            "high": 1.0,
+            "layer": ""
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "",
+      "colour": 3
+    },
+    {
+      "label": "mythos26 - flash off",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 51
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "layer",
+          "params": {
+            "layer": "flash",
+            "name": "off"
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "",
+      "colour": 57
+    },
+    {
+      "label": "mythos26 - flash flash",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 52
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "layer",
+          "params": {
+            "layer": "flash",
+            "name": "flash"
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "",
+      "colour": 57
+    },
+    {
+      "label": "mythos26 - uv off",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 61
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "layer",
+          "params": {
+            "layer": "uv",
+            "name": "off"
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "",
+      "colour": 49
+    },
+    {
+      "label": "mythos26 - uv flash",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 62
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "layer",
+          "params": {
+            "layer": "uv",
+            "name": "flash"
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "",
+      "colour": 49
+    },
+    {
+      "label": "mythos26 - uv on",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 63
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "layer",
+          "params": {
+            "layer": "uv",
+            "name": "on"
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "",
+      "colour": 49
+    },
+    {
+      "label": "mythos26 - uv kick",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 64
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "layer",
+          "params": {
+            "layer": "uv",
+            "name": "kick"
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "",
+      "colour": 49
+    },
+    {
+      "label": "mythos26 - uv rainbow",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 65
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "layer",
+          "params": {
+            "layer": "uv",
+            "name": "rainbow"
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "",
+      "colour": 49
+    }
+  ]
+}

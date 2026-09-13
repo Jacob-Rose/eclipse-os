@@ -409,6 +409,39 @@ def _check_state(context, params):
     return current == name
 
 
+def _run_layer(context, params, value):
+    layer = str(params.get("layer", "")).strip()
+    name = str(params.get("name", "")).strip()
+    if not layer or not name:
+        return "layer: needs a layer and a state"
+    if context.show is None:
+        return "layer: no show"
+    layers = getattr(context.show, "layers", None) or {}
+    target = layers.get(layer)
+    if target is None:
+        # Not a refusal: a map written for the show runs against the bench
+        # rig too, and a pad for a layer the rig does not have is nothing
+        # rather than an error on every press.
+        return f"layer {layer}: not on this rig"
+    target.set_state(name)
+    return f"layer {layer} state {name}"
+
+
+def _check_layer(context, params):
+    layer = str(params.get("layer", "")).strip()
+    name = str(params.get("name", "")).strip()
+    if not layer or not name or context.show is None:
+        return None
+    layers = getattr(context.show, "layers", None) or {}
+    target = layers.get(layer)
+    if target is None:
+        return None
+    current = getattr(target, "current_state", "")
+    if not current:
+        return None
+    return current == name
+
+
 def _run_pattern(context, params, value):
     name = str(params.get("name", "")).strip()
     if not name:
@@ -649,6 +682,16 @@ register_action(ActionSpec(
     fields=[FieldSpec("name", "state", hint="a state of the running machine")],
     run=_run_state,
     check=_check_state,
+))
+
+register_action(ActionSpec(
+    key="layer", label="rig: layer state",
+    fields=[
+        FieldSpec("layer", "layer", hint="a layer of the running config, e.g. uv"),
+        FieldSpec("name", "state", hint="a state of that layer's machine"),
+    ],
+    run=_run_layer,
+    check=_check_layer,
 ))
 
 register_action(ActionSpec(

@@ -1342,6 +1342,59 @@ visualiser that is switched off.
 
 ---
 
+### the show's first layer: eight cues, two layers, and a cue table
+
+`config/mythos-show.json` is the show as a cue list, written from `pattern
+spec.txt` at the top of the checkout, and it replaces twelve placeholders
+with sixteen slots of which nine are looks. The readme has the table; what
+is worth recording here is the three decisions under it.
+
+**A cue is assembled at the desk, not in the executable.** The spec says a
+state "should trigger synesthesia stages as well", and the layers are "optional
+and additive" per cue. Two of those three things are OSC to another machine,
+which the executable does not speak, and the third is a protocol line it
+already takes - so the executable stays a rig that knows looks, and the
+`cues` block of the config is where a state becomes a cue: its scene, its
+media, and the state each layer takes. `Cue.actions()` turns one into the
+same action list a pad carries - machine, state, layers, then the visualiser,
+in that order so a dead visualiser costs the rig nothing - and both the
+generated map and the viewer's cue buttons fire it. One helper, two surfaces,
+and a hand-edited map still shows every action in the editor.
+
+Every written cue names *both* layers. A layer a cue leaves out is left
+alone, which is the right meaning for "this cue does not care" - but it
+would also mean the flash geode turned on staying on under rain, so the
+table says `off` where it means off. The placeholders have no entry and
+touch nothing, which is what a slot with nothing in it should do.
+
+**Every show look reads the music itself, through one `intensity` knob.** The
+mod table is the right tool for "a knob, driven by a channel" and the wrong
+one for "purple riding the mids with green landing on the kick": a mod
+survives a cue change, so one declared beside the show would drive every cue
+after it, and there is no mod for an edge. So `Pattern_Mythos_BusWash` and
+`Pattern_Mythos_KickColor` read `sharedAudioLevel()` the way the audio meter
+does, with the channel set per cue rather than reflected as a knob - a pad
+must not be able to point the geode's red at the hi-hats. And every one of
+them, borrowed fire and rain included, answers to `intensity`, because the
+surface has three pads for it - low / mid / high, the spec's alternative to a
+bpm on/off - and one row of pads has to mean the same thing on every cue.
+What it scales is each look's own, and none of them go to black on `low`.
+
+**The show stands on the stage.** mythos26's frame used to be 0..1 along the
+rig; it is the scanner's stage now - the default `CoordFrame` - because the
+show borrows the fire and the rain from the generic list, and a wave that
+poured down the obelisk in one cue and along a line in the next would read
+as two rigs. The environment fits the truss to a vertical line at x 10
+(`"fit": [0, 42]`), climbing beside the pillar, so a top-down cue takes the
+pars at the same rate. The rain pre-rolls on entry: the generic look spawns
+above the stage and falls in, which from a pad is a second of black.
+
+The `flash` layer is a machine of its own (`off`, `flash`) rather than the UV's
+reused, because the UV's list has an `on` and a solid white summed over every
+fixture is a whiteout. The UV grew `kick` and `rainbow` for cues 7 and 3.
+`rig: layer state` is a new action with a lamp, so the layer pads light and
+a cue pad is live only while its layers are where it put them.
+
 ### the audio meter, and two things it caught
 
 `pattern audio`: one cue per channel of the bus, built from the channel table
@@ -1831,8 +1884,11 @@ listing online.
 - **Moving heads** — no pan/tilt representation.
 - **Config hot reload** — restart to change the patch. Look, brightness and
   tempo are live over the control protocol.
-- **Three of mythos26's seven states** — placeholders. That is the point of
-  them, but they are not looks.
+- **Seven of mythos26's sixteen states** — placeholders, waiting on the spec.
+  That is the point of them, but they are not looks.
+- **A cue cannot clear the visualiser's media.** Synesthesia has a message to
+  select a media file and none to deselect one, so a cue with no `media`
+  leaves the last one loaded, and whether it shows is the scene's business.
 - **MIDI out, and MIDI for anything but tempo and loudness** — no
   control-change mapping to patterns, no faders. `MidiInput::handleMessage` is
   where that starts.

@@ -324,16 +324,35 @@ which tab the desk starts on.
 ### the whole rig on one surface
 
 `config/midimaps/launchpad-all-states.json` is every look of every machine,
-laid out for a Launchpad X:
+laid out for a Launchpad X; `config/midimaps/mythos-show.json` is the show's
+page of it alone, with no tabs, and is what the launcher runs on:
 
 ```
-./launch-mythos-set.sh -- --midimap config/midimaps/launchpad-all-states.json
+./launch-mythos-set.sh                                  # the show's map
+./launch-mythos-set.sh --midimap config/midimaps/launchpad-all-states.json
 ```
 
-- **The grid** is the page's machine, one look per pad — 7 for mythos26, 12
+The launcher picks `midimaps/<config name>.json` beside whatever `--config`
+it is given, and falls back to the all-states map for a config with none of
+its own.
+
+- **The grid** is the page's machine, one look per pad — 16 for mythos26, 12
   for jacket, 26 for scanner, and so on. Each pad carries `rig: pattern` then
   `rig: state`, so it lands right even if the rig was moved from the desk
   while the page was up.
+- **The show's page is a cue list**, not a list of looks - and on its own
+  it is `mythos-show.json`. Its sixteen pads
+  are the bottom two rows, and each carries the *whole cue* off
+  `config/mythos-show.json`'s cue table: the state, then each layer's state
+  (`rig: layer state`), then the visualiser's scene and media — the rig
+  first, so a dead visualiser costs the rig nothing. Above them, row 4 is
+  intensity — low / mid / high, `param intensity` on whatever cue is up,
+  a knob every show look has — and rows 5 and 6 are the layers the config
+  declares, a pad per state: the flash off or on, the UV off / flash / on /
+  kick / rainbow. So a layer can be moved off a cue's default by hand, and
+  hitting the cue puts it back. The viewer's cue buttons fire the same table.
+  Both files come out of one run of the generator and carry the same rows,
+  so they cannot disagree about what a cue does.
 - **The right column** — the scene-launch buttons — are the tabs. Each is
   `desk: page` *and* `rig: pattern`: the page so the grid shows that machine's
   looks, the pattern so the rig is on the machine those looks belong to.
@@ -348,7 +367,7 @@ laid out for a Launchpad X:
   surface stops being readable.
 
 Colour is the machine: mythos26 cyan, jacket amber, obelisk blue, uv purple,
-generic green, scanner magenta.
+flash pink, generic green, scanner magenta.
 
 It is generated rather than written, because seventy-odd rows of JSON have to
 agree with what the rig announces and the rig is the only authority on that:
@@ -1358,35 +1377,67 @@ goes from screen to object with the same file.
 
 ### mythos26 — the show
 
-`config/mythos26.json` is the show, on the same ten pars.
+`config/mythos-show.json` is the show: the cue list, the two layers over it,
+and the table of what each cue asks of the rest of the room. (`config/
+mythos26.json` is the same room opening on the audio meter, for trusting the
+wire before a set.) The cues were written from `pattern spec.txt` at the top
+of the checkout, and are numbered the way it numbers them.
 
 Unlike `jacket` and the `obelisk_*` looks, these are not a relic's patterns
-borrowed for a rig — they are written for the rig, in `src/mythos26.cpp`. Two
-things follow from that: the coordinate space is the rig itself (`coord.y` runs
-0..1 from the first fixture to the last, with none of the stretching a relic
-look needs), and they can read the beat.
+borrowed for a rig — they are written for the rig, in `src/mythos26.cpp`.
+They stand on the scanner's stage (the obelisk at x 0..7 and y 0..42, the
+ring on it, the truss stood beside it climbing the same height), which is the
+space the two looks the show borrows from the generic list were written in;
+and they read the music — the beat off the trigger rack, the analysis off the
+audio bus.
 
-**Twelve empty slots, for now.** The show is being written from scratch, so
-`slot_1` … `slot_12` are all there is: a dim tinted breath apiece, a different
-hue each, so a cue change is visible on the rig before there is a look in it.
-Twelve because that is a page of the surface, not because twelve is a number
-the show needs.
+| cue | the rig | the room |
+| --- | --- | --- |
+| 1 `neuron` | cyan into deep blue noise, drifting | scene *Neuron Proximitors* |
+| 2 `geode` | red, riding the mid presence, never below 0.2 | *Voronoi Geode*; the flash layer on |
+| 3 `rain` | matrix rain, every drop its own colour | *VideoFX_1* + `alien-message.mp4`; the UV breathing through a hue wheel |
+| 4 `fire` | fire 2012 | *Dynamical Flame* |
+| 5 `glitch` | the rig re-dealt to a new colour on every kick | *Glitch* + `alien-message.mp4` |
+| 6 `tunnel` | pink into purple noise | *Fire Tunnel*; the flash layer on |
+| 7 `blown` | purple riding the mids, never below 0.3, green on the kick | *Filter Blown v2* + `275593_medium.mp4`; the UV on the kick |
+| 8 `punk` | punk purple into white, strobing to full white on the beat | *Milk, Honey, Smoke, Bile*; the flash layer on, the UV on the kick |
+| 10 `canyon` | orange, brown, green and blue bands pouring down the stage; a rainbow over everything on the beat | *Vibe Thresholds* + `361331_medium.mp4` |
 
-The looks that used to be here have not gone anywhere:
+Slots 9 and 11–16 are placeholders — a dim tinted breath apiece — until
+the spec names them. Sixteen because that is what the spec says, and two rows
+of the surface.
 
-| look | where it is now |
-| --- | --- |
-| `tv_static_mono`, `tv_static` | the `generic` machine — free-standing stage looks with no beat and no game, which is what those two are |
-| `beat_pulse` | a cue on [the audio bus](#the-audio-bus), the nearest thing to a home for a look that fires on the beat |
-| `vu_pulse` | gone for now; it is in the history if the new show wants it back |
+**Every cue has an `intensity` knob**, 0..1, and the surface has three pads
+for it — low, mid, high — so one row means the same thing on every cue. What
+it scales is the look's own business: the depth of a noise wash, how far a
+presence wash rides above its floor and how hard its kick lands, how eagerly
+the fire ignites, how many drops are in the rain, how much of the rainbow
+the canyon shows. What it never does is take the rig to black: `low` is a
+quieter cue, not a fault.
 
-The placeholders are there so the cue buttons, the cross-fades and the config
-all work before the looks exist. Writing one for real is a `GeneratorHSV` in
-`mythos26.h`/`.cpp` and a changed line in `makeMythos26StateMachine()`; nothing
-in the runner, the protocol or the viewer needs to know. If you rename a slot,
-rename it in three places — there, `MYTHOS26_STATES` in
-`python/eclipse_dmx/config.py`, and the button table in
-`python/eclipse_dmx/viewer.py`.
+**The layers are how the additive parts are done.** `flash` is the beat pulse
+summed over every light but the UV — white unless its `color` knob says
+otherwise, its envelope drawable at the desk, off until a cue asks. `uv` is
+the blacklight's own list: `off`, `flash`, `on`, `kick` (every bass hit) and
+`rainbow` (a hue wheel, which on three banks of one colour is the blacklight
+breathing between a third and two thirds and never off). Both have a row in
+the viewer and a row of pads on the surface, so either can be moved off a
+cue's default by hand.
+
+**The cue table** is the `cues` block of the config, and it is the desk's,
+not the executable's: a state is a look on the rig, and the scene, the media
+and the layers around it are assembled where the pad is. Every pad on the
+show's page carries the whole cue (`tools/make-launchpad-map.py` reads the
+table), and the viewer's cue buttons fire the same table. Every written cue
+names both layers, so a cue never inherits the last one's flash; a state with
+no entry is the state alone.
+
+Writing a cue for real is a `GeneratorHSV` in `mythos26.h`/`.cpp` and a
+changed line in `makeMythos26StateMachine()`; nothing in the runner, the
+protocol or the viewer needs to know. If you rename a slot, rename it in
+three places — there, `MYTHOS26_STATES` in `python/eclipse_dmx/config.py`,
+and the button table in `python/eclipse_dmx/viewer.py` — and in the cue
+table if it has an entry.
 
 ##### the shape of a hit, and how often
 
@@ -1403,7 +1454,7 @@ a long fall — so they belong where the cue list is rather than buried in a
 constructor. They stay live knobs once it is running; these are what it opens
 on. The UV par's `flash` is the same class dressed with its own three numbers,
 and `beatPulseState()` is that one line handed to whichever list wants it —
-the audio bus's, while the show is empty.
+the audio bus's.
 
 `intensity` is how hard the hit lands, and it scales the envelope rather than
 the whole look: at a lifted `floor` it brings the flash down toward the level

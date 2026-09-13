@@ -277,9 +277,30 @@ class ShowTest(unittest.TestCase):
 
 
 class GuiTest(ShowTest):
-    """A `ShowTest` that also needs a window manager."""
+    """A `ShowTest` that also needs a window manager.
+
+    Every one of these leaves a dead tk interpreter behind, and *where* it is
+    finally collected matters. Tk objects must be torn down on the thread
+    that made them (gh-83274); left to the cyclic collector they go whenever
+    it next runs, which in this suite is inside a later test's stdout reader
+    - the thread that parses frames - and there the teardown hangs the reader.
+    The executable then blocks on a full pipe and the next command "gets no
+    reply", with the traceback pointing at whichever ShowTest ran after the
+    last window closed. So the garbage is collected here, on the main thread,
+    while it is still this test's.
+    """
 
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
         display_or_skip()
+
+    def run(self, result=None):
+        try:
+            return super().run(result)
+        finally:
+            # The window is closed by now; drop the test's own reference to
+            # it too, or the interpreter it holds outlives this test.
+            vars(self).pop("app", None)
+            import gc
+            gc.collect()

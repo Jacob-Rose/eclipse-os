@@ -26,6 +26,16 @@
 
 namespace scanner
 {
+    /* @brief Two-lattice value noise to 0..1, smooth in both axes - hash01 on
+    * the integer corners, smoothstepped bilinear between them.
+    *
+    * The texture under the waterfall and the colour clouds, and shared so a
+    * look elsewhere that wants a drifting field gets the same one rather
+    * than a second lattice that agrees with this one by accident.
+    */
+    float valueNoise(float x, float y);
+
+
     /* @brief Matrix rain: green code falling down the stage.
     *
     * The drops are particles - real positions in the plane with a radius,
@@ -61,6 +71,11 @@ namespace scanner
         float flicker = 0.4f;
         /// glyph changes per second
         float churnRate = 8.0f;
+        /// how far each drop's hue strays from the green, as a share of the
+        /// wheel: 0 is the film's monochrome, 1 is every drop its own colour.
+        /// Per drop rather than per glyph - a streak that changed colour
+        /// along its tail would read as several drops
+        float hueSpread = 0.0f;
 
         virtual void reset() override;
         virtual void tick(float deltaTime) override;

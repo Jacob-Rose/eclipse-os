@@ -1,0 +1,197 @@
+{
+  // mythos-show: the show, as a cue list.
+  //
+  // The same room as config/mythos26.json - the ring, the obelisk, the truss
+  // with the UV on its tail, and the probe that hands the rig's colour to
+  // Synesthesia - opening on the show rather than the audio meter, with the
+  // two layers the cues ask for patched over it, and a table of what each cue
+  // wants from the rest of the room. Read that file for the MIDI and audio
+  // setup; nothing about the wiring is different here.
+  //
+  //   ./launch-mythos-set.sh                            the set
+  //   python -m eclipse_dmx view config/mythos-show.json --bpm 128
+  //   eclipse-dmx --config config/mythos-show.json --dry-run --bpm 128 --frames 80
+  //
+  // The cues themselves are src/mythos26.cpp; the spec they were written from
+  // is "pattern spec.txt" at the top of the checkout.
+
+  "master": {
+    "brightness": 1.0,
+    "gamma": 2.2
+  },
+
+  // The show. Sixteen cues, nine of them written so far - see
+  // makeMythos26StateMachine. The frame is the stage's, so the pars are
+  // placed below with a fit rather than left on the frame's diagonal.
+  "pattern": {
+    "name": "mythos26",
+    "state": "neuron"
+  },
+
+  // Tempo in, from Mixxx - the fallback source. See config/mythos26.json for
+  // the setup and what each note is.
+  "midi": {
+    "enabled": true,
+    "port": "auto",
+    "ignore": ["Traktor", "Kontrol"],
+    "clock": true,
+    "notes": true,
+    "beat_note": 50,
+    "bpm_note": 52,
+    "vu_instant_note": 64,
+    "vu_average_note": 68,
+    "vu_meter_note": 69,
+    "beat_channel": 1,
+    "bpm": 128,
+    "free_run": true
+  },
+
+  // The music, from Synesthesia: the levels, the presence, the kicks and the
+  // beat, on the bus the cues read. Flip "source" to "mixxx" (or run the
+  // launcher with --no-osc-in) for the night the visualiser will not start:
+  // the beat goes back to the cable, the presence cues sit at their floors,
+  // and the kick cues wait for a kick that never comes.
+  "audio": {
+    "source": "synesthesia",
+    "port": 7000,
+    "bpm": true,
+    "map": "oscmaps/synesthesia.json"
+  },
+
+  "devices": [
+    {
+      // The ring, in stage coordinates - see config/mythos26.json.
+      "device": "scanner_ring",
+      "offset": [0, 0],
+      "view_scale": [0.9, 1.0]
+    },
+    {
+      // The pillar, at the origin, in its own coordinates.
+      "device": "obelisk",
+      "offset": [0, 0],
+      "view_scale": [0.3, 1.0],
+      "brightness": 1.0
+    },
+    {
+      // The truss, standing beside the sculpture and climbing its height.
+      //
+      // The pars are normalized - 0..1 along the truss - and on the stage's
+      // frame that 0..1 is the frame's diagonal, (0,0) to (8,43). Fitting x
+      // to 0 collapses the climb to a vertical line, y to 42 makes it the
+      // sculpture's height, and the offset stands it at x 10, clear of the
+      // obelisk's 0..7. So a cue pouring down the stage pours down the truss
+      // at the same rate, and a beat that climbs the obelisk climbs the pars.
+      //
+      // The UV par is in here too, at the tail of the same DMX line, sampling
+      // the middle of the run - but the `uv` layer below paints it, so what
+      // the show puts there is never seen.
+      "device": "uking_par36_x10",
+      "name": "pars",
+      "offset": [10, 0],
+      "fit": [0, 42],
+      "view_scale": [1.7, 0.45],
+      "brightness": 1.0
+    },
+    {
+      // The colour this show sends to the screen behind it - see
+      // devices/synesthesia.json. The middle of the truss.
+      "device": "synesthesia",
+      "offset": [10, 21],
+      "fit": [0, 0],
+      "view_scale": [0.3, 0.3]
+    }
+  ],
+
+  // The layers: what rides over the show, each its own small cue list with
+  // its own row in the viewer and its own pads on the surface.
+  //
+  // Both open `off`, and the cue table below is what turns them on - so a
+  // cue that wants the flash has it and the one after does not, without
+  // anyone remembering to switch it off. Both are also plain layers to the
+  // desk: `layer flash state flash`, a knob on `layer flash param color`,
+  // the envelope drawn in the curve editor.
+  "layers": [
+    {
+      // The bpm flash: the beat pulse, white unless its `color` knob says
+      // otherwise, summed over every light but the UV. At `blend: add` a
+      // layer at black is not there, which is what makes it safe to leave
+      // patched under the cues that never ask for it.
+      "name": "flash",
+      "fixtures": ["scanner_ring/*", "obelisk/*", "pars/par_*"],
+      "pattern": "flash",
+      "blend": "add",
+      "state": "off"
+    },
+    {
+      // The blacklight: off, flashing on the beat, on, on every kick, or
+      // breathing through a hue wheel. `over`, not `add` - the UV has its own
+      // job and what the show wanted on it is irrelevant.
+      "name": "uv",
+      "fixtures": ["pars/uv"],
+      "pattern": "uv",
+      "state": "off"
+    }
+  ],
+
+  // The cue table: what each state of the show asks of the rest of the room.
+  //
+  // A state is a look on the rig and nothing else - src/mythos26.cpp knows
+  // nothing about Synesthesia or the layers. This is where a *cue* is
+  // assembled: the scene and media the visualiser should be on, and the
+  // state each layer should take. tools/make-launchpad-map.py reads it to
+  // put the whole cue on one pad, and the viewer's cue buttons fire it too.
+  //
+  //   scene    a Synesthesia scene name, spelled freely - it is folded the
+  //            way the app matches it. Empty sends nothing.
+  //   media    a media file for the scene, by name; empty sends nothing. The
+  //            app has no "no media" message, so a cue with none leaves the
+  //            last one selected, which its scene may or may not show.
+  //   layers   the state each layer takes, by layer name. A layer left out
+  //            is left alone; every cue here names both, so a cue never
+  //            inherits the last one's flash.
+  //
+  // A cue with no entry here is the state alone, which is what the empty
+  // slots are.
+  "cues": {
+    "neuron": {
+      "scene": "Neuron Proximitors",
+      "layers": { "flash": "off", "uv": "off" }
+    },
+    "geode": {
+      "scene": "Voronoi Geode",
+      "layers": { "flash": "flash", "uv": "off" }
+    },
+    "rain": {
+      "scene": "VideoFX_1",
+      "media": "alien-message.mp4",
+      "layers": { "flash": "off", "uv": "rainbow" }
+    },
+    "fire": {
+      "scene": "Dynamical Flame",
+      "layers": { "flash": "off", "uv": "off" }
+    },
+    "glitch": {
+      "scene": "Glitch",
+      "media": "alien-message.mp4",
+      "layers": { "flash": "off", "uv": "off" }
+    },
+    "tunnel": {
+      "scene": "Fire Tunnel",
+      "layers": { "flash": "flash", "uv": "off" }
+    },
+    "blown": {
+      "scene": "Filter Blown v2",
+      "media": "275593_medium.mp4",
+      "layers": { "flash": "off", "uv": "kick" }
+    },
+    "punk": {
+      "scene": "Milk, Honey, Smoke, Bile",
+      "layers": { "flash": "flash", "uv": "kick" }
+    },
+    "canyon": {
+      "scene": "Vibe Thresholds",
+      "media": "361331_medium.mp4",
+      "layers": { "flash": "off", "uv": "off" }
+    }
+  }
+}

@@ -1092,8 +1092,15 @@ class ShowController:
             try:
                 reply = self._replies.get(timeout=self.command_timeout)
             except queue.Empty as error:
+                # A silence and a corpse look the same from the queue, and
+                # they are not the same problem: say which, and what the
+                # executable said on its way out.
+                code = self._process.poll() if self._process is not None else None
+                why = (f"the executable exited with code {code}" if code is not None
+                       else "it is still running")
                 raise ShowError(
-                    f"no reply to '{line}' within {self.command_timeout}s") from error
+                    f"no reply to '{line}' within {self.command_timeout}s; "
+                    f"{why}{self._stderr_hint()}") from error
 
         if reply.startswith("ERR"):
             raise ShowError(reply[4:].strip())

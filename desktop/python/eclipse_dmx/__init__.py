@@ -26,12 +26,14 @@ from .config import (
     PATTERN_NAMES,
     Config,
     ConfigError,
+    Cue,
     DeviceConfig,
     Fixture,
     FixtureProfile,
     MasterConfig,
     MidiConfig,
     PatternConfig,
+    cue_actions,
 )
 from .controller import Frame, Param, ShowController, ShowError
 from .binary import find_executable, BinaryNotFoundError
@@ -51,6 +53,7 @@ __all__ = [
     "PATTERN_NAMES",
     "Config",
     "ConfigError",
+    "Cue",
     "DeviceConfig",
     "Fixture",
     "FixtureProfile",
@@ -68,4 +71,5 @@ __all__ = [
     "list_patterns",
     "list_ports",
     "SerialPortInfo",
+    "cue_actions",
 ]

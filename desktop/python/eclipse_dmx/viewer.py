@@ -32,10 +32,10 @@ from tkinter import colorchooser, simpledialog
 from typing import Dict, List, Optional, Sequence, Tuple, Union
 
 from . import look_presets
-from .config import RELIC_TYPES, Config
+from .config import RELIC_TYPES, Config, cue_actions
 from .controller import Frame, ShowController, ShowError
 from .curve_editor import CurveEditor
-from .midi_map import (ActionContext, Dispatcher, MappingSet,
+from .midi_map import (Action, ActionContext, Dispatcher, MappingSet,
                        SynesthesiaState, parse_midi_line)
 from .osc_input import DEFAULT_INPUT_PORT
 from .launchpad import LampPainter, programmer_mode, clear as lamp_clear
@@ -119,21 +119,28 @@ STATE_GROUPS: List[Tuple[str, List[Tuple[str, Tuple[str, str]]]]] = [
         # row above it - TheAudioMeter holds the two together.
         ("beat_pulse", ("state", "beat_pulse")),
     ]),
-    # The show, which is twelve empty slots while it is being written. Rename
-    # them here when they are renamed in makeMythos26StateMachine().
+    # The show: sixteen cues, numbered as "pattern spec.txt" numbers them,
+    # the unwritten ones still slots. Rename them here when they are renamed
+    # in makeMythos26StateMachine(). A button here fires the state, and then
+    # whatever config/mythos-show.json's cue table says goes with it - see
+    # ViewerApp._fire_cue.
     ("mythos26", [
-        ("slot 1", ("state", "slot_1")),
-        ("slot 2", ("state", "slot_2")),
-        ("slot 3", ("state", "slot_3")),
-        ("slot 4", ("state", "slot_4")),
-        ("slot 5", ("state", "slot_5")),
-        ("slot 6", ("state", "slot_6")),
-        ("slot 7", ("state", "slot_7")),
-        ("slot 8", ("state", "slot_8")),
+        ("1 neuron", ("state", "neuron")),
+        ("2 geode", ("state", "geode")),
+        ("3 rain", ("state", "rain")),
+        ("4 fire", ("state", "fire")),
+        ("5 glitch", ("state", "glitch")),
+        ("6 tunnel", ("state", "tunnel")),
+        ("7 blown", ("state", "blown")),
+        ("8 punk", ("state", "punk")),
         ("slot 9", ("state", "slot_9")),
-        ("slot 10", ("state", "slot_10")),
+        ("10 canyon", ("state", "canyon")),
         ("slot 11", ("state", "slot_11")),
         ("slot 12", ("state", "slot_12")),
+        ("slot 13", ("state", "slot_13")),
+        ("slot 14", ("state", "slot_14")),
+        ("slot 15", ("state", "slot_15")),
+        ("slot 16", ("state", "slot_16")),
     ]),
     # The static pair moved here with the machine that holds them - the rest
     # of the generic list is left to the generated buttons.
@@ -1891,6 +1898,7 @@ class ViewerApp:
         def apply() -> None:
             if kind == "state":
                 self.show.set_state(value)
+                self._fire_cue(value)
             elif kind == "pattern":
                 self.show.set_pattern(value)
                 self.current_pattern = value
@@ -1909,6 +1917,39 @@ class ViewerApp:
         self._guard(apply, kind)
         self._refresh_buttons()
         self._refresh_link_buttons()
+
+    def _fire_cue(self, state: str) -> None:
+        """The rest of the cue around `state`, if the config has one.
+
+        The state itself has already been set. What follows is what the
+        config's cue table puts with it - the layers, the visualiser's scene
+        and media - run through the same action registry the pads use, so a
+        button here and a pad on the surface do the same thing. Only for the
+        machine the config is written for: the same state name on another
+        machine is a coincidence, not a cue.
+
+        Each action is fenced on its own, as the dispatcher fences a pad's: a
+        visualiser that is not there must not cost the rig its layers.
+        """
+        if self.current_pattern != self.config.pattern.name:
+            return
+        if state not in self.config.cues:
+            return
+        context = self._dispatcher.context
+        for entry in cue_actions(self.config, state):
+            action = Action.from_dict(entry)
+            if action.key in ("pattern", "state"):
+                continue    # already done, by the caller
+            spec = action.spec
+            if spec is None:
+                continue
+            try:
+                line = spec.run(context, action.params, 1.0)
+            except Exception as error:  # fenced on purpose; see the docstring
+                self._say(f"cue {state}: {error}")
+                continue
+            if line:
+                self._say(line)
 
     def _refresh_link_buttons(self) -> None:
         """Lights the mode the relic is in, and shows the last thing it said.

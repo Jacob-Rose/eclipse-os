@@ -35,12 +35,16 @@ from harness import (ANSWER_FRAMES, PATIENCE, BinaryNotFoundError,  # noqa: E402
 from eclipse_dmx.config import (  # noqa: E402
     AUDIO_CHANNELS,
     AUDIO_STATES,
+    FLASH_STATES,
     MYTHOS26_STATES,
+    UV_STATES,
     AudioConfig,
     Config,
     ConfigError,
+    Cue,
     Fixture,
     MidiConfig,
+    cue_actions,
 )
 from eclipse_dmx.controller import ShowController, ShowError, _parse_frame  # noqa: E402
 from eclipse_dmx.curves import (  # noqa: E402
@@ -58,10 +62,16 @@ OBELISK_USB = DESKTOP / "config" / "obelisk_usb.json"
 SCANNER = DESKTOP / "config" / "scanner.json"
 STAGE = DESKTOP / "config" / "scanner_stage.json"
 
-#: The bench rig for additive layers, and the only config that declares any.
-#: The show used to carry three, patched permanently - see the note at the top
-#: of that file for why a rig should not have an implicit global overlay.
+#: The bench rig for additive layers. The show used to carry three, patched
+#: permanently - see the note at the top of that file for why a rig should not
+#: have an implicit global overlay.
 LAYERS = DESKTOP / "config" / "audio_layers_test.json"
+
+#: The show as a cue list: mythos26 opening on its first cue, the flash and
+#: UV layers patched over it, and the cue table saying what each cue asks of
+#: the visualiser and the layers. SHOW above is the same room opening on the
+#: audio meter.
+CUES = DESKTOP / "config" / "mythos-show.json"
 
 #: The sculpture's own numbers, from src/relics/obelisk/state_obelisk.h and the
 #: eight GenerateAxisRow calls in obelisk.cpp. The config has to agree with
@@ -2103,7 +2113,7 @@ class TheAudioMeter(ShowTest):
         data = json.loads((DESKTOP / "config" / "midimaps"
                            / "launchpad-all-states.json").read_text())
         declared = set()
-        for path in (SHOW, LAYERS):
+        for path in (SHOW, LAYERS, CUES):
             declared.update(layer["name"] for layer in Config.load(path).layers)
 
         for mapping in data["mappings"]:
@@ -2111,6 +2121,8 @@ class TheAudioMeter(ShowTest):
                 line = action["params"].get("line", "") if action["action"] == "command" else ""
                 if line.startswith("layer "):
                     self.assertIn(line.split()[1], declared, mapping["label"])
+                if action["action"] == "layer":
+                    self.assertIn(action["params"]["layer"], declared, mapping["label"])
 
 
 class TheOscInputHints(unittest.TestCase):
@@ -2868,7 +2880,7 @@ class MidiSettings(unittest.TestCase):
 
     def test_unknown_mythos_state_is_rejected(self):
         config = Config.load(SHOW)
-        config.pattern.state = "slot_13"     # twelve of them, and no more
+        config.pattern.state = "slot_17"     # sixteen of them, and no more
         with self.assertRaises(ConfigError):
             config.validate()
 
@@ -2893,17 +2905,16 @@ class Mythos26(ShowTest):
     def _beat_show(self, **kwargs):
         """The beat look, wherever it is living.
 
-        The show's own cue list is twelve empty slots for now, so the flash
-        these tests are about is a cue on the audio bus rather than the show's
-        opening state - see beatPulseState. What is being tested is the look
-        and the clock under it, neither of which moved.
+        The flash these tests are about is a cue on the audio bus rather than
+        one of the show's - see beatPulseState. What is being tested is the
+        look and the clock under it, neither of which moved.
         """
         show = self._show(**kwargs)
         show.set_pattern("audio")
         show.set_state("beat_pulse")
         return show
 
-    def test_twelve_states_in_table_order(self):
+    def test_sixteen_states_in_table_order(self):
         show = self._show(on_frame=lambda f: None)
         time.sleep(0.5)
         self.assertEqual(show.state_names, list(MYTHOS26_STATES))
@@ -3025,8 +3036,12 @@ class Mythos26(ShowTest):
         time.sleep(1.5)
         self.assertEqual(max(frames[-1][0]), 0)
 
-    def test_the_placeholders_are_visible_and_distinct(self):
-        """Every slot in the machine, which is all twelve of them for now."""
+    def test_every_cue_is_visible_and_distinct(self):
+        """Every slot in the machine - the written cues and the placeholders
+        alike. Nothing on the bus and no beat, so this is each look at rest:
+        a wash at its floor, a kick look holding its last colour, a
+        placeholder breathing. None of them may be black - a cue that comes
+        up dark in front of a room is indistinguishable from a crash."""
         frames = []
         show = self._show(on_frame=frames.append, emit_rate=20.0)
         seen = []
@@ -3039,6 +3054,344 @@ class Mythos26(ShowTest):
             self.assertGreater(max(max(f) for f in frame), 0, "a slot rendered black")
         self.assertEqual(len(set(seen)), len(MYTHOS26_STATES),
                          "two slots look the same")
+
+
+class TheShowCues(unittest.TestCase):
+    """config/mythos-show.json: the cue table, and what a cue becomes.
+
+    A state is a look on the rig; a cue is the state plus what the room does
+    around it - the layers, the visualiser's scene and media. The table is the
+    desk's, never the executable's, and these are its rules.
+    """
+
+    def setUp(self):
+        self.config = Config.load(CUES)
+
+    def test_the_show_config_validates_and_opens_on_the_show(self):
+        self.assertEqual(self.config.validate(strict_overlap=False), [])
+        self.assertEqual(self.config.pattern.name, "mythos26")
+        self.assertEqual(self.config.pattern.state, MYTHOS26_STATES[0])
+
+    def test_every_cue_names_a_state_of_the_show(self):
+        for state in self.config.cues:
+            self.assertIn(state, MYTHOS26_STATES)
+
+    def test_every_written_cue_places_both_layers(self):
+        """A layer left out of a cue is left alone - so a cue that did not
+        name the flash would inherit the last cue's. The show's own table
+        names both on every cue, on purpose."""
+        declared = [layer["name"] for layer in self.config.layers]
+        self.assertEqual(sorted(declared), ["flash", "uv"])
+        for state, cue in self.config.cues.items():
+            self.assertEqual(sorted(cue.layers), sorted(declared), state)
+
+    def test_the_spec_cues_ask_for_what_the_spec_says(self):
+        cues = self.config.cues
+        self.assertEqual(cues["geode"].layers["flash"], "flash")
+        self.assertEqual(cues["tunnel"].layers["flash"], "flash")
+        self.assertEqual(cues["rain"].layers["uv"], "rainbow")
+        self.assertEqual(cues["blown"].layers["uv"], "kick")
+        self.assertEqual(cues["punk"].layers, {"flash": "flash", "uv": "kick"})
+        self.assertEqual(cues["rain"].media, "alien-message.mp4")
+        self.assertEqual(cues["glitch"].media, "alien-message.mp4")
+        self.assertEqual(cues["neuron"].scene, "Neuron Proximitors")
+
+    def test_a_cue_is_the_rig_first_then_the_visualiser(self):
+        """The order the actions run in: the machine, the state, the layers,
+        then the scene and media - so a visualiser that is not there costs
+        the rig nothing, and a knob after a state lands on the new look."""
+        keys = [entry["action"] for entry in cue_actions(self.config, "blown")]
+        self.assertEqual(keys, ["pattern", "state", "layer", "layer", "syn_scene", "syn_media"])
+        params = [entry["params"] for entry in cue_actions(self.config, "blown")]
+        self.assertEqual(params[0], {"name": "mythos26"})
+        self.assertEqual(params[1], {"name": "blown"})
+        self.assertEqual(params[3], {"layer": "uv", "name": "kick"})
+
+    def test_a_cue_with_no_media_sends_none(self):
+        keys = [entry["action"] for entry in cue_actions(self.config, "neuron")]
+        self.assertNotIn("syn_media", keys)
+
+    def test_a_state_without_a_cue_is_the_state_alone(self):
+        self.assertEqual(
+            [entry["action"] for entry in cue_actions(self.config, "slot_9")],
+            ["pattern", "state"])
+
+    def test_a_cue_on_a_state_the_show_does_not_have_is_rejected(self):
+        self.config.cues["slot_17"] = Cue(state="slot_17", scene="x")
+        with self.assertRaises(ConfigError):
+            self.config.validate(strict_overlap=False)
+
+    def test_a_cue_putting_a_layer_where_it_cannot_go_is_rejected(self):
+        self.config.cues["neuron"].layers["flash"] = "rainbow"
+        with self.assertRaises(ConfigError):
+            self.config.validate(strict_overlap=False)
+
+    def test_a_cue_naming_a_layer_the_config_does_not_declare_is_rejected(self):
+        with self.assertRaises(ConfigError):
+            Cue.from_dict("neuron", {"layers": {"strobe": "on"}}, ["flash", "uv"])
+
+    def test_a_cue_with_a_key_nobody_reads_is_rejected(self):
+        """A typo - "scenes", "layer" - would otherwise be a cue that quietly
+        does less than it says."""
+        with self.assertRaises(ConfigError):
+            Cue.from_dict("neuron", {"scenes": "x"}, [])
+
+    def test_the_table_round_trips(self):
+        again = Config.from_dict(self.config.to_dict(), base_dir=CUES.parent)
+        self.assertEqual({k: v.to_dict() for k, v in again.cues.items()},
+                         {k: v.to_dict() for k, v in self.config.cues.items()})
+
+
+class TheShowPage(unittest.TestCase):
+    """The show's page on the launchpad, off the generated map.
+
+    A cue list rather than a list of looks: each pad is the whole cue off the
+    table, and above the cues sit the show's controls.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        import json
+        data = json.loads((DESKTOP / "config" / "midimaps"
+                           / "launchpad-all-states.json").read_text())
+        cls.page = [m for m in data["mappings"] if m.get("page") == "mythos26"]
+        cls.config = Config.load(CUES)
+
+    def _pads(self, prefix):
+        return [m for m in self.page if m["label"].startswith(prefix)]
+
+    def test_a_pad_per_cue_carrying_the_whole_cue(self):
+        pads = {}
+        for mapping in self.page:
+            states = [a["params"]["name"] for a in mapping["actions"] if a["action"] == "state"]
+            if states:
+                pads[states[0]] = mapping
+        self.assertEqual(tuple(pads), MYTHOS26_STATES)
+        for state, mapping in pads.items():
+            self.assertEqual(mapping["actions"], cue_actions(self.config, state), state)
+
+    def test_the_cues_are_the_bottom_two_rows(self):
+        notes = sorted(m["trigger"]["number"] for m in self.page
+                       if any(a["action"] == "state" for a in m["actions"]))
+        self.assertEqual(notes, [launchpad.pad(r, c) for r in (1, 2) for c in range(1, 9)])
+
+    def test_three_intensity_pads_on_the_fourth_row(self):
+        pads = self._pads("mythos26 - intensity")
+        self.assertEqual(len(pads), 3)
+        levels = [a["params"]["high"] for m in pads for a in m["actions"]]
+        self.assertEqual(levels, [0.33, 0.66, 1.0])
+        for mapping in pads:
+            self.assertEqual(mapping["trigger"]["number"] // 10, 4)
+            (action,) = mapping["actions"]
+            self.assertEqual(action["action"], "param")
+            self.assertEqual(action["params"]["name"], "intensity")
+            self.assertEqual(action["params"]["layer"], "")
+
+    def test_a_row_per_layer_with_a_pad_per_state(self):
+        for row, layer, states in ((5, "flash", FLASH_STATES), (6, "uv", UV_STATES)):
+            pads = self._pads(f"mythos26 - {layer} ")
+            self.assertEqual([m["actions"][0]["params"]["name"] for m in pads], list(states), layer)
+            for mapping in pads:
+                self.assertEqual(mapping["trigger"]["number"] // 10, row, mapping["label"])
+                (action,) = mapping["actions"]
+                self.assertEqual(action, {"action": "layer",
+                                          "params": {"layer": layer, "name":
+                                                     action["params"]["name"]}})
+
+    def test_the_show_has_a_map_of_its_own_with_the_same_rows(self):
+        """midimaps/mythos-show.json is what the set runs on: the show's page
+        and nothing else, no tabs, every row on every page. Same rows as the
+        all-states map's show page, so the two cannot drift."""
+        import json
+        data = json.loads((DESKTOP / "config" / "midimaps" / "mythos-show.json").read_text())
+        own = data["mappings"]
+        self.assertEqual(len(own), len(self.page))
+        self.assertTrue(all(m["page"] == "" for m in own))
+        self.assertEqual(data["opens_on"], "")
+        strip = lambda m: {k: v for k, v in m.items() if k != "page"}
+        self.assertEqual([strip(m) for m in own], [strip(m) for m in self.page])
+        self.assertFalse(any(a["action"] == "page" for m in own for a in m["actions"]))
+
+    def test_the_surface_opens_on_the_show(self):
+        import json
+        data = json.loads((DESKTOP / "config" / "midimaps"
+                           / "launchpad-all-states.json").read_text())
+        self.assertEqual(data["opens_on"], "mythos26")
+
+
+class _FakeLayer:
+    def __init__(self, state=""):
+        self.current_state = state
+        self.moved = []
+
+    def set_state(self, name):
+        self.moved.append(name)
+        self.current_state = name
+
+
+class TheLayerAction(unittest.TestCase):
+    """`rig: layer state`: a layer's cue, as a pad's action, with a lamp."""
+
+    def _rig(self, **layers):
+        rig = _FakeRig()
+        rig.layers = layers
+        return rig
+
+    def test_it_moves_the_layer(self):
+        uv = _FakeLayer("off")
+        context = midi_map.ActionContext(show=self._rig(uv=uv))
+        said = midi_map.ACTIONS["layer"].run(context, {"layer": "uv", "name": "kick"}, 1.0)
+        self.assertEqual(uv.moved, ["kick"])
+        self.assertIn("kick", said)
+
+    def test_a_rig_without_the_layer_is_told_rather_than_refused(self):
+        """The show's map runs against the bench rig too, and a layer pad
+        there is nothing - not an error on every press."""
+        context = midi_map.ActionContext(show=self._rig())
+        said = midi_map.ACTIONS["layer"].run(context, {"layer": "uv", "name": "kick"}, 1.0)
+        self.assertIn("not on this rig", said)
+
+    def test_it_lights_when_the_layer_is_there(self):
+        check = midi_map.ACTIONS["layer"].check
+        context = midi_map.ActionContext(show=self._rig(uv=_FakeLayer("kick")))
+        self.assertIs(check(context, {"layer": "uv", "name": "kick"}), True)
+        self.assertIs(check(context, {"layer": "uv", "name": "off"}), False)
+
+    def test_it_has_no_opinion_about_a_layer_it_cannot_see(self):
+        check = midi_map.ACTIONS["layer"].check
+        self.assertIsNone(check(midi_map.ActionContext(show=self._rig()),
+                                {"layer": "uv", "name": "kick"}))
+
+    def test_a_cue_pad_is_live_only_when_its_layers_are_where_it_put_them(self):
+        """The whole cue or nothing: a cue whose UV has since been moved by
+        hand is not the cue that is up, and the pad says so."""
+        config = Config.load(CUES)
+        pad = midi_map.Mapping(kind="note", number=11, actions=[
+            midi_map.Action.from_dict(entry) for entry in cue_actions(config, "blown")
+            if entry["action"] not in ("syn_scene", "syn_media")])
+        rig = self._rig(flash=_FakeLayer("off"), uv=_FakeLayer("kick"))
+        rig.current_state = "blown"
+        self.assertIs(pad.is_live(midi_map.ActionContext(show=rig)), True)
+        rig.layers["uv"].current_state = "off"
+        self.assertIs(pad.is_live(midi_map.ActionContext(show=rig)), False)
+
+
+class TheShowLooks(ShowTest):
+    """The written cues, driven over the protocol on config/mythos-show.json.
+
+    Sampled on the obelisk, a good way up - fixture 200 of the 344 - which
+    every cue paints; the ring's pixels sit off the noise fields' brightest
+    patches often enough to make a threshold flaky there.
+    """
+
+    SAMPLE = 35 + 200
+
+    def _show(self, state, **kwargs):
+        kwargs.setdefault("midi", "")
+        kwargs.setdefault("emit_rate", 30.0)
+        show = self.running_show(CUES, **kwargs)
+        show.set_pattern("mythos26")
+        show.set_state(state)
+        return show
+
+    def _peak(self, frames, since, seconds, channel):
+        deadline = time.monotonic() + seconds
+        peak = 0
+        while time.monotonic() < deadline:
+            for frame in frames[since:]:
+                peak = max(peak, frame[self.SAMPLE][channel])
+            time.sleep(0.02)
+        return peak
+
+    def test_the_layer_machines_match_the_executable(self):
+        """UV_STATES and FLASH_STATES are mirrors, and a mirror that drifts
+        validates a cue here that the rig refuses."""
+        show = self.running_show(CUES, midi="")
+        self.settle_until(lambda: len(show.layers) == 2, message="both layers announced")
+        self.assertEqual(tuple(show.layers["uv"].state_names), UV_STATES)
+        self.assertEqual(tuple(show.layers["flash"].state_names), FLASH_STATES)
+
+    def test_every_written_cue_has_the_intensity_knob(self):
+        """Three pads on the surface set `intensity` on whatever cue is up,
+        so every cue that is not a placeholder has to answer to it."""
+        show = self.running_show(CUES, midi="")
+        show.set_pattern("mythos26")
+        for state in Config.load(CUES).cues:
+            since = show.params_revision
+            show.set_state(state)
+            self.settle_until(lambda: show.params_revision > since,
+                              message=f"{state}'s knobs")
+            self.assertIn("intensity", [p.name for p in show.params], state)
+
+    def test_low_intensity_is_quieter_not_dark(self):
+        frames = []
+        show = self._show("neuron", on_frame=frames.append)
+        time.sleep(0.6)
+        show.set_param("intensity", 0.0)
+        time.sleep(0.4)
+        self.assertGreater(max(frames[-1][self.SAMPLE]), 0, "a cue at low went black")
+
+    def test_a_presence_wash_rises_with_its_channel(self):
+        frames = []
+        show = self._show("blown", on_frame=frames.append)
+        time.sleep(0.6)
+        at_rest = max(frames[-1][self.SAMPLE])
+        self.assertGreater(at_rest, 0, "the wash has a floor")
+
+        mark = len(frames)
+        for _ in range(8):
+            show.command("audio mid_presence 1.0", expect_reply=False)
+            time.sleep(0.05)
+        self.assertGreater(self._peak(frames, mark, 0.4, 2), at_rest + 40,
+                           "the blue of the purple should climb with the mids")
+
+    def test_a_kick_lands_green_on_the_purple(self):
+        frames = []
+        show = self._show("blown", on_frame=frames.append)
+        time.sleep(0.6)
+        self.assertLess(frames[-1][self.SAMPLE][1], 40, "purple at rest has no green in it")
+
+        mark = len(frames)
+        show.command("audio bass_hits 1.0", expect_reply=False)
+        self.assertGreater(self._peak(frames, mark, 0.5, 1), 150, "the kick is green")
+
+    def test_glitch_deals_a_new_colour_on_each_kick(self):
+        frames = []
+        show = self._show("glitch", on_frame=frames.append)
+        time.sleep(0.6)
+        before = frames[-1][self.SAMPLE]
+        self.assertGreater(max(before), 0, "holds a colour between kicks")
+
+        # one edge, one colour: the same kick held high for several frames
+        # must deal once, and a second kick after it has dropped deals again
+        for _ in range(4):
+            show.command("audio bass_hits 1.0", expect_reply=False)
+            time.sleep(0.04)
+        time.sleep(0.5)
+        first = frames[-1][self.SAMPLE]
+        show.command("audio bass_hits 0.0", expect_reply=False)
+        time.sleep(0.3)
+        show.command("audio bass_hits 1.0", expect_reply=False)
+        time.sleep(0.5)
+        second = frames[-1][self.SAMPLE]
+
+        def hue(rgb):
+            import colorsys
+            return colorsys.rgb_to_hsv(*(c / 255.0 for c in rgb))[0]
+
+        self.assertNotAlmostEqual(hue(before), hue(first), delta=0.05)
+        self.assertNotAlmostEqual(hue(first), hue(second), delta=0.05)
+
+    def test_canyon_offers_its_beat_envelope(self):
+        show = self.running_show(CUES, midi="")
+        show.set_pattern("mythos26")
+        since = show.params_revision
+        show.set_state("canyon")
+        self.settle_until(lambda: show.params_revision > since, message="canyon's knobs")
+        names = [p.name for p in show.params]
+        for knob in ("intensity", "speed", "waves", "attack", "decay", "rate"):
+            self.assertIn(knob, names)
+        self.assertIn("envelope", show.curves)
 
 
 def _rising_edges(frames, threshold=128):
@@ -4271,6 +4624,55 @@ class ViewerAgainstAnotherRig(GuiTest):
             self.assertEqual(first, span.first,
                              f"{panel_name} began at {first}, rig put it at {span.first}")
             self.assertEqual(len(got), span.count)
+
+
+class ViewerOnTheCues(GuiTest):
+    """The viewer's cue buttons fire the config's cue table, like the pads."""
+
+    def setUp(self):
+        from eclipse_dmx.viewer import ViewerApp
+        self.app = ViewerApp(CUES, pattern="mythos26", midi="", bpm=120.0)
+
+    def tearDown(self):
+        self.app._quit()
+
+    def layers(self):
+        return self.settle_until(lambda: len(self.app.show.layers) == 2,
+                                 message="both layers announced")
+
+    def test_a_cue_button_places_the_layers(self):
+        self.layers()
+        self.app._run_button(("state", "blown"))
+        self.settle_until(lambda: self.app.show.layers["uv"].current_state == "kick",
+                          message="the UV on the kick, as blown's cue says")
+        self.assertEqual(self.app.show.layers["flash"].current_state, "off")
+
+        self.app._run_button(("state", "geode"))
+        self.settle_until(lambda: self.app.show.layers["flash"].current_state == "flash",
+                          message="the flash on, as geode's cue says")
+        self.assertEqual(self.app.show.layers["uv"].current_state, "off",
+                         "geode's cue puts the UV back")
+
+    def test_a_cue_button_records_the_scene_it_asked_for(self):
+        """The visualiser half goes out over OSC to whatever is listening;
+        what this desk can check is that it asked, and that the scene pads
+        will light off the answer."""
+        self.layers()
+        self.app._run_button(("state", "canyon"))
+        self.settle_until(lambda: self.app._syn_state.sent_scene == "Vibe Thresholds",
+                          message="the cue's scene recorded as sent")
+        self.assertEqual(self.app._syn_state.sent_media, "361331_medium.mp4")
+
+    def test_a_state_without_a_cue_touches_nothing_else(self):
+        self.layers()
+        self.app._run_button(("state", "blown"))
+        self.settle_until(lambda: self.app.show.layers["uv"].current_state == "kick",
+                          message="the UV on the kick")
+        self.app._run_button(("state", "slot_9"))
+        self.settle_until(lambda: self.app.show.current_state == "slot_9",
+                          message="the placeholder up")
+        self.assertEqual(self.app.show.layers["uv"].current_state, "kick",
+                         "a slot with no cue leaves the layers where they were")
 
 
 class ViewerOnTheShow(GuiTest):
