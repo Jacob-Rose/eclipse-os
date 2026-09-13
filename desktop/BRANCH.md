@@ -1454,6 +1454,49 @@ machine they mean. The viewer passes them down too, so the window opens on the
 look asked for rather than switching to it after start, which used to show the
 config's look for a beat first.
 
+### the set is on the pi by default, and the pi does not need to know the show
+
+The mythos set could reach the scanner-pi - `--client` had been on the
+launcher for a while - but only when asked, only from the viewer, and only
+if the pi's build knew every look in the config. Three things, now closed.
+
+**`--client scanner-pi` is the launcher's default.** The reasoning was
+already in the file: the render belongs where Mixxx, the Launchpad and
+Synesthesia's analysis arrive, and the wires belong on the pi, so client mode
+is the only way round that keeps both. `--local` is the opt-out (and an
+exported empty `ECLIPSE_CLIENT`; `--host` steps in front of the default on
+its own). A defaulted pi that does not answer ssh means the set runs on this
+machine's wires with a warning saying the sculpture will stay dark - the
+flight-case rule, applied to a computer. A *named* pi that does not answer is
+still a loud warning, but the set starts: in client mode the desk is whole
+without the far end, which is the point of it.
+
+**`run` and `osc` take `--client` too.** The launcher already passed it to
+them under `--headless`, and argparse refused it - so headless was the one
+way of running the set that could not be networked. `FrameForwarder` is the
+viewer's sink handling lifted into `controller.py` and shared: open, forward
+every frame, latch on the first failure, close with `quit` so the relic gets
+its pixels back. `run` had never emitted frames, having no window to draw
+them in; with a client it does, at `--rate`.
+
+**The sink runs a look it cannot build.** `--sink` still called
+`makePattern` on the config's pattern and every layer's, and an unknown one
+was `ERR pattern` - the same fatal it is on a desk, where it is a typo. At a
+sink it was the pi's build being older than the show, which it will be every
+time a cue is written, and the whole reason to render on the desk is that the
+pi only paints. So a sink substitutes `off` for a look it does not have, for
+the show and for each layer, and says so once on `WARN sink:`. The layer
+colour replay is skipped at a sink too - the desk composed the layer, and the
+stand-in has no knob to warn about. Two tests hold it: a config naming looks
+from the future starts as a sink and paints byte for byte; the same config on
+a desk is still refused.
+
+What is still the pi's to have: the config file itself. The path goes across
+and the far end opens its own copy, so `config/mythos-show.json` has to be in
+the checkout the pi pulls - the first networked dry run said exactly that,
+`config could not open 'config/mythos-show.json'`, with the desk running on
+regardless.
+
 ---
 
 ## Commits, in order

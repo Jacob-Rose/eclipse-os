@@ -1861,10 +1861,18 @@ the show, the viewer, the wire and the colour out to Synesthesia, off
 `config/mythos26.json`.
 
 ```sh
-./launch-mythos-set.sh              # the set: live rig, viewer, OSC
+./launch-mythos-set.sh              # the set: live rig on the pi, viewer, OSC
 ./launch-mythos-set.sh --bench      # the same look, nothing on the wire
 ./launch-mythos-set.sh --headless   # no window - over ssh, or no tkinter
+./launch-mythos-set.sh --local      # the wires on this machine, not the pi's
 ```
+
+It puts the **rig on the pi**, by default: the show renders here and its
+frames go over ssh to `scanner-pi`, where the obelisk's cable and the ring's
+GPIO are — [client mode](#client-mode--the-other-way-round). `--local` keeps
+the wires on this machine; `--client NAME` names another pi. The ssh check
+runs first, and a *defaulted* pi that does not answer is a warning and a set
+on this machine's wires, on the same reasoning as the controller below.
 
 It names the **controller**, because the config cannot: `midi.port` is `auto`,
 and auto will not open a box of buttons (see [binding a pad](#binding-a-pad--the-midi-map)
@@ -2805,11 +2813,20 @@ where the controllers are plugged in, and only the picture crosses:
 
 ```sh
 python -m eclipse_dmx view config/mythos26.json --live --client scanner-pi
-./launch-mythos-set.sh --client
+python -m eclipse_dmx run  config/mythos26.json --client scanner-pi   # headless
+./launch-mythos-set.sh            # the pi is the launcher's default
+./launch-mythos-set.sh --local    # the wires on this machine instead
 ```
 
+It is the mythos set's default: `launch-mythos-set.sh` runs `--client
+scanner-pi` unless told `--local` (or `--host`, or given an empty
+`ECLIPSE_CLIENT`). A defaulted pi that does not answer ssh is not the reason
+a set fails to start — the launcher says the sculpture will stay dark and
+runs on this machine's wires; name it with `--client` to insist. `view`,
+`run` and `osc` all take `--client`, so a headless set reaches the pi too.
+
 The far end runs `eclipse-dmx --sink`, which renders nothing and paints what
-arrives — the same `F aabbcc ...` lines `--emit-frames` already produces. Two
+arrives — the same `F aabbcc ...` lines `--emit-frames` already produces. Three
 details make it work:
 
 - **The bytes are painted, not rendered.** An F line is read back out of the
@@ -2822,6 +2839,13 @@ details make it work:
   floating, which on a cheap fixture means dark and running its own colour
   macro. The sink renders into the universe for those, then overwrites the
   three colour channels. Fed full red, the pars come out `255 255 0 0 0 0 0`.
+- **The far end does not need to know the show.** A look the sink's build
+  cannot make — the config's, or a layer's — is a `WARN sink:` and an `off`
+  stand-in, not the `ERR pattern` a desk would give. The pi's binary will be
+  older than the show every time a cue is written, and since it only paints,
+  that is not its problem. What it does need is the config *file*: the path
+  crosses and the far end opens its own copy, so a show has to be committed
+  and pulled there before its name means anything on the pi.
 
 The ring needs nothing new: it is a `preview` device and was always painted by
 `ring_bridge` from the frames going past, so the sink's own `--emit-frames`

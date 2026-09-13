@@ -21,10 +21,12 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import socket
 import struct
 import subprocess
 import sys
+import tempfile
 import time
 import unittest
 from pathlib import Path
@@ -4474,6 +4476,56 @@ class TheFrameSink(ShowTest):
         show = ShowController(SHOW, dry_run=True, autostart=False)
         with self.assertRaises(ShowError):
             show.send_frame([(0, 0, 0)])
+
+    def test_a_look_this_build_has_never_heard_of_is_not_its_problem(self):
+        """The pi only paints. A show written since its binary was built -
+        and its layers - must not be the reason its wires stay dark; that is
+        the whole point of running the render on the desk."""
+        # Written by hand: the desk's Config knows every look and would
+        # refuse these names, which is right for the desk. The far end is
+        # handed a path, and validates nothing.
+        blob = json.loads(Config.load(LAYERS).to_json())
+        blob["pattern"]["name"] = "a_look_from_the_future"
+        for layer in blob["layers"]:
+            layer["pattern"] = "another_one"
+        handle = tempfile.NamedTemporaryFile(
+            mode="w", suffix=".json", prefix="eclipse-dmx-", delete=False)
+        with handle:
+            json.dump(blob, handle)
+        self.addCleanup(os.unlink, handle.name)
+        frames, events = [], []
+        sink = ShowController(
+            handle.name, dry_run=True, autostart=False, sink=True,
+            emit_rate=30, on_frame=frames.append, on_event=events.append)
+        self.addCleanup(self._stop_quietly, sink)
+        sink.start()
+        self.settle(1.0)
+
+        warned = [e for e in events if e.startswith("WARN sink:")]
+        self.assertTrue(any("a_look_from_the_future" in w for w in warned), events)
+        self.assertTrue(any("another_one" in w for w in warned), events)
+        self.assertFalse(any(e.startswith("ERR") for e in events), events)
+
+        n = int(next(e for e in events if e.startswith("SINK ")).split()[1])
+        for _ in range(12):
+            sink.send_frame([(0, 0, 255)] * n)
+            self.settle(0.05)
+        self.settle(0.5)
+        self.assertTrue(frames, "the sink echoed nothing")
+        self.assertEqual(frames[-1], [(0, 0, 255)] * n)
+
+    def test_a_show_that_renders_still_refuses_a_look_it_cannot_make(self):
+        # The stand-in is the sink's alone. On a desk, an unknown look is a
+        # typo and a black rig would be the only other symptom.
+        blob = json.loads(Config.load(SHOW).to_json())
+        blob["pattern"]["name"] = "a_look_from_the_future"
+        handle = tempfile.NamedTemporaryFile(
+            mode="w", suffix=".json", prefix="eclipse-dmx-", delete=False)
+        with handle:
+            json.dump(blob, handle)
+        self.addCleanup(os.unlink, handle.name)
+        with self.assertRaises(ShowError):
+            ShowController(handle.name, dry_run=True, on_frame=lambda f: None)
 
 
 class ViewerGivesTheDevicesBack(GuiTest):

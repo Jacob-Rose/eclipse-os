@@ -33,7 +33,7 @@ from typing import Dict, List, Optional, Sequence, Tuple, Union
 
 from . import look_presets
 from .config import RELIC_TYPES, Config, cue_actions
-from .controller import Frame, ShowController, ShowError
+from .controller import Frame, FrameForwarder, ShowController, ShowError
 from .curve_editor import CurveEditor
 from .midi_map import (Action, ActionContext, Dispatcher, MappingSet,
                        SynesthesiaState, parse_midi_line)
@@ -989,8 +989,7 @@ class ViewerApp:
         #: runs *here* - which is the whole point, because MIDI does not cross
         #: ssh and the controllers are on this desk - and the frames go there.
         self._client_host = (client or "").strip()
-        self._sink: Optional[ShowController] = None
-        self._sink_failed = False
+        self._sink: Optional[FrameForwarder] = None
 
         self._syn_state = SynesthesiaState()
 
@@ -2514,7 +2513,7 @@ class ViewerApp:
         # the same frame the OSC sender gets: this is one picture going to
         # three places - the screen, the visualiser, and the rig.
         if self._sink is not None:
-            self._send_to_sink(frame)
+            self._sink.send(frame)
 
     def _send_osc(self, frame: Frame) -> None:
         """One fixture of this frame, out to the visualiser.
@@ -2852,46 +2851,12 @@ class ViewerApp:
     def _open_sink(self, host: str) -> None:
         """Opens the far end's wires and starts feeding them this show.
 
-        Never fatal, on the same reasoning as the lamps: a rig that cannot be
-        reached is a desk that still runs, draws and speaks OSC. The reason is
-        said once and the frames simply stop being forwarded.
+        Never fatal - see FrameForwarder. The reason is said once and the
+        frames simply stop being forwarded.
         """
-        try:
-            sink = ShowController(
-                self.config_path,
-                dry_run=not self.live,
-                remote=host,
-                sink=True,
-                emit_frames=False,
-                autostart=False,
-            )
-            sink.start()
-        except Exception as error:
-            self._sink_failed = True
-            self._say(f"client: {host}: {error}")
-            return
-
+        sink = FrameForwarder(self.config_path, host, self.live, say=self._say)
+        sink.open()
         self._sink = sink
-        self._say(f"client: driving {host}'s wires from here")
-
-    def _send_to_sink(self, frame: Frame) -> None:
-        """The newest frame, on to the far end's wires.
-
-        Called from the reader thread with every frame the local show emits,
-        so `--emit-rate` is what the rig is driven at - which has to be at
-        least the fastest `device.fps` over there or the wires are being fed
-        slower than they refresh.
-        """
-        sink = self._sink
-        if sink is None or self._sink_failed:
-            return
-        try:
-            sink.send_frame(frame)
-        except Exception as error:
-            # One failure stops the stream rather than throwing thirty times a
-            # second into a pipe that is gone. The desk keeps running.
-            self._sink_failed = True
-            self._say(f"client: {error}; frames stopped")
 
     def _release_devices(self) -> None:
         """Give back every port this desk took, on any way out.
@@ -2919,12 +2884,9 @@ class ViewerApp:
             self._guard_quiet(lambda: self.show.command("midi close"))
 
     def _close_sink(self) -> None:
-        if self._sink is None:
-            return
         sink, self._sink = self._sink, None
-        # `quit` first, so the far end sends its dark frame and gives the
-        # relic its pixels back rather than being cut off mid-show.
-        self._guard_quiet(sink.stop)
+        if sink is not None:
+            sink.close()
 
     # -- lamps -------------------------------------------------------------
 

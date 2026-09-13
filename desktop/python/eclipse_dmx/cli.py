@@ -16,7 +16,7 @@ from typing import List, Optional
 
 from .binary import BinaryNotFoundError, find_executable
 from .config import BUILTIN_PALETTES, BUILTIN_PROFILES, PATTERN_NAMES, Config, ConfigError
-from .controller import ShowController, ShowError
+from .controller import FrameForwarder, ShowController, ShowError
 from .osc import DEFAULT_ADDRESS, DEFAULT_CONTROL, RESOLVE_INTERVAL
 from .osc_input import DEFAULT_BIND, DEFAULT_INPUT_PORT
 from .ports import list_midi_ports, list_ports
@@ -595,11 +595,32 @@ def _cmd_patch(args: argparse.Namespace) -> int:
     return 0
 
 
+def _client_for(args, config_path) -> Optional[FrameForwarder]:
+    """The far end of client mode, if --client named one. Not opened yet.
+
+    Shared by `run` and `osc`, which are the headless ways to run a set and
+    were the ways that could not reach the pi: `--client` was the viewer's
+    alone. Opened after the show starts, so its warnings land in order.
+    """
+    host = (getattr(args, "client", None) or "").strip()
+    if not host:
+        return None
+    if args.host:
+        print("error: --host and --client are opposite ways round; pick one",
+              file=sys.stderr)
+        raise SystemExit(2)
+    return FrameForwarder(config_path, host, live=not args.dry_run)
+
+
 def _cmd_run(args: argparse.Namespace) -> int:
     config_path = Path(args.config)
 
     def log(line: str) -> None:
         print(line, file=sys.stderr)
+
+    # With a client, the frames have to come out of the show to go anywhere:
+    # `run` asks for none on its own, having no window to draw them in.
+    client = _client_for(args, config_path)
 
     show = ShowController(
         config_path,
@@ -611,11 +632,16 @@ def _cmd_run(args: argparse.Namespace) -> int:
         on_log=log if args.verbose else None,
         remote=args.host,
         remote_command=args.remote_command,
+        emit_frames=client is not None,
+        emit_rate=args.rate,
+        on_frame=client.send if client is not None else None,
     )
 
     with show:
         for warning in show.warnings:
             print(f"warning: {warning}", file=sys.stderr)
+        if client is not None:
+            client.open()
 
         if args.pattern:
             show.set_pattern(args.pattern)
@@ -633,6 +659,8 @@ def _cmd_run(args: argparse.Namespace) -> int:
         finally:
             if listener is not None:
                 listener.close()
+            if client is not None:
+                client.close()
         return 0 if code is None else code
 
 
@@ -698,8 +726,14 @@ def _cmd_osc(args: argparse.Namespace) -> int:
         chosen = [args.fixture]
         announced = [False]
         complained = [False]
+        client = _client_for(args, args.config)
 
         def frame(colors) -> None:
+            # One picture going two places: the fixture below to the
+            # visualiser, the whole of it to the rig when the rig is
+            # somebody else's.
+            if client is not None:
+                client.send(colors)
             if not announced[0]:
                 announced[0] = True
                 if args.device:
@@ -752,6 +786,8 @@ def _cmd_osc(args: argparse.Namespace) -> int:
                     print(f"warning: {warning}", file=sys.stderr)
                 for name, why in show.offline_devices:
                     print(f"warning: device '{name}' is offline: {why}", file=sys.stderr)
+                if client is not None:
+                    client.open()
 
                 # The cue matters here in a way it does not for `run`: what is
                 # being sent is a *colour*, and a monochrome look sends grey.
@@ -771,6 +807,8 @@ def _cmd_osc(args: argparse.Namespace) -> int:
                 finally:
                     if listener is not None:
                         listener.close()
+                    if client is not None:
+                        client.close()
         finally:
             _osc_report(link)
 
@@ -970,6 +1008,15 @@ def _add_remote_args(parser: argparse.ArgumentParser) -> None:
                              "launch-desk.sh, or $ECLIPSE_DMX_REMOTE_COMMAND)")
 
 
+def _add_client_arg(parser: argparse.ArgumentParser) -> None:
+    """--client, on every way of running a show: the wires are over there,
+    the render and everything plugged into this machine stay here."""
+    parser.add_argument("--client", metavar="HOST",
+                        help="run the show HERE and put the frames on HOST's wires "
+                             "over ssh - the opposite of --host, and the way to keep "
+                             "Mixxx and a controller, which do not cross the link")
+
+
 def _add_tempo_args(parser: argparse.ArgumentParser) -> None:
     """Tempo overrides, shared by the subcommands that start a show."""
     parser.add_argument("--midi", metavar="SPEC",
@@ -1070,8 +1117,12 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--state", help="for a state machine pattern, the look to open on")
     run.add_argument("--brightness", type=float, help="override master brightness (0..1)")
     run.add_argument("--verbose", "-v", action="store_true", help="echo the executable's logs")
+    run.add_argument("--rate", type=float, default=30.0,
+                     help="with --client, frames per second sent to the far end's wires "
+                          "(default 30; at least the fastest device.fps over there)")
     _add_tempo_args(run)
     _add_remote_args(run)
+    _add_client_arg(run)
     _add_osc_input_args(run)
     run.set_defaults(func=_cmd_run)
 
@@ -1118,6 +1169,7 @@ def build_parser() -> argparse.ArgumentParser:
                      help="render without driving hardware; the OSC still goes out")
     osc.add_argument("--verbose", "-v", action="store_true", help="echo the executable's logs")
     _add_tempo_args(osc)
+    _add_client_arg(osc)
     _add_osc_input_args(osc)
     osc.set_defaults(func=_cmd_osc)
 
@@ -1147,10 +1199,7 @@ def build_parser() -> argparse.ArgumentParser:
     viewer.add_argument("--midimap", metavar="FILE",
                         help="load this midi mapping file into the [m] panel "
                              "(default: midimaps/default.json beside the config, if present)")
-    viewer.add_argument("--client", metavar="HOST",
-                        help="run the show HERE and put the frames on HOST's wires "
-                             "over ssh - the opposite of --host, and the way to keep "
-                             "Mixxx and a controller, which do not cross the link")
+    _add_client_arg(viewer)
     viewer.add_argument("--midi-out", metavar="SPEC", dest="midi_out",
                         help="light a controller's pads from the map: a MIDI output "
                              "name, a fragment of one, an index or hw:C,D,S. "

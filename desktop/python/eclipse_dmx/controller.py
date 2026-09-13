@@ -1410,6 +1410,85 @@ class ShowController:
             return None
 
 
+class FrameForwarder:
+    """Client mode's near end: a sink on another machine, fed this show's frames.
+
+    The desk renders, and every frame it emits goes down an ssh link to an
+    `eclipse-dmx --sink` beside the wires - see ShowController.send_frame for
+    the line it speaks. This is the part the viewer, `run` and `osc` share:
+    open the far end, forward what arrives, latch on the first failure.
+
+    Never fatal, on the same reasoning as the lamps: a rig that cannot be
+    reached is a desk that still runs, draws and speaks OSC. The reason is
+    said once through `say` and the frames simply stop being forwarded -
+    one failure stops the stream rather than throwing thirty times a second
+    into a pipe that is gone.
+    """
+
+    def __init__(self, config: Union[str, Path], host: str, live: bool,
+                 say: Optional[Callable[[str], None]] = None) -> None:
+        self.config = config
+        self.host = host
+        self.live = live
+        self._say = say or (lambda line: print(line, file=sys.stderr))
+        self._sink: Optional[ShowController] = None
+        self.failed = False
+
+    @property
+    def active(self) -> bool:
+        return self._sink is not None and not self.failed
+
+    def open(self) -> bool:
+        """Starts the far end. False, and said, when it could not be."""
+        try:
+            sink = ShowController(
+                self.config,
+                dry_run=not self.live,
+                remote=self.host,
+                sink=True,
+                emit_frames=False,
+                autostart=False,
+            )
+            sink.start()
+        except Exception as error:
+            self.failed = True
+            self._say(f"client: {self.host}: {error}")
+            return False
+        self._sink = sink
+        self._say(f"client: driving {self.host}'s wires from here")
+        return True
+
+    def send(self, frame: Frame) -> None:
+        """The newest frame, on to the far end's wires.
+
+        Called from the reader thread with every frame the local show emits,
+        so `--emit-rate` is what the rig is driven at - which has to be at
+        least the fastest `device.fps` over there or the wires are being fed
+        slower than they refresh.
+        """
+        sink = self._sink
+        if sink is None or self.failed:
+            return
+        try:
+            sink.send_frame(frame)
+        except Exception as error:
+            self.failed = True
+            self._say(f"client: {error}; frames stopped")
+
+    def close(self) -> None:
+        """Ends the far end. Idempotent, and quiet: this runs while the show
+        may already be going down."""
+        sink, self._sink = self._sink, None
+        if sink is None:
+            return
+        # `quit` first, so the far end sends its dark frame and gives the
+        # relic its pixels back rather than being cut off mid-show.
+        try:
+            sink.stop()
+        except Exception:
+            pass
+
+
 def run_config(
     config: Union[Config, str, Path],
     seconds: Optional[float] = None,

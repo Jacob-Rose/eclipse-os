@@ -1896,6 +1896,19 @@ namespace
         }
     }
 
+    /// The pattern a sink runs in place of one this build cannot make.
+    ///
+    /// Client mode's far end paints what the desk sends and never renders,
+    /// but the loop still expects a pattern in the slot - it is asked for
+    /// its underlay, its states, its name. `off` answers all of those with
+    /// nothing, which is exactly the contribution a sink's pattern makes.
+    std::unique_ptr<Pattern> standInPattern(std::string& outError)
+    {
+        PatternConfig config;
+        config.name = "off";
+        return makePattern(config.name, config, outError);
+    }
+
     /// Resolves the config's layers against the devices and builds their
     /// patterns.
     ///
@@ -1904,7 +1917,7 @@ namespace
     /// to nothing would be a UV that never comes on with no message saying
     /// why. `device/fixture` names one exactly; a bare `fixture` is accepted
     /// while only one device has it.
-    bool buildLayers(ShowState& show, std::string& outError)
+    bool buildLayers(ShowState& show, bool standIn, std::string& outError)
     {
         show.layers.clear();
 
@@ -1981,6 +1994,15 @@ namespace
             patternConfig.name = config.pattern;
             patternConfig.stateName = config.state;
             layer.pattern = makePattern(config.pattern, patternConfig, outError);
+            if (!layer.pattern && standIn)
+            {
+                // A sink composes nothing - the desk already put the layers
+                // into the frame - so a layer's look it cannot build is a
+                // warning and a stand-in, the same as the show's own.
+                logLine("sink: layer '" + config.name + "': " + outError + "; painting without it");
+                emit("WARN sink: layer '" + config.name + "': " + outError);
+                layer.pattern = standInPattern(outError);
+            }
             if (!layer.pattern)
             {
                 outError = "layer '" + config.name + "': " + outError;
@@ -4423,6 +4445,21 @@ int main(int argc, char** argv)
 
     // ---- build the pattern -----------------------------------------------
     show.pattern = makePattern(show.config.pattern.name, show.config.pattern, error);
+    if (!show.pattern && sinkMode)
+    {
+        // The far end of client mode never renders: the picture arrives on
+        // stdin and the pattern here is ticked past. So a look this build
+        // has never heard of is not a reason to leave the wires dark - the
+        // desk knows it, and this end only paints. `off` stands in for the
+        // slot the loop expects a pattern in, and the state the config opens
+        // on is dropped with it rather than warned about against the wrong
+        // name. Said once, because a pi that is behind the desk is the
+        // usual reason, and worth knowing before --host is tried.
+        logLine("sink: " + error + "; painting without it");
+        emit("WARN sink: " + error + " - this build does not know the look and does not need to");
+        show.pattern = standInPattern(error);
+        show.config.pattern.stateName.clear();
+    }
     if (!show.pattern)
     {
         logLine("pattern error: " + error);
@@ -4449,8 +4486,10 @@ int main(int argc, char** argv)
     applyCoordFrame(show);
 
     // The layers, once the nodes they slice exist. A name that resolves to
-    // nothing is fatal here, like a missing device file: it is a typo.
-    if (!buildLayers(show, error))
+    // nothing is fatal here, like a missing device file: it is a typo. A
+    // *look* that resolves to nothing is fatal too, except at the far end of
+    // client mode, where the layers are never rendered - see standInPattern.
+    if (!buildLayers(show, sinkMode, error))
     {
         logLine("config error: " + error);
         emit("ERR config " + error);
@@ -4670,8 +4709,10 @@ int main(int argc, char** argv)
             {
                 // The layer's declared colour, now that its look has knobs to
                 // put it in. Before announcing, so the block a client reads
-                // carries the colour the layer is actually running.
-                if (!layer.config->color.empty())
+                // carries the colour the layer is actually running. Not at a
+                // sink: the desk composed the layer, and the look here may
+                // be a stand-in with no knob to warn about.
+                if (!layer.config->color.empty() && !sinkMode)
                 {
                     ecore::HSV parsed;
                     if (parseColorString(layer.config->color, parsed))
