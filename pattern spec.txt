@@ -72,4 +72,20 @@ pattern - mostly dark, with strong white, red/orange reactive, and cyan blue col
 synesthesia - Scaffold Fractal
 media - none
 
-12 - 16. empty
+12. e-churn
+pattern - read the custom eclipse churn pattern for reference, create matching colors, 
+give me three color palette buttons and one that cycles rainbow colors, and make it match across synesthesia and eclipse-os color wise and aesthetic.
+synesthesia - Eclipse Churn
+
+13. e-nova
+pattern - read the custom eclipse nova synesthesia pattern for reference, create matching colors
+match e-churn with color options
+
+14. cloud tun
+pattern - flying through sky, yellow and pink sunset sky with dark shadow clouds underneath. check pattern in synesthesia.
+param - control flight height with two buttons, perform a lerp for these instead of snapping between them, and turn off auto height.
+param - control flight speed with two buttons, perform a lerp for these as well.
+
+15. idle post show
+
+16. idle pre show
