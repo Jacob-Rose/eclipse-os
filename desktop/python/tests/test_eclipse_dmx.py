@@ -3111,6 +3111,35 @@ class TheShowCues(unittest.TestCase):
         keys = [entry["action"] for entry in cue_actions(self.config, "neuron")]
         self.assertNotIn("syn_media", keys)
 
+    def test_a_scene_that_shows_whatever_media_is_loaded_is_given_black(self):
+        """The flame and the tunnel read syn_Media whether or not the cue
+        gave them any, so after the rain's clip they would show the rain's
+        clip. Black is the app's missing "no media"."""
+        self.assertEqual(self.config.cues["fire"].media, "black.mp4")
+        self.assertEqual(self.config.cues["tunnel"].media, "black.mp4")
+
+    def test_a_cues_controls_follow_its_scene_by_name(self):
+        """The punk cue turns the scene's own beat flash on. The control goes
+        after the scene it belongs to, by the name the scene declares,
+        folded the way the app addresses it, and with low == high so the
+        pad's value has no say in it."""
+        entries = cue_actions(self.config, "punk")
+        keys = [entry["action"] for entry in entries]
+        self.assertEqual(keys[-2:], ["syn_scene", "syn_control"])
+        self.assertEqual(entries[-1]["params"],
+                         {"address": "/controls/scene/smoke", "low": 1.0, "high": 1.0})
+        cue = Cue.from_dict("x", {"controls": {"Media_Color_Only": 0}}, [])
+        self.assertEqual(cue.actions()[-1]["params"]["address"],
+                         "/controls/scene/mediacoloronly")
+
+    def test_a_control_that_is_not_a_number_is_rejected(self):
+        with self.assertRaises(ConfigError):
+            Cue.from_dict("x", {"controls": {"smoke": "on"}}, [])
+        with self.assertRaises(ConfigError):
+            Cue.from_dict("x", {"controls": {"smoke": True}}, [])
+        with self.assertRaises(ConfigError):
+            Cue.from_dict("x", {"controls": ["smoke"]}, [])
+
     def test_a_state_without_a_cue_is_the_state_alone(self):
         self.assertEqual(
             [entry["action"] for entry in cue_actions(self.config, "slot_9")],

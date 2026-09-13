@@ -145,10 +145,18 @@
   //            way the app matches it. Empty sends nothing.
   //   media    a media file for the scene, by name; empty sends nothing. The
   //            app has no "no media" message, so a cue with none leaves the
-  //            last one selected, which its scene may or may not show.
+  //            last one selected, which its scene may or may not show. A
+  //            scene that reads syn_Media whether or not it was given any
+  //            (the flame, the tunnel) gets black.mp4 - two seconds of
+  //            nothing, made with one ffmpeg line in readme.md - so the
+  //            cue before it does not colour it.
   //   layers   the state each layer takes, by layer name. A layer left out
   //            is left alone; every cue here names both, so a cue never
   //            inherits the last one's flash.
+  //   controls the scene's own controls to set, by control name as the
+  //            scene declares it (folded the way the app addresses it), a
+  //            number each; a toggle is 0 or 1. Sent after the scene. The
+  //            few a cue needs for the look to be the look - not a preset.
   //
   // A cue with no entry here is the state alone, which is what the empty
   // slots are.
@@ -167,7 +175,10 @@
       "layers": { "flash": "off", "uv": "rainbow" }
     },
     "fire": {
+      // With any media loaded the flame renders the video through itself;
+      // black is how it renders its own fire after the rain's clip.
       "scene": "Dynamical Flame",
+      "media": "black.mp4",
       "layers": { "flash": "off", "uv": "off" }
     },
     "glitch": {
@@ -176,7 +187,9 @@
       "layers": { "flash": "off", "uv": "off" }
     },
     "tunnel": {
+      // The tunnel adds a little of its media into the walls on the highs.
       "scene": "Fire Tunnel",
+      "media": "black.mp4",
       "layers": { "flash": "flash", "uv": "off" }
     },
     "blown": {
@@ -185,8 +198,11 @@
       "layers": { "flash": "off", "uv": "kick" }
     },
     "punk": {
+      // `smoke` is the scene's own beat flash - it inverts lightness on
+      // syn_OnBeat - so the visual strobes on the beat the flash layer does.
       "scene": "Milk, Honey, Smoke, Bile",
-      "layers": { "flash": "flash", "uv": "kick" }
+      "layers": { "flash": "flash", "uv": "kick" },
+      "controls": { "smoke": 1 }
     },
     "canyon": {
       "scene": "Vibe Thresholds",

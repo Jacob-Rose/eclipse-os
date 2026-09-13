@@ -230,6 +230,17 @@ def scene_address(name: str) -> str:
     return f"/scenes/{folded}"
 
 
+def control_address(name: str) -> str:
+    """A scene control's name, as Synesthesia spells it in an OSC address.
+
+    The same folding as a scene: `rig_color` is /controls/scene/rigcolor.
+    By name rather than position because a name means the same control in
+    every scene that has one, and nothing in a scene that does not.
+    """
+    folded = "".join(ch for ch in name.lower() if ch not in " _-")
+    return f"/controls/scene/{folded}"
+
+
 def parse_endpoint(text: str, default_port: int = 6000) -> Tuple[str, int]:
     """``"host:port"`` -> ``("host", port)``. A bare host keeps the default.
 

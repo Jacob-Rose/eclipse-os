@@ -450,9 +450,11 @@ namespace edmx
     /// fixtures - each one a hashed nudge off the hue, re-rolled per kick -
     /// which is the glitch: not a wash changing colour, a rig re-dealt.
     ///
-    /// A kick is a rising edge on the bass hits channel through `threshold`.
-    /// One edge, one colour: a transient a few frames wide must not re-deal
-    /// the rig on every frame it is above the line.
+    /// A kick is a rising edge on `channel` through `threshold` - the bass
+    /// hits by default; the show's glitch cue points it at the beat, which is
+    /// the signal the Glitch scene re-deals on. One edge, one colour: a
+    /// transient a few frames wide must not re-deal the rig on every frame
+    /// it is above the line.
     class Pattern_Mythos_KickColor : public Pattern_MythosLook
     {
     public:

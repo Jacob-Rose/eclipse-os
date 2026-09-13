@@ -1393,14 +1393,14 @@ audio bus.
 
 | cue | the rig | the room |
 | --- | --- | --- |
-| 1 `neuron` | cyan into deep blue noise, drifting | scene *Neuron Proximitors* |
+| 1 `neuron` | cyan into deep blue noise, drifting — the scene's own two colours, hue 170 to 232 | scene *Neuron Proximitors* |
 | 2 `geode` | red, riding the mid presence, never below 0.2 | *Voronoi Geode*; the flash layer on |
 | 3 `rain` | matrix rain, every drop its own colour | *VideoFX_1* + `alien-message.mp4`; the UV breathing through a hue wheel |
-| 4 `fire` | fire 2012 | *Dynamical Flame* |
-| 5 `glitch` | the rig re-dealt to a new colour on every kick | *Glitch* + `alien-message.mp4` |
-| 6 `tunnel` | pink into purple noise | *Fire Tunnel*; the flash layer on |
-| 7 `blown` | purple riding the mids, never below 0.3, green on the kick | *Filter Blown v2* + `275593_medium.mp4`; the UV on the kick |
-| 8 `punk` | punk purple into white, strobing to full white on the beat | *Milk, Honey, Smoke, Bile*; the flash layer on, the UV on the kick |
+| 4 `fire` | fire 2012 | *Dynamical Flame* + `black.mp4` |
+| 5 `glitch` | the rig re-dealt to a new colour on every beat — the scene re-deals its background on the same one | *Glitch* + `alien-message.mp4` |
+| 6 `tunnel` | pink into purple noise | *Fire Tunnel* + `black.mp4`; the flash layer on |
+| 7 `blown` | magenta riding the mids, never below 0.3, green on the kick — the scene's default palette runs black through magenta to green | *Filter Blown v2* + `275593_medium.mp4`; the UV on the kick |
+| 8 `punk` | punk purple into white, strobing to full white on the beat | *Milk, Honey, Smoke, Bile* with its `smoke` on, which is its own beat strobe; the flash layer on, the UV on the kick |
 | 10 `canyon` | orange, brown, green and blue bands pouring down the stage; a rainbow over everything on the beat | *Vibe Thresholds* + `361331_medium.mp4` |
 
 Slots 9 and 11–16 are placeholders — a dim tinted breath apiece — until
@@ -1425,12 +1425,44 @@ the viewer and a row of pads on the surface, so either can be moved off a
 cue's default by hand.
 
 **The cue table** is the `cues` block of the config, and it is the desk's,
-not the executable's: a state is a look on the rig, and the scene, the media
-and the layers around it are assembled where the pad is. Every pad on the
+not the executable's: a state is a look on the rig, and the scene, the media,
+the layers and the scene's own controls around it are assembled where the pad
+is. Every pad on the
 show's page carries the whole cue (`tools/make-launchpad-map.py` reads the
 table), and the viewer's cue buttons fire the same table. Every written cue
 names both layers, so a cue never inherits the last one's flash; a state with
 no entry is the state alone.
+
+A cue can also carry `controls`: the scene's own knobs, by the name the scene
+declares them, a number each, sent after the scene. It is for the one or two
+a look depends on — the punk cue turns on `smoke`, which is Milk, Honey's own
+beat strobe, so the visual and the flash layer hit the same beat. It is not a
+preset: a preset lives in the app on one machine, a cue in this file on every
+machine that opens it. Note that the app has no "no media" message either, and
+the flame and the tunnel read `syn_Media` whether or not the cue gave them
+any — after the rain's clip they would show the rain's clip. Those two cues
+name `black.mp4`, which is two seconds of nothing, made once in the media
+folder the app watches:
+
+```sh
+ffmpeg -f lavfi -i color=c=black:s=64x64:r=30:d=2 -c:v libx264 -pix_fmt yuv420p black.mp4
+```
+
+##### what the shaders actually do
+
+Read from the scenes themselves, because a look can only match a colour the
+scene holds. Five hold one: Neuron lerps two hard-coded blues and its hue
+rotation is commented out; Voronoi Geode is a fixed red texture with its
+rotation commented out too; Dynamical Flame is red into amber at palette 0
+(the slider has three others — pin it if anyone touches it); Fire Tunnel is a
+black-body ramp that at its defaults washes to a mauve haze; Filter Blown v2
+is ten fixed cosine palettes and its default runs black, magenta, pale pink,
+green — which is why the blown cue is magenta with a green kick. Vibe
+Thresholds defaults to its fixed "Psy Fire" palette (red, indigo, blue, cyan,
+orange — the canyon table, near enough) over the raw video, with hue-shift
+mode off. Two do not hold: Glitch steps between four stock photos on every
+`syn_OnBeat`, and Milk, Honey is a feedback sim that cycles its channels every
+frame. For those the beat is the match, not the colour.
 
 Writing a cue for real is a `GeneratorHSV` in `mythos26.h`/`.cpp` and a
 changed line in `makeMythos26StateMachine()`; nothing in the runner, the

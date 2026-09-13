@@ -190,6 +190,12 @@
             "scene": "Dynamical Flame",
             "preset": ""
           }
+        },
+        {
+          "action": "syn_media",
+          "params": {
+            "name": "black.mp4"
+          }
         }
       ],
       "enabled": true,
@@ -290,6 +296,12 @@
             "scene": "Fire Tunnel",
             "preset": ""
           }
+        },
+        {
+          "action": "syn_media",
+          "params": {
+            "name": "black.mp4"
+          }
         }
       ],
       "enabled": true,
@@ -389,6 +401,14 @@
           "params": {
             "scene": "Milk, Honey, Smoke, Bile",
             "preset": ""
+          }
+        },
+        {
+          "action": "syn_control",
+          "params": {
+            "address": "/controls/scene/smoke",
+            "low": 1.0,
+            "high": 1.0
           }
         }
       ],

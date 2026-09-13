@@ -900,21 +900,29 @@ class Cue:
     difference between "this cue does not care about the UV" and "this cue
     turns the UV off"; the show's own table names every layer on every cue
     for exactly that reason.
+
+    `controls` is the scene's own knobs, by control name, sent after the
+    scene: the one or two a cue needs set for the look to be the look - a
+    toggle that puts the visual's beat flash on beside the rig's. Not a
+    preset, because a preset lives in the app on one machine and a cue
+    lives in this file on every machine that opens it.
     """
 
     state: str = ""
     scene: str = ""
     media: str = ""
     layers: Dict[str, str] = field(default_factory=dict)
+    controls: Dict[str, float] = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, state: str, data: Any, layer_names: Sequence[str]) -> "Cue":
         if not isinstance(data, dict):
             raise ConfigError(f"cues['{state}'] must be an object")
-        unknown = set(data) - {"scene", "media", "layers"}
+        unknown = set(data) - {"scene", "media", "layers", "controls"}
         if unknown:
             raise ConfigError(
-                f"cues['{state}']: unexpected keys {sorted(unknown)}; expected scene, media, layers")
+                f"cues['{state}']: unexpected keys {sorted(unknown)}; "
+                "expected scene, media, layers, controls")
         layers_raw = data.get("layers") or {}
         if not isinstance(layers_raw, dict):
             raise ConfigError(f"cues['{state}'].layers must be an object of layer -> state")
@@ -925,10 +933,22 @@ class Cue:
                     f"cues['{state}'] names layer '{layer}', which this config does not declare"
                     + (f" (have: {', '.join(layer_names)})" if layer_names else ""))
             layers[str(layer)] = str(wanted)
+        controls_raw = data.get("controls") or {}
+        if not isinstance(controls_raw, dict):
+            raise ConfigError(f"cues['{state}'].controls must be an object of control -> value")
+        controls: Dict[str, float] = {}
+        for name, value in controls_raw.items():
+            if not str(name).strip():
+                raise ConfigError(f"cues['{state}'].controls: a control needs a name")
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise ConfigError(
+                    f"cues['{state}'].controls['{name}'] must be a number (a toggle is 0 or 1)")
+            controls[str(name)] = float(value)
         return cls(state=state,
                    scene=str(data.get("scene", "") or ""),
                    media=str(data.get("media", "") or ""),
-                   layers=layers)
+                   layers=layers,
+                   controls=controls)
 
     def to_dict(self) -> Dict[str, Any]:
         out: Dict[str, Any] = {}
@@ -938,6 +958,8 @@ class Cue:
             out["media"] = self.media
         if self.layers:
             out["layers"] = dict(self.layers)
+        if self.controls:
+            out["controls"] = dict(self.controls)
         return out
 
     def actions(self, pattern: str = "") -> List[Dict[str, Any]]:
@@ -947,7 +969,9 @@ class Cue:
         cue verbatim and the viewer can run one through the same registry:
         the machine, the state, each layer's state, then the visualiser -
         the rig first, because a dead visualiser must not cost it the cue.
+        The scene's controls go last, after the scene they belong to.
         """
+        from .osc import control_address  # here, not at the top: osc is the wire, config the file
         out: List[Dict[str, Any]] = []
         if pattern:
             out.append({"action": "pattern", "params": {"name": pattern}})
@@ -959,6 +983,10 @@ class Cue:
             out.append({"action": "syn_scene", "params": {"scene": self.scene, "preset": ""}})
         if self.media:
             out.append({"action": "syn_media", "params": {"name": self.media}})
+        for name, value in self.controls.items():
+            # low == high: the pad's own value has no say, the cue's does
+            out.append({"action": "syn_control",
+                        "params": {"address": control_address(name), "low": value, "high": value}})
         return out
 
 

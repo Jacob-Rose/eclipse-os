@@ -990,9 +990,10 @@ std::unique_ptr<StateMachinePattern> edmx::makeMythos26StateMachine()
     using ecore::HSV;
 
     std::vector<StateDef> states = {
-        // 1. cyan into deep blue, drifting - the neuron scene's own colours
+        // 1. cyan into deep blue, drifting - the neuron scene's own colours:
+        //    its particles lerp vec3(0,1,.8) to vec3(0,.3,1), hue 168 to 222
         showLook<Pattern_Mythos_NoiseWash>("neuron", [](Pattern_Mythos_NoiseWash& look) {
-            look.colorA = HSV(185.0f, 0.90f, 1.00f);
+            look.colorA = HSV(170.0f, 0.90f, 1.00f);
             look.colorB = HSV(232.0f, 1.00f, 0.40f);
         }),
         // 2. red, riding the mids, never below a fifth; the flash layer is
@@ -1007,8 +1008,11 @@ std::unique_ptr<StateMachinePattern> edmx::makeMythos26StateMachine()
         showLook<Pattern_Mythos_Rain>("rain"),
         // 4. fire
         showLook<Pattern_Mythos_Fire>("fire"),
-        // 5. a new colour on every kick
+        // 5. a new colour on every beat. The Glitch scene re-deals its
+        //    background on syn_OnBeat, which the audio bus carries as `beat`
+        //    - so the rig re-deals on the same signal, not a bass hit near it
         showLook<Pattern_Mythos_KickColor>("glitch", [](Pattern_Mythos_KickColor& look) {
+            look.channel = AudioChannel::Beat;
             look.init();
         }),
         // 6. pink into purple, drifting - the fire tunnel behind it
@@ -1016,9 +1020,11 @@ std::unique_ptr<StateMachinePattern> edmx::makeMythos26StateMachine()
             look.colorA = HSV(325.0f, 0.85f, 1.00f);
             look.colorB = HSV(275.0f, 1.00f, 0.55f);
         }),
-        // 7. purple riding the mids, never below 0.3, green on the kick
+        // 7. magenta riding the mids, never below 0.3, green on the kick -
+        //    Filter Blown v2's default palette, which runs black through
+        //    magenta (hue 321) and lands on green (hue 119) at full motion
         showLook<Pattern_Mythos_BusWash>("blown", [](Pattern_Mythos_BusWash& look) {
-            look.color = HSV(285.0f, 0.95f, 1.0f);
+            look.color = HSV(315.0f, 0.95f, 1.0f);
             look.channel = AudioChannel::MidPresence;
             look.floorLevel = 0.3f;
             look.hitColor = HSV(120.0f, 1.0f, 1.0f);
