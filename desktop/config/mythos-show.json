@@ -185,15 +185,14 @@
       }
     },
     "rain": {
-      // 2 and 3 are the rain without the video: the same empty scene with
-      // black.mp4, the only way the app has of showing nothing - see the
-      // note on media above.
+      // Opens on black - the app's only "no media", see the note above - and
+      // mode 2 is the toggle that puts the video up. 3 is the film's green,
+      // black again.
       "scene": "VideoFX_1",
-      "media": "alien-message.mp4",
+      "media": "black.mp4",
       "layers": { "flash": "off", "uv": "rainbow" },
       "modes": {
-        "2": { "media": "black.mp4" },
-        "3": { "media": "black.mp4" }
+        "2": { "media": "alien-message.mp4" }
       }
     },
     "fire": {

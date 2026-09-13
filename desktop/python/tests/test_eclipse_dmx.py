@@ -3095,7 +3095,8 @@ class TheShowCues(unittest.TestCase):
         self.assertEqual(cues["rain"].layers["uv"], "rainbow")
         self.assertEqual(cues["blown"].layers["uv"], "kick")
         self.assertEqual(cues["punk"].layers, {"flash": "flash", "uv": "kick"})
-        self.assertEqual(cues["rain"].media, "alien-message.mp4")
+        self.assertEqual(cues["rain"].media, "black.mp4")
+        self.assertEqual(cues["rain"].modes[2].media, "alien-message.mp4")
         self.assertEqual(cues["glitch"].media, "alien-message.mp4")
         self.assertEqual(cues["neuron"].scene, "Neuron Proximitors")
 
@@ -3151,14 +3152,15 @@ class TheShowCues(unittest.TestCase):
     # -- modes ---------------------------------------------------------------
 
     def test_a_mode_is_the_knob_then_the_rooms_half_of_it(self):
-        """The rain's 2 and 3 have the video off: the look's knob first, so
-        a dead visualiser costs the rig nothing, then black.mp4 - the app's
-        only "no media"."""
+        """The rain opens on black and its 2 is the video: the look's knob
+        first, so a dead visualiser costs the rig nothing, then the media.
+        3 has no entry, and still puts black back."""
+        self.assertEqual(self.config.cues["rain"].media, "black.mp4")
         entries = cue_mode_actions(self.config, "rain", 2)
         self.assertEqual([e["action"] for e in entries], ["param", "syn_media"])
         self.assertEqual(entries[0]["params"],
                          {"name": "mode", "low": 2.0, "high": 2.0, "layer": ""})
-        self.assertEqual(entries[1]["params"], {"name": "black.mp4"})
+        self.assertEqual(entries[1]["params"], {"name": "alien-message.mp4"})
         self.assertEqual(cue_mode_actions(self.config, "rain", 3)[1]["params"],
                          {"name": "black.mp4"})
 
@@ -3169,7 +3171,7 @@ class TheShowCues(unittest.TestCase):
         restarts."""
         entries = cue_mode_actions(self.config, "rain", 1)
         self.assertEqual([e["action"] for e in entries], ["param", "syn_media"])
-        self.assertEqual(entries[1]["params"], {"name": "alien-message.mp4"})
+        self.assertEqual(entries[1]["params"], {"name": "black.mp4"})
         self.assertNotIn("syn_scene", [e["action"] for e in entries])
 
         entries = cue_mode_actions(self.config, "geode", 2)

@@ -1361,14 +1361,14 @@ std::unique_ptr<StateMachinePattern> edmx::makeMythos26StateMachine()
             },
         }),
         // 3. the rain, every drop its own colour, and no churn on the tails:
-        //    smooth streaks rather than the film's glyph flicker. 2 is a
-        //    downpour and 3 is the film's green; both with the video off, in
-        //    the cue table.
+        //    smooth streaks rather than the film's glyph flicker. 2 is the
+        //    same rain with the video up (the cue table's half); 3 is the
+        //    film's green, a downpour.
         showLook<Rain>("rain", [](Rain& look) {
             look.flicker = 0.0f;
         }, {
-            [](Rain& look) { look.dropCount = 28.0f; look.fallSpeed = 18.0f; },
-            [](Rain& look) { look.hueSpread = 0.0f; look.dropCount = 10.0f; },
+            {},
+            [](Rain& look) { look.hueSpread = 0.0f; look.dropCount = 28.0f; look.fallSpeed = 18.0f; },
         }),
         // 4. fire. 2 is embers - a few risers, dying young; 3 is the whole
         //    bed alight and climbing fast.

@@ -23,10 +23,11 @@ media - none
 
 3. rain
 pattern - matrix rain effect, multicolored rain. no noise on the trails.
-mode 2 / 3 - video off (downpour / green)
+mode 2 - video on (alien-message.mp4)
+mode 3 - green, downpour
 uv - cycle pattern between rgb rainbow so its fluctuating but always on
 synesthesia - VideoFX_1 (an empty scene)
-media - alien-message.mp4
+media - black by default, the video is the mode toggle
 
 4. fire
 pattern - fire 2012 effect. par lights read horizontal, like the 5th row of the obelisk from the bottom (they were mostly off climbing beside it)
