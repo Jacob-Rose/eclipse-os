@@ -7,6 +7,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <initializer_list>
+#include <vector>
 
 #include "lib/ecore/math.h"
 
@@ -34,6 +36,207 @@ namespace
         }
         return 0.0f;
     }
+
+    struct Rgb
+    {
+        float r{0.0f};
+        float g{0.0f};
+        float b{0.0f};
+    };
+
+    Rgb toRgb(const ecore::HSV& hsv)
+    {
+        const float h = hsv.getHueFloat();
+        const float s = hsv.getSatFloat();
+        const float v = hsv.getValFloat();
+
+        const float chroma = v * s;
+        const float sector = std::fmod(h < 0.0f ? h + 360.0f : h, 360.0f) / 60.0f;
+        const float x = chroma * (1.0f - std::fabs(std::fmod(sector, 2.0f) - 1.0f));
+        const float m = v - chroma;
+
+        Rgb out;
+        switch (static_cast<int>(sector))
+        {
+            case 0:  out = {chroma, x, 0.0f};   break;
+            case 1:  out = {x, chroma, 0.0f};   break;
+            case 2:  out = {0.0f, chroma, x};   break;
+            case 3:  out = {0.0f, x, chroma};   break;
+            case 4:  out = {x, 0.0f, chroma};   break;
+            default: out = {chroma, 0.0f, x};   break;
+        }
+        out.r += m;
+        out.g += m;
+        out.b += m;
+        return out;
+    }
+
+    ecore::HSV toHsv(const Rgb& rgb)
+    {
+        const float maxC = std::max(rgb.r, std::max(rgb.g, rgb.b));
+        const float minC = std::min(rgb.r, std::min(rgb.g, rgb.b));
+        const float delta = maxC - minC;
+
+        float hue = 0.0f;
+        if (delta > 0.00001f)
+        {
+            if (maxC == rgb.r)      hue = 60.0f * std::fmod((rgb.g - rgb.b) / delta, 6.0f);
+            else if (maxC == rgb.g) hue = 60.0f * (((rgb.b - rgb.r) / delta) + 2.0f);
+            else                    hue = 60.0f * (((rgb.r - rgb.g) / delta) + 4.0f);
+        }
+        if (hue < 0.0f)
+        {
+            hue += 360.0f;
+        }
+        const float sat = (maxC <= 0.00001f) ? 0.0f : (delta / maxC);
+        return ecore::HSV(hue, sat, maxC);
+    }
+
+    /// A cross-fade between two colours the way two lamps make one: in RGB.
+    ///
+    /// ecore::HSV::blend walks the hue the long way round the wheel, so
+    /// orange into sky blue passes through yellow and green, and a rainbow
+    /// fading up over a canyon band is a band of every other colour first.
+    /// That is the fixed-point library's business on a microcontroller; the
+    /// show's gradients go through this instead and arrive seamless.
+    ///
+    /// The brightness is lerped on its own and put back over the mix. Two
+    /// saturated colours mixed in RGB meet at a colour with half the level
+    /// of either - a pink into a green dips to a dim grey in the middle -
+    /// and a lamp cross-fading should not go dark on the way. The hue and
+    /// the saturation take the RGB path; the level takes the straight one.
+    ecore::HSV blendRgb(const ecore::HSV& a, const ecore::HSV& b, float t)
+    {
+        t = std::clamp(t, 0.0f, 1.0f);
+        const Rgb ra = toRgb(a);
+        const Rgb rb = toRgb(b);
+        ecore::HSV out = toHsv({ra.r + (rb.r - ra.r) * t,
+                                ra.g + (rb.g - ra.g) * t,
+                                ra.b + (rb.b - ra.b) * t});
+        out.setBrightnessAlpha(a.getValFloat() + (b.getValFloat() - a.getValFloat()) * t);
+        return out;
+    }
+
+    /// A palette that loops and blends in RGB: `t` 0..1 runs through every
+    /// colour and back to the first, so a scrolling field has no seam. The
+    /// HSVPalette the generic looks use clamps at its ends and blends in HSV,
+    /// which on the canyon was a hard edge marching down the stage once a
+    /// cycle with a smear of green above it.
+    class RgbLoopPalette
+    {
+    public:
+        RgbLoopPalette(std::initializer_list<ecore::HSV> inColors) : colors(inColors) {}
+
+        ecore::HSV at(float t) const
+        {
+            if (colors.empty())
+            {
+                return ecore::HSV();
+            }
+            const float scaled = frac(t) * static_cast<float>(colors.size());
+            const size_t index = static_cast<size_t>(scaled) % colors.size();
+            const size_t next = (index + 1) % colors.size();
+            return blendRgb(colors[index], colors[next], scaled - static_cast<float>(index));
+        }
+
+    private:
+        std::vector<ecore::HSV> colors;
+    };
+}
+
+// ============================================================================
+// modes
+// ============================================================================
+
+void ShowModes::reflectMode(ecore::PropertyBag& bag)
+{
+    bag.add("mode", mode, 1.0f, static_cast<float>(kModeCount), [this] { applyMode(); });
+}
+
+void ShowModes::initModes(eanim::GeneratorHSV& inLook, std::vector<std::function<void()>> inVariants)
+{
+    look = &inLook;
+    variants = std::move(inVariants);
+    mode = 1.0f;
+
+    // the snapshot: every knob the cue opened with, by name, so a mode can be
+    // undone by writing them back through the same bag the desk writes
+    baseValues.clear();
+    baseColors.clear();
+    ecore::PropertyBag bag;
+    look->reflect(bag);
+    for (const ecore::Property& property : bag.all())
+    {
+        if (property.name == "mode")
+        {
+            continue;
+        }
+        if (property.type == ecore::Property::Type::Color)
+        {
+            baseColors.emplace_back(property.name, property.getColor());
+        }
+        else
+        {
+            baseValues.emplace_back(property.name, property.get());
+        }
+    }
+}
+
+void ShowModes::applyMode()
+{
+    mode = std::clamp(std::round(mode), 1.0f, static_cast<float>(kModeCount));
+    if (look == nullptr)
+    {
+        return;
+    }
+
+    // Back to the cue first, whatever mode this is, so a variant is a diff
+    // on the cue and not on the last variant. Through the bag rather than
+    // the fields, so a knob with a derived value - an envelope - rebuilds.
+    ecore::PropertyBag bag;
+    look->reflect(bag);
+    for (const auto& [name, value] : baseValues)
+    {
+        bag.set(name, value);
+    }
+    for (const auto& [name, color] : baseColors)
+    {
+        bag.setColor(name, color);
+    }
+
+    const int index = getMode() - 2;
+    if (index >= 0 && index < static_cast<int>(variants.size()) && variants[index])
+    {
+        variants[index]();
+    }
+}
+
+void ShowModes::resetMode()
+{
+    // Only a look left in another mode is touched: a knob tuned at the desk
+    // in mode 1 survives a cue change the way it did before modes existed.
+    if (getMode() != 1)
+    {
+        mode = 1.0f;
+        applyMode();
+    }
+}
+
+// ============================================================================
+// the truss as a row
+// ============================================================================
+
+bool edmx::trussRowCoord(const eio::HSVStripNode* node, float row, ecore::Coordinate& outAt)
+{
+    const eio::HSVStripNode_Space* spaced = eio::spaceOf(node);
+    if (spaced == nullptr || spaced->space != eio::NodeSpace::Truss)
+    {
+        return false;
+    }
+    // `u` is 0..1 along the truss in wiring order; spread over the obelisk's
+    // runs, so the pars read the same stretch of stage the runs do
+    outAt = ecore::Coordinate(spaced->u * static_cast<float>(scanner::kStageColumns - 1), row);
+    return true;
 }
 
 // ============================================================================
@@ -267,6 +470,36 @@ void Pattern_Mythos_Placeholder::render(eio::HSVStripNode* node, ecore::HSV& inO
 // noise wash
 // ============================================================================
 
+void Pattern_Mythos_NoiseWash::init()
+{
+    bus = &sharedAudioLevel();
+    level = 0.0f;
+}
+
+void Pattern_Mythos_NoiseWash::tick(float deltaTime)
+{
+    PatternScanner::tick(deltaTime);
+    if (follow <= 0.0f)
+    {
+        return;     // nothing reads the bus; leave the level where it was
+    }
+    if (bus == nullptr)
+    {
+        bus = &sharedAudioLevel();
+    }
+
+    // the same slewed read the bus wash does, so the two breathe alike
+    const float target = std::clamp(bus->get(channel, nowSeconds()) * gain, 0.0f, 1.0f);
+    if (slew <= 0.0f || deltaTime <= 0.0f)
+    {
+        level = target;
+    }
+    else
+    {
+        level += (target - level) * (1.0f - std::exp(-deltaTime / slew));
+    }
+}
+
 void Pattern_Mythos_NoiseWash::render(eio::HSVStripNode* node, ecore::HSV& inOutColor) const
 {
     const Coordinate at = nodeCoord(node);
@@ -289,9 +522,14 @@ void Pattern_Mythos_NoiseWash::render(eio::HSVStripNode* node, ecore::HSV& inOut
     // deep blue is bright where it is cyan and deep where it is blue, which
     // is what the pair says - lifted by the floor so the deep end of a pair
     // is never a fixture that looks unplugged.
+    //
+    // And the track's, when the wash follows a channel: what rides above the
+    // floor is scaled by the channel's level, `follow` being how much of
+    // that scaling applies.
     const float floorValue = std::clamp(floorLevel, 0.0f, 1.0f);
-    inOutColor = ecore::HSV::blend(colorA, colorB, mix);
-    inOutColor.setBrightnessAlpha(floorValue + (1.0f - floorValue) * inOutColor.getValFloat());
+    const float ride = 1.0f - std::clamp(follow, 0.0f, 1.0f) * (1.0f - level);
+    inOutColor = blendRgb(colorA, colorB, mix);
+    inOutColor.setBrightnessAlpha(floorValue + (1.0f - floorValue) * inOutColor.getValFloat() * ride);
 }
 
 void Pattern_Mythos_NoiseWash::reflect(ecore::PropertyBag& bag)
@@ -300,6 +538,9 @@ void Pattern_Mythos_NoiseWash::reflect(ecore::PropertyBag& bag)
     bag.add("speed", speed, 0.1f, 4.0f);
     bag.add("scale", scale, 0.3f, 3.0f);
     bag.add("floor", floorLevel, 0.0f, 1.0f);
+    bag.add("follow", follow, 0.0f, 1.0f);
+    bag.add("gain", gain, 0.0f, 4.0f);
+    bag.add("slew", slew, 0.0f, 1.0f);
     bag.add("color_a", colorA);
     bag.add("color_b", colorB);
 }
@@ -351,20 +592,43 @@ void Pattern_Mythos_BusWash::tick(float deltaTime)
     }
 }
 
-void Pattern_Mythos_BusWash::render(eio::HSVStripNode* /*node*/, ecore::HSV& inOutColor) const
+void Pattern_Mythos_BusWash::render(eio::HSVStripNode* node, ecore::HSV& inOutColor) const
 {
     // Intensity scales what rides above the floor - the wash's swing and the
     // hit both - so a low cue is the colour holding still at its floor, not
     // the colour gone.
     const float amount = std::clamp(intensity, 0.0f, 1.0f);
     const float floorValue = std::clamp(floorLevel, 0.0f, 1.0f);
-    const float wash = floorValue + (1.0f - floorValue) * level * amount;
+    float wash = floorValue + (1.0f - floorValue) * level * amount;
     const float kick = std::clamp(hitLevel * hit * amount, 0.0f, 1.0f);
 
-    inOutColor = ecore::HSV::blend(color, hitColor, kick);
+    // the grain: a fine field drifting over the stage, cutting into the wash
+    // where it is low - so the flat blue of the geode's second mode has
+    // something moving in it. The floor stays the floor.
+    if (texture > 0.0f)
+    {
+        const Coordinate at = nodeCoord(node);
+        const float t = timeActive * 0.7f;
+        const float grain = scanner::valueNoise(at.x * 1.1f + t * 0.9f, at.y * 0.9f - t * 1.3f);
+        wash = floorValue + (wash - floorValue) * (1.0f - std::clamp(texture, 0.0f, 1.0f) * (1.0f - grain));
+    }
+
+    // The hit's shape. Plain: the hit colour lands on the kick and fades with
+    // it. Afterglow: the kick is a pop of the wash's own colour to full for
+    // the first third of its fall, and the hit colour is what it leaves
+    // behind - swung to as the pop falls, held bright, then let go as the
+    // wash comes back through. Blown pops pink and glows green after.
+    const float glow = std::clamp((0.75f - kick) / 0.35f, 0.0f, 1.0f)
+                     * std::clamp(kick / 0.25f, 0.0f, 1.0f);
+    const float pop = std::clamp(kick * 1.5f, 0.0f, 1.0f);
+    const float shape = std::clamp(afterglow, 0.0f, 1.0f);
+    const float share = lerp(kick, glow, shape);
+    const float lift = lerp(kick, std::max(pop, glow * 0.85f), shape);
+
+    inOutColor = blendRgb(color, hitColor, share);
     // the hit lifts the level as well as recolouring it: green landing on a
     // purple wash sitting at its floor should be a flash, not a tint
-    inOutColor.setBrightnessAlpha(inOutColor.getValFloat() * std::max(wash, kick));
+    inOutColor.setBrightnessAlpha(inOutColor.getValFloat() * std::max(wash, lift));
 }
 
 void Pattern_Mythos_BusWash::reflect(ecore::PropertyBag& bag)
@@ -373,10 +637,12 @@ void Pattern_Mythos_BusWash::reflect(ecore::PropertyBag& bag)
     bag.add("floor", floorLevel, 0.0f, 1.0f);
     bag.add("gain", gain, 0.0f, 4.0f);
     bag.add("slew", slew, 0.0f, 1.0f);
+    bag.add("texture", texture, 0.0f, 1.0f);
     bag.add("color", color);
     bag.add("hit", hit, 0.0f, 1.0f);
     bag.add("hit_decay", hitDecay, 0.02f, 1.0f);
     bag.add("hit_color", hitColor);
+    bag.add("afterglow", afterglow, 0.0f, 1.0f);
 }
 
 // ============================================================================
@@ -459,16 +725,24 @@ void Pattern_Mythos_KickColor::reflect(ecore::PropertyBag& bag)
 // canyon wave
 // ============================================================================
 
-Pattern_Mythos_CanyonWave::Pattern_Mythos_CanyonWave()
-    : canyon({
+namespace
+{
+    /// The fly-through, as one loop: rock, shadow, the floor, the sky, and
+    /// back into rock without a seam. Blended in RGB - see RgbLoopPalette -
+    /// so the sky into the next band's orange is a dusk rather than a strip
+    /// of green.
+    const RgbLoopPalette kCanyon{
         ecore::HSV(22.0f, 0.95f, 1.0f),    // canyon orange
         ecore::HSV(18.0f, 0.85f, 0.45f),   // shadowed rock
         ecore::HSV(35.0f, 0.75f, 0.30f),   // brown
         ecore::HSV(95.0f, 0.80f, 0.75f),   // the green of the floor
         ecore::HSV(205.0f, 0.85f, 0.95f),  // sky
         ecore::HSV(225.0f, 0.90f, 0.55f),  // deep blue
-      })
-    , triggers(&sharedTriggerRack())
+    };
+}
+
+Pattern_Mythos_CanyonWave::Pattern_Mythos_CanyonWave()
+    : triggers(&sharedTriggerRack())
 {
     // Restart, not RestartHold: the envelope fits inside a beat at any
     // tempo this runs at, and a rainbow that held over would stop being a
@@ -495,7 +769,7 @@ void Pattern_Mythos_CanyonWave::setPulseRate(float pulsesPerBeat)
 
 void Pattern_Mythos_CanyonWave::reset()
 {
-    PatternScanner::reset();
+    Pattern_MythosLook::reset();
     envelope.reset();
     rainbow = 0.0f;
 }
@@ -522,13 +796,15 @@ void Pattern_Mythos_CanyonWave::render(eio::HSVStripNode* node, ecore::HSV& inOu
 
     // the canyon: the palette over the stage's height, moving down it -
     // subtracting time takes each band toward the floor
-    const ecore::HSV rock = canyon.getColor(frac(up * waves - timeActive * speed));
+    const ecore::HSV rock = kCanyon.at(up * waves - timeActive * speed);
 
     // the rainbow: the wheel over the same height, drifting slowly the other
     // way so two hits in a row are not the same picture
     const ecore::HSV wheel(frac(up + timeActive * 0.05f) * 360.0f, 1.0f, 1.0f);
 
-    inOutColor = ecore::HSV::blend(rock, wheel, rainbow);
+    // a cross-fade in RGB: the wheel arrives over the rock as light on light,
+    // not as the hue between them
+    inOutColor = blendRgb(rock, wheel, rainbow);
 }
 
 void Pattern_Mythos_CanyonWave::reflect(ecore::PropertyBag& bag)
@@ -578,7 +854,7 @@ void Pattern_Mythos_GradientStrobe::setPulseRate(float pulsesPerBeat)
 
 void Pattern_Mythos_GradientStrobe::reset()
 {
-    PatternScanner::reset();
+    Pattern_MythosLook::reset();
     envelope.reset();
     strobe = 0.0f;
 }
@@ -606,8 +882,8 @@ void Pattern_Mythos_GradientStrobe::render(eio::HSVStripNode* node, ecore::HSV& 
     const float phase = frac(up * waves + timeActive * speed);
     const float mix = 1.0f - std::fabs(phase * 2.0f - 1.0f);
 
-    const ecore::HSV gradient = ecore::HSV::blend(colorA, colorB, mix);
-    inOutColor = ecore::HSV::blend(gradient, strobeColor, strobe);
+    const ecore::HSV gradient = blendRgb(colorA, colorB, mix);
+    inOutColor = blendRgb(gradient, strobeColor, strobe);
 }
 
 void Pattern_Mythos_GradientStrobe::reflect(ecore::PropertyBag& bag)
@@ -639,11 +915,31 @@ void Pattern_Mythos_Fire::applyIntensity()
     sparking = lerp(0.12f, 0.47f, std::clamp(intensity, 0.0f, 1.0f));
 }
 
+void Pattern_Mythos_Fire::reset()
+{
+    Pattern_Generic_Fire2012::reset();
+    resetMode();
+}
+
+void Pattern_Mythos_Fire::render(eio::HSVStripNode* node, ecore::HSV& inOutColor) const
+{
+    Coordinate at;
+    if (trussRowCoord(node, trussRow, at))
+    {
+        renderAt(at, inOutColor);
+        return;
+    }
+    Pattern_Generic_Fire2012::render(node, inOutColor);
+}
+
 void Pattern_Mythos_Fire::reflect(ecore::PropertyBag& bag)
 {
-    // first, so it sits where it does on every other cue; `sparking` below it
-    // is the same number under its own name, and the last one turned wins
+    // first, so they sit where they do on every other cue; `sparking` below
+    // is the same number as intensity under its own name, and the last one
+    // turned wins
+    reflectMode(bag);
     bag.add("intensity", intensity, 0.0f, 1.0f, [this] { applyIntensity(); });
+    bag.add("truss_row", trussRow, scanner::kStageBottom, scanner::kStageTop);
     Pattern_Generic_Fire2012::reflect(bag);
 }
 
@@ -662,6 +958,7 @@ void Pattern_Mythos_Rain::applyIntensity()
 void Pattern_Mythos_Rain::reset()
 {
     Pattern_Generic_MatrixRain::reset();
+    resetMode();
 
     // Roll the storm forward until the first drops have crossed the stage:
     // spawned up to tail + 20 above the top and falling at 0.6..1.4 of
@@ -680,9 +977,22 @@ void Pattern_Mythos_Rain::reset()
     timeActive = 0.0f;
 }
 
+void Pattern_Mythos_Rain::render(eio::HSVStripNode* node, ecore::HSV& inOutColor) const
+{
+    Coordinate at;
+    if (trussRowCoord(node, trussRow, at))
+    {
+        renderAt(at, inOutColor);
+        return;
+    }
+    Pattern_Generic_MatrixRain::render(node, inOutColor);
+}
+
 void Pattern_Mythos_Rain::reflect(ecore::PropertyBag& bag)
 {
+    reflectMode(bag);
     bag.add("intensity", intensity, 0.0f, 1.0f, [this] { applyIntensity(); });
+    bag.add("truss_row", trussRow, scanner::kStageBottom, scanner::kStageTop);
     Pattern_Generic_MatrixRain::reflect(bag);
 }
 
@@ -852,20 +1162,37 @@ namespace
     /// machine uses, and for the same reason: the rain and the fire start
     /// empty on every visit rather than mid-storm.
     ///
-    /// `setup` is run on the fresh look before init, and is where a cue
-    /// states its colours or its channel: two cues on one class differ only
-    /// in what it is handed, and the difference reads as a line each.
+    /// `setup` is run on the fresh look, and is where a cue states its
+    /// colours or its channel: two cues on one class differ only in what it
+    /// is handed, and the difference reads as a line each. What it leaves is
+    /// mode 1, and `modes` are 2 and 3 on top of it - each a diff on the cue
+    /// as set up, never on the other; see ShowModes. A cue with none has a
+    /// mode pad that puts it back where it was.
     template <typename PatternT>
-    StateDef showLook(const char* name, std::function<void(PatternT&)> setup = {})
+    using LookSetup = std::function<void(PatternT&)>;
+
+    template <typename PatternT>
+    StateDef showLook(const char* name, LookSetup<PatternT> setup = {},
+                      std::vector<LookSetup<PatternT>> modes = {})
     {
         StateDef def;
         def.name = name;
-        def.make = [setup]() -> std::shared_ptr<eanim::GeneratorHSV> {
+        def.make = [setup, modes]() -> std::shared_ptr<eanim::GeneratorHSV> {
             auto pattern = std::make_shared<PatternT>();
             if (setup)
             {
                 setup(*pattern);
             }
+            // The variants close over the look itself, which holds them: a
+            // look is never copied out from under its shared_ptr, so the
+            // pointer is good for as long as the closure is.
+            std::vector<std::function<void()>> variants;
+            for (const LookSetup<PatternT>& variant : modes)
+            {
+                PatternT* raw = pattern.get();
+                variants.push_back([raw, variant] { if (variant) variant(*raw); });
+            }
+            pattern->initModes(*pattern, std::move(variants));
             return pattern;
         };
         def.makeState = [](const char* stateName, eio::RelicIO* io,
@@ -930,7 +1257,6 @@ std::unique_ptr<StateMachinePattern> edmx::makeUvStateMachine()
             look.channel = AudioChannel::BassHits;
             look.floorLevel = 0.0f;
             look.slew = 0.0f;
-            look.init();
         }),
         look<Pattern_Mythos_HueCycle>("rainbow"),
     };
@@ -966,11 +1292,10 @@ std::unique_ptr<StateMachinePattern> edmx::makeMythos26StateMachine()
     // ------------------------------------------------------------------
     // The show, one line per cue, in the order a UI shows them - and the
     // order of "pattern spec.txt" at the top of the checkout, which is where
-    // the numbers on the surface come from. Sixteen cues, of which the spec
-    // has so far named eight; a slot that exists is a cue that can be
-    // switched to, mapped to a button and seen on the rig before there is a
-    // look in it, so the rest are placeholders, tinted so they are told
-    // apart.
+    // the numbers on the surface come from. Sixteen cues, nine of them
+    // written; a slot that exists is a cue that can be switched to, mapped
+    // to a button and seen on the rig before there is a look in it, so the
+    // rest are placeholders, tinted so they are told apart.
     //
     // What a cue asks of the *rest* of the room - its Synesthesia scene and
     // media, the flash layer, the UV - is not here. A look is a look; the
@@ -989,54 +1314,125 @@ std::unique_ptr<StateMachinePattern> edmx::makeMythos26StateMachine()
     // ------------------------------------------------------------------
     using ecore::HSV;
 
+    // Each cue is its setup, then its modes 2 and 3 - what the pad steps
+    // through, each a diff on the cue as set up. A cue with no modes listed
+    // still has the pad; it puts the cue back where it was.
+    using NoiseWash = Pattern_Mythos_NoiseWash;
+    using BusWash = Pattern_Mythos_BusWash;
+    using KickColor = Pattern_Mythos_KickColor;
+    using Rain = Pattern_Mythos_Rain;
+    using Fire = Pattern_Mythos_Fire;
+    using Strobe = Pattern_Mythos_GradientStrobe;
+    using Canyon = Pattern_Mythos_CanyonWave;
+
     std::vector<StateDef> states = {
         // 1. cyan into deep blue, drifting - the neuron scene's own colours:
-        //    its particles lerp vec3(0,1,.8) to vec3(0,.3,1), hue 168 to 222
-        showLook<Pattern_Mythos_NoiseWash>("neuron", [](Pattern_Mythos_NoiseWash& look) {
+        //    its particles lerp vec3(0,1,.8) to vec3(0,.3,1), hue 168 to 222.
+        //    2 is the same field slowed and widened; 3 quick and busy.
+        showLook<NoiseWash>("neuron", [](NoiseWash& look) {
             look.colorA = HSV(170.0f, 0.90f, 1.00f);
             look.colorB = HSV(232.0f, 1.00f, 0.40f);
+        }, {
+            [](NoiseWash& look) { look.speed = 0.35f; look.scale = 1.6f; },
+            [](NoiseWash& look) { look.speed = 2.5f;  look.scale = 0.7f; },
         }),
         // 2. red, riding the mids, never below a fifth; the flash layer is
-        //    the cue's other half
-        showLook<Pattern_Mythos_BusWash>("geode", [](Pattern_Mythos_BusWash& look) {
+        //    the cue's other half. The geode shifts to blue, so 2 is blue: a
+        //    grained blue field on the mids with a paler blue landing on
+        //    the kick, the white flash layer off (the cue table does that).
+        //    3 keeps the red and lands blue on the kick instead.
+        showLook<BusWash>("geode", [](BusWash& look) {
             look.color = HSV(0.0f, 1.0f, 1.0f);
             look.channel = AudioChannel::MidPresence;
             look.floorLevel = 0.2f;
-            look.init();
+        }, {
+            [](BusWash& look) {
+                look.color = HSV(228.0f, 1.0f, 1.0f);
+                look.floorLevel = 0.3f;
+                look.texture = 0.7f;
+                look.hitColor = HSV(200.0f, 0.55f, 1.0f);
+                look.hit = 1.0f;
+                look.hitDecay = 0.3f;
+            },
+            [](BusWash& look) {
+                look.hitColor = HSV(225.0f, 1.0f, 1.0f);
+                look.hit = 1.0f;
+                look.hitDecay = 0.35f;
+            },
         }),
-        // 3. the rain, every drop its own colour
-        showLook<Pattern_Mythos_Rain>("rain"),
-        // 4. fire
-        showLook<Pattern_Mythos_Fire>("fire"),
+        // 3. the rain, every drop its own colour, and no churn on the tails:
+        //    smooth streaks rather than the film's glyph flicker. 2 is a
+        //    downpour and 3 is the film's green; both with the video off, in
+        //    the cue table.
+        showLook<Rain>("rain", [](Rain& look) {
+            look.flicker = 0.0f;
+        }, {
+            [](Rain& look) { look.dropCount = 28.0f; look.fallSpeed = 18.0f; },
+            [](Rain& look) { look.hueSpread = 0.0f; look.dropCount = 10.0f; },
+        }),
+        // 4. fire. 2 is embers - a few risers, dying young; 3 is the whole
+        //    bed alight and climbing fast.
+        showLook<Fire>("fire", {}, {
+            [](Fire& look) { look.sparking = 0.15f; look.cooling = 60.0f; },
+            [](Fire& look) { look.sparking = 0.85f; look.cooling = 20.0f; look.riseSpeed = 18.0f; },
+        }),
         // 5. a new colour on every beat. The Glitch scene re-deals its
         //    background on syn_OnBeat, which the audio bus carries as `beat`
-        //    - so the rig re-deals on the same signal, not a bass hit near it
-        showLook<Pattern_Mythos_KickColor>("glitch", [](Pattern_Mythos_KickColor& look) {
+        //    - so the rig re-deals on the same signal, not a bass hit near
+        //    it. 2 is one colour across the rig; 3 darker between hits and
+        //    torn further apart on each.
+        showLook<KickColor>("glitch", [](KickColor& look) {
             look.channel = AudioChannel::Beat;
-            look.init();
+        }, {
+            [](KickColor& look) { look.scatter = 0.0f; },
+            [](KickColor& look) { look.floorLevel = 0.2f; look.scatter = 0.3f; look.decay = 0.2f; },
         }),
-        // 6. pink into purple, drifting - the fire tunnel behind it
-        showLook<Pattern_Mythos_NoiseWash>("tunnel", [](Pattern_Mythos_NoiseWash& look) {
+        // 6. pink into purple, drifting - the fire tunnel behind it - and
+        //    breathing with the mids the way the geode and blown do, so it
+        //    moves with the track like the cues either side of it. The same
+        //    2 and 3 as the neuron.
+        showLook<NoiseWash>("tunnel", [](NoiseWash& look) {
             look.colorA = HSV(325.0f, 0.85f, 1.00f);
             look.colorB = HSV(275.0f, 1.00f, 0.55f);
+            look.channel = AudioChannel::MidPresence;
+            look.follow = 1.0f;
+            look.floorLevel = 0.3f;
+        }, {
+            [](NoiseWash& look) { look.speed = 0.35f; look.scale = 1.6f; },
+            [](NoiseWash& look) { look.speed = 2.5f;  look.scale = 0.7f; },
         }),
-        // 7. magenta riding the mids, never below 0.3, green on the kick -
-        //    Filter Blown v2's default palette, which runs black through
-        //    magenta (hue 321) and lands on green (hue 119) at full motion
-        showLook<Pattern_Mythos_BusWash>("blown", [](Pattern_Mythos_BusWash& look) {
+        // 7. pink riding the mids, never below 0.65 - a pink base all the
+        //    way through, rather than dark until it pops - and the kick a
+        //    pop of pink to full with a green afterglow, which is the order
+        //    Filter Blown v2's palette runs in: black through magenta (hue
+        //    321) to green (hue 119) at full motion. 2 lifts the base; 3 is
+        //    the old cue, dark until the pop.
+        showLook<BusWash>("blown", [](BusWash& look) {
             look.color = HSV(315.0f, 0.95f, 1.0f);
             look.channel = AudioChannel::MidPresence;
-            look.floorLevel = 0.3f;
+            look.floorLevel = 0.65f;
             look.hitColor = HSV(120.0f, 1.0f, 1.0f);
             look.hit = 1.0f;
-            look.init();
+            look.hitDecay = 0.45f;
+            look.afterglow = 1.0f;
+        }, {
+            [](BusWash& look) { look.floorLevel = 0.85f; },
+            [](BusWash& look) { look.floorLevel = 0.25f; },
         }),
         // 8. punk purple into white, strobing on the beat; the flash layer
-        //    and the UV on the kick are the cue's other half
-        showLook<Pattern_Mythos_GradientStrobe>("punk"),
+        //    and the UV on the kick are the cue's other half. 2 strobes in
+        //    half time, 3 in double.
+        showLook<Strobe>("punk", {}, {
+            [](Strobe& look) { look.setPulseRate(edmx::kHalfTime); },
+            [](Strobe& look) { look.setPulseRate(edmx::kDoubleTime); },
+        }),
         placeholder("slot_9", 240.0f),
-        // 10. the canyon fly-through, and a rainbow on the beat
-        showLook<Pattern_Mythos_CanyonWave>("canyon"),
+        // 10. the canyon fly-through, and a rainbow on the beat. 2 is a slow
+        //    fly with the rainbow once a bar; 3 fast, the rainbow in double.
+        showLook<Canyon>("canyon", {}, {
+            [](Canyon& look) { look.speed = 0.05f; look.waves = 2.0f; look.setPulseRate(edmx::kQuarterTime); },
+            [](Canyon& look) { look.speed = 0.30f; look.setPulseRate(edmx::kDoubleTime); },
+        }),
         placeholder("slot_11", 300.0f),
         placeholder("slot_12", 330.0f),
         placeholder("slot_13", 0.0f),

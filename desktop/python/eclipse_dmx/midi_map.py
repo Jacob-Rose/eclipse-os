@@ -230,17 +230,24 @@ class ActionContext:
     have to agree on it: the pads and the audio engine run against separate
     contexts, and a scene the *app* announced arrives on the OSC one while
     the lamp asking about it hangs off the MIDI one.
+
+    `config` is the show's, for the one action that reads the cue table at
+    press time rather than carrying its actions in the map: `mode`, which
+    cannot know which cue is up until it is pressed. None on a desk with no
+    config, and then a mode is the look's knob alone.
     """
 
     def __init__(self, show=None,
                  osc_factory: Optional[Callable[[], object]] = None,
                  say: Optional[Callable[[str], None]] = None,
-                 syn: Optional[SynesthesiaState] = None) -> None:
+                 syn: Optional[SynesthesiaState] = None,
+                 config=None) -> None:
         self.show = show
         self._osc_factory = osc_factory
         self._osc = None
         self.say = say or (lambda message: None)
         self.syn = syn if syn is not None else SynesthesiaState()
+        self.config = config
 
         #: Which page of the map the surface is showing. "" shows only the
         #: mappings that belong to no page, which is every map written before
@@ -507,6 +514,76 @@ def _run_param(context, params, value):
     return None  # streamed; narrating every value would bury the header
 
 
+def _run_mode(context, params, value):
+    """The running cue's mode: the next one round, or the one named.
+
+    The pad the three intensity pads became. A show look announces a `mode`
+    knob, 1..N, and this steps it - reading where the look is off its last
+    announcement, which is what makes one pad enough. `mode` in the params
+    names one outright instead, for a desk that wants a pad per mode.
+
+    Half of a mode is the look's own and lands with the knob. The other half
+    is the cue table's - a video off, a layer moved - and is read off the
+    context's config at press time, because which cue is up is not something
+    a map can know when it is written. See Cue.mode_actions. Each of those
+    is fenced on its own, the way the dispatcher fences a pad's: a visualiser
+    that is not there must not cost the rig its mode.
+    """
+    show = context.show
+    if show is None:
+        return "mode: no show"
+    knob = show.get_param("mode")
+    if knob is None or knob.is_color or knob.is_bool:
+        return "mode: this look has no modes"
+
+    count = max(int(round(knob.maximum)), 1)
+    wanted = int(params.get("mode", 0) or 0)
+    if wanted:
+        mode = wanted
+    else:
+        step = int(params.get("step", 1) or 1)
+        mode = ((int(round(float(knob.value))) - 1 + step) % count) + 1
+    mode = min(max(mode, 1), count)
+
+    state = getattr(show, "current_state", "") or ""
+    config = getattr(context, "config", None)
+    if config is None or not state:
+        show.set_param("mode", mode, wait=False)
+        return f"mode {mode}"
+
+    from .config import cue_mode_actions   # here, not at the top: config imports nothing of ours
+    for entry in cue_mode_actions(config, state, mode):
+        action = Action.from_dict(entry)
+        spec = action.spec
+        if spec is None:
+            continue
+        try:
+            line = spec.run(context, action.params, 1.0)
+        except Exception as error:  # fenced on purpose; see the docstring
+            context.say(f"mode {mode}: {error}")
+            continue
+        if line:
+            context.say(line)
+    return f"mode {mode}"
+
+
+def _check_mode(context, params):
+    """Lit when the cue is off its first mode - or, for a pad that names a
+    mode, when the look is in that one. A look with no modes has no
+    opinion."""
+    show = context.show
+    if show is None:
+        return None
+    knob = show.get_param("mode")
+    if knob is None or knob.is_color or knob.is_bool:
+        return None
+    current = int(round(float(knob.value)))
+    wanted = int(params.get("mode", 0) or 0)
+    if wanted:
+        return current == wanted
+    return current != 1
+
+
 def _run_audio(context, params, value):
     """One channel of the audio bus, filled.
 
@@ -711,6 +788,18 @@ register_action(ActionSpec(
         FieldSpec("layer", "layer", hint="optional: a layer's look instead of the show's"),
     ],
     run=_run_param,
+))
+
+register_action(ActionSpec(
+    key="mode", label="rig: cue mode",
+    fields=[
+        FieldSpec("mode", "mode", kind="int", default=0,
+                  hint="a mode to go to, or 0 to step to the next"),
+        FieldSpec("step", "step", kind="int", default=1,
+                  hint="how far to step when no mode is named; -1 goes back"),
+    ],
+    run=_run_mode,
+    check=_check_mode,
 ))
 
 register_action(ActionSpec(

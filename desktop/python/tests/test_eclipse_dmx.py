@@ -47,6 +47,7 @@ from eclipse_dmx.config import (  # noqa: E402
     Fixture,
     MidiConfig,
     cue_actions,
+    cue_mode_actions,
 )
 from eclipse_dmx.controller import ShowController, ShowError, _parse_frame  # noqa: E402
 from eclipse_dmx.curves import (  # noqa: E402
@@ -3272,17 +3273,15 @@ class TheShowPage(unittest.TestCase):
                        if any(a["action"] == "state" for a in m["actions"]))
         self.assertEqual(notes, [launchpad.pad(r, c) for r in (1, 2) for c in range(1, 9)])
 
-    def test_three_intensity_pads_on_the_fourth_row(self):
-        pads = self._pads("mythos26 - intensity")
-        self.assertEqual(len(pads), 3)
-        levels = [a["params"]["high"] for m in pads for a in m["actions"]]
-        self.assertEqual(levels, [0.33, 0.66, 1.0])
-        for mapping in pads:
-            self.assertEqual(mapping["trigger"]["number"] // 10, 4)
-            (action,) = mapping["actions"]
-            self.assertEqual(action["action"], "param")
-            self.assertEqual(action["params"]["name"], "intensity")
-            self.assertEqual(action["params"]["layer"], "")
+    def test_one_mode_pad_on_the_fourth_row(self):
+        """Where the three intensity pads were: one pad that steps whatever
+        cue is up to its next mode, and nothing else on the row."""
+        (pad,) = self._pads("mythos26 - mode")
+        self.assertEqual(pad["trigger"]["number"], launchpad.pad(4, 1))
+        self.assertEqual(pad["actions"], [{"action": "mode", "params": {"mode": 0, "step": 1}}])
+        self.assertFalse(self._pads("mythos26 - intensity"))
+        self.assertEqual([m["label"] for m in self.page if m["trigger"]["number"] // 10 == 4],
+                         ["mythos26 - mode"])
 
     def test_a_row_per_layer_with_a_pad_per_state(self):
         for row, layer, states in ((5, "flash", FLASH_STATES), (6, "uv", UV_STATES)):
@@ -3324,6 +3323,103 @@ class _FakeLayer:
     def set_state(self, name):
         self.moved.append(name)
         self.current_state = name
+
+
+class _FakeModedRig(_FakeLayer):
+    """A show with a `mode` knob it announces, and the layers a cue moves."""
+
+    def __init__(self, state="rain", mode=1.0, count=3.0, **layers):
+        super().__init__(state)
+        self.layers = layers
+        self.params = [_FakeParam("mode", mode, 1.0, count)]
+        self.set = []
+
+    def get_param(self, name):
+        return next((p for p in self.params if p.name == name), None)
+
+    def set_param(self, name, value, wait=True):
+        self.set.append((name, value))
+        knob = self.get_param(name)
+        if knob is not None:
+            knob.value = value
+
+
+class _FakeParam:
+    def __init__(self, name, value, minimum, maximum, kind="f"):
+        self.name, self.value, self.minimum, self.maximum, self.kind = name, value, minimum, maximum, kind
+        self.is_color = kind == "c"
+        self.is_bool = kind == "b"
+
+
+class TheModeAction(unittest.TestCase):
+    """`rig: cue mode`: the pad the intensity pads became. Steps the running
+    look's `mode` off what it last announced, and fires the cue table's half
+    of the mode off the context's config."""
+
+    def setUp(self):
+        self.config = Config.load(CUES)
+
+    def _context(self, rig, config=True):
+        self.said = []
+        return midi_map.ActionContext(show=rig, say=self.said.append,
+                                      config=self.config if config else None)
+
+    def test_it_steps_to_the_next_mode_and_round(self):
+        rig = _FakeModedRig("fire", mode=1.0)
+        spec = midi_map.ACTIONS["mode"]
+        for expected in (2, 3, 1, 2):
+            said = spec.run(self._context(rig), {"mode": 0, "step": 1}, 1.0)
+            self.assertEqual(said, f"mode {expected}")
+            self.assertEqual(rig.set[-1], ("mode", expected))
+
+    def test_it_reads_the_looks_count_not_its_own(self):
+        rig = _FakeModedRig("fire", mode=2.0, count=2.0)
+        midi_map.ACTIONS["mode"].run(self._context(rig), {"mode": 0, "step": 1}, 1.0)
+        self.assertEqual(rig.set[-1], ("mode", 1))
+
+    def test_a_named_mode_goes_there_and_a_step_back_goes_back(self):
+        rig = _FakeModedRig("fire", mode=1.0)
+        midi_map.ACTIONS["mode"].run(self._context(rig), {"mode": 3, "step": 1}, 1.0)
+        self.assertEqual(rig.set[-1], ("mode", 3))
+        midi_map.ACTIONS["mode"].run(self._context(rig), {"mode": 0, "step": -1}, 1.0)
+        self.assertEqual(rig.set[-1], ("mode", 2))
+
+    def test_it_fires_the_cue_tables_half_off_the_running_cue(self):
+        """The geode's blue takes the white flash layer with it, and mode 1
+        brings it back - read off the config at press time, because the
+        pad cannot know which cue is up when the map is written."""
+        flash = _FakeLayer("flash")
+        rig = _FakeModedRig("geode", mode=1.0, flash=flash)
+        spec = midi_map.ACTIONS["mode"]
+        spec.run(self._context(rig), {"mode": 0, "step": 1}, 1.0)
+        self.assertEqual(rig.set, [("mode", 2)])
+        self.assertEqual(flash.moved, ["off"])
+        spec.run(self._context(rig), {"mode": 1, "step": 1}, 1.0)
+        self.assertEqual(flash.moved, ["off", "flash"])
+
+    def test_a_desk_with_no_config_moves_the_knob_alone(self):
+        flash = _FakeLayer("flash")
+        rig = _FakeModedRig("geode", mode=1.0, flash=flash)
+        midi_map.ACTIONS["mode"].run(self._context(rig, config=False), {"mode": 0, "step": 1}, 1.0)
+        self.assertEqual(rig.set, [("mode", 2)])
+        self.assertEqual(flash.moved, [])
+
+    def test_a_look_without_modes_says_so(self):
+        rig = _FakeModedRig("slot_9")
+        rig.params = []
+        said = midi_map.ACTIONS["mode"].run(self._context(rig), {"mode": 0, "step": 1}, 1.0)
+        self.assertIn("no modes", said)
+        self.assertEqual(rig.set, [])
+
+    def test_it_lights_when_the_cue_is_off_its_first_mode(self):
+        check = midi_map.ACTIONS["mode"].check
+        self.assertIs(check(self._context(_FakeModedRig(mode=1.0)), {"mode": 0}), False)
+        self.assertIs(check(self._context(_FakeModedRig(mode=2.0)), {"mode": 0}), True)
+        self.assertIs(check(self._context(_FakeModedRig(mode=2.0)), {"mode": 2}), True)
+        self.assertIs(check(self._context(_FakeModedRig(mode=2.0)), {"mode": 3}), False)
+        rig = _FakeModedRig()
+        rig.params = []
+        self.assertIsNone(check(self._context(rig), {"mode": 0}))
 
 
 class TheLayerAction(unittest.TestCase):
@@ -3408,9 +3504,10 @@ class TheShowLooks(ShowTest):
         self.assertEqual(tuple(show.layers["uv"].state_names), UV_STATES)
         self.assertEqual(tuple(show.layers["flash"].state_names), FLASH_STATES)
 
-    def test_every_written_cue_has_the_intensity_knob(self):
-        """Three pads on the surface set `intensity` on whatever cue is up,
-        so every cue that is not a placeholder has to answer to it."""
+    def test_every_written_cue_has_the_mode_knob(self):
+        """The mode pad steps `mode` on whatever cue is up, so every cue
+        that is not a placeholder has to announce it - 1..3, opening on 1 -
+        and the intensity knob it used to be is still there for a fader."""
         show = self.running_show(CUES, midi="")
         show.set_pattern("mythos26")
         for state in Config.load(CUES).cues:
@@ -3418,7 +3515,72 @@ class TheShowLooks(ShowTest):
             show.set_state(state)
             self.settle_until(lambda: show.params_revision > since,
                               message=f"{state}'s knobs")
-            self.assertIn("intensity", [p.name for p in show.params], state)
+            names = [p.name for p in show.params]
+            self.assertEqual(names[0], "mode", state)
+            self.assertIn("intensity", names, state)
+            mode = show.get_param("mode")
+            self.assertEqual((mode.value, mode.minimum, mode.maximum), (1.0, 1.0, 3.0), state)
+
+    def test_a_mode_moves_the_looks_knobs_and_the_echo_carries_them(self):
+        """`param mode 2` on the geode turns it blue - and the reply lists
+        every knob the mode moved, not only the mode, so the desk's copy of
+        the colour is the colour."""
+        show = self._show("geode")
+        self.settle_until(lambda: show.get_param("color") is not None, message="geode's knobs")
+        self.assertEqual(show.get_param("color").value, "#ff0000")
+        show.set_param("mode", 2)
+        self.settle_until(lambda: show.get_param("color").value != "#ff0000",
+                          message="the echo of the colour the mode set")
+        self.assertEqual(show.get_param("mode").value, 2.0)
+        self.assertEqual(show.get_param("texture").value, 0.7)
+        # and back: 1 is the cue as built, whatever 2 did to it
+        show.set_param("mode", 1)
+        self.settle_until(lambda: show.get_param("color").value == "#ff0000",
+                          message="the cue's own colour back")
+        self.assertEqual(show.get_param("texture").value, 0.0)
+
+    def test_a_mode_is_snapped_and_clamped(self):
+        show = self._show("fire")
+        self.settle_until(lambda: show.get_param("mode") is not None, message="fire's knobs")
+        show.set_param("mode", 2.4)
+        self.settle_until(lambda: show.get_param("mode").value == 2.0, message="snapped")
+        show.set_param("mode", 9)
+        self.settle_until(lambda: show.get_param("mode").value == 3.0, message="clamped")
+
+    def test_entering_a_cue_again_is_mode_one(self):
+        """A pad is the cue as written. A look left in mode 2 comes back in
+        1 - and one left in 1 keeps a knob tuned at the desk, as it always
+        did."""
+        show = self._show("punk")
+        self.settle_until(lambda: show.get_param("rate") is not None, message="punk's knobs")
+        show.set_param("mode", 2)
+        self.settle_until(lambda: show.get_param("rate").value == 0.5, message="half time")
+        show.set_state("rain")
+        time.sleep(0.5)
+        since = show.params_revision
+        show.set_state("punk")
+        self.settle_until(lambda: show.params_revision > since, message="punk again")
+        self.assertEqual(show.get_param("mode").value, 1.0)
+        self.assertEqual(show.get_param("rate").value, 1.0)
+
+        show.set_param("speed", 2.0)
+        show.set_state("rain")
+        time.sleep(0.5)
+        since = show.params_revision
+        show.set_state("punk")
+        self.settle_until(lambda: show.params_revision > since, message="punk a third time")
+        self.assertEqual(show.get_param("speed").value, 2.0)
+
+    def test_the_truss_reads_the_fire_as_a_row(self):
+        """The pars stand beside the obelisk at x 10, out of reach of flames
+        born at x 0..7 - so the fire is read across them as a row at
+        `truss_row`, and more than the lowest par burns."""
+        frames = []
+        show = self._show("fire", on_frame=frames.append)
+        time.sleep(1.0)
+        pars = show.devices[2]
+        lit = [i for i in range(pars.first, pars.first + 10) if max(frames[-1][i]) > 0]
+        self.assertGreater(len(lit), 3, "the fire should reach along the truss")
 
     def test_low_intensity_is_quieter_not_dark(self):
         frames = []
@@ -3442,33 +3604,43 @@ class TheShowLooks(ShowTest):
         self.assertGreater(self._peak(frames, mark, 0.4, 2), at_rest + 40,
                            "the blue of the purple should climb with the mids")
 
-    def test_a_kick_lands_green_on_the_purple(self):
+    def test_a_kick_pops_pink_and_glows_green_after(self):
+        """Blown: a pink base all the way through, a kick a pop of that pink
+        to full, and green as the afterglow rather than on the hit."""
         frames = []
         show = self._show("blown", on_frame=frames.append)
         time.sleep(0.6)
-        self.assertLess(frames[-1][self.SAMPLE][1], 40, "purple at rest has no green in it")
+        rest = frames[-1][self.SAMPLE]
+        self.assertGreater(rest[0], 40, "the base is pink, not dark")
+        self.assertLess(rest[1], 40, "pink at rest has no green in it")
 
+        # a transient, as the bus gets one from the analysis: up, then gone
         mark = len(frames)
         show.command("audio bass_hits 1.0", expect_reply=False)
-        self.assertGreater(self._peak(frames, mark, 0.5, 1), 150, "the kick is green")
+        time.sleep(0.05)
+        show.command("audio bass_hits 0.0", expect_reply=False)
+        self.assertGreater(self._peak(frames, mark, 0.15, 0), rest[0] + 60, "the pop is pink")
+        self.assertGreater(self._peak(frames, mark, 0.7, 1), 100, "green follows it")
 
-    def test_glitch_deals_a_new_colour_on_each_kick(self):
+    def test_glitch_deals_a_new_colour_on_each_beat(self):
+        """The glitch cue re-deals on `beat` - the signal its scene re-deals
+        on - not on a bass hit near it."""
         frames = []
         show = self._show("glitch", on_frame=frames.append)
         time.sleep(0.6)
         before = frames[-1][self.SAMPLE]
-        self.assertGreater(max(before), 0, "holds a colour between kicks")
+        self.assertGreater(max(before), 0, "holds a colour between beats")
 
-        # one edge, one colour: the same kick held high for several frames
-        # must deal once, and a second kick after it has dropped deals again
+        # one edge, one colour: the same beat held high for several frames
+        # must deal once, and a second beat after it has dropped deals again
         for _ in range(4):
-            show.command("audio bass_hits 1.0", expect_reply=False)
+            show.command("audio beat 1.0", expect_reply=False)
             time.sleep(0.04)
         time.sleep(0.5)
         first = frames[-1][self.SAMPLE]
-        show.command("audio bass_hits 0.0", expect_reply=False)
+        show.command("audio beat 0.0", expect_reply=False)
         time.sleep(0.3)
-        show.command("audio bass_hits 1.0", expect_reply=False)
+        show.command("audio beat 1.0", expect_reply=False)
         time.sleep(0.5)
         second = frames[-1][self.SAMPLE]
 

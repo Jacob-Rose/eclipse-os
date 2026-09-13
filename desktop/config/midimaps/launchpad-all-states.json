@@ -2992,7 +2992,7 @@
       "colour": 3
     },
     {
-      "label": "mythos26 - intensity low",
+      "label": "mythos26 - mode",
       "trigger": {
         "kind": "note",
         "channel": 1,
@@ -3001,64 +3001,16 @@
       "mode": "press",
       "actions": [
         {
-          "action": "param",
+          "action": "mode",
           "params": {
-            "name": "intensity",
-            "low": 0.0,
-            "high": 0.33,
-            "layer": ""
+            "mode": 0,
+            "step": 1
           }
         }
       ],
       "enabled": true,
       "page": "mythos26",
       "colour": 9
-    },
-    {
-      "label": "mythos26 - intensity mid",
-      "trigger": {
-        "kind": "note",
-        "channel": 1,
-        "number": 42
-      },
-      "mode": "press",
-      "actions": [
-        {
-          "action": "param",
-          "params": {
-            "name": "intensity",
-            "low": 0.0,
-            "high": 0.66,
-            "layer": ""
-          }
-        }
-      ],
-      "enabled": true,
-      "page": "mythos26",
-      "colour": 13
-    },
-    {
-      "label": "mythos26 - intensity high",
-      "trigger": {
-        "kind": "note",
-        "channel": 1,
-        "number": 43
-      },
-      "mode": "press",
-      "actions": [
-        {
-          "action": "param",
-          "params": {
-            "name": "intensity",
-            "low": 0.0,
-            "high": 1.0,
-            "layer": ""
-          }
-        }
-      ],
-      "enabled": true,
-      "page": "mythos26",
-      "colour": 3
     },
     {
       "label": "mythos26 - flash off",

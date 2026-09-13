@@ -5,7 +5,11 @@
 
 #pragma once
 
+#include <functional>
 #include <memory>
+#include <string>
+#include <utility>
+#include <vector>
 
 #include "lib/eanim/automation_curve.h"
 #include "lib/eanim/generator_hsv.h"
@@ -328,25 +332,93 @@ namespace edmx
     // in the next would read as two rigs. So they are scanner::PatternScanners:
     // a resettable clock, nodeCoord() and stageAlpha() for free.
     //
-    // And every one has an `intensity` knob, 0..1, because the surface has
-    // three pads per cue - low, medium, high - and a pad has to mean the same
-    // thing on every look. What it *scales* is the look's own business: the
-    // depth of a wash, how hard a hit lands, how many drops are in the air.
-    // What it never does is take the rig to black, so `low` is a quieter cue
-    // and not a fault.
+    // And every one has a `mode` - 1, 2 or 3, one pad on the surface
+    // stepping through them - because a cue is not one look but the two or
+    // three the scene behind it asks for at different moments: the geode
+    // gone blue, the rain with its video off. What a mode *is* is the cue's
+    // own, written beside it in the table; see ShowModes for the mechanism.
+    //
+    // They also keep an `intensity` knob, 0..1, scaling the look's own
+    // measure of how much is happening - the depth of a wash, how hard a hit
+    // lands, how many drops are in the air - and never taking the rig to
+    // black. It used to be the surface's three pads; it is a knob for a
+    // fader or a mod now, and the pads are the mode.
     // ========================================================================
 
-    /// The base for a show look: the clock, and the intensity knob every cue
-    /// answers to. The knob is declared once here so it is spelled the same on
-    /// all of them; each look reads it in its own way.
-    class Pattern_MythosLook : public scanner::PatternScanner
+    /// The mode every show cue answers to: 1, 2 or 3, and a pad that steps
+    /// through them.
+    ///
+    /// Where the three intensity pads used to be. A number 0..1 that meant
+    /// the same on every cue could not mean much on any of them - `low` was
+    /// a quieter geode, when what the geode wanted was to go blue. So a mode
+    /// is the cue's own: modes 2 and 3 are written beside the cue in
+    /// makeMythos26StateMachine, a line each, and this is the rig-side half
+    /// of the mechanism. The other half - a video off, a layer moved - is the
+    /// cue table's `modes` in config/mythos-show.json, fired by the same pad.
+    ///
+    /// Mode 1 is the cue as built. The knobs it opened with are snapshotted
+    /// once its setup has run, and every mode change puts all of them back
+    /// before its own variant runs over them - so 2 is a diff on the cue and
+    /// not on whatever 3 left behind, and 1 is the way back. Entering a look
+    /// that was left in another mode puts it in 1; entering one already in 1
+    /// touches nothing, so a knob tuned at the desk survives a cue change the
+    /// way it always has, and a mode does not.
+    ///
+    /// A mixin rather than a base, because the fire and the rain are generic
+    /// looks with a base of their own.
+    class ShowModes
+    {
+    public:
+        static constexpr int kModeCount = 3;
+
+        /// 1..3. A float because a knob is one; snapped on the way in.
+        float mode{1.0f};
+
+        /// `mode`, on the bag. First on every look, so it sits at the top of
+        /// the knob pane on all of them.
+        void reflectMode(ecore::PropertyBag& bag);
+
+        /// Binds to the look this is part of, takes the snapshot, and keeps
+        /// the variants for modes 2 and up in order. Called once the cue's
+        /// setup has run - see showLook - so the snapshot is the cue and not
+        /// the class. A mode past the end of the list is mode 1's values and
+        /// nothing else.
+        void initModes(eanim::GeneratorHSV& look, std::vector<std::function<void()>> variants);
+
+        /// Snaps `mode`, restores the snapshot, runs the variant.
+        void applyMode();
+
+        /// What entry does: back to mode 1 if the look was left elsewhere.
+        void resetMode();
+
+        int getMode() const { return static_cast<int>(mode); }
+
+    private:
+        eanim::GeneratorHSV* look{nullptr};
+        std::vector<std::function<void()>> variants;
+        std::vector<std::pair<std::string, float>> baseValues;
+        std::vector<std::pair<std::string, ecore::HSV>> baseColors;
+    };
+
+
+    /// The base for a show look: the clock, the mode, and the intensity knob.
+    /// Both knobs are declared once here so they are spelled the same on all
+    /// of them; each look reads intensity in its own way.
+    class Pattern_MythosLook : public scanner::PatternScanner, public ShowModes
     {
     public:
         /// How much of the look is happening, 0..1. See the note above.
         float intensity{1.0f};
 
+        virtual void reset() override
+        {
+            PatternScanner::reset();
+            resetMode();
+        }
+
         virtual void reflect(ecore::PropertyBag& bag) override
         {
+            reflectMode(bag);
             bag.add("intensity", intensity, 0.0f, 1.0f);
         }
     };
@@ -378,8 +450,30 @@ namespace edmx
         /// backdrop that blacks out in patches reads as fixtures failing.
         float floorLevel{0.25f};
 
+        /// A channel of the bus the field's level rides, and how much of the
+        /// ride shows: at `follow` 0 the wash drifts on its own, which is the
+        /// neuron cue; at 1 its brightness above the floor is the channel's,
+        /// slewed. The tunnel follows the mid presence the way the geode and
+        /// blown do, because a cue between two that move with the track and
+        /// one that does not reads as the rig losing the music. The channel
+        /// is set per cue, not a knob - see Pattern_Mythos_BusWash::channel.
+        AudioChannel channel{AudioChannel::MidPresence};
+        float follow{0.0f};
+        float gain{1.0f};
+        float slew{0.15f};
+
+        void init();
+
+        virtual void tick(float deltaTime) override;
         virtual void render(eio::HSVStripNode* node, ecore::HSV& inOutColor) const override;
         virtual void reflect(ecore::PropertyBag& bag) override;
+
+        /// The channel's slewed level, 0..1, for tests.
+        float getLevel() const { return level; }
+
+    private:
+        AudioLevel* bus{nullptr};
+        float level{0.0f};
     };
 
 
@@ -423,6 +517,20 @@ namespace edmx
         /// Seconds for a hit to fall away. The bus's hits channels are already
         /// transients; this holds the top of one long enough to be seen.
         float hitDecay{0.25f};
+
+        /// What shape the hit is. At 0 the hit colour lands on the kick and
+        /// fades. At 1 the kick is a pop of the wash's own colour to full,
+        /// and the hit colour is what it leaves behind: as the pop falls the
+        /// rig swings to it and then back to the wash. Blown is the second -
+        /// pink, popping pink, glowing green after - which is what the scene
+        /// does, and which a green landing *on* the kick did not read as.
+        float afterglow{0.0f};
+
+        /// A fine grain over the wash, 0..1: value noise at a scale of a
+        /// fixture or two, drifting, eating into the level where it is low.
+        /// The geode's blue mode, which wanted a small noise rather than a
+        /// flat blue; 0 is a flat wash and the default.
+        float texture{0.0f};
 
         void init();
 
@@ -529,7 +637,6 @@ namespace edmx
         float getRainbowLevel() const { return rainbow; }
 
     private:
-        ecore::HSVPalette canyon;
         TriggerRack* triggers{nullptr};
         float attackSeconds{0.05f};
         float decaySeconds{0.45f};
@@ -583,15 +690,42 @@ namespace edmx
     };
 
 
-    /// Fire 2012, as a show cue: the generic look with the intensity knob
-    /// on the front, turning how eagerly the floor ignites.
-    class Pattern_Mythos_Fire : public scanner::Pattern_Generic_Fire2012
+    /// Where the truss reads a stage simulation: as a row across the
+    /// obelisk's width at this height, not as the line beside it that the
+    /// environment places it on.
+    ///
+    /// The pars stand at x 10, climbing the obelisk's height. The flames are
+    /// born at x 0..7 and reach three units either side, and the rain falls
+    /// at x 0..7 with a radius under one - so the truss saw the ember bed on
+    /// its lowest par and nothing of the rain at all. Reading it as a row is
+    /// what the pars should have been doing for these two looks: ten lamps
+    /// showing the fifth run from the floor, where the flames are still
+    /// full and the drops are still passing. A knob, because which run is
+    /// something to see on the rig.
+    ///
+    /// Only these two: a top-down cue - the canyon, the rain's own fall -
+    /// does want the pars climbing beside the pillar, and they keep to it.
+    constexpr float kTrussRowDefault = 4.0f;
+
+    /// The stage point a truss node reads a simulation at: `u` along the
+    /// truss spread over the obelisk's runs, at `row`. Null for anything that
+    /// is not the truss.
+    bool trussRowCoord(const eio::HSVStripNode* node, float row, ecore::Coordinate& outAt);
+
+
+    /// Fire 2012, as a show cue: the generic look with the mode and the
+    /// intensity knob on the front, the latter turning how eagerly the floor
+    /// ignites, and the truss read as a row through the flames.
+    class Pattern_Mythos_Fire : public scanner::Pattern_Generic_Fire2012, public ShowModes
     {
     public:
         float intensity{1.0f};
+        float trussRow{kTrussRowDefault};
 
         void applyIntensity();
 
+        virtual void reset() override;
+        virtual void render(eio::HSVStripNode* node, ecore::HSV& inOutColor) const override;
         virtual void reflect(ecore::PropertyBag& bag) override;
     };
 
@@ -602,16 +736,20 @@ namespace edmx
     /// lets them fall in, which from a pad is a second of black before the
     /// first head crosses the obelisk's top; a cue cannot open dark, so
     /// reset() rolls the storm forward before anyone sees it.
-    class Pattern_Mythos_Rain : public scanner::Pattern_Generic_MatrixRain
+    ///
+    /// The truss is read as a row through the storm - see kTrussRowDefault.
+    class Pattern_Mythos_Rain : public scanner::Pattern_Generic_MatrixRain, public ShowModes
     {
     public:
         Pattern_Mythos_Rain();
 
         float intensity{1.0f};
+        float trussRow{kTrussRowDefault};
 
         void applyIntensity();
 
         virtual void reset() override;
+        virtual void render(eio::HSVStripNode* node, ecore::HSV& inOutColor) const override;
         virtual void reflect(ecore::PropertyBag& bag) override;
     };
 

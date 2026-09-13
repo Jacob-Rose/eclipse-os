@@ -145,8 +145,11 @@ void Pattern_Generic_MatrixRain::tick(float deltaTime)
 
 void Pattern_Generic_MatrixRain::render(HSVStripNode* inNode, HSV& inOutColor) const
 {
-    const Coordinate at = nodeCoord(inNode);
+    renderAt(nodeCoord(inNode), inOutColor);
+}
 
+void Pattern_Generic_MatrixRain::renderAt(const Coordinate& at, HSV& inOutColor) const
+{
     float brightness = 0.0f;
     float headness = 0.0f;
     uint32_t litSeed = 0;
@@ -303,8 +306,11 @@ void Pattern_Generic_Fire2012::tick(float deltaTime)
 
 void Pattern_Generic_Fire2012::render(HSVStripNode* inNode, HSV& inOutColor) const
 {
-    const Coordinate at = nodeCoord(inNode);
+    renderAt(nodeCoord(inNode), inOutColor);
+}
 
+void Pattern_Generic_Fire2012::renderAt(const Coordinate& at, HSV& inOutColor) const
+{
     float heat = 0.0f;
 
     for (const Particle& flame : flames.all())

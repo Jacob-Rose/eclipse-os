@@ -35,8 +35,8 @@ from . import look_presets
 from .config import RELIC_TYPES, Config, cue_actions
 from .controller import Frame, FrameForwarder, ShowController, ShowError
 from .curve_editor import CurveEditor
-from .midi_map import (Action, ActionContext, Dispatcher, MappingSet,
-                       SynesthesiaState, parse_midi_line)
+from .midi_map import (ACTIONS, Action, ActionContext, Dispatcher, MappingSet,
+                       SynesthesiaState, coerce_params, parse_midi_line)
 from .osc_input import DEFAULT_INPUT_PORT
 from .launchpad import LampPainter, programmer_mode, clear as lamp_clear
 from .midi_panel import MidiMapPanel
@@ -141,6 +141,10 @@ STATE_GROUPS: List[Tuple[str, List[Tuple[str, Tuple[str, str]]]]] = [
         ("slot 14", ("state", "slot_14")),
         ("slot 15", ("state", "slot_15")),
         ("slot 16", ("state", "slot_16")),
+        # the mode pad: steps the running cue through its modes, and fires
+        # what the cue table says the room does in each - see the `mode`
+        # action in midi_map, which this runs
+        ("mode", ("mode", "")),
     ]),
     # The static pair moved here with the machine that holds them - the rest
     # of the generic list is left to the generated buttons.
@@ -995,7 +999,7 @@ class ViewerApp:
 
         self._dispatcher = Dispatcher(self._midimap, ActionContext(
             show=self.show, osc_factory=self._map_osc, say=self._say,
-            syn=self._syn_state))
+            syn=self._syn_state, config=self.config))
         # Which tab the map opens on. A map with no pages says nothing here
         # and every row is on every page, which is how one without them works.
         self._dispatcher.context.page = self._midimap.opens_on
@@ -1912,6 +1916,13 @@ class ViewerApp:
                     self.show.release_link()
                 else:
                     self.show.set_link_mode(value)
+            elif kind == "mode":
+                # the pad's action, run the way a pad runs it, so the button
+                # and the surface cannot disagree about what a mode does
+                spec = ACTIONS["mode"]
+                line = spec.run(self._dispatcher.context, coerce_params(spec, {}), 1.0)
+                if line:
+                    self._say(line)
 
         self._guard(apply, kind)
         self._refresh_buttons()
@@ -2984,7 +2995,8 @@ class ViewerApp:
 
         self._osc_dispatcher = OscDispatcher(
             bindings, ActionContext(show=self.show, osc_factory=self._map_osc,
-                                    say=self._say, syn=self._syn_state))
+                                    say=self._say, syn=self._syn_state,
+                                    config=self.config))
 
         port = self._osc_in_port or DEFAULT_INPUT_PORT
         try:

@@ -82,6 +82,11 @@ namespace scanner
         virtual void render(HSVStripNode* inNode, HSV& inOutColor) const override;
         virtual void reflect(ecore::PropertyBag& bag) override;
 
+        /// The rain at one point of the stage - what render() does once it
+        /// has asked the node where it is, split out so a look can read the
+        /// storm somewhere other than where its fixture stands.
+        void renderAt(const Coordinate& at, HSV& inOutColor) const;
+
     private:
         eanim::ParticleSystem drops;
     };
@@ -125,6 +130,9 @@ namespace scanner
         virtual void tick(float deltaTime) override;
         virtual void render(HSVStripNode* inNode, HSV& inOutColor) const override;
         virtual void reflect(ecore::PropertyBag& bag) override;
+
+        /// The fire at one point of the stage; see MatrixRain::renderAt.
+        void renderAt(const Coordinate& at, HSV& inOutColor) const;
 
     private:
         eanim::ParticleSystem flames;

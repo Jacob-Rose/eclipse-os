@@ -31,7 +31,7 @@ cd "$(dirname "$0")"
 CONFIG="${ECLIPSE_CONFIG:-config/mythos-show.json}"
 OSC_DEVICE="synesthesia"        # devices/synesthesia.json: the room's colour
 
-# The pads: the show's cues, its intensity and its layers, laid out for the
+# The pads: the show's cues, its mode pad and its layers, laid out for the
 # Launchpad - config/midimaps/mythos-show.json, generated from the config's
 # cue table by tools/make-launchpad-map.py, so it goes with the show above.
 # Derived from the config's name so a --config of another show carries its own

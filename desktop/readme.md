@@ -346,11 +346,14 @@ its own.
   `config/mythos-show.json`'s cue table: the state, then each layer's state
   (`rig: layer state`), then the visualiser's scene and media — the rig
   first, so a dead visualiser costs the rig nothing. Above them, row 4 is
-  intensity — low / mid / high, `param intensity` on whatever cue is up,
-  a knob every show look has — and rows 5 and 6 are the layers the config
-  declares, a pad per state: the flash off or on, the UV off / flash / on /
-  kick / rainbow. So a layer can be moved off a cue's default by hand, and
-  hitting the cue puts it back. The viewer's cue buttons fire the same table.
+  the **mode pad** — one pad, `rig: cue mode`, stepping whatever cue is up
+  through its modes 1, 2, 3 and round, and firing what the cue table says
+  the room does in each (the rain's video off in 2 and 3). It lights when
+  the cue is off mode 1; hitting the cue again is mode 1. Rows 5 and 6 are
+  the layers the config declares, a pad per state: the flash off or on,
+  the UV off / flash / on / kick / rainbow. So a layer can be moved off a
+  cue's default by hand, and hitting the cue puts it back. The viewer's cue
+  buttons fire the same table, and its `mode` button is the same pad.
   Both files come out of one run of the generator and carry the same rows,
   so they cannot disagree about what a cue does.
 - **The right column** — the scene-launch buttons — are the tabs. Each is
@@ -1396,25 +1399,53 @@ audio bus.
 | --- | --- | --- |
 | 1 `neuron` | cyan into deep blue noise, drifting — the scene's own two colours, hue 170 to 232 | scene *Neuron Proximitors* |
 | 2 `geode` | red, riding the mid presence, never below 0.2 | *Voronoi Geode*; the flash layer on |
-| 3 `rain` | matrix rain, every drop its own colour | *VideoFX_1* + `alien-message.mp4`; the UV breathing through a hue wheel |
-| 4 `fire` | fire 2012 | *Dynamical Flame* + `black.mp4` |
+| 3 `rain` | matrix rain, every drop its own colour; the truss read as a row through it | *VideoFX_1* + `alien-message.mp4`; the UV breathing through a hue wheel |
+| 4 `fire` | fire 2012; the truss read as a row through the flames | *Dynamical Flame* + `black.mp4` |
 | 5 `glitch` | the rig re-dealt to a new colour on every beat — the scene re-deals its background on the same one | *Glitch* + `alien-message.mp4` |
-| 6 `tunnel` | pink into purple noise | *Fire Tunnel* + `black.mp4`; the flash layer on |
-| 7 `blown` | magenta riding the mids, never below 0.3, green on the kick — the scene's default palette runs black through magenta to green | *Filter Blown v2* + `275593_medium.mp4`; the UV on the kick |
+| 6 `tunnel` | pink into purple noise, breathing with the mid presence | *Fire Tunnel* + `black.mp4`; the flash layer on |
+| 7 `blown` | pink riding the mids, never below 0.65; a kick pops it to full and leaves a green afterglow — the scene's default palette runs black through magenta to green | *Filter Blown v2* + `275593_medium.mp4`; the UV on the kick |
 | 8 `punk` | punk purple into white, strobing to full white on the beat | *Milk, Honey, Smoke, Bile* with its `smoke` on, which is its own beat strobe; the flash layer on, the UV on the kick |
-| 10 `canyon` | orange, brown, green and blue bands pouring down the stage; a rainbow over everything on the beat | *Vibe Thresholds* + `361331_medium.mp4` |
+| 10 `canyon` | orange, brown, green and blue bands pouring down the stage, one seamless loop; a rainbow over everything on the beat | *Vibe Thresholds* + `361331_medium.mp4` |
 
 Slots 9 and 11–16 are placeholders — a dim tinted breath apiece — until
 the spec names them. Sixteen because that is what the spec says, and two rows
 of the surface.
 
-**Every cue has an `intensity` knob**, 0..1, and the surface has three pads
-for it — low, mid, high — so one row means the same thing on every cue. What
-it scales is the look's own business: the depth of a noise wash, how far a
-presence wash rides above its floor and how hard its kick lands, how eagerly
-the fire ignites, how many drops are in the rain, how much of the rainbow
-the canyon shows. What it never does is take the rig to black: `low` is a
-quieter cue, not a fault.
+**Every cue has a `mode`** — 1, 2 or 3 — and the surface has one pad for it,
+stepping the running cue round. Mode 1 is the cue as written; 2 and 3 are
+the cue's own, a line each beside it in `src/mythos26.cpp`:
+
+| cue | 2 | 3 |
+| --- | --- | --- |
+| `neuron`, `tunnel` | the field slowed and widened | quick and busy |
+| `geode` | gone blue: a grained blue field on the mids, a paler blue on the kick, the white flash off | the red, with blue on the kick |
+| `rain` | a downpour, video off | the film's green, video off |
+| `fire` | embers | the whole bed alight |
+| `glitch` | one colour across the rig | darker between beats, torn further apart on each |
+| `blown` | a brighter base | dark until the pop |
+| `punk` | half time | double time |
+| `canyon` | a slow fly, the rainbow once a bar | fast, the rainbow in double time |
+
+Each is a diff on the cue as built: the knobs the cue opened with are
+snapshotted and put back before a mode's own changes go over them, so 2 is
+never on top of 3, and 1 is the way back. The room's half — the video off,
+the flash layer off — is the cue table's `modes` in `config/mythos-show.json`,
+fired by the same pad. Hitting a cue again is mode 1; a knob tuned by hand
+in mode 1 survives a cue change as it always did.
+
+The `intensity` knob is still on every cue, 0..1, for a fader or a mod:
+the depth of a noise wash, how far a presence wash rides above its floor,
+how eagerly the fire ignites, how many drops are in the rain. It never
+takes the rig to black.
+
+**The truss is read as a row through the fire and the rain.** The pars
+stand beside the obelisk at x 10, climbing its height, and neither
+simulation reaches there — the flames are born at x 0..7, the drops fall
+there — so the truss saw the ember bed on its lowest par and nothing of the
+rain. For those two cues the pars are read across the obelisk's width at
+`truss_row` instead, the fifth run from the floor by default, where the
+flames are still full and the drops are still passing. Every other cue
+keeps them climbing beside the pillar.
 
 **The layers are how the additive parts are done.** `flash` is the beat pulse
 summed over every light but the UV — white unless its `color` knob says

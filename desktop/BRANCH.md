@@ -1375,10 +1375,15 @@ after it, and there is no mod for an edge. So `Pattern_Mythos_BusWash` and
 `Pattern_Mythos_KickColor` read `sharedAudioLevel()` the way the audio meter
 does, with the channel set per cue rather than reflected as a knob - a pad
 must not be able to point the geode's red at the hi-hats. And every one of
-them, borrowed fire and rain included, answers to `intensity`, because the
-surface has three pads for it - low / mid / high, the spec's alternative to a
-bpm on/off - and one row of pads has to mean the same thing on every cue.
-What it scales is each look's own, and none of them go to black on `low`.
+them, borrowed fire and rain included, has a `mode` - 1, 2 or 3, one pad on
+the surface stepping through them, what the three intensity pads became. A
+number 0..1 meant the same on every cue and so could not mean much on any:
+`low` was a quieter geode, when what the geode wanted was to go blue. So a
+mode is the cue's own, a line each beside it in the table (`ShowModes` in
+mythos26.h is the mechanism: a snapshot of the cue as built, put back before
+each mode's diff), and the room's half of one - the rain's video off - is the
+cue table's `modes`, fired by the same pad. `intensity` is still a knob on
+all of them, for a fader; none of them go to black on it.
 
 **The show stands on the stage.** mythos26's frame used to be 0..1 along the
 rig; it is the scanner's stage now - the default `CoordFrame` - because the

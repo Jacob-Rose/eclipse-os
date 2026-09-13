@@ -16,7 +16,7 @@ order, so a pad works from wherever the rig happens to be.
 Two files come out. The all-states map is every machine, a tab each. The
 show's own map - midimaps/<config>.json, config/midimaps/mythos-show.json for
 the set - is the show's page alone: sixteen cue pads off the config's cue
-table, the intensity row, a row per layer, and nothing to tab to. That one is
+table, the mode pad, a row per layer, and nothing to tab to. That one is
 what launch-mythos-set.sh runs on.
 """
 import argparse, json, pathlib, subprocess, sys
@@ -35,11 +35,11 @@ OPENS_ON = "mythos26"
 #: of its grid is the show's controls; see the block below.
 SHOW = "mythos26"
 
-#: The three intensity pads on the show's page, as `param intensity` values.
-#: Every show look has the knob - see Pattern_MythosLook - so one row of three
-#: means the same thing on every cue.
-INTENSITIES = [("low", 0.33, lp.Colour.AMBER), ("mid", 0.66, lp.Colour.YELLOW),
-               ("high", 1.0, lp.Colour.WHITE)]
+#: The mode pad on the show's page: one pad, stepping whatever cue is up
+#: through its modes - every show look has the knob, see ShowModes - and
+#: firing what the config's cue table says the room does in each. Where the
+#: three intensity pads were; it lights when the cue is off its first mode.
+MODE_PAD = ("mode", lp.Colour.AMBER)
 
 
 def probe(executable, config):
@@ -150,19 +150,17 @@ for machine in ORDER:
 # The show's controls, on the rows above its cues. Sixteen cues fill the
 # bottom two rows; the third is left dark so the controls read as controls.
 #
-#   row 4   intensity: low / mid / high, on whatever cue is up
+#   row 4   the mode pad: the next mode of whatever cue is up
 #   row 5+  one row per layer the config declares, a pad per state, so the
 #           flash and the UV can be moved off a cue's default by hand -
 #           and put back by hitting the cue again
 show_rows = len(machines[SHOW]) // 8 + (1 if len(machines[SHOW]) % 8 else 0)
 controls_row = show_rows + 2
-for col, (label, level, colour) in enumerate(INTENSITIES, start=1):
-    rows.append(mm.Mapping(
-        label=f"{SHOW} - intensity {label}",
-        kind="note", channel=1, number=lp.pad(controls_row, col), mode="press",
-        page=SHOW, colour=colour,
-        actions=[mm.Action("param", {"name": "intensity", "low": 0.0, "high": level,
-                                      "layer": ""})]))
+rows.append(mm.Mapping(
+    label=f"{SHOW} - {MODE_PAD[0]}",
+    kind="note", channel=1, number=lp.pad(controls_row, 1), mode="press",
+    page=SHOW, colour=MODE_PAD[1],
+    actions=[mm.Action("mode", {"mode": 0, "step": 1})]))
 
 for offset, layer in enumerate(show_config.layers, start=1):
     layer_states = machines.get(layer["pattern"], [])
@@ -229,7 +227,7 @@ print(f"  opens on '{OPENS_ON}'")
 for machine, count in pages.items():
     print(f"    page {machine:<10} {count:>2} pads")
 print(f"  {SHOW}: {len(machines[SHOW])} cues, {len(show_config.cues)} of them in the cue table, "
-      f"intensity on row {controls_row}, {len(show_config.layers)} layer rows above it")
+      f"the mode pad on row {controls_row}, {len(show_config.layers)} layer rows above it")
 print(f"  {len(ORDER)} tabs on the right column, {len(TABS) - len(ORDER)} spare")
 print(f"  inputs a/b on Up ({UP}) and Down ({DOWN}); "
       f"Left ({LEFT}) and Right ({RIGHT}) left alone")

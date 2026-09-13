@@ -31,6 +31,9 @@
   // Tempo in, from Mixxx - the fallback source. See config/mythos26.json for
   // the setup and what each note is.
   "midi": {
+    // how far ahead of the music the rig runs, in ms. Measured: python -m eclipse_dmx calibrate
+    "latency_ms": 0,
+
     "enabled": true,
     "port": "auto",
     "ignore": ["Traktor", "Kontrol"],
@@ -157,6 +160,12 @@
   //            scene declares it (folded the way the app addresses it), a
   //            number each; a toggle is 0 or 1. Sent after the scene. The
   //            few a cue needs for the look to be the look - not a preset.
+  //   modes    what the mode pad changes about the room, by mode number:
+  //            "2" and "3", each the same four fields over the cue. The
+  //            look's own half of a mode - the geode gone blue, the rain a
+  //            downpour - is in src/mythos26.cpp beside the cue; this is
+  //            the half the executable cannot reach. Mode 1 is the cue.
+  //            The pad steps 1, 2, 3, 1; hitting the cue again is mode 1.
   //
   // A cue with no entry here is the state alone, which is what the empty
   // slots are.
@@ -166,13 +175,26 @@
       "layers": { "flash": "off", "uv": "off" }
     },
     "geode": {
+      // 2 is the geode gone blue - a grained blue field with its own paler
+      // blue landing on the kick - and the white flash layer is off for it,
+      // so the blue is the only flash. 3 is the red with blue on the kick.
       "scene": "Voronoi Geode",
-      "layers": { "flash": "flash", "uv": "off" }
+      "layers": { "flash": "flash", "uv": "off" },
+      "modes": {
+        "2": { "layers": { "flash": "off" } }
+      }
     },
     "rain": {
+      // 2 and 3 are the rain without the video: the same empty scene with
+      // black.mp4, the only way the app has of showing nothing - see the
+      // note on media above.
       "scene": "VideoFX_1",
       "media": "alien-message.mp4",
-      "layers": { "flash": "off", "uv": "rainbow" }
+      "layers": { "flash": "off", "uv": "rainbow" },
+      "modes": {
+        "2": { "media": "black.mp4" },
+        "3": { "media": "black.mp4" }
+      }
     },
     "fire": {
       // With any media loaded the flame renders the video through itself;
