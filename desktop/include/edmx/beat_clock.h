@@ -174,6 +174,9 @@ namespace edmx
         /// of the way through beat 12. Patterns trigger on the integer part
         /// changing and animate off the fraction.
         ///
+        /// Told early by the latency, when one is set: this is where the
+        /// *rig* should be, which is the grid a little ahead. See setLatency().
+        ///
         /// **The integer part is a count of beats.** It moves forward on every
         /// beat and never backwards, which is what a pattern watching for a
         /// change needs, and it moves by however many beats actually went by —
@@ -231,6 +234,29 @@ namespace edmx
         void setFreeRun(bool enable);
         bool getFreeRun() const;
 
+        /// How far ahead of the music the rig runs, in seconds.
+        ///
+        /// A beat reaches a lamp late. It is rendered on the next frame, sent
+        /// - across a network, in client mode - painted into a DMX frame that
+        /// takes 23ms to leave the widget, and then the fixture answers at its
+        /// own pace. Every one of those is constant, so the fix is constant
+        /// too: every reader is told the beat this much early, and the light
+        /// lands on the music instead of just after it. `latency_ms` in the
+        /// config, `latency` on the protocol, and `calibrate` in the python
+        /// package is the beep test that finds the number.
+        ///
+        /// Read side only, and that is the whole design. The grid itself
+        /// stays in message time: it is what markBeat() judges an arrival
+        /// against and what setBpm() holds the phase in, and Mixxx sends a
+        /// tempo message on every beat. A lead folded into the anchor would
+        /// be folded in again on each of them, and the rig would walk ahead
+        /// of the music by the lead per beat.
+        ///
+        /// Negative is allowed. A PA on a delay line puts the music behind
+        /// the lights, and then the rig has to wait rather than lead.
+        void setLatency(double seconds);
+        double getLatency() const;
+
         /// Beats seen from outside, for status and for spotting a link that is
         /// connected but silent.
         unsigned long long getExternalBeats() const;
@@ -259,6 +285,12 @@ namespace edmx
         /// Folds one measured beat-to-beat gap into the tempo, if it could
         /// plausibly be one beat. Smoothed, never taken raw.
         void learnPeriod(double interval);
+
+        /// beatPosition() with no lead: where the grid itself is at `now`.
+        /// What the grid's own bookkeeping reads - a beat is filed against
+        /// where the grid was when the message landed, not where the rig was
+        /// showing it.
+        double positionAt(double now) const;
 
         /// What a filed beat does about free-run having predicted beats of its
         /// own since the last one we took.
@@ -301,6 +333,9 @@ namespace edmx
 
         std::atomic<bool> freeRun{true};
         std::atomic<unsigned long long> externalBeats{0};
+
+        /// Seconds every reader is told the beat early. See setLatency().
+        std::atomic<double> latency{0.0};
     };
 
     /// The process's beat clock.

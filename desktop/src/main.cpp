@@ -131,6 +131,8 @@ namespace
             "  blackout <on|off>         hold the rig dark without losing the look\n"
             "  bpm <float>               set the tempo by hand\n"
             "  beat                      a beat, now - tap the tempo in, or trigger a cue\n"
+            "  latency [ms|nudge <ms>]   how far ahead of the music the rig runs, so a\n"
+            "                            beat lands on the lamp when it lands on the ear\n"
             "  midi list                 MIDI inputs the machine can see\n"
             "  midi open <spec>          follow tempo from that input\n"
             "  midi close                stop following, keep the tempo\n"
@@ -1055,6 +1057,65 @@ namespace
                   std::floor(clock.beatPosition(6.4)), 10.0, 0.0);
         }
 
+        // ---- the latency: a lead on the read side, and only there ---------
+        //
+        // A rig told to run 100ms ahead reads the beat 100ms early - and the
+        // grid underneath does not move, however many tempo messages land on
+        // it. The failure this guards is a lead applied where setBpm() holds
+        // the phase: Mixxx sends a tempo every beat, and each one would have
+        // folded the lead into the anchor again.
+        {
+            BeatClock clock;
+            clock.setBpm(120.0f, BeatSource::Internal, 0.0);
+            clock.setLatency(0.1);
+
+            // At 120bpm a beat is 0.5s. 0.4s in, led by 0.1, is the top of
+            // beat one - not 0.8 of beat zero.
+            check("latency leads the read", clock.beatPosition(0.4), 1.0, 0.001);
+            check("latency leads time since beat", clock.timeSinceBeat(0.3), 0.4, 0.001);
+
+            // A tempo change holds the grid's phase, not the led one.
+            clock.setBpm(100.0f, BeatSource::Internal, 0.4);
+            check("latency survives a tempo change",
+                  clock.beatPosition(0.4), 0.8 + (0.1 / 0.6), 0.001);
+
+            // A beat lands on the grid, and the lead is still exactly a lead.
+            clock.markBeat(1.0, BeatSource::Manual);
+            check("latency after a beat", clock.timeSinceBeat(1.0), 0.1, 0.001);
+
+            // Negative: the music is behind the lights, and the rig waits.
+            clock.setLatency(-0.1);
+            check("negative latency lags the read",
+                  clock.timeSinceBeat(1.15), 0.05, 0.001);
+
+            // Clamped rather than taken: a minute of lead is a typo.
+            clock.setLatency(60.0);
+            check("latency is clamped", clock.getLatency(), 2.0, 0.0);
+        }
+
+        // ---- a Mixxx stream under a lead: the grid stays on the messages ---
+        {
+            BeatClock clock;
+            MidiInput midi;
+            midi.setBeatClock(&clock);
+            clock.setBpm(100.0f, BeatSource::Internal, 0.0);
+            clock.setLatency(0.08);
+
+            constexpr double kPeriod = 60.0 / 128.0;
+            for (int beat = 0; beat < 16; ++beat)
+            {
+                const double at = 10.0 + (beat * kPeriod);
+                midi.handleMessage(0x90, 52, 78, at - 0.002);
+                midi.handleMessage(0x90, 50, 100, at);
+            }
+            const double end = 10.0 + (15 * kPeriod);
+
+            // Read at the last beat, the rig is exactly the lead into it - not
+            // sixteen leads, which is what an anchor-side lead accumulates.
+            check("mixxx.latency_does_not_walk", clock.timeSinceBeat(end), 0.08, 0.002);
+            check("mixxx.latency_bpm", clock.getBpm(), 128.0, 0.5);
+        }
+
         // ---- a Mixxx MIDI-for-light stream, with everything it sends -------
         {
             BeatClock clock;
@@ -1499,6 +1560,20 @@ namespace
         }
     }
 
+    /// One line off stdin, and when it arrived.
+    ///
+    /// Stamped by the reader thread as the line lands, not by the show loop
+    /// when it gets round to it. The loop drains once a frame, so a `beat`
+    /// timed at the drain is a beat timed to the nearest frame - up to 40ms
+    /// late, and by a different amount each time. That is the same jitter the
+    /// MIDI path was built to avoid by taking its timestamp in the callback,
+    /// and a tap, or the calibration tool's sync, deserves the same.
+    struct StdinLine
+    {
+        std::string text;
+        double at{0.0}; ///< nowSeconds() when getline returned it
+    };
+
     /// Reads stdin on its own thread and hands whole lines to the show loop.
     /// Blocking getline on the render thread would stall the DMX refresh, and a
     /// rig that stops refreshing is a rig that some fixtures will time out on.
@@ -1512,8 +1587,9 @@ namespace
                 std::string line;
                 while (std::getline(std::cin, line))
                 {
+                    const double at = nowSeconds();
                     std::lock_guard<std::mutex> lock(mutex);
-                    pending.push_back(line);
+                    pending.push_back(StdinLine{line, at});
                 }
                 // stdin closed: the parent went away or the user hit ctrl-d
                 eof = true;
@@ -1544,10 +1620,10 @@ namespace
             return true;
         }
 
-        std::vector<std::string> drain()
+        std::vector<StdinLine> drain()
         {
             std::lock_guard<std::mutex> lock(mutex);
-            std::vector<std::string> out;
+            std::vector<StdinLine> out;
             out.swap(pending);
             return out;
         }
@@ -1557,7 +1633,7 @@ namespace
     private:
         std::thread thread;
         std::mutex mutex;
-        std::vector<std::string> pending;
+        std::vector<StdinLine> pending;
         std::atomic<bool> running{false};
         std::atomic<bool> eof{false};
     };
@@ -2517,6 +2593,16 @@ namespace
             return false;
         }
 
+        // What every knob read before the set, so the echo can carry every
+        // knob the set moved and not only the one named: a look's `mode`
+        // rewrites its colours and its rates, and a desk told about the mode
+        // alone would go on showing the old ones.
+        std::vector<std::string> before;
+        for (const ecore::Property& property : bag.all())
+        {
+            before.push_back(paramLine(property));
+        }
+
         if (target->type == ecore::Property::Type::Color)
         {
             ecore::HSV parsed;
@@ -2545,7 +2631,22 @@ namespace
             bag.set(name, value);
         }
 
+        // The named knob first, always - it is the reply - then any other
+        // the set moved.
         emit(prefix + paramLine(*target));
+        for (size_t i = 0; i < bag.all().size(); ++i)
+        {
+            const ecore::Property& property = bag.all()[i];
+            if (&property == target)
+            {
+                continue;
+            }
+            const std::string now = paramLine(property);
+            if (now != before[i])
+            {
+                emit(prefix + now);
+            }
+        }
 
         eanim::CurveBag curves;
         pattern.reflectCurves(curves);
@@ -2825,7 +2926,11 @@ namespace
         show.sinkPainted = true;
     }
 
-    void handleCommand(ShowState& show, const std::string& rawLine)
+    /// One line of the control protocol, applied. `arrivedAt` is when it
+    /// landed on the reader thread, for the commands that mean *now* - a
+    /// beat, an align - and are read a frame later; everything else takes
+    /// the clock when it runs.
+    void handleCommand(ShowState& show, const std::string& rawLine, double arrivedAt)
     {
         // Strip a UTF-8 BOM. Anything that pipes a file of cues in - PowerShell
         // does it by default - puts one on the first line, and it turns a
@@ -3590,10 +3695,56 @@ namespace
             // `midi align` is that. Someone tapping a tempo in taps every beat,
             // and every tap declaring itself the top of the bar would leave the
             // slow rates hitting on all of them.
-            const double when = nowSeconds();
+            //
+            // "Now" being when the line arrived, not when this frame got to
+            // it: the calibration tool syncs its own clock to the grid with
+            // one of these, and a frame's worth of slop would be baked into
+            // the number it measures.
+            const double when = arrivedAt;
             sharedBeatClock().markBeat(when, BeatSource::Manual);
             show.midi.alignToNow();
             emit("OK beat");
+            return;
+        }
+
+        if (command == "latency")
+        {
+            // How far ahead of the music the rig runs, in milliseconds. See
+            // BeatClock::setLatency for what it pays for; `calibrate` in the
+            // python package for how the number is found.
+            //
+            //   latency              report it
+            //   latency 45           set it - negative is allowed
+            //   latency nudge -1     move it, which is what a knob sends
+            //
+            // Relative moves are a word rather than a sign because `-1` is a
+            // perfectly good absolute value here.
+            BeatClock& clock = sharedBeatClock();
+
+            if (words.size() >= 2)
+            {
+                const bool nudge = (words[1] == "nudge");
+                if (nudge && words.size() < 3)
+                {
+                    emit("ERR latency nudge needs a value, in ms");
+                    return;
+                }
+
+                float value = 0.0f;
+                const std::string& text = words[nudge ? 2 : 1];
+                if (!parseFloatArg(text, value))
+                {
+                    emit("ERR latency: '" + text + "' is not a number");
+                    return;
+                }
+
+                const double seconds = static_cast<double>(value) / 1000.0;
+                clock.setLatency(nudge ? (clock.getLatency() + seconds) : seconds);
+            }
+
+            char reply[64];
+            std::snprintf(reply, sizeof(reply), "OK latency %.1f", clock.getLatency() * 1000.0);
+            emit(reply);
             return;
         }
 
@@ -3760,7 +3911,7 @@ namespace
 
             if (action == "align")
             {
-                sharedBeatClock().restart(nowSeconds(), BeatSource::Manual);
+                sharedBeatClock().restart(arrivedAt, BeatSource::Manual);
                 show.midi.alignToNow();
                 emit("OK midi align");
                 return;
@@ -4417,6 +4568,7 @@ int main(int argc, char** argv)
     // some. See edmx/beat_clock.h.
     sharedBeatClock().setBpm(show.config.midi.bpm, BeatSource::Internal);
     sharedBeatClock().setFreeRun(show.config.midi.freeRun);
+    sharedBeatClock().setLatency(static_cast<double>(show.config.midi.latencyMs) / 1000.0);
 
     if (show.config.midi.enabled)
     {
@@ -4616,9 +4768,9 @@ int main(int argc, char** argv)
     {
         if (useStdin)
         {
-            for (const std::string& line : stdinReader.drain())
+            for (const StdinLine& line : stdinReader.drain())
             {
-                handleCommand(show, line);
+                handleCommand(show, line.text, line.at);
             }
             if (show.shouldQuit)
             {

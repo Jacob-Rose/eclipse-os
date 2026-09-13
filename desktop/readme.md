@@ -1162,6 +1162,7 @@ a mode that ignores its colour channels (`static_channels`).
 | `chase` | a lit fixture running the rig, driven by an eanim Saw |
 | `pulse` | whole rig breathing on `pattern.color` |
 | `identify` | one fixture at a time in white, for commissioning |
+| `metronome` | the whole rig in white at the top of every beat, for [the beep test](#latency--the-beep-test) |
 | `off` | dark |
 | `obelisk_seasons` | the obelisk's four-seasons noise field |
 | `obelisk_theater` | the obelisk's theatre chase |
@@ -2173,6 +2174,72 @@ bpm=128.0 src=midi_note lock=yes free_run=on beat=417 bar_beat=3
 arriving from outside. `lock=no` with the rig still pulsing means it is
 free-running — the link went quiet and it is keeping its own time.
 
+#### latency — the beep test
+
+The beat reaches a lamp late. It is rendered on the next frame, crosses the
+network in [client mode](#client-mode--the-other-way-round), sits in a DMX
+frame that takes 23ms to leave the widget, and then the fixture answers at
+its own pace. From the desk none of that is visible except as the lights
+being *just* behind the music — every beat, all night, by the same amount.
+That last part is what makes it fixable: it is a constant, and `midi.latency_ms`
+pays it back.
+
+```json
+"midi": {
+  "latency_ms": 45
+}
+```
+
+With that set, every look reads the clock 45ms ahead, and a flash that was
+going to take 45ms to reach the truss lands on the kick. The grid itself does
+not move — a beat is still filed against the moment its message arrived, and
+Mixxx's tempo message every beat still holds the phase where it was — only
+what the looks are *told* moves. Negative is allowed, for a PA on a delay line
+that puts the music behind the lights.
+
+The number comes from the beep test, which is Rock Band's screen:
+
+```sh
+./launch-mythos-set-latency.sh              # the set's config, the rig on the pi
+./launch-mythos-set-latency.sh --local      # the wires on this machine
+python -m eclipse_dmx calibrate config/mythos26.json --client scanner-pi   # by hand
+```
+
+The launcher is the set's launcher cut down: same default pi, same fallback
+to this machine's wires when it does not answer, and it opens on
+`config/mythos-show.json` because that is the file the set runs off and the
+file `[s]` writes into.
+
+A click on this machine's speakers, and the rig flashing white on the same
+beat — the `metronome` look, on the same executable and the same `--client`
+road a set uses, so what it measures is what a set needs. Then either:
+
+- **by feel** — `[up]`/`[down]` move the latency a millisecond at a time,
+  ten with shift, until the flash and the click land together; or
+- **by tap** — `[b]`, then `[space]` on every click for three bars while the
+  rig is held dark; `[f]`, then `[space]` on every flash while the click is
+  muted. Where the two runs of taps land differs by exactly how late the
+  flash is — your reaction time is in both and cancels — and `[a]` applies
+  the answer. Twelve taps a round, the first two not counted.
+
+`[s]` writes it to the config, as a line at the top of the `midi` block
+with the rest of the file left exactly as it was, comments included. It is
+live before that: the number on screen is the number the show is running,
+and `latency <ms>` / `latency nudge <ms>` on the protocol are the same knob
+for trimming a set by ear while it plays.
+
+Two things it is honest about. The click goes out through this machine's own
+sound stack at a small fixed latency of its own — tens of milliseconds, kept
+small on purpose and about what the music has through the same stack — so
+the number is "the rig, relative to a sound played here", which is the right
+number for a set played from here. And it runs the show *here*, where the
+speakers are: `--host` is refused, because a beep from the pi is not the
+reference anyone is listening to.
+
+The click is streamed raw to `pw-cat`, `pacat` or `aplay`, whichever opens
+first, so nothing needs installing on a machine that already plays sound.
+`--no-click` runs the screen without it, for a bench.
+
 ### gamma
 
 `master.gamma` defaults to 2.2. LEDs are linear in duty cycle and eyes are
@@ -2195,7 +2262,7 @@ state <name>              states                 input <a|b> <on|off>
 params                    params dump            param <name> <value>
 trigger <tag>
 
-bpm <float>               beat
+bpm <float>               beat                   latency [ms | nudge <ms>]
 midi open <spec>          midi close             midi align
 midi free-run <on|off>    midi monitor <on|off>  midi list / midi status
 
@@ -2215,7 +2282,14 @@ The `link` commands need `device.type` to be a relic — see
 to our own state machine, so a cue list drives either end without changing.
 The tempo commands work whatever is running, because the beat clock is
 process-wide — dial a tempo in on `solid`, switch to `mythos26`, and it is
-already right.
+already right. `latency` is how far ahead of the music the clock is read, in
+milliseconds, so a beat lands on the lamp when it lands on the ear; see
+[the beep test](#latency--the-beep-test).
+
+`beat` and `midi align` are timed to when the line *arrived*, not to the frame
+that got round to reading it: stdin is read on its own thread and every line
+is stamped as it lands. A tap through the pipe is therefore as exact as one
+off a MIDI cable, which the beep test depends on.
 
 With `--emit-frames` on, a `BEAT <n> <bpm> <src> <lock|free>` line goes out the
 moment each beat lands, outside the frame rate limit. That is what the viewer's
@@ -2313,6 +2387,7 @@ python -m eclipse_dmx generate --profile uking_par36 --count 10 -o my_rig.json
 python -m eclipse_dmx run my_rig.json --dry-run --seconds 5
 python -m eclipse_dmx view my_rig.json          # watch it in a window
 python -m eclipse_dmx osc my_rig.json           # its colour out to a visualiser
+python -m eclipse_dmx calibrate my_rig.json     # the beep test: how late is the rig
 ```
 
 And a worked example with a cue list in `python/example_show.py`.

@@ -18,6 +18,7 @@
 #include "relics/scanner/scanner_patterns.h"
 
 #include "edmx/audio_meter.h"
+#include "edmx/beat_clock.h"
 #include "edmx/mythos26.h"
 #include "edmx/state_machine.h"
 
@@ -233,6 +234,50 @@ namespace
     };
 
 
+    /// The whole rig, full white, at the top of every beat. Dark otherwise.
+    ///
+    /// The other commissioning tool. `identify` answers "which lamp is
+    /// fixture 7"; this answers "how late is the rig" - it is the flash the
+    /// calibration beep test measures against, so it is as plain as a flash
+    /// can be. Every beat the same, every lamp the same, a hard edge rather
+    /// than an envelope: the eye reads an onset, and the test is only about
+    /// when that onset is seen. White, so a lamp with a colour cast is
+    /// still obviously on.
+    ///
+    /// `flash` is how long it stays lit, in seconds: long enough to be a
+    /// frame or two on the slowest device a rig runs at, short enough to end
+    /// well before the next beat at any tempo the clock allows. Its own knob
+    /// rather than `width`, which carries across a pattern switch and means
+    /// fixtures of tail on the look before this one.
+    class MetronomePattern : public Pattern
+    {
+    public:
+        const char* getName() const override { return "metronome"; }
+
+        void tick(float deltaTime) override { (void)deltaTime; }
+
+        void render(const PatternContext& context, std::vector<ecore::HSV>& outColors) override
+        {
+            // Read the clock here rather than counting ticks: the whole point
+            // is to show where the clock says the beat is - lead included.
+            const float since = sharedBeatClock().timeSinceBeat(nowSeconds());
+            const bool lit = since < std::max(flash, 0.001f);
+            outColors.assign(context.fixtureCount,
+                             ecore::HSV(0.0f, 0.0f, lit ? brightness : 0.0f));
+        }
+
+        void reflect(ecore::PropertyBag& bag) override
+        {
+            // No speed and no width: the tempo is the clock's.
+            bag.add("flash", flash, 0.01f, 0.5f);
+            bag.add("brightness", brightness, 0.0f, 1.0f);
+        }
+
+    private:
+        float flash{0.08f};
+    };
+
+
     /// Everything off. Worth having as a real pattern rather than a special
     /// case: "blackout" should behave like any other look.
     class OffPattern : public Pattern
@@ -407,6 +452,7 @@ namespace
         table["chase"]        = []() { return std::unique_ptr<Pattern>(new ChasePattern()); };
         table["pulse"]        = []() { return std::unique_ptr<Pattern>(new PulsePattern()); };
         table["identify"]     = []() { return std::unique_ptr<Pattern>(new IdentifyPattern()); };
+        table["metronome"]    = []() { return std::unique_ptr<Pattern>(new MetronomePattern()); };
         table["off"]          = []() { return std::unique_ptr<Pattern>(new OffPattern()); };
 
         // --- relic state machines -------------------------------------------

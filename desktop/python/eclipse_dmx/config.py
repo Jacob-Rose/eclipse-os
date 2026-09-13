@@ -52,6 +52,7 @@ PATTERN_NAMES = (
     "chase",
     "pulse",
     "identify",
+    "metronome",
     "off",
     # relic patterns, run unmodified through edmx::GeneratorPattern.
     # Must stay in step with ensureBuiltinsRegistered() in desktop/src/pattern.cpp.
@@ -452,6 +453,11 @@ class MidiConfig:
     beat_channel: int = -1
     bpm: float = 128.0
     free_run: bool = True
+    #: How far ahead of the music the rig runs, in milliseconds, so a beat
+    #: lands on a lamp when it lands on the ear. Everything between the clock
+    #: and the fixture is a constant this pays back. Zero until measured;
+    #: `python -m eclipse_dmx calibrate` is the beep test that writes it.
+    latency_ms: float = 0.0
 
     def ignores(self, name: str) -> bool:
         """Whether `name` matches the ignore list, the way the executable does."""
@@ -461,6 +467,11 @@ class MidiConfig:
     def validate(self) -> None:
         if not 30.0 <= self.bpm <= 300.0:
             raise ConfigError(f"midi.bpm {self.bpm} is not a tempo; expected 30..300")
+
+        if not -LATENCY_LIMIT_MS <= self.latency_ms <= LATENCY_LIMIT_MS:
+            raise ConfigError(
+                f"midi.latency_ms {self.latency_ms} is not a rig's latency; expected "
+                f"-{LATENCY_LIMIT_MS:g}..{LATENCY_LIMIT_MS:g} (it is in milliseconds)")
 
         for key in ("beat_note", "bpm_note",
                     "vu_instant_note", "vu_average_note", "vu_meter_note"):
@@ -523,8 +534,14 @@ class MidiConfig:
             "beat_channel": self.beat_channel,
             "bpm": self.bpm,
             "free_run": self.free_run,
+            "latency_ms": self.latency_ms,
         }
 
+
+#: The most a rig can be late or early, in milliseconds. Two seconds either
+#: way is past anything a chain of wires could be; beyond it is a unit mistake,
+#: and the executable clamps to the same figure - see BeatClock::setLatency.
+LATENCY_LIMIT_MS = 2000.0
 
 #: What can fill the bus.
 AUDIO_SOURCES = ("mixxx", "synesthesia", "none")
@@ -906,6 +923,14 @@ class Cue:
     toggle that puts the visual's beat flash on beside the rig's. Not a
     preset, because a preset lives in the app on one machine and a cue
     lives in this file on every machine that opens it.
+
+    `modes` is what the mode pad changes about the room, by mode number as a
+    string - "2", "3" - each the same four fields, applied over the cue when
+    the look is put in that mode: the rain's video off in 2 and 3, the
+    geode's white flash off in its blue 2. The look's own half of a mode is
+    in the executable (see ShowModes in desktop/include/edmx/mythos26.h);
+    this is the half the executable cannot reach. A mode with no entry
+    changes nothing but the look, and mode 1 is the cue itself.
     """
 
     state: str = ""
@@ -913,42 +938,65 @@ class Cue:
     media: str = ""
     layers: Dict[str, str] = field(default_factory=dict)
     controls: Dict[str, float] = field(default_factory=dict)
+    modes: Dict[int, "Cue"] = field(default_factory=dict)
+
+    #: How many modes a show look has - ShowModes::kModeCount, mirrored.
+    MODE_COUNT = 3
 
     @classmethod
-    def from_dict(cls, state: str, data: Any, layer_names: Sequence[str]) -> "Cue":
+    def from_dict(cls, state: str, data: Any, layer_names: Sequence[str],
+                  _where: str = "") -> "Cue":
+        where = _where or f"cues['{state}']"
         if not isinstance(data, dict):
-            raise ConfigError(f"cues['{state}'] must be an object")
-        unknown = set(data) - {"scene", "media", "layers", "controls"}
+            raise ConfigError(f"{where} must be an object")
+        allowed = {"scene", "media", "layers", "controls"} | ({"modes"} if not _where else set())
+        unknown = set(data) - allowed
         if unknown:
             raise ConfigError(
-                f"cues['{state}']: unexpected keys {sorted(unknown)}; "
-                "expected scene, media, layers, controls")
+                f"{where}: unexpected keys {sorted(unknown)}; "
+                f"expected {', '.join(sorted(allowed))}")
         layers_raw = data.get("layers") or {}
         if not isinstance(layers_raw, dict):
-            raise ConfigError(f"cues['{state}'].layers must be an object of layer -> state")
+            raise ConfigError(f"{where}.layers must be an object of layer -> state")
         layers: Dict[str, str] = {}
         for layer, wanted in layers_raw.items():
             if layer not in layer_names:
                 raise ConfigError(
-                    f"cues['{state}'] names layer '{layer}', which this config does not declare"
+                    f"{where} names layer '{layer}', which this config does not declare"
                     + (f" (have: {', '.join(layer_names)})" if layer_names else ""))
             layers[str(layer)] = str(wanted)
         controls_raw = data.get("controls") or {}
         if not isinstance(controls_raw, dict):
-            raise ConfigError(f"cues['{state}'].controls must be an object of control -> value")
+            raise ConfigError(f"{where}.controls must be an object of control -> value")
         controls: Dict[str, float] = {}
         for name, value in controls_raw.items():
             if not str(name).strip():
-                raise ConfigError(f"cues['{state}'].controls: a control needs a name")
+                raise ConfigError(f"{where}.controls: a control needs a name")
             if isinstance(value, bool) or not isinstance(value, (int, float)):
                 raise ConfigError(
-                    f"cues['{state}'].controls['{name}'] must be a number (a toggle is 0 or 1)")
+                    f"{where}.controls['{name}'] must be a number (a toggle is 0 or 1)")
             controls[str(name)] = float(value)
+        modes: Dict[int, "Cue"] = {}
+        modes_raw = data.get("modes") or {}
+        if not isinstance(modes_raw, dict):
+            raise ConfigError(f"{where}.modes must be an object of mode number -> overrides")
+        for key, entry in modes_raw.items():
+            try:
+                number = int(key)
+            except (TypeError, ValueError):
+                raise ConfigError(f"{where}.modes: '{key}' is not a mode number") from None
+            if not 2 <= number <= cls.MODE_COUNT:
+                raise ConfigError(
+                    f"{where}.modes: mode {number} is not one a look has "
+                    f"(2..{cls.MODE_COUNT}; 1 is the cue itself)")
+            modes[number] = cls.from_dict(state, entry, layer_names,
+                                          _where=f"{where}.modes['{key}']")
         return cls(state=state,
                    scene=str(data.get("scene", "") or ""),
                    media=str(data.get("media", "") or ""),
                    layers=layers,
-                   controls=controls)
+                   controls=controls,
+                   modes=modes)
 
     def to_dict(self) -> Dict[str, Any]:
         out: Dict[str, Any] = {}
@@ -960,6 +1008,9 @@ class Cue:
             out["layers"] = dict(self.layers)
         if self.controls:
             out["controls"] = dict(self.controls)
+        if self.modes:
+            out["modes"] = {str(number): mode.to_dict()
+                            for number, mode in sorted(self.modes.items())}
         return out
 
     def actions(self, pattern: str = "") -> List[Dict[str, Any]]:
@@ -990,6 +1041,55 @@ class Cue:
         return out
 
 
+    def mode_actions(self, mode: int) -> List[Dict[str, Any]]:
+        """The cue's mode `mode` as the actions the mode pad fires: the
+        look's knob, then what this file says the room is in that mode.
+
+        The knob first, for the same reason the state goes first in
+        actions(): the rig is the cue, and a visualiser that is not there
+        must not cost it the mode. `param mode N` on the show's look, with
+        low and high both N so the pad's value has no say.
+
+        Then the room. Not only what this mode's entry says, but the cue's
+        own value for everything *any* mode touches: the rain's mode 1 has
+        no entry, and still has to put the video back that 2 took away, and
+        a pad that names 2 outright has to undo 3. So the fields the modes
+        reach are re-sent every time, at whatever this mode leaves them -
+        and nothing else is, because re-sending a scene restarts it. A cue
+        with no modes fires the knob alone.
+        """
+        out: List[Dict[str, Any]] = [
+            {"action": "param", "params": {"name": "mode", "low": float(mode),
+                                           "high": float(mode), "layer": ""}}]
+        if not self.modes:
+            return out
+
+        override = self.modes.get(mode) or Cue()
+        layers = {name for entry in self.modes.values() for name in entry.layers}
+        controls = {name for entry in self.modes.values() for name in entry.controls}
+        scene = any(entry.scene for entry in self.modes.values())
+        media = any(entry.media for entry in self.modes.values())
+
+        # the scene's controls ride with the scene: a scene re-sent comes up
+        # on its own defaults, so the cue's controls have to follow it again
+        scene_now = override.scene or (self.scene if scene else "")
+        if scene_now:
+            controls |= set(self.controls)
+
+        room = Cue(
+            scene=scene_now,
+            media=override.media or (self.media if media else ""),
+            layers={name: override.layers.get(name, self.layers.get(name, ""))
+                    for name in sorted(layers | set(override.layers))},
+            controls={name: override.controls.get(name, self.controls.get(name))
+                      for name in sorted(controls | set(override.controls))})
+        room.layers = {name: wanted for name, wanted in room.layers.items() if wanted}
+        room.controls = {name: value for name, value in room.controls.items()
+                         if value is not None}
+        out.extend(room.actions())
+        return out
+
+
 def cue_actions(config: "Config", state: str) -> List[Dict[str, Any]]:
     """The actions for `state` under `config`: its cue if it has one, else
     the state alone. What the surface and the viewer both fire."""
@@ -997,6 +1097,16 @@ def cue_actions(config: "Config", state: str) -> List[Dict[str, Any]]:
     if cue is None:
         cue = Cue(state=state)
     return cue.actions(pattern=config.pattern.name)
+
+
+def cue_mode_actions(config: "Config", state: str, mode: int) -> List[Dict[str, Any]]:
+    """The actions that put the running cue `state` in `mode`: the look's
+    knob, then the cue table's overrides for that mode if it has any. What
+    the mode pad and the viewer's mode button both fire."""
+    cue = config.cues.get(state)
+    if cue is None:
+        cue = Cue(state=state)
+    return cue.mode_actions(mode)
 
 
 @dataclass
@@ -1212,13 +1322,15 @@ class Config:
         layer_states = {layer["name"]: STATE_MACHINE_STATES.get(layer["pattern"])
                         for layer in self.layers}
         for state, cue in self.cues.items():
-            for layer, wanted in cue.layers.items():
-                known = layer_states.get(layer)
-                if known is not None and wanted not in known:
-                    raise ConfigError(
-                        f"cues: '{state}' puts layer '{layer}' at '{wanted}', which is not "
-                        f"a state of its '{next(l['pattern'] for l in self.layers if l['name'] == layer)}' "
-                        f"(have: {', '.join(known)})")
+            for mode, entry in [(0, cue)] + sorted(cue.modes.items()):
+                for layer, wanted in entry.layers.items():
+                    known = layer_states.get(layer)
+                    if known is not None and wanted not in known:
+                        raise ConfigError(
+                            f"cues: '{state}'{f' mode {mode}' if mode else ''} puts layer "
+                            f"'{layer}' at '{wanted}', which is not a state of its "
+                            f"'{next(l['pattern'] for l in self.layers if l['name'] == layer)}' "
+                            f"(have: {', '.join(known)})")
 
         if not self.devices:
             raise ConfigError("an environment needs at least one device")
@@ -1521,6 +1633,7 @@ class Config:
             beat_channel=int(midi.get("beat_channel", config.midi.beat_channel)),
             bpm=float(midi.get("bpm", config.midi.bpm)),
             free_run=bool(midi.get("free_run", config.midi.free_run)),
+            latency_ms=float(midi.get("latency_ms", config.midi.latency_ms)),
         )
 
         pattern = data.get("pattern", {})
@@ -1826,3 +1939,175 @@ def _strip_line_comments(text: str) -> str:
     """
     return _STRING_OR_COMMENT.sub(
         lambda match: "" if match.group()[0] == "/" else match.group(), text)
+
+
+# ---------------------------------------------------------------------------
+# Writing one number back
+# ---------------------------------------------------------------------------
+
+#: A JSON number, as far as the calibration tool ever writes one.
+_NUMBER = re.compile(r"-?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?")
+
+
+def _skip_gap(text: str, index: int, end: int) -> int:
+    """Past whitespace and ``//`` comments from `index`, stopping at `end`."""
+    while index < end:
+        char = text[index]
+        if char.isspace():
+            index += 1
+        elif text.startswith("//", index):
+            newline = text.find("\n", index, end)
+            index = end if newline < 0 else newline + 1
+        else:
+            break
+    return index
+
+
+def _string_end(text: str, index: int) -> int:
+    """Index just past the string literal opening at `index`."""
+    match = _STRING_OR_COMMENT.match(text, index)
+    if match is None or match.group()[0] != '"':
+        raise ConfigError(f"unterminated string at offset {index}")
+    return match.end()
+
+
+def _value_end(text: str, index: int, end: int) -> int:
+    """Index just past the JSON value starting at `index`."""
+    char = text[index]
+    if char == '"':
+        return _string_end(text, index)
+    if char in "{[":
+        close = "}" if char == "{" else "]"
+        depth = 0
+        while index < end:
+            index = _skip_gap(text, index, end)
+            if index >= end:
+                break
+            char = text[index]
+            if char == '"':
+                index = _string_end(text, index)
+                continue
+            if char in "{[":
+                depth += 1
+            elif char in "}]":
+                depth -= 1
+                if depth == 0:
+                    if char != close:
+                        raise ConfigError(f"mismatched brackets at offset {index}")
+                    return index + 1
+            index += 1
+        raise ConfigError("unterminated object")
+    # a scalar: to the next delimiter
+    while index < end and text[index] not in ",}]" and not text[index].isspace() \
+            and not text.startswith("//", index):
+        index += 1
+    return index
+
+
+def _members(text: str, body_start: int, body_end: int):
+    """The members of the object whose body spans [body_start, body_end).
+
+    Yields ``(key, key_start, value_start, value_end)`` for each, comments and
+    whitespace stepped over and nested values stepped across, so a key one
+    level down is never mistaken for one at this level.
+    """
+    index = body_start
+    while True:
+        index = _skip_gap(text, index, body_end)
+        if index >= body_end:
+            return
+        if text[index] == ",":
+            index += 1
+            continue
+        if text[index] != '"':
+            raise ConfigError(f"expected a key at offset {index}")
+        key_start = index
+        key_end = _string_end(text, index)
+        key = json.loads(text[key_start:key_end])
+        index = _skip_gap(text, key_end, body_end)
+        if index >= body_end or text[index] != ":":
+            raise ConfigError(f"expected ':' after key {key!r}")
+        value_start = _skip_gap(text, index + 1, body_end)
+        value_end = _value_end(text, value_start, body_end)
+        yield key, key_start, value_start, value_end
+        index = value_end
+
+
+def _object_body(text: str, value_start: int) -> Tuple[int, int]:
+    """[body_start, body_end) of the object whose ``{`` is at `value_start`."""
+    if text[value_start] != "{":
+        raise ConfigError(f"expected an object at offset {value_start}")
+    return value_start + 1, _value_end(text, value_start, len(text)) - 1
+
+
+def _line_indent(text: str, index: int) -> str:
+    """The leading whitespace of the line `index` is on."""
+    line_start = text.rfind("\n", 0, index) + 1
+    line = text[line_start:]
+    return line[:len(line) - len(line.lstrip())]
+
+
+def format_latency_ms(latency_ms: float) -> str:
+    """``45``, ``-12``, ``45.5``: to a tenth, and no decimal point at all when
+    it is whole, which is how every other number in a config is written."""
+    rounded = round(float(latency_ms), 1)
+    return f"{int(rounded)}" if rounded == int(rounded) else f"{rounded:.1f}"
+
+
+def write_midi_latency(path: Union[str, Path], latency_ms: float) -> str:
+    """Sets ``midi.latency_ms`` in the file at `path`, leaving the rest as written.
+
+    A config file is commented, and the comments are where the reasons live,
+    so this is a text edit rather than a load-and-dump: the number is replaced
+    where it stands, or a line is added at the top of the ``midi`` block - or
+    a ``midi`` block at the top of the file - when there is none. The text is
+    parsed before and after the edit, and the number read back out of it, so
+    a file this cannot understand is left alone rather than half-edited.
+
+    Returns the member as written, e.g. ``"latency_ms": 45``.
+    """
+    target = Path(path)
+    text = target.read_text(encoding="utf-8")
+    if not isinstance(json.loads(_strip_line_comments(text)), dict):
+        raise ConfigError(f"{target} is not a config: expected an object at the top")
+
+    written = f'"latency_ms": {format_latency_ms(latency_ms)}'
+    note = "// how far ahead of the music the rig runs, in ms. Measured: " \
+           "python -m eclipse_dmx calibrate"
+
+    root = _skip_gap(text, 0, len(text))
+    body_start, body_end = _object_body(text, root)
+
+    midi = next((m for m in _members(text, body_start, body_end) if m[0] == "midi"), None)
+    if midi is None:
+        # No midi block: one with just this in it, first thing in the file.
+        # `enabled` is false by default, so it opens nothing.
+        first = next(iter(_members(text, body_start, body_end)), None)
+        indent = _line_indent(text, first[1]) if first else "  "
+        block = (f"\n{indent}{note}\n{indent}\"midi\": {{\n"
+                 f"{indent}  {written}\n{indent}}}{',' if first else ''}\n")
+        edited = text[:body_start] + block + text[body_start:]
+    else:
+        _, midi_key, midi_value, _ = midi
+        inner_start, inner_end = _object_body(text, midi_value)
+        existing = next((m for m in _members(text, inner_start, inner_end)
+                         if m[0] == "latency_ms"), None)
+        if existing is not None:
+            _, _, value_start, value_end = existing
+            if _NUMBER.fullmatch(text[value_start:value_end]) is None:
+                raise ConfigError(
+                    f"midi.latency_ms in {target} is not a number: "
+                    f"{text[value_start:value_end]!r}")
+            edited = text[:value_start] + format_latency_ms(latency_ms) + text[value_end:]
+        else:
+            first = next(iter(_members(text, inner_start, inner_end)), None)
+            indent = _line_indent(text, first[1]) if first else _line_indent(text, midi_key) + "  "
+            line = f"\n{indent}{note}\n{indent}{written}{',' if first else ''}\n"
+            edited = text[:inner_start] + line + text[inner_start:]
+
+    check = json.loads(_strip_line_comments(edited)).get("midi", {}).get("latency_ms")
+    if check is None or abs(float(check) - round(float(latency_ms), 1)) > 0.05:
+        raise ConfigError(f"editing {target} did not take; nothing written")
+    target.write_text(edited, encoding="utf-8")
+    return written
+

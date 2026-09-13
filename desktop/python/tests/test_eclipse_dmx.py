@@ -3147,6 +3147,72 @@ class TheShowCues(unittest.TestCase):
             [entry["action"] for entry in cue_actions(self.config, "slot_9")],
             ["pattern", "state"])
 
+    # -- modes ---------------------------------------------------------------
+
+    def test_a_mode_is_the_knob_then_the_rooms_half_of_it(self):
+        """The rain's 2 and 3 have the video off: the look's knob first, so
+        a dead visualiser costs the rig nothing, then black.mp4 - the app's
+        only "no media"."""
+        entries = cue_mode_actions(self.config, "rain", 2)
+        self.assertEqual([e["action"] for e in entries], ["param", "syn_media"])
+        self.assertEqual(entries[0]["params"],
+                         {"name": "mode", "low": 2.0, "high": 2.0, "layer": ""})
+        self.assertEqual(entries[1]["params"], {"name": "black.mp4"})
+        self.assertEqual(cue_mode_actions(self.config, "rain", 3)[1]["params"],
+                         {"name": "black.mp4"})
+
+    def test_mode_one_puts_back_what_the_other_modes_took(self):
+        """Mode 1 has no entry - it is the cue - and still has to undo 2:
+        the rain's video comes back, the geode's flash comes back on. Only
+        the fields a mode touches are re-sent, because a scene re-sent
+        restarts."""
+        entries = cue_mode_actions(self.config, "rain", 1)
+        self.assertEqual([e["action"] for e in entries], ["param", "syn_media"])
+        self.assertEqual(entries[1]["params"], {"name": "alien-message.mp4"})
+        self.assertNotIn("syn_scene", [e["action"] for e in entries])
+
+        entries = cue_mode_actions(self.config, "geode", 2)
+        self.assertEqual(entries[1], {"action": "layer",
+                                      "params": {"layer": "flash", "name": "off"}})
+        for mode in (1, 3):
+            entries = cue_mode_actions(self.config, "geode", mode)
+            self.assertEqual(entries[1:], [{"action": "layer",
+                                            "params": {"layer": "flash", "name": "flash"}}], mode)
+
+    def test_a_cue_with_no_modes_is_the_knob_alone(self):
+        for state in ("fire", "slot_9"):
+            self.assertEqual([e["action"] for e in cue_mode_actions(self.config, state, 3)],
+                             ["param"], state)
+
+    def test_a_mode_carries_a_scene_with_its_controls(self):
+        """A scene re-sent comes up on its own defaults, so the cue's
+        controls follow it again - in mode 2 and back in mode 1."""
+        cue = Cue.from_dict("punk", {"scene": "A", "controls": {"smoke": 1},
+                                     "modes": {"2": {"scene": "B"}}}, [])
+        two = cue.mode_actions(2)
+        self.assertEqual([e["action"] for e in two], ["param", "syn_scene", "syn_control"])
+        self.assertEqual(two[1]["params"]["scene"], "B")
+        one = cue.mode_actions(1)
+        self.assertEqual(one[1]["params"]["scene"], "A")
+        self.assertEqual(one[2]["params"]["address"], "/controls/scene/smoke")
+
+    def test_a_mode_the_look_does_not_have_is_rejected(self):
+        with self.assertRaises(ConfigError):
+            Cue.from_dict("rain", {"modes": {"1": {"media": "x"}}}, [])
+        with self.assertRaises(ConfigError):
+            Cue.from_dict("rain", {"modes": {"4": {"media": "x"}}}, [])
+        with self.assertRaises(ConfigError):
+            Cue.from_dict("rain", {"modes": {"two": {"media": "x"}}}, [])
+        with self.assertRaises(ConfigError):
+            Cue.from_dict("rain", {"modes": {"2": {"modes": {}}}}, [])
+        with self.assertRaises(ConfigError):
+            Cue.from_dict("rain", {"modes": {"2": {"layers": {"strobe": "on"}}}}, ["flash"])
+
+    def test_a_mode_putting_a_layer_where_it_cannot_go_is_rejected(self):
+        self.config.cues["geode"].modes[2].layers["flash"] = "rainbow"
+        with self.assertRaises(ConfigError):
+            self.config.validate(strict_overlap=False)
+
     def test_a_cue_on_a_state_the_show_does_not_have_is_rejected(self):
         self.config.cues["slot_17"] = Cue(state="slot_17", scene="x")
         with self.assertRaises(ConfigError):
@@ -6552,6 +6618,320 @@ class TheLookPresets(unittest.TestCase):
         bad = look_presets.state_dir(self.dir, "campfire") / "bad.config"
         bad.write_text("not json", encoding="utf-8")
         self.assertEqual(look_presets.list_presets(self.dir, "campfire"), ["good"])
+
+
+# ===========================================================================
+# The latency, and the beep test that finds it
+# ===========================================================================
+
+class TheLatency(ShowTest):
+    """The lead on the beat clock: over the protocol, from the config, and
+    what it does to a flash."""
+
+    def test_set_reported_nudged_and_in_status(self):
+        lines = run_show(["latency 45", "latency", "latency nudge -3.5",
+                          "latency nudge", "latency x", "status"], config=RIG)
+        replies = [line for line in lines if line.startswith(("OK latency", "ERR latency"))]
+        self.assertEqual(replies[:3], ["OK latency 45.0", "OK latency 45.0", "OK latency 41.5"])
+        self.assertTrue(replies[3].startswith("ERR latency nudge needs"), replies[3])
+        self.assertTrue(replies[4].startswith("ERR latency: 'x'"), replies[4])
+        status = [line for line in lines if line.startswith("STATUS")][-1]
+        self.assertIn(" latency=41.5ms", status)
+
+    def test_negative_is_a_value_not_a_nudge(self):
+        lines = run_show(["latency -20", "latency"], config=RIG)
+        self.assertIn("OK latency -20.0", lines)
+
+    def test_clamped_at_two_seconds(self):
+        lines = run_show(["latency 60000"], config=RIG)
+        self.assertIn("OK latency 2000.0", lines)
+
+    def test_the_config_carries_it(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "rig.json"
+            data = json.loads(_strip(RIG.read_text(encoding="utf-8")))
+            data["midi"] = {"latency_ms": 37}
+            path.write_text(json.dumps(data), encoding="utf-8")
+            lines = run_show(["latency"], config=path)
+        self.assertIn("OK latency 37.0", lines)
+
+    def test_the_controller_speaks_it(self):
+        show = self.running_show(RIG, midi="")
+        self.assertEqual(show.get_latency(), 0.0)
+        self.assertEqual(show.set_latency(12), 12.0)
+        self.assertEqual(show.nudge_latency(-2), 10.0)
+        self.assertEqual(show.get_latency(), 10.0)
+
+    def _flash_phases(self, latency_ms, seconds=3.0):
+        """Where the metronome's flashes land against a beat tapped from here,
+        as a phase of the beat in seconds: 0 is on it."""
+        stamped = []
+        show = self.running_show(RIG, pattern="metronome", midi="", bpm=120.0,
+                                 on_frame=lambda frame: stamped.append(
+                                     (time.monotonic(), max(frame[0]) > 128)),
+                                 emit_rate=40.0)
+        show.set_latency(latency_ms)
+        anchor = time.monotonic()
+        show.tap_beat()
+        time.sleep(seconds)
+        onsets = [at for i, (at, lit) in enumerate(stamped)
+                  if lit and i > 0 and not stamped[i - 1][1] and at > anchor + 0.6]
+        self.assertGreaterEqual(len(onsets), 3, "the metronome did not flash")
+        return [((at - anchor) + 0.25) % 0.5 - 0.25 for at in onsets]
+
+    def test_the_metronome_flashes_on_every_beat(self):
+        frames = []
+        show = self.running_show(RIG, pattern="metronome", midi="", bpm=120.0,
+                                 on_frame=frames.append, emit_rate=40.0)
+        time.sleep(0.3)
+        frames.clear()
+        time.sleep(4.0)
+        self.assertAlmostEqual(_rising_edges(frames), 8.0, delta=2.0)
+
+    def test_a_lead_moves_the_flash_earlier_by_that_much(self):
+        """The whole chain: a `beat` stamped as it lands, a lead on the
+        read, a flash that follows the clock. Measured off the frame stream,
+        so a frame's width of slop is in every reading; the lead has to show
+        through it, and 200ms is five frames."""
+        on_time = self._flash_phases(0)
+        early = self._flash_phases(200)
+        mean_on = sum(on_time) / len(on_time)
+        mean_early = sum(early) / len(early)
+        # a frame late at most, never early, with no lead...
+        self.assertGreater(mean_on, -0.01)
+        self.assertLess(mean_on, 0.08)
+        # ...and about 200ms earlier than that with one
+        self.assertAlmostEqual(mean_on - mean_early, 0.2, delta=0.06)
+
+
+def _strip(text):
+    from eclipse_dmx.config import _strip_line_comments
+    return _strip_line_comments(text)
+
+
+class TheLatencyInTheConfig(unittest.TestCase):
+    """`midi.latency_ms`: read, checked, and written back without touching
+    anything else in the file."""
+
+    def setUp(self):
+        self.folder = tempfile.TemporaryDirectory()
+        self.addCleanup(self.folder.cleanup)
+        self.dir = Path(self.folder.name)
+
+    def copy(self, source):
+        target = self.dir / source.name
+        target.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
+        return target
+
+    def test_read_and_round_tripped(self):
+        config = Config.from_dict(
+            {"midi": {"latency_ms": 45}, "fixtures": [{"name": "a", "start_channel": 1}]})
+        self.assertEqual(config.midi.latency_ms, 45.0)
+        self.assertEqual(Config.from_dict(config.to_dict()).midi.latency_ms, 45.0)
+
+    def test_absent_is_zero(self):
+        self.assertEqual(MidiConfig().latency_ms, 0.0)
+
+    def test_a_unit_mistake_is_rejected(self):
+        with self.assertRaises(ConfigError):
+            MidiConfig(latency_ms=45000).validate()
+        MidiConfig(latency_ms=-150).validate()
+
+    def test_written_into_the_midi_block_with_the_comments_kept(self):
+        from eclipse_dmx.config import write_midi_latency
+
+        path = self.copy(SHOW)
+        before = path.read_text(encoding="utf-8")
+        self.assertEqual(write_midi_latency(path, 45), '"latency_ms": 45')
+        after = path.read_text(encoding="utf-8")
+
+        self.assertEqual(after.count("//"), before.count("//") + 1)
+        self.assertEqual(json.loads(_strip(after))["midi"]["latency_ms"], 45)
+        # everything that was there is still there, in order
+        without = after.replace('"latency_ms": 45,\n', "")
+        self.assertEqual([l for l in without.splitlines() if "calibrate" not in l and l.strip()],
+                         [l for l in before.splitlines() if l.strip()])
+
+    def test_replaced_where_it_stands(self):
+        from eclipse_dmx.config import write_midi_latency
+
+        path = self.copy(SHOW)
+        write_midi_latency(path, 45)
+        lines_once = path.read_text(encoding="utf-8").count("\n")
+        write_midi_latency(path, -12.5)
+        after = path.read_text(encoding="utf-8")
+        self.assertEqual(after.count("\n"), lines_once)
+        self.assertEqual(after.count("latency_ms"), 1)
+        self.assertEqual(json.loads(_strip(after))["midi"]["latency_ms"], -12.5)
+
+    def test_a_midi_block_is_made_when_there_is_none(self):
+        from eclipse_dmx.config import write_midi_latency
+
+        path = self.copy(RIG)
+        self.assertNotIn("midi", json.loads(_strip(path.read_text(encoding="utf-8"))))
+        write_midi_latency(path, 30)
+        config = Config.load(path)
+        self.assertEqual(config.midi.latency_ms, 30.0)
+        self.assertFalse(config.midi.enabled, "a block with only a latency opens nothing")
+
+    def test_a_file_it_cannot_read_is_left_alone(self):
+        from eclipse_dmx.config import write_midi_latency
+
+        path = self.dir / "broken.json"
+        path.write_text("{ not json", encoding="utf-8")
+        with self.assertRaises((ConfigError, ValueError)):
+            write_midi_latency(path, 30)
+        self.assertEqual(path.read_text(encoding="utf-8"), "{ not json")
+
+    def test_whole_numbers_are_written_whole(self):
+        from eclipse_dmx.config import format_latency_ms
+        self.assertEqual(format_latency_ms(45.0), "45")
+        self.assertEqual(format_latency_ms(45.04), "45")
+        self.assertEqual(format_latency_ms(45.5), "45.5")
+        self.assertEqual(format_latency_ms(-12), "-12")
+
+
+class TheBeepTest(unittest.TestCase):
+    """The arithmetic of the calibration screen, with no window and no
+    sound: where a tap lands, what two rounds of them say, and where the
+    clicks go in the stream."""
+
+    def test_a_tap_is_measured_against_the_nearest_beat(self):
+        from eclipse_dmx.calibrate import Grid
+        grid = Grid(120.0, anchor=100.0)
+        index, offset = grid.nearest(101.07)
+        self.assertEqual(index, 2)
+        self.assertAlmostEqual(offset, 0.07)
+        index, offset = grid.nearest(101.45)     # early for beat 3, not late for 2
+        self.assertEqual(index, 3)
+        self.assertAlmostEqual(offset, -0.05)
+
+    def test_beats_between(self):
+        from eclipse_dmx.calibrate import Grid
+        grid = Grid(120.0, anchor=100.0)
+        self.assertEqual(grid.beats_between(100.9, 102.0), [(2, 101.0), (3, 101.5)])
+        self.assertEqual(grid.beats_between(101.0, 101.5), [(2, 101.0)])
+        self.assertEqual(grid.beats_between(101.1, 101.4), [])
+
+    def test_the_first_taps_are_settling_not_measured(self):
+        from eclipse_dmx.calibrate import SETTLING_TAPS, TAPS_PER_ROUND, TapRound
+        tap = TapRound("beep")
+        for offset in [300.0, -200.0] + [70.0] * (TAPS_PER_ROUND - 2):
+            tap.add(offset)
+        self.assertTrue(tap.done)
+        self.assertEqual(len(tap.counted), TAPS_PER_ROUND - SETTLING_TAPS)
+        self.assertAlmostEqual(tap.mean_ms, 70.0)
+        self.assertAlmostEqual(tap.spread_ms, 0.0)
+
+    def test_the_reaction_time_cancels(self):
+        from eclipse_dmx.calibrate import suggested_latency_ms
+        # taps 70ms after the click, 95ms after the flash: the flash is 25ms
+        # behind the click, so the clock reads 25ms further ahead
+        self.assertAlmostEqual(suggested_latency_ms(10.0, 70.0, 95.0), 35.0)
+        # a flash ahead of the click brings the lead down
+        self.assertAlmostEqual(suggested_latency_ms(40.0, 70.0, 55.0), 25.0)
+        self.assertEqual(suggested_latency_ms(0.0, 0.0, 99999.0), 2000.0)
+
+    def test_the_click_lands_where_the_grid_says(self):
+        import array
+        from eclipse_dmx.calibrate import Grid, render_chunk
+        grid = Grid(120.0, anchor=100.0)
+        click = array.array("h", [1000])            # one sample, at 1kHz
+        accent = array.array("h", [2000, 2000])     # two
+        # beat 2 at 101.0 is 300 samples into a chunk starting at 100.7
+        out = array.array("h", render_chunk(grid, 100.7, 500, click, accent, rate=1000))
+        lit = [i for i, sample in enumerate(out) if sample != 0]
+        self.assertEqual(lit, [300])
+        # beat 4 at 102.0 is the one of the bar: the accent, two samples long
+        out = array.array("h", render_chunk(grid, 101.9, 500, click, accent, rate=1000))
+        self.assertEqual([i for i, sample in enumerate(out) if sample != 0], [100, 101])
+        # a click straddling a chunk boundary carries on into the next chunk
+        head = array.array("h", render_chunk(grid, 101.9, 101, click, accent, rate=1000))
+        tail = array.array("h", render_chunk(grid, 102.001, 10, click, accent, rate=1000))
+        self.assertEqual([i for i, s in enumerate(head) if s != 0], [100])
+        self.assertEqual([i for i, s in enumerate(tail) if s != 0], [0])
+        # muted is silence, and still the right length
+        silent = render_chunk(grid, 100.7, 500, click, accent, rate=1000, muted=True)
+        self.assertEqual(silent, bytes(1000))
+
+    def test_the_click_is_an_onset_that_dies_away(self):
+        from eclipse_dmx.calibrate import click_waveform
+        click = click_waveform(1000.0)
+        loud = max(abs(s) for s in click[:100])
+        quiet = max(abs(s) for s in click[-100:])
+        self.assertGreater(loud, 10000)
+        self.assertLess(quiet, loud / 20)
+
+
+class TheBeepTestWindow(GuiTest):
+    """The screen, on a dry run of the rig with the sound off."""
+
+    def setUp(self):
+        from eclipse_dmx.calibrate import CalibrationApp
+
+        self.folder = tempfile.TemporaryDirectory()
+        self.addCleanup(self.folder.cleanup)
+        self.config = Path(self.folder.name) / RIG.name
+        self.config.write_text(RIG.read_text(encoding="utf-8"), encoding="utf-8")
+        self.app = CalibrationApp(self.config, dry_run=True, click=False)
+
+    def tearDown(self):
+        self.app._quit()
+
+    def test_opens_on_the_metronome_at_the_configs_latency(self):
+        status = self.app.show.status()
+        self.assertIn("pattern=metronome", status)
+        self.assertIn("bpm=120.0", status)
+        self.assertEqual(self.app.latency_ms, 0.0)
+        self.assertIn("latency  0 ms", self.app.number.cget("text"))
+
+    def test_an_arrow_is_a_millisecond_and_shift_is_ten(self):
+        from eclipse_dmx.calibrate import BIG_STEP_MS, STEP_MS
+        self.app.nudge(STEP_MS)
+        self.app.nudge(STEP_MS)
+        self.app.nudge(-BIG_STEP_MS)
+        self.assertEqual(self.app.latency_ms, -8.0)
+        self.assertEqual(self.app.show.get_latency(), -8.0)
+        self.assertIn("latency  -8 ms", self.app.number.cget("text"))
+        self.assertIn("not saved", self.app.number_note.cget("text"))
+
+    def _tap_round(self, cue, late_ms):
+        from eclipse_dmx.calibrate import TAPS_PER_ROUND
+        self.app.start_round(cue)
+        grid = self.app.grid
+        first = int((time.monotonic() - grid.anchor) / grid.period) + 2
+        for i in range(TAPS_PER_ROUND):
+            self.app.tap(grid.beat_at(first + i) + late_ms / 1000.0)
+
+    def test_the_beep_round_darkens_the_rig_and_the_flash_round_does_not(self):
+        self.app.start_round("beep")
+        self.assertIn("blackout=on", self.app.show.status())
+        self.app.start_round("flash")
+        self.assertIn("blackout=off", self.app.show.status())
+        self.app.reset_rounds()
+        self.assertIsNone(self.app.active)
+
+    def test_two_rounds_say_the_number_and_s_writes_it(self):
+        self.assertIsNone(self.app.suggestion_ms)
+        self._tap_round("beep", 70.0)
+        self.assertIsNone(self.app.active, "twelve taps end a round")
+        self.assertIn("blackout=off", self.app.show.status())
+        self._tap_round("flash", 95.0)
+        self.assertAlmostEqual(self.app.suggestion_ms, 25.0, places=3)
+        self.assertIn("+25ms from the click", self.app.result_line.cget("text"))
+
+        self.app.apply()
+        self.assertEqual(self.app.latency_ms, 25.0)
+        self.assertEqual(self.app.show.get_latency(), 25.0)
+        self.assertIn("not saved", self.app.number_note.cget("text"))
+
+        self.app.save()
+        self.assertEqual(Config.load(self.config).midi.latency_ms, 25.0)
+        self.assertIn("saved in the config", self.app.number_note.cget("text"))
+
+    def test_a_tap_outside_a_round_is_told_where_to_start(self):
+        self.app.tap()
+        self.assertIn("no round running", self.app.message.cget("text"))
 
 
 if __name__ == "__main__":

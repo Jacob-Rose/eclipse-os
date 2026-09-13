@@ -44,7 +44,10 @@ void BeatClock::setBpm(float bpm, BeatSource inSource, double when)
     // Re-anchor so the beat in progress stays where it is. Without this a
     // tempo nudge mid-beat yanks the phase, and the rig stutters at exactly
     // the moment someone is trying to dial the tempo in.
-    const double position = beatPosition(when);
+    //
+    // The grid's own position, not the led one: holding the *led* phase would
+    // move the anchor by the latency, and Mixxx sends a tempo every beat.
+    const double position = positionAt(when);
     const double fraction = position - std::floor(position);
 
     period.store(newPeriod);
@@ -108,7 +111,7 @@ void BeatClock::takeBeat(double when, long long steps, Advance advance)
 
     // What free-run has been predicting in the meantime, which is a beat the
     // rig has already lit and a number a status line has already shown.
-    const long long showing = static_cast<long long>(std::floor(beatPosition(when)));
+    const long long showing = static_cast<long long>(std::floor(positionAt(when)));
 
     if (advance == Advance::Grid)
     {
@@ -287,6 +290,11 @@ void BeatClock::restart(double when, BeatSource inSource)
 
 double BeatClock::beatPosition(double now) const
 {
+    return positionAt(now + latency.load());
+}
+
+double BeatClock::positionAt(double now) const
+{
     const double last = anchor.load();
     const long long number = beatNumber.load();
 
@@ -371,6 +379,19 @@ bool BeatClock::getFreeRun() const
     return freeRun.load();
 }
 
+void BeatClock::setLatency(double seconds)
+{
+    // Two seconds either way is already past anything a rig could be: a
+    // number beyond it is a unit mistake, and a clock told to run a minute
+    // ahead would look exactly like a clock that had stopped.
+    latency.store(std::clamp(seconds, -2.0, 2.0));
+}
+
+double BeatClock::getLatency() const
+{
+    return latency.load();
+}
+
 unsigned long long BeatClock::getExternalBeats() const
 {
     return externalBeats.load();
@@ -380,13 +401,14 @@ std::string BeatClock::describe(double now) const
 {
     char text[160];
     std::snprintf(text, sizeof(text),
-                  "bpm=%.1f src=%s lock=%s free_run=%s beat=%lld bar_beat=%d",
+                  "bpm=%.1f src=%s lock=%s free_run=%s beat=%lld bar_beat=%d latency=%.1fms",
                   static_cast<double>(getBpm()),
                   describeBeatSource(getSource()),
                   isLocked(now) ? "yes" : "no",
                   getFreeRun() ? "on" : "off",
                   static_cast<long long>(std::floor(beatPosition(now))),
-                  beatInBar(now) + 1);
+                  beatInBar(now) + 1,
+                  getLatency() * 1000.0);
     return std::string(text);
 }
 

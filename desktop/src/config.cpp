@@ -650,6 +650,7 @@ bool edmx::loadConfig(const std::string& path, Config& outConfig, std::string& o
         config.midi.beatChannel  = midi["beat_channel"].asInt(config.midi.beatChannel);
         config.midi.bpm          = midi["bpm"].asFloat(config.midi.bpm);
         config.midi.freeRun      = midi["free_run"].asBool(config.midi.freeRun);
+        config.midi.latencyMs    = midi["latency_ms"].asFloat(config.midi.latencyMs);
 
         const JsonValue& ignore = midi["ignore"];
         if (ignore.isArray())

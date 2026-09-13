@@ -1311,6 +1311,33 @@ class ShowController:
         """
         self.command("beat")
 
+    def set_latency(self, milliseconds: float) -> float:
+        """How far ahead of the music the rig runs, so a beat lands on a
+        lamp when it lands on the ear. Negative waits instead. Returns what
+        the clock settled on, which is clamped at two seconds either way.
+
+        Live, like the tempo: `calibrate` nudges it while the rig flashes,
+        and a set can be trimmed by ear. The config's `midi.latency_ms` is
+        where it comes from at startup - see `config.write_midi_latency`.
+        """
+        return self._latency_reply(self.command(f"latency {milliseconds:g}"))
+
+    def nudge_latency(self, milliseconds: float) -> float:
+        """Moves the latency by this much. What a knob sends."""
+        return self._latency_reply(self.command(f"latency nudge {milliseconds:g}"))
+
+    def get_latency(self) -> float:
+        """The latency as the clock has it, in milliseconds."""
+        return self._latency_reply(self.command("latency"))
+
+    @staticmethod
+    def _latency_reply(reply: str) -> float:
+        # `OK latency 45.0`
+        try:
+            return float(reply.split()[-1])
+        except (ValueError, IndexError) as error:
+            raise ShowError(f"unexpected reply to latency: {reply!r}") from error
+
     def midi_open(self, port: str = "auto") -> None:
         """Follows tempo from a MIDI input. `port` is an index, a name, a
         fragment of one, or "auto"."""

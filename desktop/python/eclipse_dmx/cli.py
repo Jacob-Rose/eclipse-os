@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from .binary import BinaryNotFoundError, find_executable
+from .calibrate import DEFAULT_BPM as DEFAULT_CALIBRATION_BPM
 from .config import BUILTIN_PALETTES, BUILTIN_PROFILES, PATTERN_NAMES, Config, ConfigError
 from .controller import FrameForwarder, ShowController, ShowError
 from .osc import DEFAULT_ADDRESS, DEFAULT_CONTROL, RESOLVE_INTERVAL
@@ -968,6 +969,39 @@ def _cmd_view(args: argparse.Namespace) -> int:
     )
 
 
+def _cmd_calibrate(args: argparse.Namespace) -> int:
+    """The beep test. Imported here so the rest of the CLI works headless."""
+    if args.host:
+        # The click has to sound where the music does. With the executable
+        # on the pi the beep would come out of the pi, or nowhere.
+        print("error: calibrate runs the show here, where the speakers are; "
+              "use --client to reach the pi's wires, not --host", file=sys.stderr)
+        return 2
+    try:
+        from .calibrate import calibrate
+    except ImportError as error:  # tkinter missing (some slim linux pythons)
+        print(
+            f"error: calibrate needs tkinter, which this python does not have ({error}).\n"
+            f"       on debian/ubuntu: sudo apt install python3-tk",
+            file=sys.stderr,
+        )
+        return 1
+
+    def log(line: str) -> None:
+        print(line, file=sys.stderr)
+
+    return calibrate(
+        args.config,
+        executable=args.executable,
+        dry_run=args.dry_run,
+        client=args.client,
+        bpm=args.bpm,
+        emit_rate=args.rate,
+        click=not args.no_click,
+        on_log=log if args.verbose else None,
+    )
+
+
 def _cmd_list(args: argparse.Namespace) -> int:
     print("patterns:")
     for name in PATTERN_NAMES:
@@ -1172,6 +1206,28 @@ def build_parser() -> argparse.ArgumentParser:
     _add_client_arg(osc)
     _add_osc_input_args(osc)
     osc.set_defaults(func=_cmd_osc)
+
+    calibrate = subparsers.add_parser(
+        "calibrate",
+        help="the beep test: measure how late the rig is, and bake it into the config",
+        description="A click on this machine's speakers and the rig flashing on the same "
+                    "beat. Nudge the latency a millisecond at a time until they land "
+                    "together, or tap along to each and let the difference say - then "
+                    "save, and midi.latency_ms in the config carries it into every set.",
+    )
+    calibrate.add_argument("config")
+    calibrate.add_argument("--bpm", type=float, default=DEFAULT_CALIBRATION_BPM,
+                           help=f"tempo of the test (default {DEFAULT_CALIBRATION_BPM:g})")
+    calibrate.add_argument("--dry-run", action="store_true",
+                           help="no hardware on this machine; with --client the far end still lights")
+    calibrate.add_argument("--no-click", action="store_true",
+                           help="no sound - only the arrow keys and the flash, for a bench")
+    calibrate.add_argument("--rate", type=float, default=30.0,
+                           help="with --client, frames per second sent to the far end's wires "
+                                "(default 30; at least the fastest device.fps over there)")
+    calibrate.add_argument("--verbose", "-v", action="store_true", help="echo the executable's logs")
+    _add_client_arg(calibrate)
+    calibrate.set_defaults(func=_cmd_calibrate)
 
     viewer = subparsers.add_parser(
         "view", help="watch the rig in a window, laid out from the config"

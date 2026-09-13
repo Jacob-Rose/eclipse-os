@@ -1497,6 +1497,55 @@ the checkout the pi pulls - the first networked dry run said exactly that,
 `config could not open 'config/mythos-show.json'`, with the desk running on
 regardless.
 
+### the latency, and the beep test that finds it
+
+"Feels like our bpm is just offset." It was - not the tempo, the phase, by a
+constant: a frame, the ssh hop to the pi, the DMX refresh, the lamp. So the
+clock now takes a lead. `midi.latency_ms` in the config, `latency` on the
+protocol, and `BeatClock::setLatency` under both.
+
+**Read side only, and that is the design.** The lead is added to `now` when
+a look asks where the beat is, and nowhere else. The grid itself - the
+anchor a beat message re-seats, the phase `setBpm` holds across a tempo
+change - stays in message time. The alternative, moving the anchor, would
+have been re-applied on every tempo message Mixxx sends, which is one per
+beat, and the rig would have walked ahead of the music by the lead per beat.
+The self-test replays a Mixxx stream under a lead and checks the phase is
+exactly one lead at the end, not sixteen.
+
+**stdin lines are stamped as they land.** The reader thread already existed
+so the render loop would not block on `getline`; it now records
+`nowSeconds()` with each line, and `beat` and `midi align` use that instead
+of the frame that got round to them. A tap through the pipe was timed to
+the nearest frame before - up to 40ms late, by a different amount each
+time - which is exactly the slop the beep test could not afford to have
+baked into its sync.
+
+**`calibrate` is Rock Band's screen.** `python -m eclipse_dmx calibrate
+config/mythos26.json --client scanner-pi`: a click on the desk's speakers
+and the `metronome` look flashing the rig white on the same beat, over the
+same executable and the same `--client` road a set uses. The arrows nudge
+the latency a millisecond at a time - ten with shift - until they land
+together; or tap along to the click and then to the flash and the difference
+is the number, the reaction time cancelling. `[s]` writes it into the
+config's `midi` block as a text edit, comments and all, because the configs
+are commented and the comments are the documentation.
+
+Two things it does not pretend. The click has this machine's own audio
+latency on it - streamed raw to `pw-cat`/`pacat`/`aplay` a few tens of
+milliseconds ahead, kept small on purpose - so the number is "the rig,
+relative to a sound played here", which is right for a set played from
+here and is trimmable by ear with the same knob during one. And the grid
+the taps are measured against is the tool's own, on `time.monotonic()`; the
+show is put on it with one stamped `beat` and both free-run on the same
+kernel clock from there, so there is nothing to drift.
+
+The click is not fired per beat - a process start or a playback call's own
+scheduling on every one of them - but drawn into a paced PCM stream where
+the grid says a beat is. Starting that stream before `Tk()` cost it a 120ms
+stall on its first beat, Tcl's start-up holding the interpreter; it starts
+after the window now.
+
 ---
 
 ## Commits, in order

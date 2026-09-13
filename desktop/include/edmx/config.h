@@ -116,6 +116,14 @@ namespace edmx
         /// Keep predicting beats after the external clock stops. A drifting rig
         /// beats a dark one.
         bool freeRun{true};
+
+        /// How far ahead of the music the rig runs, in milliseconds, so that
+        /// a beat lands on a lamp when it lands on the ear. Everything between
+        /// the clock and the fixture - a frame, the network in client mode,
+        /// the DMX refresh, the lamp itself - is a constant this pays back.
+        /// Zero until measured: `python -m eclipse_dmx calibrate` is the beep
+        /// test that writes it here. See BeatClock::setLatency.
+        float latencyMs{0.0f};
     };
 
     /// One knob, driven by one channel of the audio bus.
