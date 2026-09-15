@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
 #
 # Builds eclipse-os.ino for the Pico W and leaves a .uf2 you can drag onto the
-# board (or hand to tools/flash-firmware.sh).
+# board.
 #
-#   tools/build-firmware.sh [output-dir]
+#   tools/build-firmware.sh [obelisk|whiteboard] [deploy|dev] [output-dir]
+#
+# The words are tools/firmware-env.sh's. The .uf2 is named for what it is -
+# eclipse-os.whiteboard.deploy.uf2 - so two builds in one folder cannot be
+# mistaken for each other.
 #
 # Prerequisites, once per machine: arduino-cli, the rp2040 core, the libraries,
 # and tools/patch-libraries.sh. See the root readme.
@@ -16,24 +20,26 @@ set -u
 export PATH="$HOME/.local/bin:$PATH"
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-OUT="${1:-$REPO/build-firmware}"
-FQBN="${FQBN:-rp2040:rp2040:rpipicow}"
+. "$REPO/tools/firmware-env.sh" "$@"
+OUT="${REST[0]:-$REPO/build-firmware}"
+MODE="$([ "$DEPLOY" = 1 ] && echo deploy || echo dev)"
 
 if ! command -v arduino-cli >/dev/null 2>&1; then
     echo "arduino-cli is not on PATH. See the root readme for the one-time setup." >&2
     exit 1
 fi
 
-echo "repo:  $REPO"
-echo "fqbn:  $FQBN"
-echo "out:   $OUT"
+firmware_check_secrets "$REPO"
+
+echo "repo:   $REPO"
+firmware_describe
+echo "out:    $OUT"
 echo
 
-rm -rf "$OUT"
 mkdir -p "$OUT"
 
 cd "$REPO" || exit 1
-arduino-cli compile -b "$FQBN" --output-dir "$OUT" eclipse-os.ino
+arduino-cli compile "${BUILD_ARGS[@]}" --output-dir "$OUT" eclipse-os.ino
 status=$?
 
 if [ $status -ne 0 ]; then
@@ -45,5 +51,8 @@ if [ $status -ne 0 ]; then
     exit $status
 fi
 
+UF2="$OUT/eclipse-os.$RELIC.$MODE.uf2"
+mv -f "$OUT/eclipse-os.ino.uf2" "$UF2"
+
 echo
-echo "uf2: $OUT/eclipse-os.ino.uf2"
+echo "uf2: $UF2"

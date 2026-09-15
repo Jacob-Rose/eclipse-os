@@ -34,6 +34,15 @@ HSVStrip::HSVStrip(uint16_t inLedCount, uint16_t inLedPin)
 #endif
 }
 
+HSVStrip::HSVStrip(const StripWiring& wiring)
+#if USING_NEOPIXEL
+    : HSVStrip(wiring.length, wiring.pin, wiring.order)
+#else
+    : HSVStrip(wiring.length, wiring.pin)
+#endif
+{
+}
+
 HSVStrip::~HSVStrip()
 {
 }

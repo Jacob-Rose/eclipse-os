@@ -16,6 +16,15 @@
 
 #if USING_NEOPIXEL
 #include <Adafruit_NeoPixel.h>
+#else
+// The host has no pixel driver, but relics/wiring.h names a colour order per
+// sculpture and is compiled on both sides. Adafruit's values, so the table
+// reads the same in a host test as on the board.
+typedef uint16_t neoPixelType;
+#define NEO_RGB    ((0 << 6) | (0 << 4) | (1 << 2) | (2))
+#define NEO_GRB    ((1 << 6) | (1 << 4) | (0 << 2) | (2))
+#define NEO_BGR    ((2 << 6) | (2 << 4) | (1 << 2) | (0))
+#define NEO_KHZ800 0x0000
 #endif
 
 #include "../ecore/hsv.h"
@@ -24,6 +33,18 @@ using namespace ecore;
 
 namespace eio
 {
+    /// @brief Where a strip is plugged in, and what it is.
+    ///
+    /// The one thing about a sculpture that its code cannot tell you. Every
+    /// relic's strip is one of these, and they all live in relics/wiring.h -
+    /// the only file a pin number is allowed in.
+    struct StripWiring
+    {
+        uint16_t pin;
+        uint16_t length;
+        neoPixelType order; // NEO_GRB + NEO_KHZ800 and friends. Ignored on a host.
+    };
+
     /// @brief HSV Wrapper for Adafruit_Neopixel
     ///
     /// HSV Wrapper for an Adafruit Neopixel strip, allows us to lerp and perform much cleaner calculations 
@@ -38,6 +59,7 @@ namespace eio
         HSVStrip(uint16_t inLedCount, uint16_t inLedPin, neoPixelType inPixelType);
 #endif
         HSVStrip(uint16_t inLedCount, uint16_t inLedPin);
+        explicit HSVStrip(const StripWiring& wiring);
         ~HSVStrip();
 
         HSV getHSV(uint16_t idx) const;

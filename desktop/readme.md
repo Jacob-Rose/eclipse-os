@@ -2562,7 +2562,7 @@ until a `link take`; the default, `"streaming"`, takes it on the first frame.
 A laptop can take a relic over for a show and hand it back afterwards.
 
 ```sh
-# flash the relic first: eclipse-os.ino, RELIC_OBELISK, USE_RELIC_LINK 1
+# flash the relic first: ../upload.sh obelisk  (USE_RELIC_LINK 1 is the default)
 eclipse-dmx --probe-relics
 eclipse-dmx --config config/obelisk_usb.json
 
@@ -2575,9 +2575,9 @@ python -m eclipse_dmx view config/obelisk_usb.json --live
 Done, on a real obelisk. Recorded here because it is also the order to work
 through if a second sculpture ever misbehaves.
 
-1. **Flash it.** `eclipse-os.ino` with `RELIC RELIC_OBELISK` and
-   `USE_RELIC_LINK 1`. `DEPLOYMENT 0` on a first run — the logs are worth more
-   than the frame rate. Build is 396 KB of flash (18%) and 71.5 KB of RAM (27%).
+1. **Flash it.** `./upload.sh obelisk` from the repo root — that is the
+   obelisk, dev, `USE_RELIC_LINK 1`. Dev rather than `deploy` on a first run —
+   the logs are worth more than the frame rate. Build is 396 KB of flash (18%) and 71.5 KB of RAM (27%).
 2. **`eclipse-dmx --probe-relics`.** ✓ `RELIC COM4  obelisk strip=0:344
    brightness=63`. That is the sculpture naming itself, its one strip, its
    length, and the current limit it will apply on top of anything sent.

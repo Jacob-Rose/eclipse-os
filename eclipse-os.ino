@@ -11,15 +11,26 @@
 // One line, because a Pico is flashed for exactly one sculpture and everything
 // below follows from it: the obelisk wants no network at all, the whiteboard
 // cannot work without one.
+//
+// The build scripts set these from the command line (`./upload.sh whiteboard
+// deploy` - see tools/firmware-env.sh), so the values here are only what you
+// get with no arguments. Guarded rather than plain so a -D on the command line
+// wins instead of colliding.
 // ---------------------------------------------------------------------------
 #define RELIC_OBELISK   1
 #define RELIC_WHITEBOARD 2
 
-#define RELIC RELIC_OBELISK
+#ifndef RELIC
+  #define RELIC RELIC_OBELISK
+#endif
 
-#define DEPLOYMENT 0 // 0 = dev, 1 = production. Disables usb debugging usually due to low delay between ticks
-#define DEBUG_LOGGING_ENABLED 1 && !DEPLOYMENT // overwrites the one in logging.h
-#define USE_LED_FOR_TICK 1 && !DEPLOYMENT
+#ifndef DEPLOYMENT
+  #define DEPLOYMENT 0 // 0 = dev, 1 = production. Disables usb debugging usually due to low delay between ticks
+#endif
+#ifndef DEBUG_LOGGING_ENABLED
+  #define DEBUG_LOGGING_ENABLED (1 && !DEPLOYMENT) // overwrites the one in logging.h - for this file only; the scripts pass it to the whole build
+#endif
+#define USE_LED_FOR_TICK (1 && !DEPLOYMENT)
 
 // The desk's cable. Deliberately *not* gated on DEPLOYMENT: the build that
 // goes on a sculpture for a show is precisely the build a show needs to reach,
@@ -94,9 +105,11 @@ using namespace ecore::log;
 #if RELIC == RELIC_OBELISK
   static unique_ptr<obelisk::ObeliskCore> relic;
   static const char* RELIC_NAME = "obelisk";
+  static constexpr eio::StripWiring RELIC_WIRING = wiring::kObelisk;
 #else
   static unique_ptr<todoist_whiteboard::WhiteboardCore> relic;
   static const char* RELIC_NAME = "todoist_whiteboard";
+  static constexpr eio::StripWiring RELIC_WIRING = wiring::kWhiteboard;
 #endif
 
 #if USE_RELIC_LINK
@@ -165,6 +178,9 @@ void setup() {
   Serial.println("Copyright 2025 | Jake Rose");
   Serial.print("Relic: ");
   Serial.println(RELIC_NAME);
+  // The wiring, first thing, because a board built for the wrong strip is
+  // silent in every other way. See src/relics/wiring.h.
+  Serial.printf("Strip: GP%u x %u\n", RELIC_WIRING.pin, RELIC_WIRING.length);
   Serial.println("Initializing...\n");
 
   Serial.println("Debug logging is enabled... Expect performance impact.");

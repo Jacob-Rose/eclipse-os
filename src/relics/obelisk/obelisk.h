@@ -11,6 +11,7 @@
 #include "../../lib/esm/state_generic.h"
 
 #include "../../lib/eio/relic.h"
+#include "../wiring.h"
 
 #include "../scanner/scanner_patterns.h"
 
@@ -42,8 +43,6 @@ namespace obelisk
         ObeliskIO();
     
         virtual void init() override;
-
-        uint16_t StripLEDPin = 6;
     };
     
     class ObeliskCore : public RelicCore

@@ -27,7 +27,10 @@ void ObeliskIO::init()
 {
     RelicIO::init();
 
-    auto [mainStripIt, stripInserted] = strips.emplace(static_cast<uint8_t>(0), make_unique<HSVStrip>(WALL_SIDE_LENGTH * 8, StripLEDPin));
+    // The strip is wiring::kObelisk; the eight runs below are what the
+    // pixels on it mean, so the two lengths had better agree.
+    static_assert(wiring::kObelisk.length == WALL_SIDE_LENGTH * 8, "relics/wiring.h and WALL_SIDE_LENGTH disagree about the obelisk");
+    auto [mainStripIt, stripInserted] = strips.emplace(static_cast<uint8_t>(0), make_unique<HSVStrip>(wiring::kObelisk));
 
     HSVStrip* mainStrip = mainStripIt->second.get();
 
