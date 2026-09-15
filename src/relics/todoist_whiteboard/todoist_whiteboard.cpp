@@ -29,7 +29,7 @@ void WhiteboardIO::init()
 
     auto [mainStripIt, stripInserted] = strips.emplace(
         static_cast<uint8_t>(0), 
-        make_unique<HSVStrip>(stripLength, stripLEDPin)
+        make_unique<HSVStrip>(wiring::kWhiteboard)
     );
 
     HSVStrip* mainStrip = mainStripIt->second.get();
@@ -43,7 +43,7 @@ void WhiteboardIO::init()
         HSVStripNodeFactory::GenerateAxisRow(
             segmentIt->second.get(), 
             0, 
-            stripLength, 
+            wiring::kWhiteboard.length, 
             Coord(0, 0), 
             Coord(1.f, 0)
         );
@@ -182,6 +182,18 @@ WhiteboardCore::WhiteboardCore(MqttClient& mqtt)
     stateMachine->init();
 }
 
+// The topics the light advertises in its discovery config - see
+// HomeAssistantDiscovery::publishLightDiscovery, which derives them from the
+// unique id. Until now the relic listened on whiteboard/* instead, so the
+// light HA showed was never one it could hear; only the Mode select lined up.
+static const char* kLightId = "whiteboard_light_01";
+static const char* kModeId  = "whiteboard_mode";
+
+static std::string haTopic(const char* id, const char* leaf)
+{
+    return std::string("eclipse/") + id + "/" + leaf;
+}
+
 void WhiteboardCore::setHomeAssistantConfig(const HomeAssistantConfig& config)
 {
     haConfig = config;
@@ -224,6 +236,11 @@ void WhiteboardCore::publishDiscovery()
     std::vector<std::string> modes = {"noise", "monocolor", "rainbow", "fire"};
     haDiscovery->publishSelectDiscovery("whiteboard_mode", "Whiteboard Mode", modes);
 
+    // The subscriptions, the availability and the state: everything the
+    // broker forgot while we were away.
+    subscribeTopics();
+    mqttClient.publish(haTopic(kLightId, "available").c_str(), "online", true);
+    mqttClient.publish(haTopic(kModeId, "available").c_str(), "online", true);
     publishState();
     publishModeState();
 
@@ -237,29 +254,49 @@ void WhiteboardCore::setupMQTT()
         mqttHandler.handleMessage(topic, payload, length);
     });
 
-    mqttClient.subscribe("whiteboard/pattern");
-    mqttClient.subscribe("whiteboard/brightness");
-    mqttClient.subscribe("whiteboard/power");
-
+    // The light: on/off, brightness, effect. Plus the older whiteboard/*
+    // names, which nothing advertises but an automation may still use.
+    mqttHandler.registerHandler(haTopic(kLightId, "set"), [this](const std::string& payload) {
+        onPowerCommand(payload);
+    });
+    mqttHandler.registerHandler(haTopic(kLightId, "brightness/set"), [this](const std::string& payload) {
+        onBrightnessCommand(payload);
+    });
+    mqttHandler.registerHandler(haTopic(kLightId, "effect/set"), [this](const std::string& payload) {
+        onPatternCommand(payload);
+    });
     mqttHandler.registerHandler("whiteboard/pattern", [this](const std::string& payload) {
         onPatternCommand(payload);
     });
-
     mqttHandler.registerHandler("whiteboard/brightness", [this](const std::string& payload) {
         onBrightnessCommand(payload);
     });
-
     mqttHandler.registerHandler("whiteboard/power", [this](const std::string& payload) {
         onPowerCommand(payload);
     });
 
-    // Subscribe to mode command topic
-    mqttClient.subscribe("eclipse/whiteboard_mode/set");
-    mqttHandler.registerHandler("eclipse/whiteboard_mode/set", [this](const std::string& payload) {
+    // The select.
+    mqttHandler.registerHandler(haTopic(kModeId, "set"), [this](const std::string& payload) {
         onModeCommand(payload);
     });
 
+    subscribeTopics();
+
     dbgLog("WhiteboardCore::setupMQTT complete", Verbosity::Display, Category::Relic);
+}
+
+void WhiteboardCore::subscribeTopics()
+{
+    // Every session starts clean (MQTT_CLEAN_SESSION), so the broker forgets
+    // these on every reconnect and they have to be said again - which is why
+    // this is not part of setupMQTT, and why tick() calls it on a reconnect.
+    mqttClient.subscribe(haTopic(kLightId, "set").c_str());
+    mqttClient.subscribe(haTopic(kLightId, "brightness/set").c_str());
+    mqttClient.subscribe(haTopic(kLightId, "effect/set").c_str());
+    mqttClient.subscribe("whiteboard/pattern");
+    mqttClient.subscribe("whiteboard/brightness");
+    mqttClient.subscribe("whiteboard/power");
+    mqttClient.subscribe(haTopic(kModeId, "set").c_str());
 }
 
 void WhiteboardCore::onPatternCommand(const std::string& payload)
@@ -275,9 +312,9 @@ void WhiteboardCore::onPatternCommand(const std::string& payload)
     } else if (payload == "fire") {
         setPattern(WhiteboardPattern::Fire);
     }
-
-    publishState();
-    // Note: publishModeState() is already called in setPattern()
+    // setPattern has told both entities. Saying it again here put a second,
+    // identical echo on the wire after every command, and a checker waiting
+    // for the *next* answer would take the stale one.
 }
 
 void WhiteboardCore::onBrightnessCommand(const std::string& payload)
@@ -330,58 +367,38 @@ void WhiteboardCore::onModeCommand(const std::string& payload)
     } else if (payload == "fire") {
         setPattern(WhiteboardPattern::Fire);
     }
+}
 
-    publishModeState();
+const char* WhiteboardCore::patternName() const
+{
+    switch (currentPattern) {
+        case WhiteboardPattern::Noise:     return "noise";
+        case WhiteboardPattern::Monocolor: return "monocolor";
+        case WhiteboardPattern::Rainbow:   return "rainbow";
+        case WhiteboardPattern::Fire:      return "fire";
+        default:                           return "noise";
+    }
 }
 
 void WhiteboardCore::publishState()
 {
-    mqttClient.publish("whiteboard/state", bPowerOn ? "ON" : "OFF");
-    
-    std::string patternName;
-    switch (currentPattern) {
-        case WhiteboardPattern::Noise:
-            patternName = "noise";
-            break;
-        case WhiteboardPattern::Monocolor:
-            patternName = "monocolor";
-            break;
-        case WhiteboardPattern::Rainbow:
-            patternName = "rainbow";
-            break;
-        case WhiteboardPattern::Fire:
-            patternName = "fire";
-            break;
-        default:
-            patternName = "unknown";
-            break;
-    }
-    
-    mqttClient.publish("whiteboard/pattern/state", patternName.c_str());
+    const char* power = bPowerOn ? "ON" : "OFF";
+    mqttClient.publish(haTopic(kLightId, "state").c_str(), power);
+    mqttClient.publish(haTopic(kLightId, "effect").c_str(), patternName());
+
+    // What the slider should sit at: the byte the strip is actually on.
+    char brightness[4];
+    snprintf(brightness, sizeof(brightness), "%u", getEBrightnessAsByte(coreIO->getGlobalBrightness()));
+    mqttClient.publish(haTopic(kLightId, "brightness").c_str(), brightness);
+
+    // The older names, kept for anything already listening.
+    mqttClient.publish("whiteboard/state", power);
+    mqttClient.publish("whiteboard/pattern/state", patternName());
 }
 
 void WhiteboardCore::publishModeState()
 {
-    std::string modeName;
-    switch (currentPattern) {
-        case WhiteboardPattern::Noise:
-            modeName = "noise";
-            break;
-        case WhiteboardPattern::Monocolor:
-            modeName = "monocolor";
-            break;
-        case WhiteboardPattern::Rainbow:
-            modeName = "rainbow";
-            break;
-        case WhiteboardPattern::Fire:
-            modeName = "fire";
-            break;
-        default:
-            modeName = "noise";
-            break;
-    }
-
-    mqttClient.publish("eclipse/whiteboard_mode/state", modeName.c_str());
+    mqttClient.publish(haTopic(kModeId, "state").c_str(), patternName());
 }
 
 void WhiteboardCore::setPattern(WhiteboardPattern pattern)
@@ -406,7 +423,10 @@ void WhiteboardCore::setPattern(WhiteboardPattern pattern)
     }
 
     dbgLog(("Pattern switched to: " + std::to_string(static_cast<int>(pattern))).c_str(), Verbosity::Display, Category::Relic);
+
+    // Both entities show the pattern, so both hear about it, whichever asked.
     publishModeState();
+    publishState();
 }
 
 void WhiteboardCore::tick(float deltaTime)
@@ -414,8 +434,18 @@ void WhiteboardCore::tick(float deltaTime)
     RelicCore::tick(deltaTime);
     stateMachine->tick(deltaTime);
 
-    // Republish discovery if MQTT reconnected and we haven't published yet
-    if (bHasHAConfig && !bDiscoveryPublished && mqttClient.isConnected())
+    // A reconnect is a new session: the broker has forgotten our
+    // subscriptions and HA may have restarted and forgotten the device. Say
+    // it all again. Before this, one WiFi blip on the wall and HA could see
+    // the lights but never reach them again.
+    const bool connected = mqttClient.isConnected();
+    if (connected && !bWasConnected)
+    {
+        bDiscoveryPublished = false;
+    }
+    bWasConnected = connected;
+
+    if (bHasHAConfig && !bDiscoveryPublished && connected)
     {
         publishDiscovery();
     }
@@ -426,7 +456,6 @@ bool WhiteboardCore::handleCommand(string msg)
     if (strcmp(msg.c_str(), "next") == 0) {
         int nextPattern = (static_cast<int>(currentPattern) + 1) % static_cast<int>(WhiteboardPattern::MAX);
         setPattern(static_cast<WhiteboardPattern>(nextPattern));
-        publishState();
         return true;
     }
 
