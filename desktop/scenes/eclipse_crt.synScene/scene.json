@@ -1,0 +1,70 @@
+{
+	"CONTROLS" :
+	[
+		{
+			"DEFAULT" : [ 0.35, 0.35, 0.35 ],
+			"DESCRIPTION" : "The colour the rig is showing. Driven over OSC by eclipse-dmx, same as the other Link scenes. It only shows through when no media is loaded - it tints the fallback test pattern so the CRT has something to chew on before you have baked your text into the media. Declared FIRST so it keeps the positional address /controls/global/color/1, and named rig_color so /controls/scene/rigcolor also finds it - see scenes/readme.md.",
+			"IS_META" : true,
+			"NAME" : "rig_color",
+			"TYPE" : "color",
+			"UI_GROUP" : "Link"
+		},
+		{
+			"DEFAULT" : 1,
+			"DESCRIPTION" : "The CRT itself. On, the source is run through the RVM filter (Lottes' Retro Video Monitor, arcade slot-mask mode). Off, the source is passed straight through, upscaled clean - which is the 'clean' preset and the way to see what the filter is actually doing by toggling it.",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "crt_enable",
+			"TYPE" : "toggle",
+			"UI_GROUP" : "CRT"
+		},
+		{
+			"DEFAULT" : 1.0,
+			"DESCRIPTION" : "Screen curvature. 0 is a flat panel; 1 is the barrel warp RVM ships as its arcade default. Above 1 bulges further and starts to vignette the corners away. This is a runtime knob because RVM takes the warp amount as a function argument - only the mask *style* (arcade vs TV vs PVM) is compile-time, and this scene commits to arcade.",
+			"MAX" : 2.0,
+			"MIN" : 0.0,
+			"NAME" : "warp",
+			"TYPE" : "slider",
+			"UI_GROUP" : "CRT"
+		},
+		{
+			"DEFAULT" : 0.75,
+			"DESCRIPTION" : "Horizontal spot size. 0.50 is a soft, blurry beam; 0.75 is RVM's default; 1.00 is a hard, blocky pixel. This is the INPUT_BLUR the filter takes as an argument, so it moves live.",
+			"MAX" : 1.0,
+			"MIN" : 0.5,
+			"NAME" : "blur",
+			"TYPE" : "slider",
+			"UI_GROUP" : "CRT"
+		},
+		{
+			"DEFAULT" : 1.0,
+			"DESCRIPTION" : "Output level, applied after the filter. A slot mask throws away roughly two thirds of the light on purpose (that is how it makes the black grid between phosphors), so a CRT run wants headroom above 1 to get back to the brightness of the clean pass. Leave at 1 while dialling the look in.",
+			"MAX" : 3.0,
+			"MIN" : 0.0,
+			"NAME" : "brightness",
+			"TYPE" : "slider",
+			"UI_GROUP" : "CRT"
+		}
+	],
+	"CREDIT" : "eclipse-os; RVM filter by Timothy Lottes (public domain)",
+	"DESCRIPTION" : "A CRT styliser: your media (with the text baked into it) run through Timothy Lottes' Retro Video Monitor filter in arcade slot-mask mode. Pass 0 draws the source into a low-res buffer; the final pass upscales it with scanlines, a slot mask and barrel warp. Warp, spot size and brightness are live; the mask style is committed to arcade.",
+	"GPU" : 0,
+	"HEIGHT" : 1080,
+	"IMAGE_PATH" : "eclipse_crt.png",
+	"MEDIA" : [ { "FILTER" : "linear", "WRAP" : "clamp" } ],
+	"PASSES" :
+	[
+		{
+			"DESCRIPTION" : "The source, at the CRT's native resolution. 640x360 is the 'input' the filter upscales - low enough that 360 scanlines land visibly across a 1080 output (~3x), 16:9 so media is not stretched. Raise it for a finer tube, lower it for a chunkier one. FLOAT so the linear-light maths in the filter has the precision for it.",
+			"FILTER" : "linear",
+			"FLOAT" : true,
+			"HEIGHT" : 360,
+			"TARGET" : "BuffA",
+			"WIDTH" : 640,
+			"WRAP" : "clamp"
+		}
+	],
+	"TAGS" : [ "utility", "crt", "retro", "filter", "eclipse" ],
+	"TITLE" : "Eclipse CRT",
+	"WIDTH" : 1920
+}

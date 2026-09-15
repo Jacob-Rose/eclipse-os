@@ -1,0 +1,119 @@
+{
+	"CONTROLS" :
+	[
+		{
+			"DEFAULT" : [ 0.0, 0.85, 0.85 ],
+			"DESCRIPTION" : "The colour of the galaxies - the part of the picture you would name. Driven over OSC by eclipse-dmx, so Nova is painted in whatever colour the truss is showing. This is the FIRST colour control in this list, which is what makes it /controls/global/color/1 - the positional address is the order these are declared in, so moving it down this list repoints the sender. Its default is the original's regime-0 teal.",
+			"IS_META" : true,
+			"NAME" : "rig_color",
+			"TYPE" : "color",
+			"UI_GROUP" : "Link"
+		},
+		{
+			"DEFAULT" : [ 1.0, 0.85, 0.15 ],
+			"DESCRIPTION" : "The wash the galaxies sit on. SECOND colour control, so /controls/global/color/2 and /controls/scene/rigcolor2. Only read when 'auto second' is off - nothing sends this yet; eclipse-dmx sends one fixture. Defaults to the original's regime-0 yellow.",
+			"NAME" : "rig_color_2",
+			"TYPE" : "color",
+			"UI_GROUP" : "Link"
+		},
+		{
+			"DEFAULT" : 1,
+			"DESCRIPTION" : "Derive the second colour as the complement of the first instead of reading rig_color_2. On by default, because one fixture is what the sender sends and a wash on the opposite side of the hue wheel is what the original pairs (orange galaxies on sky blue). Turn it off to drive both colours yourself.",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "auto_second",
+			"TYPE" : "toggle",
+			"UI_GROUP" : "Link"
+		},
+		{
+			"DEFAULT" : [ 0.0, 0.85, 0.85 ],
+			"DESCRIPTION" : "A first colour you set by hand, used instead of the rig's when 'Colour by hand' is on. This exists because a running sender overwrites rig_color thirty times a second, which makes it impossible to try a different colour while the link is live.",
+			"NAME" : "manual_color",
+			"TYPE" : "color",
+			"UI_GROUP" : "palette"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Take the first colour from 'manual_color' instead of from the rig. Turn this on to prove the scene works independently of the link.",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "color_by_hand",
+			"TYPE" : "toggle",
+			"UI_GROUP" : "palette"
+		},
+		{
+			"DEFAULT" : 1.0,
+			"DESCRIPTION" : "How bright the wash behind the galaxies is, in the second colour. 0 is the black background of the original's regimes 2 and 3; 1 is a full wash like regimes 0 and 1; above 1 blows it out the way regime 0 did.",
+			"MAX" : 2.0,
+			"MIN" : 0.0,
+			"NAME" : "base_amount",
+			"PARAMS" : 0.25,
+			"TYPE" : "slider smooth",
+			"UI_GROUP" : "palette"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Turn up to simplify the scene into a few splotches of color.",
+			"MAX" : 1.0,
+			"MIN" : 0.0,
+			"NAME" : "simplify",
+			"PARAMS" : 0.25,
+			"TYPE" : "slider smooth",
+			"UI_GROUP" : "zoom"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "'Zooms Out' when turned up, causing a grainy effect like a sandstorm.",
+			"MAX" : 1.0,
+			"MIN" : 0.0,
+			"NAME" : "sandstorm",
+			"PARAMS" : 0.4,
+			"TYPE" : "slider smooth",
+			"UI_GROUP" : "zoom"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Cause the slopes of the texture to highlight on high percussive hits.",
+			"NAME" : "flashing",
+			"TYPE" : "toggle",
+			"UI_GROUP" : "action"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "While ON, pulses emanate outwards synced to the BPM of the song.",
+			"NAME" : "pulsate",
+			"TYPE" : "toggle",
+			"UI_GROUP" : "action"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "A radial grid effect that emanates out from the center like rays of energy.",
+			"NAME" : "radial_grid",
+			"TYPE" : "toggle",
+			"UI_GROUP" : "action"
+		},
+		{
+			"DEFAULT" : 0,
+			"DESCRIPTION" : "Rotates the main texture on the beat when set to ON. Standard slow rotation when set to OFF.",
+			"NAME" : "beat_rotate",
+			"TYPE" : "toggle",
+			"UI_GROUP" : "action"
+		}
+	],
+	"CREDIT" : "Felix Woitzel (Nova); colour link by eclipse-os",
+	"DESCRIPTION" : "Felix Woitzel's Nova with its palette taken from the rig: the galaxies are whatever colour the lights are showing, arriving over OSC from eclipse-dmx, and the other five colours of the look are derived from that one. Everything else is the original.",
+	"GPU" : 2,
+	"IMAGE_PATH" : "eclipse_nova.png",
+	"PASSES" :
+	[
+		{ "TARGET" : "buffA", "WIDTH" : 960, "HEIGHT" : 540, "FLOAT" : true },
+		{ "TARGET" : "buffC", "WIDTH" : 960, "HEIGHT" : 540, "FLOAT" : true },
+		{ "TARGET" : "buffD", "WIDTH" : 960, "HEIGHT" : 540, "FLOAT" : true }
+	],
+	"SMOOTH_TRANSITIONS" :
+	[
+		{ "UNIFORMS" : [ "light", "dark" ], "DURATION" : 3 }
+	],
+	"TAGS" : [ "groovy", "mandala", "dark", "osc", "eclipse" ],
+	"TITLE" : "Eclipse Nova"
+}

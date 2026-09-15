@@ -13,6 +13,9 @@ lighting it — one look, two surfaces, neither side knowing about the other.
 | `eclipse_link_min.synScene` | The smallest thing that can render. Answers "is anything drawing at all". Run this when something else comes up black. |
 | `eclipse_link_test.synScene` | A test card. Answers "is the colour arriving, and is it changing", and tells apart the ways that can fail. **Currently comes up black — under diagnosis; see the minimal scene's readme.** |
 | `eclipse_chroma_key.synScene` | The look. Your media in black and white except where it already matches the rig's colour, within a limit. |
+| `eclipse_churn.synScene` | Synesthesia's bundled Churning (Victor S.), painted in two rig colours instead of its own rainbow. First test of taking a shipped feedback scene and recolouring its readout. |
+| `eclipse_nova.synScene` | Synesthesia's bundled Nova (Felix Woitzel), its four random colour regimes replaced by a palette derived from the rig's colour — the galaxies are `rig_color`, the other five roles follow by one rule. Its readme explains why the rig drives the shader and not the reverse. |
+| `eclipse_crt.synScene` | A CRT styliser. Your media — with text baked into it — run through Timothy Lottes' Retro Video Monitor in arcade slot-mask mode: scanlines, a slot mask and tube warp. Warp, spot size and brightness are live controls. |
 
 They are in that order on purpose: each one adds exactly what the one above it
 left out, so a scene that fails tells you which addition broke it. Minimal has
