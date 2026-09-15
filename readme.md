@@ -128,15 +128,45 @@ You need the [arduino-cli](https://arduino.github.io/arduino-cli/), the RP2040 c
 
 #### Which relic
 
-A board is flashed for exactly one sculpture, and one line at the top of
-`eclipse-os.ino` says which:
+A board is flashed for exactly one sculpture, and the build scripts say which:
 
-```cpp
-#define RELIC RELIC_OBELISK      // or RELIC_WHITEBOARD
+```sh
+./upload.sh whiteboard deploy    # the string lights on the wall, for a month
+./upload.sh                      # the obelisk, dev - the same as no words ever meant
 ```
 
-Everything else follows from it. The obelisk has no network and needs no
-`secrets.h`; the whiteboard cannot work without both.
+The words (`obelisk`/`whiteboard`, `deploy`/`dev`, `-p PORT`) are the same for
+`compile.sh`, `upload.sh`, `monitor.sh` and `tools/build-firmware.sh`, in any
+order - `./compile.sh --help` lists them. They become `-D`s on the whole build
+(`tools/firmware-env.sh`), and the `#define`s at the top of `eclipse-os.ino`
+are only the defaults behind them. Everything else follows from the relic: the
+obelisk has no network and needs no `secrets.h`; the whiteboard cannot work
+without both, and the scripts say so before the compiler does.
+
+Where a sculpture's pixels are plugged in - pin, length, colour order - is one
+line per relic in `src/relics/wiring.h`, and nowhere else. The scripts print
+that line before every build (`wiring: GP5 x 300, NEO_BGR + NEO_KHZ800`) and a
+dev build prints it in its boot banner, because a board built for the wrong
+strip is a dark strip with nothing in the log.
+
+**After every flash of a relic that talks to Home Assistant, run
+`tools/check-ha.py`.** It does from your machine what HA does: logs into the
+broker with `secrets.h`, reads the device's discovery configs, drives every
+command they advertise and expects the relic to echo the state back. `HA
+CHECK PASS` means HA can see *and reach* it; anything less names the broken
+thing. `--tidy` clears discovery left behind by an older build of the same
+board (a renamed device id), which otherwise makes HA reject the new one as a
+duplicate. Neither failure shows up in the serial monitor, which is why this
+exists: the light entity was unreachable for months while its Mode select
+worked, and nothing said so.
+
+```sh
+./upload.sh whiteboard deploy && tools/check-ha.py
+```
+
+`deploy` is `DEPLOYMENT 1` - the tighter loop - and, new, `DEBUG_LOGGING_ENABLED
+0` for the library too. The sketch's own define never reached `src/lib`, so a
+deploy build used to log from everything but the sketch.
 
 `USE_RELIC_LINK`, just below it, is the desk's cable — see
 [desktop/readme.md](desktop/readme.md#over-usb). Leave it on: a laptop can then
@@ -146,9 +176,12 @@ gated on `DEPLOYMENT`, unlike the raw serial input it replaced.
 
 #### Build / upload / monitor
 
-1. `tools/build-firmware.sh` -> compile and leave a `.uf2` in `build-firmware/`
+1. `tools/build-firmware.sh` -> compile and leave a `.uf2` in `build-firmware/`,
+   named for what it is: `eclipse-os.whiteboard.deploy.uf2`
 2. compile.sh -> compile for raspberry pico w (use as reference, easy to change per chipset)
-3. upload.sh -> upload compiled project to first found device
+3. upload.sh -> compile *and* upload to the first found device (or `-p PORT`). One
+   step, because a bare `arduino-cli upload` sends whatever the build cache last
+   held, which may be the other sculpture
 4. monitor.sh -> view serial out of first found device
 
 To get the `.uf2` onto the board, either drop it on the `RPI-RP2` drive, or -
