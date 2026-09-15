@@ -27,6 +27,13 @@ void LFO::reflectState(ecore::PropertyBag& bag, const std::string& prefix)
 void LFO::tick(float deltaTime)
 {
     currentOffset += deltaTime * speed;
+
+    // Only ever goes into sin(), so it is a phase, and a phase wraps. Left to
+    // grow it is a float losing its low bits: the whiteboard's rainbow, at 0.2
+    // a second, reached 2^17 in a week - where a float's step is 0.016 and its
+    // 0.006 tick rounds to nothing at all. It stopped there, exactly.
+    constexpr float kTwoPi = 2.0f * 3.14159265f;
+    currentOffset = std::fmod(currentOffset, kTwoPi);
 }
 
 float LFO::evaluate(float inVal) const

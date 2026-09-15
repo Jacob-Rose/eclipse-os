@@ -1,5 +1,9 @@
 #include "noise.h"
 
+#include <cmath>
+
+#include "../ecore/math.h"
+
 using namespace eanim;
 
 PerlinNoiseGenerator2D::PerlinNoiseGenerator2D()
@@ -35,11 +39,35 @@ void PerlinNoiseGenerator2D::reflectState(ecore::PropertyBag& bag, const std::st
 void PerlinNoiseGenerator2D::tick(float deltaTime)
 {
     currentTime += deltaTime * timeScale;
+
+    // Loop rather than grow - see kLoopLength. fmod rather than a subtraction
+    // so a clock a desk lands from far outside the loop comes back in one tick
+    // too, and the second line covers a field running backwards.
+    currentTime = std::fmod(currentTime, kLoopLength);
+    if (currentTime < 0.0f)
+    {
+        currentTime += kLoopLength;
+    }
 }
 
 float PerlinNoiseGenerator2D::evaluate(float x, float y) const
 {
-    float freqScalar = 1.0f / noise.GetFrequency();
+    const float freqScalar = 1.0f / noise.GetFrequency();
+    const float sx = x * imageScaleX;
+    const float sy = y * imageScaleY;
 
-    return noise.GetNoise<float>(x * imageScaleX, y * imageScaleY, currentTime * freqScalar);
+    float value = noise.GetNoise<float>(sx, sy, currentTime * freqScalar);
+
+    // The seam. Sampling at (currentTime - kLoopLength) is sampling just
+    // before zero, so by the time the clock wraps this has faded all the way
+    // to where the next loop starts, and the wrap itself moves nothing.
+    const float fadeStart = kLoopLength - kLoopFade;
+    if (currentTime > fadeStart)
+    {
+        const float alpha = (currentTime - fadeStart) / kLoopFade;
+        const float ahead = noise.GetNoise<float>(sx, sy, (currentTime - kLoopLength) * freqScalar);
+        value = lerp(value, ahead, alpha);
+    }
+
+    return value;
 }

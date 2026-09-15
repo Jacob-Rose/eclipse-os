@@ -33,6 +33,8 @@
 #include <utility>
 #include <vector>
 
+#include "lib/eanim/lfo.h"
+#include "lib/eanim/noise.h"
 #include "lib/ecore/hsv.h"
 #include "lib/eio/hsv_strip.h"
 #include "lib/eio/relic.h"
@@ -989,6 +991,50 @@ namespace
             ecore::PropertyBag empty;
             solid.reflectState(empty);
             check("reflect: a scanner look has its one clock", static_cast<long long>(empty.size()), 1);
+        }
+
+        // ---- a week on the wall: the clocks must still tick ---------------
+        //
+        // The whiteboard's looks slowed down after six days and its rainbow
+        // stopped after seven, because a float clock that only grows runs out
+        // of low bits for a 30ms step. The same ticks, at the same rates, on
+        // the host; each clock must still move by a whole step afterwards.
+        {
+            constexpr float kTick = 0.03f;
+            constexpr long kWeekOfTicks = 7L * 24 * 3600 * 1000 / 30;
+
+            eanim::PerlinNoiseGenerator2D field;
+            field.timeScale = 0.5f;
+            for (long i = 0; i < kWeekOfTicks; ++i) field.tick(kTick);
+            const float before = field.getCurrentTime();
+            field.tick(kTick);
+            float step = field.getCurrentTime() - before;
+            if (step < 0.0f) step += eanim::PerlinNoiseGenerator2D::kLoopLength;
+            check("week: the noise clock stays inside its loop",
+                  before < eanim::PerlinNoiseGenerator2D::kLoopLength ? 1 : 0, 1);
+            check("week: the noise clock still takes a whole tick",
+                  std::fabs(step - kTick * 0.5f) < 1e-4f ? 1 : 0, 1);
+
+            eanim::LFO lfo;
+            lfo.speed = 0.2f;
+            for (long i = 0; i < kWeekOfTicks; ++i) lfo.tick(kTick);
+            const float phaseBefore = lfo.getCurrentOffset();
+            lfo.tick(kTick);
+            float phaseStep = lfo.getCurrentOffset() - phaseBefore;
+            if (phaseStep < 0.0f) phaseStep += 2.0f * 3.14159265f;
+            check("week: the lfo still takes a whole tick",
+                  std::fabs(phaseStep - kTick * 0.2f) < 1e-4f ? 1 : 0, 1);
+
+            // and the loop's seam is not a cut: the field just before the
+            // clock wraps is the field just after
+            eanim::PerlinNoiseGenerator2D seam;
+            seam.timeScale = 1.0f;
+            seam.tick(eanim::PerlinNoiseGenerator2D::kLoopLength - 0.0005f);
+            const float a = seam.evaluate(3.7f, 1.2f);
+            seam.tick(0.001f);
+            const float b = seam.evaluate(3.7f, 1.2f);
+            check("week: the clock wrapped", seam.getCurrentTime() < 1.0f ? 1 : 0, 1);
+            check("week: the seam is continuous", std::fabs(a - b) < 0.01f ? 1 : 0, 1);
         }
 
         emit(failures == 0 ? "SELFTEST PASS" : "SELFTEST FAILURES " + std::to_string(failures));
