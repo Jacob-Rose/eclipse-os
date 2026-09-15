@@ -5,6 +5,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <functional>
 #include <memory>
 #include <string>
@@ -364,15 +365,26 @@ namespace edmx
     /// touches nothing, so a knob tuned at the desk survives a cue change the
     /// way it always has, and a mode does not.
     ///
+    /// Three modes is the floor, not the count: a cue with more variants
+    /// listed beside it has more - the churn and the nova have four, three
+    /// palettes and a rainbow - and the pad steps round however many the
+    /// cue has. The knob's maximum says which, so the desk need not know.
+    ///
     /// A mixin rather than a base, because the fire and the rain are generic
     /// looks with a base of their own.
     class ShowModes
     {
     public:
+        /// The fewest modes any cue has. A cue with no variants still has
+        /// three, so the pad does the same thing on every cue.
         static constexpr int kModeCount = 3;
 
-        /// 1..3. A float because a knob is one; snapped on the way in.
+        /// 1..modeCount(). A float because a knob is one; snapped on the way in.
         float mode{1.0f};
+
+        /// How many modes this look has: kModeCount, or one more than its
+        /// variants when there are more of those.
+        int modeCount() const { return std::max(kModeCount, static_cast<int>(variants.size()) + 1); }
 
         /// `mode`, on the bag. First on every look, so it sits at the top of
         /// the knob pane on all of them.
@@ -433,7 +445,12 @@ namespace edmx
     /// rather than marching up a strip.
     ///
     /// The two colours are knobs, so any pair is this look with a picker; the
-    /// cues differ only in what they are built with.
+    /// cues differ only in what they are built with. `hue_cycle` turns the
+    /// pair through the wheel together - the churn's rainbow mode: the same
+    /// field, its two colours a fixed distance apart on a wheel that turns.
+    ///
+    /// The probe is painted `color_a` outright, so an eclipse scene keyed to
+    /// the rig is keyed to the palette and not to a passing patch.
     class Pattern_Mythos_NoiseWash : public Pattern_MythosLook
     {
     public:
@@ -441,6 +458,9 @@ namespace edmx
         /// `color_b` where it is high.
         ecore::HSV colorA{185.0f, 0.9f, 1.0f};
         ecore::HSV colorB{230.0f, 1.0f, 0.4f};
+
+        /// Wheels per second the pair is turned through; 0 holds them.
+        float hueCycle{0.0f};
 
         /// How fast the patches drift, and how big they are.
         float speed{1.0f};
@@ -471,9 +491,16 @@ namespace edmx
         /// The channel's slewed level, 0..1, for tests.
         float getLevel() const { return level; }
 
+        /// The pair as the wheel has turned them, for tests.
+        ecore::HSV colorANow() const { return turned(colorA); }
+        ecore::HSV colorBNow() const { return turned(colorB); }
+
     private:
+        ecore::HSV turned(const ecore::HSV& color) const;
+
         AudioLevel* bus{nullptr};
         float level{0.0f};
+        float hueOffset{0.0f};
     };
 
 
@@ -754,6 +781,109 @@ namespace edmx
     };
 
 
+    /// Galaxies on a wash over a dark ground - the nova cue.
+    ///
+    /// Eclipse Nova paints Woitzel's Nova in the rig's colour: the galaxies
+    /// are `rig_color`, the wash behind them a second colour, and the two
+    /// sit on a background the scene's `base_amount` sets between black and
+    /// the wash. This is the same three roles on the stage: `base` under
+    /// everything, `galaxy` where a slow, large field of noise peaks - and
+    /// swelling with the bass presence, which is what brightens the scene's
+    /// galaxies - and `wash` in a finer field between them, at `wash_amount`.
+    /// The probe is painted `galaxy`, so the scene's galaxies are the rig's.
+    ///
+    /// `hue_cycle` turns all three through the wheel together, for the
+    /// rainbow mode; the base keeps its darkness, so the ground stays a
+    /// ground at every hue.
+    class Pattern_Mythos_Nova : public Pattern_MythosLook
+    {
+    public:
+        ecore::HSV base{225.0f, 1.0f, 0.22f};       // the dark blue ground
+        ecore::HSV galaxy{182.0f, 0.90f, 1.0f};     // cyan
+        ecore::HSV wash{48.0f, 0.90f, 1.0f};        // yellow
+
+        /// How much of the wash shows between the galaxies, 0..1.
+        float washAmount{0.55f};
+        /// How fast the fields drift, and how big the galaxies are.
+        float speed{1.0f};
+        float scale{1.0f};
+        /// Wheels per second, for the rainbow; 0 holds the palette.
+        float hueCycle{0.0f};
+
+        /// The galaxies swell with this channel, slewed; `follow` is how
+        /// much of the swell shows.
+        AudioChannel channel{AudioChannel::BassPresence};
+        float follow{0.6f};
+        float gain{1.0f};
+        float slew{0.2f};
+
+        void init();
+
+        virtual void tick(float deltaTime) override;
+        virtual void render(eio::HSVStripNode* node, ecore::HSV& inOutColor) const override;
+        virtual void reflect(ecore::PropertyBag& bag) override;
+
+        /// The channel's slewed level, 0..1, for tests.
+        float getLevel() const { return level; }
+
+    private:
+        ecore::HSV turned(const ecore::HSV& color) const;
+
+        AudioLevel* bus{nullptr};
+        float level{0.0f};
+        float hueOffset{0.0f};
+    };
+
+
+    /// Flying through a sunset over a floor of cloud - the cloud cue.
+    ///
+    /// The sky is a gradient down the stage's height, `sky_high` at the top
+    /// into `sky_low` at the horizon; below the horizon the cloud deck,
+    /// `cloud` with a slow field of noise streaming down the stage at
+    /// `speed` so the rig is flown through rather than lit. `height` is
+    /// where the horizon sits, 0..1 up the stage: fly low and the deck fills
+    /// the rig, climb and it falls away to sky.
+    ///
+    /// Both `height` and `speed` are targets: the look glides to them over
+    /// `glide` seconds rather than snapping, which is what the spec's two
+    /// buttons each ask for - a pad sets the target, the flight takes its
+    /// time. The scene's own height and speed are ramped from the desk the
+    /// same way; see the cue's pads in config/mythos-show.json.
+    class Pattern_Mythos_CloudFlight : public Pattern_MythosLook
+    {
+    public:
+        ecore::HSV skyHigh{48.0f, 0.85f, 1.0f};     // the yellow overhead
+        ecore::HSV skyLow{330.0f, 0.70f, 1.0f};     // the pink at the horizon
+        ecore::HSV cloud{270.0f, 0.60f, 0.16f};     // the deck, in shadow
+
+        /// Where the horizon is, 0..1 up the stage - the target.
+        float height{0.45f};
+        /// How fast the deck streams past, in stage heights a second - the target.
+        float speed{0.25f};
+        /// Seconds a change of either takes to arrive.
+        float glide{2.0f};
+        /// How much of the deck is lit from above, 0..1: the tops of the
+        /// clouds catching the sunset.
+        float glow{0.35f};
+
+        void init();
+
+        virtual void reset() override;
+        virtual void tick(float deltaTime) override;
+        virtual void render(eio::HSVStripNode* node, ecore::HSV& inOutColor) const override;
+        virtual void reflect(ecore::PropertyBag& bag) override;
+
+        /// Where the flight actually is, for tests.
+        float getHeightNow() const { return heightNow; }
+        float getSpeedNow() const { return speedNow; }
+
+    private:
+        float heightNow{0.45f};
+        float speedNow{0.25f};
+        float travelled{0.0f};
+    };
+
+
     /// One hue after another, on every fixture at once.
     ///
     /// For the UV par, whose three channels are three banks of the same
@@ -783,7 +913,7 @@ namespace edmx
 
     /// The show's sixteen slots, in the order a UI shows them.
     ///
-    /// Eight of them written, the rest placeholders waiting on the spec. The
+    /// Twelve of them written, the rest placeholders waiting on the spec. The
     /// static pair and the beat flash that used to live here are cues on the
     /// generic machine and the audio bus. See makeGenericStateMachine and
     /// beatPulseState.

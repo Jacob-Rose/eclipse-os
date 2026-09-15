@@ -4,19 +4,28 @@ optional / additive layers for bpm flashes and uv (or any others) have a gui hoo
 
 each pattern has a "mode" button instead of low / medium / high intensity. one button, cycles 1 -> 2 -> 3 -> 1.
 mode 1 is the pattern as written, 2 and 3 are that pattern's own variations. hitting the cue again is mode 1.
-numbers here are the pad numbers on the surface.
+a pattern can have a mode 4 (e-churn and e-nova do: three palettes and a rainbow), the button cycles round however many it has.
+four more buttons beside it name a mode outright (1 2 3 4) - the palette buttons. on a three-mode pattern, 4 does what 3 does.
+numbers here are the pad numbers on the surface. colours are hue / sat / val unless written as rgb.
+
+the probe: the synesthesia scenes that take the rig's colour (e-churn, e-nova) get the pattern's palette colour A, not a sampled point.
+a second colour (colour B) goes to the scene from the cue table, one per palette.
 
 1. neuron
 pattern - simple blue green noise matching the cyan to dark blue in the scene. good.
+palette - cyan (170 / 0.90 / 1.00) into deep blue (232 / 1.00 / 0.40), drifting, not following the music.
+mode 2 - same field slowed and widened (speed 0.35, scale 1.6)
+mode 3 - quick and busy (speed 2.5, scale 0.7)
 synesthesia - Neuron Proximitors
 media - none
 
 2. geode
 pattern - one parameter reacts to presence of song, with optional bpm flash on midi.
 param - (synesthesia mid presence) -> red background layer (clamp to 0.2 alpha lowest)
-additional layer - bpm matched flash with curve and bpm trigger system, ability to set color
-mode 2 - the scene shifts to blue sometimes, so this goes blue: a different blue flash / small noise pattern, white flash off
-mode 3 - red with blue on the kick
+palette - red (0 / 1.00 / 1.00) riding the mids, floor 0.2
+additional layer - bpm matched flash with curve and bpm trigger system, ability to set color. flash layer on, white.
+mode 2 - the scene shifts to blue sometimes, so this goes blue: blue (228 / 1.00 / 1.00) on the mids, floor 0.3, grained (texture 0.7), a paler blue (200 / 0.55 / 1.00) landing on the kick, white flash off
+mode 3 - red with blue (225 / 1.00 / 1.00) on the kick
 uv - off
 synesthesia - Voronoi Geode
 media - none
@@ -24,37 +33,52 @@ media - none
 3. rain
 pattern - matrix rain effect, multicolored rain. no noise on the trails.
 mode 2 - video on (alien-message.mp4)
-mode 3 - green, downpour
+mode 3 - green, downpour (one hue, 28 drops, fall speed 18)
 uv - cycle pattern between rgb rainbow so its fluctuating but always on
+par lights read horizontal through the rain, at the 5th row of the obelisk from the bottom (same as fire)
 synesthesia - VideoFX_1 (an empty scene)
 media - black by default, the video is the mode toggle
 
 4. fire
 pattern - fire 2012 effect. par lights read horizontal, like the 5th row of the obelisk from the bottom (they were mostly off climbing beside it)
+mode 2 - embers: a few risers, dying young (sparking 0.15, cooling 60)
+mode 3 - the whole bed alight, climbing fast (sparking 0.85, cooling 20, rise 18)
 uv - off
 synesthesia - Dynamical Flame
+media - black (the flame renders its media through itself)
 
 5. glitch
-pattern - on kick hit change color. good.
+pattern - on kick hit change color. good. re-deals on the beat (syn_OnBeat), which is what the scene re-deals its background on.
+mode 2 - one colour across the whole rig (no scatter)
+mode 3 - darker between hits (floor 0.2), torn further apart on each (scatter 0.3, decay 0.2)
 synesthesia - Glitch
 media - alien-message.mp4
 
 6. tunnel
 pattern - simple pink / purple noise (match shader aesthetic). follows presence off osc like the others so it syncs with them.
+palette - pink (325 / 0.85 / 1.00) into purple (275 / 1.00 / 0.55), riding the mids, floor 0.3
 additional layer - white flash on bpm
+mode 2 / 3 - same as neuron (slow and wide / quick and busy)
 synesthesia - Fire Tunnel
+media - black
 
 7. blown
 pattern - pink base throughout on presence, min 0.65 (was 0.3 and too dark until it popped). kick pops it to pink, green afterglow. (match shader aesthetic)
+palette - pink (315 / 0.95 / 1.00) riding the mids, floor 0.65; the kick pops it to full pink then green (120 / 1.00 / 1.00) afterglow, decay 0.45
+mode 2 - brighter base (floor 0.85)
+mode 3 - the old cue, dark until the pop (floor 0.25)
 uv - on kick
 synesthesia - Filter Blown v2
 media - 275593_medium.mp4
 
 8. punk
 pattern - punk purple white gradient strobe effect bpm reactive, pretty bright (match shader aesthetic). good.
-additional layer - bpm kick layers and on beat layers for various gradient flashes
+palette - punk purple (280 / 0.95 / 1.00) into white, strobing to full white on the beat
+additional layer - bpm kick layers and on beat layers for various gradient flashes. flash layer on, uv on kick.
+mode 2 - half time
+mode 3 - double time
 uv - on kick
-synesthesia - Milk, Honey, Smoke, Bile
+synesthesia - Milk, Honey, Smoke, Bile (with its own beat strobe "smoke" on)
 
 9. todo
 pattern - rainbow when presence is high, slow moving hue shift among par lights. low white noise when no presence
@@ -63,7 +87,10 @@ media - 87841-602894456.mp4
 
 10. canyon
 pattern - cycling wave gradients moving top down with canyon orange browns greens and blues as we fly through the area. gradients and blending seamless.
+palette - canyon orange (22 / 0.95 / 1.00), shadowed rock (18 / 0.85 / 0.45), brown (35 / 0.75 / 0.30), floor green (95 / 0.80 / 0.75), sky (205 / 0.85 / 0.95), deep blue (225 / 0.90 / 0.55), looping, blended in rgb
 param - on bpm hit we fade to a rainbow effect among all the lights
+mode 2 - slow fly (speed 0.05, two waves), the rainbow once a bar
+mode 3 - fast (speed 0.30), the rainbow in double time
 synesthesia - Vibe Thresholds
 media - 361331_medium.mp4
 
@@ -73,20 +100,38 @@ synesthesia - Scaffold Fractal
 media - none
 
 12. e-churn
-pattern - read the custom eclipse churn pattern for reference, create matching colors, 
-give me three color palette buttons and one that cycles rainbow colors, and make it match across synesthesia and eclipse-os color wise and aesthetic.
+pattern - the noise field in the churn's two colours, busier than neuron (speed 1.6, scale 0.8), pushed by the level like the paint is (follow 0.6, floor 0.35).
+three colour palette buttons and one that cycles rainbow colors, matched across synesthesia and eclipse-os: colour A is the probe, colour B is sent to the scene per palette.
+mode 1 - red (0 / 0.95 / 1.00) and blue (237 / 0.95 / 0.85) - the scene's own pair. scene rig_color_2 = rgb 0.05 0.10 1.00
+mode 2 - magenta (300 / 0.90 / 1.00) and cyan (185 / 0.95 / 0.90). scene rig_color_2 = rgb 0.05 0.85 0.90
+mode 3 - orange (28 / 0.95 / 1.00) and violet (268 / 0.90 / 0.80). scene rig_color_2 = rgb 0.40 0.08 0.80
+mode 4 - rainbow: the red / blue pair turned through the hue wheel (0.08 wheels a second); the scene's paint job off (rig_amount 0, stock churning's own rainbow) with color_phasing on
+scene controls - rig_amount 1, rig_contrast 0.6, color_phasing 0
+uv - off
 synesthesia - Eclipse Churn
+media - black (the churn mixes a little of its media in)
 
 13. e-nova
-pattern - eclipse nova pattern with a dark blue color with yellow, cyan color by hand palette. make our eclipse os pattern match shader a bit.
-match e-churn with color options
-give me a few other palette options.
+pattern - galaxies on a wash over a dark ground: a slow large field lit only where it peaks (the galaxies, swelling with the bass presence like the scene's do), a finer field of the wash colour in the dark between them, on the ground colour.
+matches e-churn's colour options: three palettes and a rainbow. the probe sends the galaxy colour; the wash colour goes to the scene as rig_color_2 with auto_second off.
+mode 1 - by hand: cyan galaxies (182 / 0.90 / 1.00), yellow wash (48 / 0.90 / 1.00), dark blue ground (225 / 1.00 / 0.22). scene rig_color_2 = rgb 1.00 0.85 0.15, base_amount 0.35
+mode 2 - nova's regime 1: orange galaxies (37 / 0.80 / 1.00), sky blue wash (207 / 0.55 / 1.00), deep blue ground (240 / 0.75 / 0.30). scene rig_color_2 = rgb 0.45 0.75 1.00, base_amount 1.0
+mode 3 - nova's regime 2: violet galaxies (263 / 0.90 / 1.00), azure wash (216 / 0.75 / 1.00), near-black ground (250 / 0.80 / 0.08), less wash. scene rig_color_2 = rgb 0.25 0.55 1.00, base_amount 0
+mode 4 - rainbow: the hand palette turned through the wheel (0.06 wheels a second); the scene derives its own second colour again (auto_second on)
+scene controls - color_by_hand 0, auto_second 0
+uv - off
 synesthesia - Eclipse Nova
+media - none
 
-14. cloud tun
-pattern - flying through sky, yellow and pink sunset sky with dark shadow clouds underneath. check pattern in synesthesia.
-param - control flight height with two buttons, perform a lerp for these instead of snapping between them, and turn off auto height.
-param - control flight speed with two buttons, perform a lerp for these as well.
+14. clouds
+pattern - flying through sky, yellow and pink sunset sky with dark shadow clouds underneath. sky is a gradient down the stage, yellow overhead (48 / 0.85 / 1.00) into pink at the horizon (330 / 0.70 / 1.00); below the horizon the cloud deck (270 / 0.60 / 0.16) with its own noise streaming past, the tops catching the pink.
+param - flight height with two buttons (fly low 0.15 / fly high 0.85), the look lerps to it over 2s instead of snapping; the scene's height is ramped over the same 2s, with its auto height turned off.
+param - flight speed with two buttons (slower 0.08 / faster 0.70), lerped the same way, the scene's speed ramped with it.
+mode 2 - dusk: pink (330) overhead into violet (285 / 0.75 / 0.80), the deck darker (260 / 0.70 / 0.10)
+mode 3 - golden hour: orange-yellow (42) overhead into orange (18) at the horizon, the deck warm (25 / 0.70 / 0.14), more glow on the tops
+uv - off
+synesthesia - Cloud Ten (CHECK: the scene name and its height / speed / auto_height control names are a guess from the spec; the scene is not in the checkout. fix them in the cue table.)
+media - black
 
 15. idle post show
 

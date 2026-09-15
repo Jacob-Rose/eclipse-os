@@ -16,7 +16,7 @@ import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Union
+from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
 DMX_CHANNEL_COUNT = 512
 
@@ -158,9 +158,9 @@ MYTHOS26_STATES = (
     "slot_9",
     "canyon",    # 10. canyon bands pouring down, a rainbow on the beat
     "slot_11",
-    "slot_12",
-    "slot_13",
-    "slot_14",
+    "churn",     # 12. the field in two rig colours, pushed by the level; three palettes and a rainbow
+    "nova",      # 13. galaxies on a wash over a dark ground; three palettes and a rainbow
+    "clouds",    # 14. a sunset over a cloud deck, flown through; height and speed glide
     "slot_15",
     "slot_16",
 )
@@ -903,6 +903,60 @@ class Device:
         return out
 
 
+#: A control's value as the cue table writes it: a number, or three for a colour.
+ControlValue = Union[float, Tuple[float, float, float]]
+
+
+@dataclass
+class CuePad:
+    """One of a cue's own buttons - see Cue's note on `pads`."""
+
+    label: str = ""
+    params: Dict[str, float] = field(default_factory=dict)
+    controls: Dict[str, ControlValue] = field(default_factory=dict)
+    ramp: float = 0.0
+
+    @classmethod
+    def from_dict(cls, data: Any, where: str) -> "CuePad":
+        if not isinstance(data, dict):
+            raise ConfigError(f"{where} must be an object")
+        unknown = set(data) - {"label", "params", "controls", "ramp"}
+        if unknown:
+            raise ConfigError(f"{where}: unexpected keys {sorted(unknown)}; "
+                              f"expected label, params, controls, ramp")
+        label = str(data.get("label", "") or "").strip()
+        if not label:
+            raise ConfigError(f"{where}: a pad needs a label")
+        params_raw = data.get("params") or {}
+        if not isinstance(params_raw, dict):
+            raise ConfigError(f"{where}.params must be an object of knob -> value")
+        params: Dict[str, float] = {}
+        for name, value in params_raw.items():
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise ConfigError(f"{where}.params['{name}'] must be a number")
+            params[str(name)] = float(value)
+        ramp = data.get("ramp", 0.0)
+        if isinstance(ramp, bool) or not isinstance(ramp, (int, float)) or ramp < 0:
+            raise ConfigError(f"{where}.ramp must be seconds, 0 or more")
+        pad = cls(label=label, params=params,
+                  controls=Cue.parse_controls(data.get("controls"), where),
+                  ramp=float(ramp))
+        if not pad.params and not pad.controls:
+            raise ConfigError(f"{where}: a pad needs params or controls to set")
+        return pad
+
+    def to_dict(self) -> Dict[str, Any]:
+        out: Dict[str, Any] = {"label": self.label}
+        if self.params:
+            out["params"] = dict(self.params)
+        if self.controls:
+            out["controls"] = {name: (list(value) if isinstance(value, tuple) else value)
+                               for name, value in self.controls.items()}
+        if self.ramp:
+            out["ramp"] = self.ramp
+        return out
+
+
 @dataclass
 class Cue:
     """What one state of the show asks of the rest of the room.
@@ -920,9 +974,22 @@ class Cue:
 
     `controls` is the scene's own knobs, by control name, sent after the
     scene: the one or two a cue needs set for the look to be the look - a
-    toggle that puts the visual's beat flash on beside the rig's. Not a
-    preset, because a preset lives in the app on one machine and a cue
-    lives in this file on every machine that opens it.
+    toggle that puts the visual's beat flash on beside the rig's. A number
+    each, or three of them for a colour control - the churn's second colour
+    is `[r, g, b]`, 0..1, and goes out as one message of three floats the
+    way the probe's colour does. Not a preset, because a preset lives in
+    the app on one machine and a cue lives in this file on every machine
+    that opens it.
+
+    `pads` are the cue's own buttons on the surface, for a cue with a
+    control the operator flies by hand - the clouds' height and speed. Each
+    is a label, the look's knobs to set (`params`, by knob name) and the
+    scene's controls to send (`controls`, as above), and a `ramp` in
+    seconds over which those controls glide from wherever they were to the
+    new value - the look glides on its own (see Pattern_Mythos_CloudFlight's
+    `glide`), and the ramp is the scene's half of the same move. A pad's
+    knobs are aimed at the running look, so one pressed under another cue
+    is refused harmlessly.
 
     `modes` is what the mode pad changes about the room, by mode number as a
     string - "2", "3" - each the same four fields, applied over the cue when
@@ -937,11 +1004,58 @@ class Cue:
     scene: str = ""
     media: str = ""
     layers: Dict[str, str] = field(default_factory=dict)
-    controls: Dict[str, float] = field(default_factory=dict)
+    controls: Dict[str, ControlValue] = field(default_factory=dict)
     modes: Dict[int, "Cue"] = field(default_factory=dict)
+    pads: List["CuePad"] = field(default_factory=list)
 
-    #: How many modes a show look has - ShowModes::kModeCount, mirrored.
-    MODE_COUNT = 3
+    #: The most modes any show look has. Every look has at least three
+    #: (ShowModes::kModeCount); the ones with a fourth - the churn, the nova:
+    #: three palettes and a rainbow - announce it as the knob's maximum, and
+    #: the pad reads that. This only bounds what the table may name.
+    MODE_COUNT = 4
+
+    @staticmethod
+    def parse_controls(data: Any, where: str) -> Dict[str, ControlValue]:
+        """`controls` as the file writes them: name -> number, or name ->
+        [r, g, b] for a colour. Checked here so a typo is the file's error
+        and not a packet the app drops without a word."""
+        if data is None:
+            return {}
+        if not isinstance(data, dict):
+            raise ConfigError(f"{where}.controls must be an object of control -> value")
+        controls: Dict[str, ControlValue] = {}
+        for name, value in data.items():
+            if not str(name).strip():
+                raise ConfigError(f"{where}.controls: a control needs a name")
+            if isinstance(value, (list, tuple)):
+                if len(value) != 3 or any(isinstance(v, bool) or not isinstance(v, (int, float))
+                                          for v in value):
+                    raise ConfigError(
+                        f"{where}.controls['{name}'] must be a number, or [r, g, b] for a colour")
+                controls[str(name)] = tuple(float(v) for v in value)
+                continue
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise ConfigError(
+                    f"{where}.controls['{name}'] must be a number (a toggle is 0 or 1), "
+                    f"or [r, g, b] for a colour")
+            controls[str(name)] = float(value)
+        return controls
+
+    @staticmethod
+    def control_action(name: str, value: ControlValue, ramp: float = 0.0) -> Dict[str, Any]:
+        """One control as the `syn_control` action a pad fires: low == high,
+        so the pad's own value has no say; a colour as `values`; a ramp in
+        seconds when the move should glide rather than snap."""
+        from .osc import control_address  # here, not at the top: osc is the wire, config the file
+        params: Dict[str, Any] = {"address": control_address(name)}
+        if isinstance(value, tuple):
+            params["values"] = list(value)
+        else:
+            params["low"] = value
+            params["high"] = value
+        if ramp > 0.0:
+            params["ramp"] = float(ramp)
+        return {"action": "syn_control", "params": params}
 
     @classmethod
     def from_dict(cls, state: str, data: Any, layer_names: Sequence[str],
@@ -949,7 +1063,7 @@ class Cue:
         where = _where or f"cues['{state}']"
         if not isinstance(data, dict):
             raise ConfigError(f"{where} must be an object")
-        allowed = {"scene", "media", "layers", "controls"} | ({"modes"} if not _where else set())
+        allowed = {"scene", "media", "layers", "controls"} | ({"modes", "pads"} if not _where else set())
         unknown = set(data) - allowed
         if unknown:
             raise ConfigError(
@@ -965,17 +1079,12 @@ class Cue:
                     f"{where} names layer '{layer}', which this config does not declare"
                     + (f" (have: {', '.join(layer_names)})" if layer_names else ""))
             layers[str(layer)] = str(wanted)
-        controls_raw = data.get("controls") or {}
-        if not isinstance(controls_raw, dict):
-            raise ConfigError(f"{where}.controls must be an object of control -> value")
-        controls: Dict[str, float] = {}
-        for name, value in controls_raw.items():
-            if not str(name).strip():
-                raise ConfigError(f"{where}.controls: a control needs a name")
-            if isinstance(value, bool) or not isinstance(value, (int, float)):
-                raise ConfigError(
-                    f"{where}.controls['{name}'] must be a number (a toggle is 0 or 1)")
-            controls[str(name)] = float(value)
+        controls = cls.parse_controls(data.get("controls"), where)
+        pads_raw = data.get("pads") or []
+        if not isinstance(pads_raw, list):
+            raise ConfigError(f"{where}.pads must be a list")
+        pads = [CuePad.from_dict(entry, f"{where}.pads[{index}]")
+                for index, entry in enumerate(pads_raw)]
         modes: Dict[int, "Cue"] = {}
         modes_raw = data.get("modes") or {}
         if not isinstance(modes_raw, dict):
@@ -996,7 +1105,8 @@ class Cue:
                    media=str(data.get("media", "") or ""),
                    layers=layers,
                    controls=controls,
-                   modes=modes)
+                   modes=modes,
+                   pads=pads)
 
     def to_dict(self) -> Dict[str, Any]:
         out: Dict[str, Any] = {}
@@ -1007,10 +1117,13 @@ class Cue:
         if self.layers:
             out["layers"] = dict(self.layers)
         if self.controls:
-            out["controls"] = dict(self.controls)
+            out["controls"] = {name: (list(value) if isinstance(value, tuple) else value)
+                               for name, value in self.controls.items()}
         if self.modes:
             out["modes"] = {str(number): mode.to_dict()
                             for number, mode in sorted(self.modes.items())}
+        if self.pads:
+            out["pads"] = [pad.to_dict() for pad in self.pads]
         return out
 
     def actions(self, pattern: str = "") -> List[Dict[str, Any]]:
@@ -1022,7 +1135,6 @@ class Cue:
         the rig first, because a dead visualiser must not cost it the cue.
         The scene's controls go last, after the scene they belong to.
         """
-        from .osc import control_address  # here, not at the top: osc is the wire, config the file
         out: List[Dict[str, Any]] = []
         if pattern:
             out.append({"action": "pattern", "params": {"name": pattern}})
@@ -1035,9 +1147,20 @@ class Cue:
         if self.media:
             out.append({"action": "syn_media", "params": {"name": self.media}})
         for name, value in self.controls.items():
-            # low == high: the pad's own value has no say, the cue's does
-            out.append({"action": "syn_control",
-                        "params": {"address": control_address(name), "low": value, "high": value}})
+            out.append(self.control_action(name, value))
+        return out
+
+    def pad_actions(self, index: int) -> List[Dict[str, Any]]:
+        """The cue's pad `index` as the actions it fires: the look's knobs,
+        then the scene's controls, ramped if the pad says so. The rig first,
+        for the reason everything else here puts it first."""
+        pad = self.pads[index]
+        out: List[Dict[str, Any]] = []
+        for name, value in pad.params.items():
+            out.append({"action": "param", "params": {"name": name, "low": float(value),
+                                                      "high": float(value), "layer": ""}})
+        for name, value in pad.controls.items():
+            out.append(self.control_action(name, value, ramp=pad.ramp))
         return out
 
 
@@ -1097,6 +1220,15 @@ def cue_actions(config: "Config", state: str) -> List[Dict[str, Any]]:
     if cue is None:
         cue = Cue(state=state)
     return cue.actions(pattern=config.pattern.name)
+
+
+def cue_pad_actions(config: "Config", state: str, index: int) -> List[Dict[str, Any]]:
+    """The actions for pad `index` of `state`'s cue. What the surface and
+    the viewer's pad buttons both fire."""
+    cue = config.cues.get(state)
+    if cue is None or index >= len(cue.pads):
+        return []
+    return cue.pad_actions(index)
 
 
 def cue_mode_actions(config: "Config", state: str, mode: int) -> List[Dict[str, Any]]:

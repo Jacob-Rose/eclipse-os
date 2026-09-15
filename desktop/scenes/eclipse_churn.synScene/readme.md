@@ -16,7 +16,7 @@ between). The dynamics — the churn — are exactly Victor's.
 | control | OSC | what it does |
 |---|---|---|
 | `rig_color` | `/controls/scene/rigcolor`, `/controls/global/color/1` | The rig's colour. Default red. |
-| `rig_color_2` | `/controls/scene/rigcolor2`, `/controls/global/color/2` | The second colour. Default blue. Nothing sends it yet. |
+| `rig_color_2` | `/controls/scene/rigcolor2`, `/controls/global/color/2` | The second colour. Default blue. The show's `churn` cue sends it, once per palette, from the cue table. |
 | `rig_amount` | `/controls/scene/rigamount` | 0 is stock Churning, 1 is only the two colours. |
 | `rig_contrast` | `/controls/scene/rigcontrast` | Puts the hue variation the palette throws away back as light and dark. |
 
@@ -24,8 +24,10 @@ Everything else is Churning's own.
 
 ## Not done
 
-- `eclipse-dmx` sends one fixture. Driving `rig_color_2` from a second fixture
-  is a small change in `viewer._send_osc` / `osc.send_color`.
+- `eclipse-dmx` sends one fixture, and the `churn` cue sends `rig_color_2`
+  as a static colour control per palette (`config/mythos-show.json`). A
+  second live fixture would be a small change in `viewer._send_osc` /
+  `osc.send_color`, if a palette ever wants its second colour to move.
 - `direction` and `colRegSel` are `HARD_TRANSITIONS`: the app randomises them
   on scene entry, so the base look differs each time the scene is cued. For a
   show, pin `colRegSel` in `scene.json`.

@@ -48,6 +48,7 @@ from eclipse_dmx.config import (  # noqa: E402
     MidiConfig,
     cue_actions,
     cue_mode_actions,
+    cue_pad_actions,
 )
 from eclipse_dmx.controller import ShowController, ShowError, _parse_frame  # noqa: E402
 from eclipse_dmx.curves import (  # noqa: E402
@@ -820,8 +821,10 @@ class TheScenes(unittest.TestCase):
         # anywhere: the scene runs, the packets go out, nothing moves.
         for scene in self.SCENES:
             with self.subTest(scene=scene.name):
+                # a control with no TYPE is a slider to the app - Churning's
+                # own `dive_in` is one - and so not a colour
                 colours = [control["NAME"] for control in self.manifest(scene)["CONTROLS"]
-                           if control["TYPE"].split()[0] == "color"]
+                           if control.get("TYPE", "slider").split()[0] == "color"]
                 if not colours:
                     # Allowed: a pure diagnostic scene takes nothing from the
                     # rig and has nothing for the sender to aim at. The contract
@@ -876,7 +879,8 @@ class TheScenes(unittest.TestCase):
         for scene in self.SCENES:
             with self.subTest(scene=scene.name):
                 shader = (scene / "main.glsl").read_text(encoding="utf-8")
-                self.assertIn("vec4 renderMain(", shader)
+                # Churning's own spelling has a space before the parenthesis
+                self.assertRegex(shader, r"vec4\s+renderMain\s*\(")
 
 
 class TheRig(unittest.TestCase):
@@ -3149,6 +3153,84 @@ class TheShowCues(unittest.TestCase):
             [entry["action"] for entry in cue_actions(self.config, "slot_9")],
             ["pattern", "state"])
 
+    # -- palettes: a colour as a control, and a fourth mode -----------------
+
+    def test_a_colour_control_is_three_floats_in_one_message(self):
+        """The churn's second colour is [r, g, b] in the table and goes out
+        as one syn_control carrying `values`, the way the probe's colour
+        goes: one message, three floats, no low/high scaling."""
+        cue = Cue.from_dict("x", {"controls": {"rig_color_2": [0.05, 0.1, 1.0]}}, [])
+        self.assertEqual(cue.controls["rig_color_2"], (0.05, 0.1, 1.0))
+        entry = cue.actions()[-1]
+        self.assertEqual(entry["action"], "syn_control")
+        self.assertEqual(entry["params"], {"address": "/controls/scene/rigcolor2",
+                                           "values": [0.05, 0.1, 1.0]})
+        self.assertEqual(cue.to_dict()["controls"]["rig_color_2"], [0.05, 0.1, 1.0])
+        for bad in ([0.1, 0.2], [0.1, "x", 0.3], [True, 0, 0], [0.1, 0.2, 0.3, 0.4]):
+            with self.assertRaises(ConfigError):
+                Cue.from_dict("x", {"controls": {"c": bad}}, [])
+
+    def test_the_churn_and_the_nova_have_four_modes_and_send_their_second_colour(self):
+        """Three palettes and a rainbow. The probe sends colour A live; the
+        table sends colour B for each palette, and the fourth mode hands
+        the scene its own rainbow (the churn) or its own derived second
+        colour (the nova)."""
+        churn = self.config.cues["churn"]
+        self.assertEqual(churn.scene, "Eclipse Churn")
+        self.assertEqual(sorted(churn.modes), [2, 3, 4])
+        self.assertEqual(churn.controls["rig_color_2"], (0.05, 0.10, 1.00))
+        for mode in (2, 3):
+            self.assertIn("rig_color_2", churn.modes[mode].controls)
+        self.assertEqual(churn.modes[4].controls, {"rig_amount": 0.0, "color_phasing": 1.0})
+        four = cue_mode_actions(self.config, "churn", 4)
+        self.assertEqual(four[0]["params"]["low"], 4.0)
+        # the fields any mode reaches are re-sent at whatever this mode leaves
+        # them: colour B is back to the cue's own, the paint job is off
+        sent = {e["params"]["address"]: e["params"] for e in four[1:]}
+        self.assertEqual(sent["/controls/scene/rigamount"]["low"], 0.0)
+        self.assertEqual(sent["/controls/scene/rigcolor2"]["values"], [0.05, 0.10, 1.00])
+        one = cue_mode_actions(self.config, "churn", 1)
+        sent = {e["params"]["address"]: e["params"] for e in one[1:]}
+        self.assertEqual(sent["/controls/scene/rigamount"]["low"], 1.0)
+
+        nova = self.config.cues["nova"]
+        self.assertEqual(nova.scene, "Eclipse Nova")
+        self.assertEqual(sorted(nova.modes), [2, 3, 4])
+        self.assertEqual(nova.controls["auto_second"], 0.0)
+        self.assertEqual(nova.modes[4].controls, {"auto_second": 1.0})
+
+    # -- a cue's own pads ----------------------------------------------------
+
+    def test_a_cues_pads_move_the_look_and_ramp_the_scene(self):
+        """The clouds' four pads: each sets the look's target - it glides on
+        its own - and sends the scene's control with a ramp, the rig first."""
+        clouds = self.config.cues["clouds"]
+        self.assertEqual([pad.label for pad in clouds.pads],
+                         ["fly low", "fly high", "slower", "faster"])
+        self.assertEqual(clouds.controls["auto_height"], 0.0)
+        entries = cue_pad_actions(self.config, "clouds", 1)
+        self.assertEqual([e["action"] for e in entries], ["param", "syn_control"])
+        self.assertEqual(entries[0]["params"], {"name": "height", "low": 0.85, "high": 0.85, "layer": ""})
+        self.assertEqual(entries[1]["params"], {"address": "/controls/scene/height",
+                                                "low": 0.85, "high": 0.85, "ramp": 2.0})
+        self.assertEqual(cue_pad_actions(self.config, "clouds", 9), [])
+        self.assertEqual(cue_pad_actions(self.config, "neuron", 0), [])
+
+    def test_a_pad_needs_a_label_and_something_to_set(self):
+        for bad in ({"params": {"height": 1}},
+                    {"label": "x"},
+                    {"label": "x", "params": {"height": "up"}},
+                    {"label": "x", "params": {"height": 1}, "ramp": -1},
+                    {"label": "x", "params": {"height": 1}, "colour": "red"}):
+            with self.assertRaises(ConfigError):
+                Cue.from_dict("x", {"pads": [bad]}, [])
+        with self.assertRaises(ConfigError):
+            Cue.from_dict("x", {"pads": {"label": "x"}}, [])
+        with self.assertRaises(ConfigError):
+            Cue.from_dict("x", {"modes": {"2": {"pads": []}}}, [])
+        cue = Cue.from_dict("x", {"pads": [{"label": "up", "params": {"h": 1}, "ramp": 1.5}]}, [])
+        self.assertEqual(Cue.from_dict("x", cue.to_dict(), []).to_dict(), cue.to_dict())
+
     # -- modes ---------------------------------------------------------------
 
     def test_a_mode_is_the_knob_then_the_rooms_half_of_it(self):
@@ -3203,7 +3285,7 @@ class TheShowCues(unittest.TestCase):
         with self.assertRaises(ConfigError):
             Cue.from_dict("rain", {"modes": {"1": {"media": "x"}}}, [])
         with self.assertRaises(ConfigError):
-            Cue.from_dict("rain", {"modes": {"4": {"media": "x"}}}, [])
+            Cue.from_dict("rain", {"modes": {"5": {"media": "x"}}}, [])
         with self.assertRaises(ConfigError):
             Cue.from_dict("rain", {"modes": {"two": {"media": "x"}}}, [])
         with self.assertRaises(ConfigError):
@@ -3268,22 +3350,48 @@ class TheShowPage(unittest.TestCase):
                 pads[states[0]] = mapping
         self.assertEqual(tuple(pads), MYTHOS26_STATES)
         for state, mapping in pads.items():
-            self.assertEqual(mapping["actions"], cue_actions(self.config, state), state)
+            # the map carries every field of an action, defaults filled;
+            # the table's actions carry only what the cue said
+            expected = [midi_map.Action.from_dict(entry).to_dict()
+                        for entry in cue_actions(self.config, state)]
+            self.assertEqual(mapping["actions"], expected, state)
 
     def test_the_cues_are_the_bottom_two_rows(self):
         notes = sorted(m["trigger"]["number"] for m in self.page
                        if any(a["action"] == "state" for a in m["actions"]))
         self.assertEqual(notes, [launchpad.pad(r, c) for r in (1, 2) for c in range(1, 9)])
 
-    def test_one_mode_pad_on_the_fourth_row(self):
+    def test_the_mode_pads_on_the_fourth_row(self):
         """Where the three intensity pads were: one pad that steps whatever
-        cue is up to its next mode, and nothing else on the row."""
-        (pad,) = self._pads("mythos26 - mode")
+        cue is up to its next mode, then a gap, then a pad per mode naming
+        one - four, the most any cue has - and nothing else on the row."""
+        (pad,) = [m for m in self._pads("mythos26 - mode") if m["label"] == "mythos26 - mode"]
         self.assertEqual(pad["trigger"]["number"], launchpad.pad(4, 1))
         self.assertEqual(pad["actions"], [{"action": "mode", "params": {"mode": 0, "step": 1}}])
         self.assertFalse(self._pads("mythos26 - intensity"))
+        named = self._pads("mythos26 - mode ")
+        self.assertEqual([m["label"] for m in named],
+                         [f"mythos26 - mode {n}" for n in (1, 2, 3, 4)])
+        self.assertEqual([m["trigger"]["number"] for m in named],
+                         [launchpad.pad(4, c) for c in (3, 4, 5, 6)])
+        self.assertEqual([m["actions"] for m in named],
+                         [[{"action": "mode", "params": {"mode": n, "step": 1}}] for n in (1, 2, 3, 4)])
         self.assertEqual([m["label"] for m in self.page if m["trigger"]["number"] // 10 == 4],
-                         ["mythos26 - mode"])
+                         ["mythos26 - mode"] + [m["label"] for m in named])
+
+    def test_a_cues_own_pads_on_the_seventh_row(self):
+        """The clouds' four, above the layers, each the cue table's pad as
+        the surface fires it."""
+        pads = self._pads("mythos26 - clouds ")
+        self.assertEqual([m["label"] for m in pads],
+                         [f"mythos26 - clouds {label}" for label in
+                          ("fly low", "fly high", "slower", "faster")])
+        self.assertEqual([m["trigger"]["number"] for m in pads],
+                         [launchpad.pad(7, c) for c in (1, 2, 3, 4)])
+        for index, mapping in enumerate(pads):
+            expected = [midi_map.Action.from_dict(entry).to_dict()
+                        for entry in cue_pad_actions(self.config, "clouds", index)]
+            self.assertEqual(mapping["actions"], expected, mapping["label"])
 
     def test_a_row_per_layer_with_a_pad_per_state(self):
         for row, layer, states in ((5, "flash", FLASH_STATES), (6, "uv", UV_STATES)):
@@ -3521,7 +3629,10 @@ class TheShowLooks(ShowTest):
             self.assertEqual(names[0], "mode", state)
             self.assertIn("intensity", names, state)
             mode = show.get_param("mode")
-            self.assertEqual((mode.value, mode.minimum, mode.maximum), (1.0, 1.0, 3.0), state)
+            # three is the floor; the churn and the nova have a fourth, the
+            # rainbow, and the pad reads the maximum to know how far to step
+            count = 4.0 if state in ("churn", "nova") else 3.0
+            self.assertEqual((mode.value, mode.minimum, mode.maximum), (1.0, 1.0, count), state)
 
     def test_a_mode_moves_the_looks_knobs_and_the_echo_carries_them(self):
         """`param mode 2` on the geode turns it blue - and the reply lists
@@ -5987,6 +6098,51 @@ class TheMidiMap(unittest.TestCase):
         ])
         dispatcher.handle(midi_map.parse_midi_line("ch=1 cc 7 127"))
         self.assertEqual(link.calls, [("raw", "/controls/global/slider/1", 2.0)])
+
+    def test_a_colour_control_goes_as_it_is_written(self):
+        """`values` is a colour: three floats in one message, the pad's own
+        value ignored. Typed into the editor as "r g b" and read back."""
+        dispatcher, link = self._dispatcher([
+            midi_map.Mapping(kind="note", number=36, mode="press", action="syn_control",
+                             params={"address": "/controls/scene/rigcolor2",
+                                     "values": [0.05, 0.1, 1.0]}),
+        ])
+        dispatcher.handle(midi_map.parse_midi_line("ch=1 note_on 36 40"))
+        self.assertEqual(link.calls, [("raw", "/controls/scene/rigcolor2", 0.05, 0.1, 1.0)])
+        spec = midi_map.ACTIONS["syn_control"]
+        self.assertEqual(midi_map.coerce_params(spec, {"values": "0.5, 0.25 1"})["values"],
+                         [0.5, 0.25, 1.0])
+        self.assertEqual(midi_map.coerce_params(spec, {"values": "[0.5, 0.25, 1]"})["values"],
+                         [0.5, 0.25, 1.0])
+        self.assertEqual(midi_map.coerce_params(spec, {})["values"], [])
+        self.assertEqual(midi_map.coerce_params(spec, {"values": "x"})["values"], [])
+
+    def test_a_ramped_control_glides_from_the_last_value_sent(self):
+        """A control with `ramp` is sent in steps from wherever this desk
+        last put it, ending exactly on the target; the first send of an
+        address snaps, having nothing to glide from. A newer press on the
+        same address takes it over mid-glide."""
+        dispatcher, link = self._dispatcher([
+            midi_map.Mapping(kind="note", number=36, mode="press", action="syn_control",
+                             params={"address": "/controls/scene/height",
+                                     "low": 0.2, "high": 0.2, "ramp": 0.1}),
+            midi_map.Mapping(kind="note", number=37, mode="press", action="syn_control",
+                             params={"address": "/controls/scene/height",
+                                     "low": 0.8, "high": 0.8, "ramp": 0.1}),
+        ])
+        dispatcher.handle(midi_map.parse_midi_line("ch=1 note_on 36 90"))
+        self.assertEqual(link.calls, [("raw", "/controls/scene/height", 0.2)])
+        dispatcher.handle(midi_map.parse_midi_line("ch=1 note_on 37 90"))
+        deadline = time.monotonic() + 2.0
+        while time.monotonic() < deadline and link.calls[-1][2] != 0.8:
+            time.sleep(0.01)
+        sent = [call[2] for call in link.calls]
+        self.assertEqual(sent[0], 0.2)
+        self.assertEqual(sent[-1], 0.8)
+        self.assertEqual(len(sent), 1 + 3)            # 0.1s at 30/s is three steps
+        self.assertEqual(sent, sorted(sent))
+        self.assertEqual(midi_map.ramp_steps([0.0, 1.0], [1.0, 0.0], 0.1, rate=20),
+                         [[0.5, 0.5], [1.0, 0.0]])
 
     def test_a_disabled_mapping_is_silent(self):
         dispatcher, link = self._dispatcher([

@@ -347,15 +347,20 @@ its own.
   (`rig: layer state`), then the visualiser's scene and media — the rig
   first, so a dead visualiser costs the rig nothing. Above them, row 4 is
   the **mode pad** — one pad, `rig: cue mode`, stepping whatever cue is up
-  through its modes 1, 2, 3 and round, and firing what the cue table says
-  the room does in each (the rain's video off in 2 and 3). It lights when
-  the cue is off mode 1; hitting the cue again is mode 1. Rows 5 and 6 are
-  the layers the config declares, a pad per state: the flash off or on,
-  the UV off / flash / on / kick / rainbow. So a layer can be moved off a
-  cue's default by hand, and hitting the cue puts it back. The viewer's cue
-  buttons fire the same table, and its `mode` button is the same pad.
-  Both files come out of one run of the generator and carry the same rows,
-  so they cannot disagree about what a cue does.
+  through its modes 1, 2, 3 (4 on the churn and the nova) and round, and
+  firing what the cue table says the room does in each (the rain's video
+  off in 2 and 3). It lights when the cue is off mode 1; hitting the cue
+  again is mode 1. A gap along the same row, **four pads name a mode
+  outright** — the churn's and the nova's palette buttons — each lit when
+  the cue is in that one. Rows 5 and 6 are the layers the config declares,
+  a pad per state: the flash off or on, the UV off / flash / on / kick /
+  rainbow. So a layer can be moved off a cue's default by hand, and
+  hitting the cue puts it back. Row 7 is the **cues' own pads** — the
+  clouds' fly low / fly high / slower / faster — off the table's `pads`.
+  The viewer's cue buttons fire the same table, and its `mode` and pad
+  buttons are the same pads. Both files come out of one run of the
+  generator and carry the same rows, so they cannot disagree about what a
+  cue does.
 - **The right column** — the scene-launch buttons — are the tabs. Each is
   `desk: page` *and* `rig: pattern`: the page so the grid shows that machine's
   looks, the pattern so the rig is on the machine those looks belong to.
@@ -1406,14 +1411,18 @@ audio bus.
 | 7 `blown` | pink riding the mids, never below 0.65; a kick pops it to full and leaves a green afterglow — the scene's default palette runs black through magenta to green | *Filter Blown v2* + `275593_medium.mp4`; the UV on the kick |
 | 8 `punk` | punk purple into white, strobing to full white on the beat | *Milk, Honey, Smoke, Bile* with its `smoke` on, which is its own beat strobe; the flash layer on, the UV on the kick |
 | 10 `canyon` | orange, brown, green and blue bands pouring down the stage, one seamless loop; a rainbow over everything on the beat | *Vibe Thresholds* + `361331_medium.mp4` |
+| 12 `churn` | the neuron's field in the churn's two colours — red into blue — busier, and pushed by the level the way the paint is; three palettes and a rainbow on the mode pads | *Eclipse Churn* + `black.mp4`; the probe sends colour A, the cue table colour B |
+| 13 `nova` | galaxies on a wash over a dark ground, the galaxies swelling with the bass presence — cyan on yellow over dark blue, by hand; three palettes and a rainbow | *Eclipse Nova*, `auto_second` off; the probe sends the galaxy colour, the cue table the wash |
+| 14 `clouds` | a sunset down the stage — yellow overhead into pink at the horizon — over a cloud deck in shadow, streaming past; `height` and `speed` glide to where four pads put them | *Cloud Ten* (the scene and its control names are unverified — see the cue) with its auto height off; the same four pads ramp its height and speed |
 
-Slots 9 and 11–16 are placeholders — a dim tinted breath apiece — until
+Slots 9, 11, 15 and 16 are placeholders — a dim tinted breath apiece — until
 the spec names them. Sixteen because that is what the spec says, and two rows
 of the surface.
 
-**Every cue has a `mode`** — 1, 2 or 3 — and the surface has one pad for it,
-stepping the running cue round. Mode 1 is the cue as written; 2 and 3 are
-the cue's own, a line each beside it in `src/mythos26.cpp`:
+**Every cue has a `mode`** — 1, 2 or 3, and on the churn and the nova a 4 —
+and the surface has one pad for it, stepping the running cue round, and
+four beside it naming one outright. Mode 1 is the cue as written; the rest
+are the cue's own, a line each beside it in `src/mythos26.cpp`:
 
 | cue | 2 | 3 |
 | --- | --- | --- |
@@ -1425,8 +1434,15 @@ the cue's own, a line each beside it in `src/mythos26.cpp`:
 | `blown` | a brighter base | dark until the pop |
 | `punk` | half time | double time |
 | `canyon` | a slow fly, the rainbow once a bar | fast, the rainbow in double time |
+| `churn` | magenta into cyan | orange into violet — and **4** the red-and-blue pair turned through the wheel, the scene let back to its own rainbow |
+| `nova` | Nova's regime 1: orange galaxies, a sky-blue wash, deep blue ground | its regime 2: violet galaxies, an azure wash, near-black — and **4** the hand palette through the wheel, the scene deriving its own second colour |
+| `clouds` | dusk: pink into violet, the deck darker | golden hour: orange down to the horizon, the deck warm |
 
-Each is a diff on the cue as built: the knobs the cue opened with are
+Three is the floor, not the count: a cue with more variants beside it has
+more, and the knob's maximum is how the desk knows how far the pad steps —
+so the churn's and the nova's four palette pads are the same four the
+other cues have, with the fourth doing what the third does on a cue with
+three. Each is a diff on the cue as built: the knobs the cue opened with are
 snapshotted and put back before a mode's own changes go over them, so 2 is
 never on top of 3, and 1 is the way back. The room's half — the video off,
 the flash layer off — is the cue table's `modes` in `config/mythos-show.json`,
@@ -1466,7 +1482,9 @@ names both layers, so a cue never inherits the last one's flash; a state with
 no entry is the state alone.
 
 A cue can also carry `controls`: the scene's own knobs, by the name the scene
-declares them, a number each, sent after the scene. It is for the one or two
+declares them, a number each — or `[r, g, b]` for a colour control, which
+goes as one message of three floats, the way the probe's colour does —
+sent after the scene. It is for the one or two
 a look depends on — the punk cue turns on `smoke`, which is Milk, Honey's own
 beat strobe, so the visual and the flash layer hit the same beat. It is not a
 preset: a preset lives in the app on one machine, a cue in this file on every
@@ -1495,6 +1513,34 @@ orange — the canyon table, near enough) over the raw video, with hue-shift
 mode off. Two do not hold: Glitch steps between four stock photos on every
 `syn_OnBeat`, and Milk, Honey is a feedback sim that cycles its channels every
 frame. For those the beat is the match, not the colour.
+
+The two eclipse scenes are the other way round: they hold no colour of
+their own and take it from the rig. Eclipse Churn paints Churning in
+`rig_color` and `rig_color_2`; Eclipse Nova paints its galaxies `rig_color`
+and its wash `rig_color_2`. The first is the probe's, live — and for those
+cues the probe is no longer a point of the field but **the palette's first
+colour outright**: the `synesthesia` device declares `"space": "probe"`, and
+a look with a palette (the washes, the nova) paints that node its colour A,
+so the scene is keyed to the cue and not to whichever patch of noise is
+passing the truss. The second colour nothing sends, so the cue table does,
+as a colour control, once per palette. The rainbow modes turn the rig's pair
+through the wheel and hand the scene its own rainbow — Churning's
+`color_phasing` with the paint job off, Nova's `auto_second`.
+
+##### a cue's own pads
+
+A cue can carry `pads`: buttons of its own on the surface, for a control
+the operator flies by hand. The clouds have four — fly low, fly high,
+slower, faster — and each moves the look's knob (`params`) and the scene's
+control (`controls`) together, the rig first. Neither snaps: the look's
+`height` and `speed` are targets it glides to over its `glide` seconds, and
+the pad's `ramp` is the scene's half of the same move, the control re-sent
+in steps from wherever this desk last put it until it lands on the target,
+on a thread so the pad returns at once. A control never sent snaps, having
+nothing to glide from — the app does not say where its sliders are. The
+generator lays a cue's pads on the rows above the layers; the viewer has a
+button each. A pad pressed under another cue aims its knob at a look that
+has no such knob and is refused harmlessly.
 
 Writing a cue for real is a `GeneratorHSV` in `mythos26.h`/`.cpp` and a
 changed line in `makeMythos26StateMachine()`; nothing in the runner, the

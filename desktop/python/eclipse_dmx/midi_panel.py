@@ -335,7 +335,9 @@ class MidiMapPanel:
                     row.pack(fill="x", pady=1)
                     self._dim_label(row, f"  {fld.label:<7}").pack(side="left")
                     var = tk.StringVar()
-                    var.set(str(action.params.get(fld.name, fld.default)))
+                    raw = action.params.get(fld.name, fld.default)
+                    # a list of numbers is typed as "r g b", and read back the same way
+                    var.set(" ".join(f"{v:g}" for v in raw) if isinstance(raw, (list, tuple)) else str(raw))
                     param_vars[fld.name] = var
                     width = 6 if fld.kind in ("int", "float") else 22
                     self._entry_factory(row, var, width=width).pack(side="left")

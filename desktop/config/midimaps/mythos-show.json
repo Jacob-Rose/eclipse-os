@@ -408,7 +408,9 @@
           "params": {
             "address": "/controls/scene/smoke",
             "low": 1.0,
-            "high": 1.0
+            "high": 1.0,
+            "values": [],
+            "ramp": 0.0
           }
         }
       ],
@@ -522,7 +524,7 @@
       "colour": 41
     },
     {
-      "label": "mythos26 - slot_12",
+      "label": "mythos26 - churn",
       "trigger": {
         "kind": "note",
         "channel": 1,
@@ -539,7 +541,78 @@
         {
           "action": "state",
           "params": {
-            "name": "slot_12"
+            "name": "churn"
+          }
+        },
+        {
+          "action": "layer",
+          "params": {
+            "layer": "flash",
+            "name": "off"
+          }
+        },
+        {
+          "action": "layer",
+          "params": {
+            "layer": "uv",
+            "name": "off"
+          }
+        },
+        {
+          "action": "syn_scene",
+          "params": {
+            "scene": "Eclipse Churn",
+            "preset": ""
+          }
+        },
+        {
+          "action": "syn_media",
+          "params": {
+            "name": "black.mp4"
+          }
+        },
+        {
+          "action": "syn_control",
+          "params": {
+            "address": "/controls/scene/rigamount",
+            "low": 1.0,
+            "high": 1.0,
+            "values": [],
+            "ramp": 0.0
+          }
+        },
+        {
+          "action": "syn_control",
+          "params": {
+            "address": "/controls/scene/rigcontrast",
+            "low": 0.6,
+            "high": 0.6,
+            "values": [],
+            "ramp": 0.0
+          }
+        },
+        {
+          "action": "syn_control",
+          "params": {
+            "address": "/controls/scene/colorphasing",
+            "low": 0.0,
+            "high": 0.0,
+            "values": [],
+            "ramp": 0.0
+          }
+        },
+        {
+          "action": "syn_control",
+          "params": {
+            "address": "/controls/scene/rigcolor2",
+            "low": 0.0,
+            "high": 1.0,
+            "values": [
+              0.05,
+              0.1,
+              1.0
+            ],
+            "ramp": 0.0
           }
         }
       ],
@@ -548,7 +621,7 @@
       "colour": 41
     },
     {
-      "label": "mythos26 - slot_13",
+      "label": "mythos26 - nova",
       "trigger": {
         "kind": "note",
         "channel": 1,
@@ -565,7 +638,72 @@
         {
           "action": "state",
           "params": {
-            "name": "slot_13"
+            "name": "nova"
+          }
+        },
+        {
+          "action": "layer",
+          "params": {
+            "layer": "flash",
+            "name": "off"
+          }
+        },
+        {
+          "action": "layer",
+          "params": {
+            "layer": "uv",
+            "name": "off"
+          }
+        },
+        {
+          "action": "syn_scene",
+          "params": {
+            "scene": "Eclipse Nova",
+            "preset": ""
+          }
+        },
+        {
+          "action": "syn_control",
+          "params": {
+            "address": "/controls/scene/colorbyhand",
+            "low": 0.0,
+            "high": 0.0,
+            "values": [],
+            "ramp": 0.0
+          }
+        },
+        {
+          "action": "syn_control",
+          "params": {
+            "address": "/controls/scene/autosecond",
+            "low": 0.0,
+            "high": 0.0,
+            "values": [],
+            "ramp": 0.0
+          }
+        },
+        {
+          "action": "syn_control",
+          "params": {
+            "address": "/controls/scene/baseamount",
+            "low": 0.35,
+            "high": 0.35,
+            "values": [],
+            "ramp": 0.0
+          }
+        },
+        {
+          "action": "syn_control",
+          "params": {
+            "address": "/controls/scene/rigcolor2",
+            "low": 0.0,
+            "high": 1.0,
+            "values": [
+              1.0,
+              0.85,
+              0.15
+            ],
+            "ramp": 0.0
           }
         }
       ],
@@ -574,7 +712,7 @@
       "colour": 41
     },
     {
-      "label": "mythos26 - slot_14",
+      "label": "mythos26 - clouds",
       "trigger": {
         "kind": "note",
         "channel": 1,
@@ -591,7 +729,64 @@
         {
           "action": "state",
           "params": {
-            "name": "slot_14"
+            "name": "clouds"
+          }
+        },
+        {
+          "action": "layer",
+          "params": {
+            "layer": "flash",
+            "name": "off"
+          }
+        },
+        {
+          "action": "layer",
+          "params": {
+            "layer": "uv",
+            "name": "off"
+          }
+        },
+        {
+          "action": "syn_scene",
+          "params": {
+            "scene": "Cloud Ten",
+            "preset": ""
+          }
+        },
+        {
+          "action": "syn_media",
+          "params": {
+            "name": "black.mp4"
+          }
+        },
+        {
+          "action": "syn_control",
+          "params": {
+            "address": "/controls/scene/autoheight",
+            "low": 0.0,
+            "high": 0.0,
+            "values": [],
+            "ramp": 0.0
+          }
+        },
+        {
+          "action": "syn_control",
+          "params": {
+            "address": "/controls/scene/height",
+            "low": 0.45,
+            "high": 0.45,
+            "values": [],
+            "ramp": 0.0
+          }
+        },
+        {
+          "action": "syn_control",
+          "params": {
+            "address": "/controls/scene/speed",
+            "low": 0.25,
+            "high": 0.25,
+            "values": [],
+            "ramp": 0.0
           }
         }
       ],
@@ -671,6 +866,90 @@
       "enabled": true,
       "page": "",
       "colour": 9
+    },
+    {
+      "label": "mythos26 - mode 1",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 43
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "mode",
+          "params": {
+            "mode": 1,
+            "step": 1
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "",
+      "colour": 13
+    },
+    {
+      "label": "mythos26 - mode 2",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 44
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "mode",
+          "params": {
+            "mode": 2,
+            "step": 1
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "",
+      "colour": 13
+    },
+    {
+      "label": "mythos26 - mode 3",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 45
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "mode",
+          "params": {
+            "mode": 3,
+            "step": 1
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "",
+      "colour": 13
+    },
+    {
+      "label": "mythos26 - mode 4",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 46
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "mode",
+          "params": {
+            "mode": 4,
+            "step": 1
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "",
+      "colour": 13
     },
     {
       "label": "mythos26 - flash off",
@@ -818,6 +1097,138 @@
       "enabled": true,
       "page": "",
       "colour": 49
+    },
+    {
+      "label": "mythos26 - clouds fly low",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 71
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "param",
+          "params": {
+            "name": "height",
+            "low": 0.15,
+            "high": 0.15,
+            "layer": ""
+          }
+        },
+        {
+          "action": "syn_control",
+          "params": {
+            "address": "/controls/scene/height",
+            "low": 0.15,
+            "high": 0.15,
+            "values": [],
+            "ramp": 2.0
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "",
+      "colour": 37
+    },
+    {
+      "label": "mythos26 - clouds fly high",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 72
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "param",
+          "params": {
+            "name": "height",
+            "low": 0.85,
+            "high": 0.85,
+            "layer": ""
+          }
+        },
+        {
+          "action": "syn_control",
+          "params": {
+            "address": "/controls/scene/height",
+            "low": 0.85,
+            "high": 0.85,
+            "values": [],
+            "ramp": 2.0
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "",
+      "colour": 37
+    },
+    {
+      "label": "mythos26 - clouds slower",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 73
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "param",
+          "params": {
+            "name": "speed",
+            "low": 0.08,
+            "high": 0.08,
+            "layer": ""
+          }
+        },
+        {
+          "action": "syn_control",
+          "params": {
+            "address": "/controls/scene/speed",
+            "low": 0.08,
+            "high": 0.08,
+            "values": [],
+            "ramp": 2.0
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "",
+      "colour": 37
+    },
+    {
+      "label": "mythos26 - clouds faster",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 74
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "param",
+          "params": {
+            "name": "speed",
+            "low": 0.7,
+            "high": 0.7,
+            "layer": ""
+          }
+        },
+        {
+          "action": "syn_control",
+          "params": {
+            "address": "/controls/scene/speed",
+            "low": 0.7,
+            "high": 0.7,
+            "values": [],
+            "ramp": 2.0
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "",
+      "colour": 37
     }
   ]
 }

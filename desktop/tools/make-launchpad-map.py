@@ -22,7 +22,7 @@ what launch-mythos-set.sh runs on.
 import argparse, json, pathlib, subprocess, sys
 from eclipse_dmx import launchpad as lp
 from eclipse_dmx import midi_map as mm
-from eclipse_dmx.config import Config, cue_actions
+from eclipse_dmx.config import Config, cue_actions, cue_pad_actions
 
 MACHINES = ["mythos26", "jacket", "obelisk", "uv", "flash", "generic", "scanner", "audio"]
 
@@ -40,6 +40,18 @@ SHOW = "mythos26"
 #: firing what the config's cue table says the room does in each. Where the
 #: three intensity pads were; it lights when the cue is off its first mode.
 MODE_PAD = ("mode", lp.Colour.AMBER)
+
+#: Beside it, a pad per mode naming one outright - the churn's and the
+#: nova's palette buttons, three palettes and a rainbow, and on every other
+#: cue the same pads with the fourth doing what the third does. Each lights
+#: when the cue is in that mode. As many as the most any cue has.
+MODE_COUNT = 4
+NAMED_MODE_COLOUR = lp.Colour.YELLOW
+
+#: A cue's own pads - the clouds' height and speed - on the rows above the
+#: layers, in the order the cue table lists them. They act on whatever cue
+#: is up, and a knob the running look does not have is refused harmlessly.
+CUE_PAD_COLOUR = lp.Colour.SPRING
 
 
 def probe(executable, config):
@@ -150,10 +162,12 @@ for machine in ORDER:
 # The show's controls, on the rows above its cues. Sixteen cues fill the
 # bottom two rows; the third is left dark so the controls read as controls.
 #
-#   row 4   the mode pad: the next mode of whatever cue is up
+#   row 4   the mode pad: the next mode of whatever cue is up; and, a gap
+#           along, a pad per mode naming one - the palette buttons
 #   row 5+  one row per layer the config declares, a pad per state, so the
 #           flash and the UV can be moved off a cue's default by hand -
 #           and put back by hitting the cue again
+#   above   the cues' own pads, where a cue has them
 show_rows = len(machines[SHOW]) // 8 + (1 if len(machines[SHOW]) % 8 else 0)
 controls_row = show_rows + 2
 rows.append(mm.Mapping(
@@ -161,6 +175,12 @@ rows.append(mm.Mapping(
     kind="note", channel=1, number=lp.pad(controls_row, 1), mode="press",
     page=SHOW, colour=MODE_PAD[1],
     actions=[mm.Action("mode", {"mode": 0, "step": 1})]))
+for number in range(1, MODE_COUNT + 1):
+    rows.append(mm.Mapping(
+        label=f"{SHOW} - mode {number}",
+        kind="note", channel=1, number=lp.pad(controls_row, 2 + number), mode="press",
+        page=SHOW, colour=NAMED_MODE_COLOUR,
+        actions=[mm.Action("mode", {"mode": number, "step": 1})]))
 
 for offset, layer in enumerate(show_config.layers, start=1):
     layer_states = machines.get(layer["pattern"], [])
@@ -178,6 +198,22 @@ for offset, layer in enumerate(show_config.layers, start=1):
             kind="note", channel=1, number=lp.pad(row, col), mode="press",
             page=SHOW, colour=COLOUR.get(layer["pattern"], lp.Colour.WHITE),
             actions=[mm.Action("layer", {"layer": layer["name"], "name": state})]))
+
+# The cues' own pads, filling the rows above the layers left to right.
+cue_pads = [(state, index, pad)
+            for state, cue in show_config.cues.items()
+            for index, pad in enumerate(cue.pads)]
+pads_row = controls_row + len(show_config.layers) + 1
+for slot, (state, index, pad) in enumerate(cue_pads):
+    row = pads_row + slot // 8
+    if row > 8:
+        raise SystemExit(f"the cues have {len(cue_pads)} pads between them; "
+                         f"rows {pads_row}..8 hold {(9 - pads_row) * 8}")
+    rows.append(mm.Mapping(
+        label=f"{SHOW} - {state} {pad.label}",
+        kind="note", channel=1, number=lp.pad(row, 1 + slot % 8), mode="press",
+        page=SHOW, colour=CUE_PAD_COLOUR,
+        actions=[mm.Action.from_dict(entry) for entry in cue_pad_actions(show_config, state, index)]))
 
 for machine, index in zip(ORDER, TABS):
     # A tab changes the surface *and* the rig - the page so the grid shows this
@@ -227,7 +263,8 @@ print(f"  opens on '{OPENS_ON}'")
 for machine, count in pages.items():
     print(f"    page {machine:<10} {count:>2} pads")
 print(f"  {SHOW}: {len(machines[SHOW])} cues, {len(show_config.cues)} of them in the cue table, "
-      f"the mode pad on row {controls_row}, {len(show_config.layers)} layer rows above it")
+      f"the mode pads on row {controls_row}, {len(show_config.layers)} layer rows above it, "
+      f"{len(cue_pads)} cue pads above those")
 print(f"  {len(ORDER)} tabs on the right column, {len(TABS) - len(ORDER)} spare")
 print(f"  inputs a/b on Up ({UP}) and Down ({DOWN}); "
       f"Left ({LEFT}) and Right ({RIGHT}) left alone")

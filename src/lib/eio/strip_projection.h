@@ -40,6 +40,12 @@ namespace eio
         Ring,
         Obelisk,
         Truss,
+        /// Not a light: the point the visualiser reads the rig's colour from
+        /// (desktop/devices/synesthesia.json). A look with a palette paints
+        /// it the palette's first colour rather than whatever its field is
+        /// doing there, so the scene behind the rig is keyed to the cue and
+        /// not to one wandering patch of it.
+        Probe,
     };
 
     /// The name a device file declares under "space", as a NodeSpace.
@@ -49,6 +55,7 @@ namespace eio
         if (name == "ring") return NodeSpace::Ring;
         if (name == "obelisk") return NodeSpace::Obelisk;
         if (name == "truss" || name == "pars") return NodeSpace::Truss;
+        if (name == "probe") return NodeSpace::Probe;
         return NodeSpace::Stage;
     }
 

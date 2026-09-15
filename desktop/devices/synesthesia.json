@@ -20,6 +20,14 @@
 
   "name": "synesthesia",
 
+  // What it is, to a look: the probe. A show look with a palette - the
+  // churn, the nova, the washes - paints this point its first colour
+  // outright, so the scene behind the rig is keyed to the cue's palette
+  // rather than to whichever patch of the field happens to be drifting past
+  // the truss. Looks without a palette (the rain, the fire) render it as a
+  // point of the stage like any other.
+  "space": "probe",
+
   // Normalized, so `fit` in the environment entry is what places it. With one
   // fixture there is nothing to spread: it lands wherever the entry puts it.
   "coord_space": "normalized",

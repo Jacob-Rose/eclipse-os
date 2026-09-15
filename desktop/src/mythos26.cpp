@@ -37,6 +37,26 @@ namespace
         return 0.0f;
     }
 
+    /// Whether this node is the visualiser's probe - see NodeSpace::Probe.
+    bool isProbe(const eio::HSVStripNode* node)
+    {
+        const eio::HSVStripNode_Space* spaced = eio::spaceOf(node);
+        return spaced != nullptr && spaced->space == eio::NodeSpace::Probe;
+    }
+
+    /// A colour with its hue turned by `turns` of the wheel.
+    ecore::HSV turnHue(const ecore::HSV& color, float turns)
+    {
+        if (turns == 0.0f)
+        {
+            return color;
+        }
+        ecore::HSV out(std::fmod(color.getHueFloat() + turns * 360.0f + 360.0f, 360.0f),
+                       color.getSatFloat(), color.getValFloat());
+        out.setBrightnessAlpha(color.getValFloat());
+        return out;
+    }
+
     struct Rgb
     {
         float r{0.0f};
@@ -150,7 +170,9 @@ namespace
 
 void ShowModes::reflectMode(ecore::PropertyBag& bag)
 {
-    bag.add("mode", mode, 1.0f, static_cast<float>(kModeCount), [this] { applyMode(); });
+    // the maximum is the count: it is how the desk learns how many modes
+    // this cue has, and so how far its pad steps before coming round
+    bag.add("mode", mode, 1.0f, static_cast<float>(modeCount()), [this] { applyMode(); });
 }
 
 void ShowModes::initModes(eanim::GeneratorHSV& inLook, std::vector<std::function<void()>> inVariants)
@@ -184,7 +206,7 @@ void ShowModes::initModes(eanim::GeneratorHSV& inLook, std::vector<std::function
 
 void ShowModes::applyMode()
 {
-    mode = std::clamp(std::round(mode), 1.0f, static_cast<float>(kModeCount));
+    mode = std::clamp(std::round(mode), 1.0f, static_cast<float>(modeCount()));
     if (look == nullptr)
     {
         return;
@@ -474,11 +496,20 @@ void Pattern_Mythos_NoiseWash::init()
 {
     bus = &sharedAudioLevel();
     level = 0.0f;
+    hueOffset = 0.0f;
+}
+
+ecore::HSV Pattern_Mythos_NoiseWash::turned(const ecore::HSV& color) const
+{
+    return turnHue(color, hueOffset);
 }
 
 void Pattern_Mythos_NoiseWash::tick(float deltaTime)
 {
     PatternScanner::tick(deltaTime);
+    // the wheel turns whether or not anything follows the bus - it is the
+    // palette, not the level
+    hueOffset = hueCycle > 0.0f ? frac(hueOffset + deltaTime * hueCycle) : 0.0f;
     if (follow <= 0.0f)
     {
         return;     // nothing reads the bus; leave the level where it was
@@ -502,6 +533,18 @@ void Pattern_Mythos_NoiseWash::tick(float deltaTime)
 
 void Pattern_Mythos_NoiseWash::render(eio::HSVStripNode* node, ecore::HSV& inOutColor) const
 {
+    const ecore::HSV a = turned(colorA);
+    const ecore::HSV b = turned(colorB);
+
+    // the probe is the palette's first colour, so the scene behind the rig
+    // is keyed to the cue and not to whichever patch is passing the truss
+    if (isProbe(node))
+    {
+        inOutColor = a;
+        inOutColor.setBrightnessAlpha(a.getValFloat());
+        return;
+    }
+
     const Coordinate at = nodeCoord(node);
     const float t = timeActive * 0.10f * speed;
     const float s = scale;
@@ -528,7 +571,7 @@ void Pattern_Mythos_NoiseWash::render(eio::HSVStripNode* node, ecore::HSV& inOut
     // that scaling applies.
     const float floorValue = std::clamp(floorLevel, 0.0f, 1.0f);
     const float ride = 1.0f - std::clamp(follow, 0.0f, 1.0f) * (1.0f - level);
-    inOutColor = blendRgb(colorA, colorB, mix);
+    inOutColor = blendRgb(a, b, mix);
     inOutColor.setBrightnessAlpha(floorValue + (1.0f - floorValue) * inOutColor.getValFloat() * ride);
 }
 
@@ -543,6 +586,7 @@ void Pattern_Mythos_NoiseWash::reflect(ecore::PropertyBag& bag)
     bag.add("slew", slew, 0.0f, 1.0f);
     bag.add("color_a", colorA);
     bag.add("color_b", colorB);
+    bag.add("hue_cycle", hueCycle, 0.0f, 1.0f);
 }
 
 // ============================================================================
@@ -997,6 +1041,183 @@ void Pattern_Mythos_Rain::reflect(ecore::PropertyBag& bag)
 }
 
 // ============================================================================
+// nova
+// ============================================================================
+
+void Pattern_Mythos_Nova::init()
+{
+    bus = &sharedAudioLevel();
+    level = 0.0f;
+    hueOffset = 0.0f;
+}
+
+ecore::HSV Pattern_Mythos_Nova::turned(const ecore::HSV& color) const
+{
+    return turnHue(color, hueOffset);
+}
+
+void Pattern_Mythos_Nova::tick(float deltaTime)
+{
+    PatternScanner::tick(deltaTime);
+    hueOffset = hueCycle > 0.0f ? frac(hueOffset + deltaTime * hueCycle) : 0.0f;
+    if (bus == nullptr)
+    {
+        bus = &sharedAudioLevel();
+    }
+
+    // the same slewed read the washes do; the bass presence, because that
+    // is what brightens the scene's galaxies
+    const float target = std::clamp(bus->get(channel, nowSeconds()) * gain, 0.0f, 1.0f);
+    if (slew <= 0.0f || deltaTime <= 0.0f)
+    {
+        level = target;
+    }
+    else
+    {
+        level += (target - level) * (1.0f - std::exp(-deltaTime / slew));
+    }
+}
+
+void Pattern_Mythos_Nova::render(eio::HSVStripNode* node, ecore::HSV& inOutColor) const
+{
+    const ecore::HSV ground = turned(base);
+    const ecore::HSV stars = turned(galaxy);
+    const ecore::HSV between = turned(wash);
+
+    // the probe is the galaxies: what the scene paints its own in
+    if (isProbe(node))
+    {
+        inOutColor = stars;
+        inOutColor.setBrightnessAlpha(stars.getValFloat());
+        return;
+    }
+
+    const Coordinate at = nodeCoord(node);
+    const float t = timeActive * 0.06f * speed;
+    const float s = scale;
+
+    // the galaxies: one large, slow field, lit only where it peaks, so the
+    // rig has a few of them and dark between - the picture is mostly ground
+    const float big = scanner::valueNoise(at.x * 0.22f * s + t * 1.3f, at.y * 0.11f * s - t * 0.9f);
+    const float swell = 1.0f - std::clamp(follow, 0.0f, 1.0f) * (1.0f - level);
+    const float depth = std::clamp(intensity, 0.0f, 1.0f);
+    // the threshold falls as the bass presence rises: the galaxies grow
+    const float edge = 0.62f - 0.17f * swell * depth;
+    const float galaxies = std::clamp((big - edge) / 0.22f, 0.0f, 1.0f);
+
+    // the wash: a finer field in the dark between them, at its amount
+    const float fine = scanner::valueNoise(at.x * 0.55f * s - t * 1.7f + 53.0f, at.y * 0.30f * s + t * 1.1f);
+    const float washes = std::clamp((fine - 0.45f) / 0.35f, 0.0f, 1.0f)
+                       * std::clamp(washAmount, 0.0f, 1.0f) * (1.0f - galaxies);
+
+    // ground, then the wash over it, then the galaxies over both - in RGB,
+    // so yellow arriving over dark blue is light on dark and not green
+    ecore::HSV out = blendRgb(ground, between, washes);
+    out = blendRgb(out, stars, galaxies);
+    inOutColor = out;
+    inOutColor.setBrightnessAlpha(out.getValFloat() * (0.85f + 0.15f * swell));
+}
+
+void Pattern_Mythos_Nova::reflect(ecore::PropertyBag& bag)
+{
+    Pattern_MythosLook::reflect(bag);
+    bag.add("speed", speed, 0.1f, 4.0f);
+    bag.add("scale", scale, 0.3f, 3.0f);
+    bag.add("wash_amount", washAmount, 0.0f, 1.0f);
+    bag.add("follow", follow, 0.0f, 1.0f);
+    bag.add("gain", gain, 0.0f, 4.0f);
+    bag.add("slew", slew, 0.0f, 1.0f);
+    bag.add("base", base);
+    bag.add("galaxy", galaxy);
+    bag.add("wash", wash);
+    bag.add("hue_cycle", hueCycle, 0.0f, 1.0f);
+}
+
+// ============================================================================
+// cloud flight
+// ============================================================================
+
+void Pattern_Mythos_CloudFlight::init()
+{
+    heightNow = height;
+    speedNow = speed;
+    travelled = 0.0f;
+}
+
+void Pattern_Mythos_CloudFlight::reset()
+{
+    Pattern_MythosLook::reset();
+    // a cue entered is a flight begun where its knobs say, not gliding in
+    // from wherever the last visit left it
+    heightNow = height;
+    speedNow = speed;
+    travelled = 0.0f;
+}
+
+void Pattern_Mythos_CloudFlight::tick(float deltaTime)
+{
+    PatternScanner::tick(deltaTime);
+
+    // both glide: a pad moves the target and the flight takes `glide`
+    // seconds to get there, the way a plane climbs rather than teleports
+    if (glide <= 0.0f || deltaTime <= 0.0f)
+    {
+        heightNow = height;
+        speedNow = speed;
+    }
+    else
+    {
+        const float k = 1.0f - std::exp(-deltaTime * 3.0f / glide);
+        heightNow += (height - heightNow) * k;
+        speedNow += (speed - speedNow) * k;
+    }
+    // the deck streams at the speed the flight is actually doing
+    travelled = frac(travelled + deltaTime * speedNow * 0.25f);
+}
+
+void Pattern_Mythos_CloudFlight::render(eio::HSVStripNode* node, ecore::HSV& inOutColor) const
+{
+    const float up = stageAlpha(node);
+    const Coordinate at = nodeCoord(node);
+
+    // the horizon: where the flight's height puts it, 1 - height because a
+    // high flight looks down on a deck that has fallen away to the bottom
+    const float horizon = 1.0f - std::clamp(heightNow, 0.0f, 1.0f);
+
+    // the sky: yellow overhead into pink at the horizon
+    const float skyT = horizon >= 0.999f ? 0.0f : std::clamp((up - horizon) / (1.0f - horizon), 0.0f, 1.0f);
+    const ecore::HSV sky = blendRgb(skyLow, skyHigh, skyT);
+
+    // the deck: the cloud's own noise, streaming down the stage - the
+    // wrap is on `travelled`, so the field never runs out of bits
+    const float scroll = travelled * 40.0f;
+    const float n = 0.6f * scanner::valueNoise(at.x * 0.35f + 11.0f, at.y * 0.18f + scroll * 0.18f)
+                  + 0.4f * scanner::valueNoise(at.x * 0.80f - 7.0f, at.y * 0.45f + scroll * 0.45f);
+    // the tops catch the sunset: the pink, at `glow`, where the deck peaks
+    const float lit = std::clamp((n - 0.55f) / 0.3f, 0.0f, 1.0f) * std::clamp(glow, 0.0f, 1.0f)
+                    * std::clamp(intensity, 0.0f, 1.0f);
+    ecore::HSV deck = blendRgb(cloud, skyLow, lit);
+    deck.setBrightnessAlpha(lerp(cloud.getValFloat() * (0.6f + 0.4f * n), skyLow.getValFloat(), lit));
+
+    // the deck's edge is soft - a band of the stage's height either side
+    // of the horizon where cloud and sky mix - so the pars do not step
+    const float edge = std::clamp((up - horizon + 0.06f) / 0.12f, 0.0f, 1.0f);
+    inOutColor = blendRgb(deck, sky, edge);
+}
+
+void Pattern_Mythos_CloudFlight::reflect(ecore::PropertyBag& bag)
+{
+    Pattern_MythosLook::reflect(bag);
+    bag.add("height", height, 0.0f, 1.0f);
+    bag.add("speed", speed, 0.0f, 2.0f);
+    bag.add("glide", glide, 0.0f, 10.0f);
+    bag.add("glow", glow, 0.0f, 1.0f);
+    bag.add("sky_high", skyHigh);
+    bag.add("sky_low", skyLow);
+    bag.add("cloud", cloud);
+}
+
+// ============================================================================
 // hue cycle
 // ============================================================================
 
@@ -1292,7 +1513,7 @@ std::unique_ptr<StateMachinePattern> edmx::makeMythos26StateMachine()
     // ------------------------------------------------------------------
     // The show, one line per cue, in the order a UI shows them - and the
     // order of "pattern spec.txt" at the top of the checkout, which is where
-    // the numbers on the surface come from. Sixteen cues, nine of them
+    // the numbers on the surface come from. Sixteen cues, twelve of them
     // written; a slot that exists is a cue that can be switched to, mapped
     // to a button and seen on the rig before there is a look in it, so the
     // rest are placeholders, tinted so they are told apart.
@@ -1324,6 +1545,8 @@ std::unique_ptr<StateMachinePattern> edmx::makeMythos26StateMachine()
     using Fire = Pattern_Mythos_Fire;
     using Strobe = Pattern_Mythos_GradientStrobe;
     using Canyon = Pattern_Mythos_CanyonWave;
+    using Nova = Pattern_Mythos_Nova;
+    using Clouds = Pattern_Mythos_CloudFlight;
 
     std::vector<StateDef> states = {
         // 1. cyan into deep blue, drifting - the neuron scene's own colours:
@@ -1434,9 +1657,68 @@ std::unique_ptr<StateMachinePattern> edmx::makeMythos26StateMachine()
             [](Canyon& look) { look.speed = 0.30f; look.setPulseRate(edmx::kDoubleTime); },
         }),
         placeholder("slot_11", 300.0f),
-        placeholder("slot_12", 330.0f),
-        placeholder("slot_13", 0.0f),
-        placeholder("slot_14", 30.0f),
+        // 12. the churn: Eclipse Churn is Churning painted in two rig
+        //     colours, so this is the field in the same two, busier than
+        //     the neuron and pushed by the level the way the paint is. Four
+        //     modes, a pad each: three palettes and a rainbow. 1 is the
+        //     scene's own pair, red and blue; 2 magenta and cyan; 3 orange
+        //     and violet; 4 the red-and-blue pair turned through the wheel,
+        //     with the scene let back to its own rainbow (the cue table's
+        //     half). The probe sends colour A; the cue table sends colour B.
+        showLook<NoiseWash>("churn", [](NoiseWash& look) {
+            look.colorA = HSV(0.0f, 0.95f, 1.00f);
+            look.colorB = HSV(237.0f, 0.95f, 0.85f);
+            look.channel = AudioChannel::Level;
+            look.follow = 0.6f;
+            look.floorLevel = 0.35f;
+            look.speed = 1.6f;
+            look.scale = 0.8f;
+        }, {
+            [](NoiseWash& look) { look.colorA = HSV(300.0f, 0.90f, 1.00f); look.colorB = HSV(185.0f, 0.95f, 0.90f); },
+            [](NoiseWash& look) { look.colorA = HSV(28.0f, 0.95f, 1.00f);  look.colorB = HSV(268.0f, 0.90f, 0.80f); },
+            [](NoiseWash& look) { look.hueCycle = 0.08f; },
+        }),
+        // 13. the nova: galaxies on a wash over a dark ground, swelling
+        //     with the bass presence the way the scene's do. 1 is the
+        //     palette chosen by hand - cyan galaxies, a yellow wash, a dark
+        //     blue ground. 2 is Nova's own regime 1, orange on sky blue
+        //     over deep blue; 3 its regime 2, violet with an azure wash on
+        //     near-black; 4 the hand palette turned through the wheel with
+        //     the scene deriving its own second colour. The probe sends the
+        //     galaxy colour; the cue table sends the wash.
+        showLook<Nova>("nova", {}, {
+            [](Nova& look) {
+                look.galaxy = HSV(37.0f, 0.80f, 1.00f);
+                look.wash = HSV(207.0f, 0.55f, 1.00f);
+                look.base = HSV(240.0f, 0.75f, 0.30f);
+            },
+            [](Nova& look) {
+                look.galaxy = HSV(263.0f, 0.90f, 1.00f);
+                look.wash = HSV(216.0f, 0.75f, 1.00f);
+                look.base = HSV(250.0f, 0.80f, 0.08f);
+                look.washAmount = 0.35f;
+            },
+            [](Nova& look) { look.hueCycle = 0.06f; },
+        }),
+        // 14. the clouds: a sunset down the stage, yellow overhead into
+        //     pink at the horizon, and the deck below it in shadow,
+        //     streaming past. `height` and `speed` are targets the look
+        //     glides to - the cue's four pads move them. 2 is dusk, the
+        //     sky gone pink into violet and the deck darker; 3 is golden
+        //     hour, orange down to the horizon and the deck warm.
+        showLook<Clouds>("clouds", {}, {
+            [](Clouds& look) {
+                look.skyHigh = HSV(330.0f, 0.70f, 1.00f);
+                look.skyLow = HSV(285.0f, 0.75f, 0.80f);
+                look.cloud = HSV(260.0f, 0.70f, 0.10f);
+            },
+            [](Clouds& look) {
+                look.skyHigh = HSV(42.0f, 0.90f, 1.00f);
+                look.skyLow = HSV(18.0f, 0.90f, 1.00f);
+                look.cloud = HSV(25.0f, 0.70f, 0.14f);
+                look.glow = 0.5f;
+            },
+        }),
         placeholder("slot_15", 60.0f),
         placeholder("slot_16", 90.0f),
     };

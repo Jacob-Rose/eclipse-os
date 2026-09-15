@@ -88,7 +88,7 @@ day the sender carries two fixtures.
 | control | what it does |
 |---|---|
 | `rig_color` | The galaxies. First colour control; the sender's target. |
-| `rig_color_2` | The wash. Second colour control. Read only with `auto_second` off. |
+| `rig_color_2` | The wash. Second colour control. Read only with `auto_second` off. The show's `nova` cue turns `auto_second` off and sends this per palette. |
 | `auto_second` | Derive the wash as the complement of `rig_color`. On by default. |
 | `manual_color` / `color_by_hand` | Try a first colour while the link is live, which otherwise overwrites `rig_color` thirty times a second. Same reason as in Eclipse Chroma Key. |
 | `base_amount` | How bright the wash is. 0 is the black background of regimes 2 and 3; 1 a full wash like 0 and 1. |

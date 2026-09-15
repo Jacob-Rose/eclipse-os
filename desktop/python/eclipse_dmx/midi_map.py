@@ -48,9 +48,11 @@ a mapping file is a named preset for a controller layout.
 from __future__ import annotations
 
 import json
+import threading
+import time
 from dataclasses import InitVar, dataclass, field
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Union
+from typing import Callable, Dict, List, Optional, Sequence, Union
 
 from .osc import scene_address
 
@@ -128,9 +130,10 @@ def parse_midi_line(payload: str) -> Optional[MidiEvent]:
 class FieldSpec:
     """One parameter an action takes, described well enough to draw a form.
 
-    `kind` is "text", "int" or "float"; the editor validates on that, and
-    `from_dict` re-coerces on load so a hand-edited file cannot smuggle a
-    string into a slot number.
+    `kind` is "text", "int", "float" or "floats" - the last a list of them,
+    for a colour, written in a file as a list or as "r g b"; the editor
+    validates on that, and `from_dict` re-coerces on load so a hand-edited
+    file cannot smuggle a string into a slot number.
     """
 
     name: str
@@ -174,6 +177,13 @@ class SynesthesiaState:
         #: meaningful case: it means OSC output is off at the other end, and
         #: the scene check falls back to what was sent.
         self.heard_scene: str = ""
+
+        #: The last value sent to each control address, so a control asked
+        #: to *ramp* has somewhere to ramp from. A control never sent snaps.
+        self.sent_controls: Dict[str, List[float]] = {}
+        #: One counter per address a ramp is running on: a new ramp on the
+        #: same address bumps it, and the old thread sees it and stops.
+        self.ramp_generation: Dict[str, int] = {}
 
     # -- what the desk asked for -------------------------------------------
 
@@ -383,13 +393,55 @@ def _check_syn_media(context, params):
     return context.syn.sent_media == name
 
 
+#: How often a ramped control is re-sent on its way, per second. Synesthesia
+#: reads a control at frame rate, so faster than this is packets for nothing.
+RAMP_RATE = 30.0
+
+
+def ramp_steps(start: Sequence[float], target: Sequence[float], seconds: float,
+               rate: float = RAMP_RATE) -> List[List[float]]:
+    """The values a control is sent on its way from `start` to `target`
+    over `seconds`, ending exactly on `target`. Linear: a slider glided by
+    hand is, near enough."""
+    count = max(int(round(seconds * rate)), 1)
+    return [[a + (b - a) * (step / count) for a, b in zip(start, target)]
+            for step in range(1, count + 1)]
+
+
 def _run_syn_control(context, params, value):
     address = str(params.get("address", "")).strip()
     if not address:
         return "syn control: no address"
-    low = float(params.get("low", 0.0))
-    high = float(params.get("high", 1.0))
-    context.osc().send_raw(address, low + (high - low) * value)
+    values = list(params.get("values") or [])
+    if not values:
+        low = float(params.get("low", 0.0))
+        high = float(params.get("high", 1.0))
+        values = [low + (high - low) * value]
+
+    # A ramp: from the last value this desk sent the address, in steps on
+    # a thread, so the pad returns at once and the scene glides. A control
+    # never sent before, or sent with a different shape, snaps - there is
+    # nothing to glide from, and the app does not say where its sliders are.
+    ramp = float(params.get("ramp", 0.0) or 0.0)
+    start = context.syn.sent_controls.get(address)
+    context.syn.sent_controls[address] = list(values)
+    generation = context.syn.ramp_generation.get(address, 0) + 1
+    context.syn.ramp_generation[address] = generation
+    if ramp > 0.0 and start is not None and len(start) == len(values):
+        link = context.osc()
+        steps = ramp_steps(start, values, ramp)
+        interval = ramp / len(steps)
+
+        def glide() -> None:
+            for step in steps:
+                time.sleep(interval)
+                if context.syn.ramp_generation.get(address) != generation:
+                    return    # a newer press took this control over
+                link.send_raw(address, *step)
+
+        threading.Thread(target=glide, name=f"ramp {address}", daemon=True).start()
+        return None
+    context.osc().send_raw(address, *values)
     return None  # a fader narrating every packet would bury the header
 
 
@@ -750,6 +802,10 @@ register_action(ActionSpec(
         FieldSpec("address", "address", default="/controls/global/slider/1"),
         FieldSpec("low", "low", kind="float", default=0.0),
         FieldSpec("high", "high", kind="float", default=1.0),
+        FieldSpec("values", "values", kind="floats", default="",
+                  hint="a colour: r g b, 0..1 - sent as is, instead of low..high"),
+        FieldSpec("ramp", "ramp", kind="float", default=0.0,
+                  hint="seconds to glide there from the last value sent; 0 snaps"),
     ],
     run=_run_syn_control,
 ))
@@ -869,11 +925,26 @@ def coerce_params(spec: ActionSpec, params: Dict[str, object]) -> Dict[str, obje
                 clean[fld.name] = int(raw)
             elif fld.kind == "float":
                 clean[fld.name] = float(raw)
+            elif fld.kind == "floats":
+                clean[fld.name] = _floats(raw)
             else:
                 clean[fld.name] = str(raw)
         except (TypeError, ValueError):
-            clean[fld.name] = fld.default
+            clean[fld.name] = [] if fld.kind == "floats" else fld.default
     return clean
+
+
+def _floats(raw: object) -> List[float]:
+    """A "floats" field from a file or an editor: a list, or a string of
+    numbers split on spaces or commas. Empty is the empty list."""
+    if raw is None or raw == "":
+        return []
+    if isinstance(raw, (list, tuple)):
+        return [float(v) for v in raw]
+    text = str(raw)
+    for ch in ",[]()":
+        text = text.replace(ch, " ")
+    return [float(v) for v in text.split()]
 
 
 # ---------------------------------------------------------------------------

@@ -20,7 +20,7 @@
     "gamma": 2.2
   },
 
-  // The show. Sixteen cues, nine of them written so far - see
+  // The show. Sixteen cues, twelve of them written so far - see
   // makeMythos26StateMachine. The frame is the stage's, so the pars are
   // placed below with a fit rather than left on the frame's diagonal.
   "pattern": {
@@ -158,14 +158,23 @@
   //            inherits the last one's flash.
   //   controls the scene's own controls to set, by control name as the
   //            scene declares it (folded the way the app addresses it), a
-  //            number each; a toggle is 0 or 1. Sent after the scene. The
-  //            few a cue needs for the look to be the look - not a preset.
+  //            number each - a toggle is 0 or 1 - or [r, g, b] 0..1 for a
+  //            colour control. Sent after the scene. The few a cue needs
+  //            for the look to be the look - not a preset.
   //   modes    what the mode pad changes about the room, by mode number:
-  //            "2" and "3", each the same four fields over the cue. The
-  //            look's own half of a mode - the geode gone blue, the rain a
-  //            downpour - is in src/mythos26.cpp beside the cue; this is
+  //            "2", "3" and, on a cue that has one, "4", each the same
+  //            four fields over the cue. The look's own half of a mode -
+  //            the geode gone blue, the rain a downpour, the churn's next
+  //            palette - is in src/mythos26.cpp beside the cue; this is
   //            the half the executable cannot reach. Mode 1 is the cue.
-  //            The pad steps 1, 2, 3, 1; hitting the cue again is mode 1.
+  //            The pad steps round however many the cue has (three, or
+  //            four for the churn and the nova); hitting the cue again is
+  //            mode 1, and the four numbered pads name one outright.
+  //   pads     the cue's own buttons on the surface, for a control flown
+  //            by hand: a label, the look's knobs to set (`params`), the
+  //            scene's controls to send (`controls`), and a `ramp` in
+  //            seconds for the scene's half to glide over. The look glides
+  //            on its own. See the clouds.
   //
   // A cue with no entry here is the state alone, which is what the empty
   // slots are.
@@ -229,6 +238,66 @@
       "scene": "Vibe Thresholds",
       "media": "361331_medium.mp4",
       "layers": { "flash": "off", "uv": "off" }
+    },
+    "churn": {
+      // Eclipse Churn (scenes/eclipse_churn.synScene) paints Churning in
+      // two colours: rig_color, which the probe sends live - the look's
+      // colour A - and rig_color_2, which nothing sends, so the cue does:
+      // colour B of each palette, as the look has it. black.mp4 because
+      // the churn mixes a little of its media into the paint. Mode 4 is
+      // the rainbow: the paint job off (rig_amount 0 is stock Churning,
+      // its own rainbow) and its palette phasing in time, while the rig
+      // turns its pair through the wheel.
+      "scene": "Eclipse Churn",
+      "media": "black.mp4",
+      "layers": { "flash": "off", "uv": "off" },
+      "controls": { "rig_amount": 1, "rig_contrast": 0.6, "color_phasing": 0,
+                    "rig_color_2": [0.05, 0.10, 1.00] },
+      "modes": {
+        "2": { "controls": { "rig_color_2": [0.05, 0.85, 0.90] } },
+        "3": { "controls": { "rig_color_2": [0.40, 0.08, 0.80] } },
+        "4": { "controls": { "rig_amount": 0, "color_phasing": 1 } }
+      }
+    },
+    "nova": {
+      // Eclipse Nova (scenes/eclipse_nova.synScene): the galaxies are
+      // rig_color, which the probe sends live - the look's galaxy colour -
+      // and the wash is rig_color_2 with auto_second off, which the cue
+      // sends: the palette's wash. base_amount is the ground: 0.35 keeps
+      // the hand palette's dark blue dark; regime 1 (mode 2) is a full
+      // wash, regime 2 (mode 3) is black. Mode 4 lets the scene derive
+      // its own second colour again, so it cycles with the probe.
+      "scene": "Eclipse Nova",
+      "layers": { "flash": "off", "uv": "off" },
+      "controls": { "color_by_hand": 0, "auto_second": 0, "base_amount": 0.35,
+                    "rig_color_2": [1.00, 0.85, 0.15] },
+      "modes": {
+        "2": { "controls": { "rig_color_2": [0.45, 0.75, 1.00], "base_amount": 1.0 } },
+        "3": { "controls": { "rig_color_2": [0.25, 0.55, 1.00], "base_amount": 0.0 } },
+        "4": { "controls": { "auto_second": 1 } }
+      }
+    },
+    "clouds": {
+      // The flight. The scene's auto height is turned off so the pads own
+      // it, and each pad moves the look's target and the scene's control
+      // together - the look glides over its own `glide`, the scene over
+      // the pad's `ramp`, the same two seconds.
+      //
+      // CHECK AGAINST THE SCENE: the scene and its control names below
+      // (height, speed, auto_height) are written from the spec, not from
+      // the scene's scene.json, which is not in this checkout. Fold them
+      // the way the app does (lowercase, no spaces, underscores or
+      // hyphens) and correct them here; nothing else needs to change.
+      "scene": "Cloud Ten",
+      "media": "black.mp4",
+      "layers": { "flash": "off", "uv": "off" },
+      "controls": { "auto_height": 0, "height": 0.45, "speed": 0.25 },
+      "pads": [
+        { "label": "fly low",  "params": { "height": 0.15 }, "controls": { "height": 0.15 }, "ramp": 2.0 },
+        { "label": "fly high", "params": { "height": 0.85 }, "controls": { "height": 0.85 }, "ramp": 2.0 },
+        { "label": "slower",   "params": { "speed": 0.08 },  "controls": { "speed": 0.08 },  "ramp": 2.0 },
+        { "label": "faster",   "params": { "speed": 0.70 },  "controls": { "speed": 0.70 },  "ramp": 2.0 }
+      ]
     }
   }
 }

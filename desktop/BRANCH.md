@@ -1551,6 +1551,50 @@ the grid says a beat is. Starting that stream before `Tk()` cost it a 120ms
 stall on its first beat, Tcl's start-up holding the interpreter; it starts
 after the window now.
 
+### three more cues: the churn, the nova, the clouds
+
+Cues 12 to 14 of `pattern spec.txt`, and three things the spec asked for
+that the show did not have a shape for.
+
+**Palettes are modes, and a cue can have four.** "Three colour palette
+buttons and one that cycles rainbow colours" is four things a pad steps
+through, which is what a mode already was - so `ShowModes::kModeCount` is
+the floor now and a cue with more variants beside it has more, the knob's
+maximum telling the desk how many. The `mode` action already read that
+maximum; four pads beside the step pad name a mode outright (the churn's
+palette buttons, and on every other cue the same pads, the fourth doing
+what the third does), and `Cue.MODE_COUNT` is what the table may name. The
+rainbow is `hue_cycle`: the palette's colours turned through the wheel
+together, so the field's texture is the palette's and only its hue moves.
+
+**The probe is painted, not sampled.** Eclipse Churn and Eclipse Nova take
+their colour from the rig, and a probe reading one point of a two-colour
+noise field sent whichever patch was passing the truss - blue half the
+time on a red-and-blue palette, and on the nova the ground, which is dark
+on purpose. So `devices/synesthesia.json` declares `"space": "probe"` - a
+fifth `NodeSpace` - and a look with a palette paints that node its first
+colour outright. The stock scenes never read it, so nothing else changed.
+The second colour nothing sent, so the cue table sends it: `controls` take
+`[r, g, b]` now, one `syn_control` carrying `values`, three floats in one
+message the way `send_color` sends the probe's - once per palette, and
+re-sent by the mode pad the way every field a mode reaches is.
+
+**A cue's own pads, and a control that glides.** The clouds want height and
+speed flown by hand, two buttons each, lerped. On the rig `height` and
+`speed` are targets `Pattern_Mythos_CloudFlight` glides to over `glide`
+seconds, and a cue can carry `pads` in the table: a label, the look's
+knobs, the scene's controls, and a `ramp` - the control re-sent in steps
+from wherever this desk last put it, on a thread, until it lands. A control
+never sent snaps; the app does not say where its sliders are. The generator
+lays them on the rows above the layers; the viewer has a button each.
+
+**Not verified: the cloud scene.** It is not in the checkout, so its name
+(*Cloud Ten*) and the three control names the cue sends (`height`,
+`speed`, `auto_height`) are written from the spec and marked as such in
+the cue table. If they are wrong the rig's half still works - the pads
+refuse nothing on the rig - and correcting three strings in the table is
+the whole fix.
+
 ---
 
 ## Commits, in order

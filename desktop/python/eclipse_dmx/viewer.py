@@ -32,7 +32,7 @@ from tkinter import colorchooser, simpledialog
 from typing import Dict, List, Optional, Sequence, Tuple, Union
 
 from . import look_presets
-from .config import RELIC_TYPES, Config, cue_actions
+from .config import RELIC_TYPES, Config, cue_actions, cue_pad_actions
 from .controller import Frame, FrameForwarder, ShowController, ShowError
 from .curve_editor import CurveEditor
 from .midi_map import (ACTIONS, Action, ActionContext, Dispatcher, MappingSet,
@@ -136,15 +136,28 @@ STATE_GROUPS: List[Tuple[str, List[Tuple[str, Tuple[str, str]]]]] = [
         ("slot 9", ("state", "slot_9")),
         ("10 canyon", ("state", "canyon")),
         ("slot 11", ("state", "slot_11")),
-        ("slot 12", ("state", "slot_12")),
-        ("slot 13", ("state", "slot_13")),
-        ("slot 14", ("state", "slot_14")),
+        ("12 churn", ("state", "churn")),
+        ("13 nova", ("state", "nova")),
+        ("14 clouds", ("state", "clouds")),
         ("slot 15", ("state", "slot_15")),
         ("slot 16", ("state", "slot_16")),
         # the mode pad: steps the running cue through its modes, and fires
         # what the cue table says the room does in each - see the `mode`
-        # action in midi_map, which this runs
+        # action in midi_map, which this runs. Then a button per mode
+        # naming one - the churn's and the nova's palette buttons, four
+        # because that is the most any cue has; on a cue with three the
+        # fourth does what the third does.
         ("mode", ("mode", "")),
+        ("mode 1", ("mode", "1")),
+        ("mode 2", ("mode", "2")),
+        ("mode 3", ("mode", "3")),
+        ("mode 4", ("mode", "4")),
+        # the cues' own pads - the clouds' height and speed - by cue and
+        # index into the cue table's `pads`; see ViewerApp._fire_pad
+        ("fly low", ("pad", "clouds:0")),
+        ("fly high", ("pad", "clouds:1")),
+        ("slower", ("pad", "clouds:2")),
+        ("faster", ("pad", "clouds:3")),
     ]),
     # The static pair moved here with the machine that holds them - the rest
     # of the generic list is left to the generated buttons.
@@ -1918,11 +1931,16 @@ class ViewerApp:
                     self.show.set_link_mode(value)
             elif kind == "mode":
                 # the pad's action, run the way a pad runs it, so the button
-                # and the surface cannot disagree about what a mode does
+                # and the surface cannot disagree about what a mode does;
+                # a value names a mode, none steps to the next
                 spec = ACTIONS["mode"]
-                line = spec.run(self._dispatcher.context, coerce_params(spec, {}), 1.0)
+                params = coerce_params(spec, {"mode": int(value)} if value else {})
+                line = spec.run(self._dispatcher.context, params, 1.0)
                 if line:
                     self._say(line)
+            elif kind == "pad":
+                state, _, index = value.partition(":")
+                self._fire_pad(state, int(index))
 
         self._guard(apply, kind)
         self._refresh_buttons()
@@ -1957,6 +1975,30 @@ class ViewerApp:
                 line = spec.run(context, action.params, 1.0)
             except Exception as error:  # fenced on purpose; see the docstring
                 self._say(f"cue {state}: {error}")
+                continue
+            if line:
+                self._say(line)
+
+    def _fire_pad(self, state: str, index: int) -> None:
+        """One of a cue's own pads, off the cue table, through the same
+        registry the surface fires it through - see Cue.pad_actions. Not
+        gated on the cue being up: the knob it sets is aimed at the running
+        look and refused if that look has no such knob, which is the same
+        harmless no the surface gets."""
+        context = self._dispatcher.context
+        entries = cue_pad_actions(self.config, state, index)
+        if not entries:
+            self._say(f"pad: {state} has no pad {index}")
+            return
+        for entry in entries:
+            action = Action.from_dict(entry)
+            spec = action.spec
+            if spec is None:
+                continue
+            try:
+                line = spec.run(context, action.params, 1.0)
+            except Exception as error:  # fenced on purpose, as _fire_cue is
+                self._say(f"pad {state}: {error}")
                 continue
             if line:
                 self._say(line)
