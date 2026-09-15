@@ -78,8 +78,10 @@ give me three color palette buttons and one that cycles rainbow colors, and make
 synesthesia - Eclipse Churn
 
 13. e-nova
-pattern - read the custom eclipse nova synesthesia pattern for reference, create matching colors
+pattern - eclipse nova pattern with a dark blue color with yellow, cyan color by hand palette. make our eclipse os pattern match shader a bit.
 match e-churn with color options
+give me a few other palette options.
+synesthesia - Eclipse Nova
 
 14. cloud tun
 pattern - flying through sky, yellow and pink sunset sky with dark shadow clouds underneath. check pattern in synesthesia.
