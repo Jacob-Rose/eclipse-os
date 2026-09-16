@@ -3242,10 +3242,12 @@ class TheShowCues(unittest.TestCase):
         self.assertEqual(cues["scaffold"].media, "")
         # the clouds' scene reads its media, and black.mp4 left it black
         self.assertEqual(cues["clouds"].media, "white.mp4")
-        # the house states either side of the set take both layers off
+        # the house states either side of the set take both layers off, and
+        # put the screen on black the way the rain opens - so no video plays
         for state in ("white", "blackout"):
             self.assertEqual(cues[state].layers, {"flash": "off", "uv": "off"}, state)
-            self.assertEqual(cues[state].scene, "", state)
+            self.assertEqual(cues[state].scene, "VideoFX_1", state)
+            self.assertEqual(cues[state].media, "black.mp4", state)
         self.assertEqual(cues["glitch"].media, "alien-message.mp4")
         self.assertEqual(cues["neuron"].scene, "Neuron Proximitors")
 
@@ -3349,12 +3351,19 @@ class TheShowCues(unittest.TestCase):
     # -- a cue's own pads ----------------------------------------------------
 
     def test_a_cues_pads_move_the_look_and_ramp_the_scene(self):
-        """The clouds' four pads: each sets the look's target - it glides on
-        its own - and sends the scene's control with a ramp, the rig first."""
+        """The clouds' height and speed pads: each sets the look's target -
+        it glides on its own - and sends the scene's control with a ramp,
+        the rig first. The last two are the scene's auto height, a toggle
+        with nothing on the rig and no ramp."""
         clouds = self.config.cues["clouds"]
         self.assertEqual([pad.label for pad in clouds.pads],
-                         ["fly low", "fly high", "slower", "faster"])
+                         ["fly low", "fly high", "slower", "faster", "by hand", "auto"])
         self.assertEqual(clouds.controls["auto_height"], 0.0)
+        for index, value in ((4, 0.0), (5, 1.0)):
+            self.assertEqual(cue_pad_actions(self.config, "clouds", index),
+                             [{"action": "syn_control",
+                               "params": {"address": "/controls/scene/autoheight",
+                                          "low": value, "high": value}}])
         entries = cue_pad_actions(self.config, "clouds", 1)
         self.assertEqual([e["action"] for e in entries], ["param", "syn_control"])
         # the look's knob is `height`; the scene's is `manual_height`, its
@@ -3529,14 +3538,14 @@ class TheShowPage(unittest.TestCase):
                          ["mythos26 - mode"] + [m["label"] for m in named])
 
     def test_a_cues_own_pads_on_the_seventh_row(self):
-        """The clouds' four, above the layers, each the cue table's pad as
+        """The clouds' six, above the layers, each the cue table's pad as
         the surface fires it."""
         pads = self._pads("mythos26 - clouds ")
         self.assertEqual([m["label"] for m in pads],
                          [f"mythos26 - clouds {label}" for label in
-                          ("fly low", "fly high", "slower", "faster")])
+                          ("fly low", "fly high", "slower", "faster", "by hand", "auto")])
         self.assertEqual([m["trigger"]["number"] for m in pads],
-                         [launchpad.pad(7, c) for c in (1, 2, 3, 4)])
+                         [launchpad.pad(7, c) for c in (1, 2, 3, 4, 5, 6)])
         for index, mapping in enumerate(pads):
             expected = [midi_map.Action.from_dict(entry).to_dict()
                         for entry in cue_pad_actions(self.config, "clouds", index)]

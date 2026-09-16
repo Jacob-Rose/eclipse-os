@@ -846,9 +846,9 @@ namespace edmx
     class Pattern_Mythos_Nova : public Pattern_MythosLook
     {
     public:
-        ecore::HSV base{225.0f, 1.0f, 0.22f};       // the dark blue ground
+        ecore::HSV base{49.0f, 0.85f, 0.35f};       // the ground: the wash, dimmed - see the cue's base_amount
         ecore::HSV galaxy{182.0f, 0.90f, 1.0f};     // cyan
-        ecore::HSV wash{48.0f, 0.90f, 1.0f};        // yellow
+        ecore::HSV wash{49.0f, 0.85f, 1.0f};        // yellow: the scene's (1.00, 0.85, 0.15)
 
         /// How much of the wash shows between the galaxies, 0..1.
         float washAmount{0.55f};

@@ -387,9 +387,50 @@ named. See the readme on the three media contracts.
 `blackout`. Plain flat looks (`Pattern_Mythos_House`) on the show base so
 they have the mode and intensity knobs every pad expects, with cue entries
 that take both layers off - a flash left running under a blackout is not a
-blackout. The placeholder look is gone with the last two slots; the tests
-that wanted a state with no cue take the white's entry away for the check.
-The pad maps are regenerated.
+blackout - and put the screen on `VideoFX_1` with `black.mp4`, the same
+"no media" the rain opens on, so nothing plays either side of the set. The
+placeholder look is gone with the last two slots; the tests that wanted a
+state with no cue take the white's entry away for the check. The pad maps
+are regenerated.
+
+### the colours, lined up against their scenes
+
+A pass over every look whose scene takes the rig's colour, converting each
+side to the other's terms. Modes 2 and 3 of the churn and the nova matched
+to the digit; what did not:
+
+- **churn, mode 1**: the look's colour B was `HSV(237, .95, .85)`, the
+  scene's own blue - and what the cue table sends as `rig_color_2` - is
+  `(0.05, 0.10, 1.00)`, the same hue at full value. The look is at 1.0 now.
+- **nova, mode 1**: the look had a *dark blue* ground under a yellow wash.
+  The scene has no ground of its own: its background is
+  `rig_color_2 * base_amount`, so with the cue's 0.35 it was showing a dim
+  yellow while the rig showed dark blue. The look's `base` is the wash
+  dimmed to 0.35 now, and the cue table's note - which said 0.35 "keeps the
+  dark blue dark" - says what the knob does. The wash itself was
+  `HSV(48, .90, 1)` against a sent `(1.00, 0.85, 0.15)`; `HSV(49, .85, 1)`.
+- **nova, mode 4**: `auto_second` on makes the scene's wash the
+  *complement* of the probe, and the hand palette's wash is 46° short of
+  that - cyan galaxies got a red wash on screen and a yellow one on the rig.
+  The look moves its galaxies to `HSV(229, .90, 1)` for the rainbow, the
+  blue whose complement is the palette's yellow, so the two turn together.
+- **neuron**, **blown**: the comments named the scenes' hues (168..222,
+  321/119) and the numbers under them were 232, 315 and 120. Numbers match
+  the comments now.
+
+Left as they are, on purpose: the geode's rim light is the complement of
+the probe (cyan under red, orange under mode 2's blue) and the rig has no
+rim; the nova's mode 2 ground is deep blue on the rig and a full sky-blue
+wash on screen, the same family at different depths; the churn's mode 4
+hands the scene its own rainbow while the rig turns a two-colour pair,
+which is the mode's design. The stock scenes - the neuron, the tunnel, the
+flame, the clouds and the rest - are checked against their shipped colours
+where the comments record them and not otherwise.
+
+The clouds cue grew two pads, `by hand` and `auto`, sending the scene's
+`auto_height` 0 and 1 - the cue opens by hand, and `auto` gives the height
+back to the scene's own flight. The rig has no auto height; it holds its
+last target, and the height pads still move it.
 
 ### commissioning
 

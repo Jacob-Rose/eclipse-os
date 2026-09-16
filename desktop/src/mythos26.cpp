@@ -1704,7 +1704,7 @@ std::unique_ptr<StateMachinePattern> edmx::makeMythos26StateMachine()
         //    2 is the same field slowed and widened; 3 quick and busy.
         showLook<NoiseWash>("neuron", [](NoiseWash& look) {
             look.colorA = HSV(170.0f, 0.90f, 1.00f);
-            look.colorB = HSV(232.0f, 1.00f, 0.40f);
+            look.colorB = HSV(222.0f, 1.00f, 0.40f);
         }, {
             [](NoiseWash& look) { look.speed = 0.35f; look.scale = 1.6f; },
             [](NoiseWash& look) { look.speed = 2.5f;  look.scale = 0.7f; },
@@ -1785,10 +1785,10 @@ std::unique_ptr<StateMachinePattern> edmx::makeMythos26StateMachine()
         //    321) to green (hue 119) at full motion. 2 lifts the base; 3 is
         //    the old cue, dark until the pop.
         showLook<BusWash>("blown", [](BusWash& look) {
-            look.color = HSV(315.0f, 0.95f, 1.0f);
+            look.color = HSV(321.0f, 0.95f, 1.0f);
             look.channel = AudioChannel::MidPresence;
             look.floorLevel = 0.65f;
-            look.hitColor = HSV(120.0f, 1.0f, 1.0f);
+            look.hitColor = HSV(119.0f, 1.0f, 1.0f);
             look.hit = 1.0f;
             look.hitDecay = 0.45f;
             look.afterglow = 1.0f;
@@ -1849,7 +1849,7 @@ std::unique_ptr<StateMachinePattern> edmx::makeMythos26StateMachine()
         //     half). The probe sends colour A; the cue table sends colour B.
         showLook<NoiseWash>("churn", [](NoiseWash& look) {
             look.colorA = HSV(0.0f, 0.95f, 1.00f);
-            look.colorB = HSV(237.0f, 0.95f, 0.85f);
+            look.colorB = HSV(237.0f, 0.95f, 1.00f);
             look.channel = AudioChannel::Level;
             look.follow = 0.6f;
             look.floorLevel = 0.35f;
@@ -1862,12 +1862,17 @@ std::unique_ptr<StateMachinePattern> edmx::makeMythos26StateMachine()
         }),
         // 13. the nova: galaxies on a wash over a dark ground, swelling
         //     with the bass presence the way the scene's do. 1 is the
-        //     palette chosen by hand - cyan galaxies, a yellow wash, a dark
-        //     blue ground. 2 is Nova's own regime 1, orange on sky blue
-        //     over deep blue; 3 its regime 2, violet with an azure wash on
-        //     near-black; 4 the hand palette turned through the wheel with
-        //     the scene deriving its own second colour. The probe sends the
-        //     galaxy colour; the cue table sends the wash.
+        //     palette chosen by hand - cyan galaxies, a yellow wash, and the
+        //     ground the wash dimmed, which is the only ground the scene can
+        //     show: its background is rig_color_2 * base_amount, so the cue
+        //     table's 0.35 is this base's value. 2 is Nova's own regime 1,
+        //     orange on sky blue over deep blue; 3 its regime 2, violet with
+        //     an azure wash on near-black; 4 the rainbow: the scene derives
+        //     its own second colour again - the complement of what the probe
+        //     sends - so the galaxies go to the blue whose complement is the
+        //     palette's yellow, and the three turn through the wheel with the
+        //     wash staying opposite the galaxies the way the scene's does.
+        //     The probe sends the galaxy colour; the cue table sends the wash.
         showLook<Nova>("nova", {}, {
             [](Nova& look) {
                 look.galaxy = HSV(37.0f, 0.80f, 1.00f);
@@ -1880,7 +1885,7 @@ std::unique_ptr<StateMachinePattern> edmx::makeMythos26StateMachine()
                 look.base = HSV(250.0f, 0.80f, 0.08f);
                 look.washAmount = 0.35f;
             },
-            [](Nova& look) { look.hueCycle = 0.06f; },
+            [](Nova& look) { look.galaxy = HSV(229.0f, 0.90f, 1.00f); look.hueCycle = 0.06f; },
         }),
         // 14. the clouds: a sunset down the stage, yellow overhead into
         //     pink at the horizon, and the deck below it in shadow,

@@ -296,10 +296,14 @@
       // Eclipse Nova (scenes/eclipse_nova.synScene): the galaxies are
       // rig_color, which the probe sends live - the look's galaxy colour -
       // and the wash is rig_color_2 with auto_second off, which the cue
-      // sends: the palette's wash. base_amount is the ground: 0.35 keeps
-      // the hand palette's dark blue dark; regime 1 (mode 2) is a full
-      // wash, regime 2 (mode 3) is black. Mode 4 lets the scene derive
-      // its own second colour again, so it cycles with the probe.
+      // sends: the palette's wash. base_amount is the ground, and the
+      // ground is the wash dimmed - the scene's background is
+      // rig_color_2 * base_amount, nothing else - so 0.35 is the hand
+      // palette's dim yellow, and the look's `base` is the same colour at
+      // the same value; regime 1 (mode 2) is a full wash, regime 2 (mode
+      // 3) is black. Mode 4 lets the scene derive its own second colour
+      // again - the complement of the probe - so it cycles with it; the
+      // look moves its galaxies to the blue whose complement is the yellow.
       "scene": "Eclipse Nova",
       "layers": { "flash": "off", "uv": "off" },
       "controls": { "color_by_hand": 0, "auto_second": 0, "base_amount": 0.35,
@@ -344,22 +348,36 @@
       "scene": "Cloud Ten",
       "media": "white.mp4",
       "layers": { "flash": "off", "uv": "off" },
+      //
+      // The last two pads are the scene's auto height, off and on: `by hand`
+      // is the cue as it opens - the height pads own it - and `auto` hands
+      // it back to the scene's own flight. A toggle, so no ramp. Only the
+      // scene has an auto height; the rig sits at its last target either
+      // way, so the height pads still move it.
       "controls": { "auto_height": 0, "manual_height": 0.45, "speed": 0.25 },
       "pads": [
         { "label": "fly low",  "params": { "height": 0.15 }, "controls": { "manual_height": 0.15 }, "ramp": 2.0 },
         { "label": "fly high", "params": { "height": 0.85 }, "controls": { "manual_height": 0.85 }, "ramp": 2.0 },
         { "label": "slower",   "params": { "speed": 0.08 },  "controls": { "speed": 0.08 },  "ramp": 2.0 },
-        { "label": "faster",   "params": { "speed": 0.70 },  "controls": { "speed": 0.70 },  "ramp": 2.0 }
+        { "label": "faster",   "params": { "speed": 0.70 },  "controls": { "speed": 0.70 },  "ramp": 2.0 },
+        { "label": "by hand",  "controls": { "auto_height": 0 } },
+        { "label": "auto",     "controls": { "auto_height": 1 } }
       ]
     },
     "white": {
       // The house lights, after the show: white at half, nothing riding
-      // over it. No scene - the screen is left where the last cue put it.
+      // over it. The screen goes to VideoFX_1 on black - the app's only
+      // "no media", the same as the rain opens on - so no video plays.
+      "scene": "VideoFX_1",
+      "media": "black.mp4",
       "layers": { "flash": "off", "uv": "off" }
     },
     "blackout": {
       // Before the show: everything off, the layers with it - a flash left
-      // on from the last cue is not a blackout.
+      // on from the last cue is not a blackout - and the screen on black
+      // the same way.
+      "scene": "VideoFX_1",
+      "media": "black.mp4",
       "layers": { "flash": "off", "uv": "off" }
     }
   }

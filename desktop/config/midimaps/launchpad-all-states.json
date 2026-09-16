@@ -926,6 +926,19 @@
             "layer": "uv",
             "name": "off"
           }
+        },
+        {
+          "action": "syn_scene",
+          "params": {
+            "scene": "VideoFX_1",
+            "preset": ""
+          }
+        },
+        {
+          "action": "syn_media",
+          "params": {
+            "name": "black.mp4"
+          }
         }
       ],
       "enabled": true,
@@ -965,6 +978,19 @@
           "params": {
             "layer": "uv",
             "name": "off"
+          }
+        },
+        {
+          "action": "syn_scene",
+          "params": {
+            "scene": "VideoFX_1",
+            "preset": ""
+          }
+        },
+        {
+          "action": "syn_media",
+          "params": {
+            "name": "black.mp4"
           }
         }
       ],
@@ -3689,6 +3715,54 @@
             "high": 0.7,
             "values": [],
             "ramp": 2.0
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "mythos26",
+      "colour": 37
+    },
+    {
+      "label": "mythos26 - clouds by hand",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 75
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "syn_control",
+          "params": {
+            "address": "/controls/scene/autoheight",
+            "low": 0.0,
+            "high": 0.0,
+            "values": [],
+            "ramp": 0.0
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "mythos26",
+      "colour": 37
+    },
+    {
+      "label": "mythos26 - clouds auto",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 76
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "syn_control",
+          "params": {
+            "address": "/controls/scene/autoheight",
+            "low": 1.0,
+            "high": 1.0,
+            "values": [],
+            "ramp": 0.0
           }
         }
       ],
