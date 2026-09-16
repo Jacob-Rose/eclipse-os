@@ -2152,6 +2152,11 @@ class ViewerApp:
         while self._midi_events:
             event = self._midi_events.popleft()
             last_event = event
+            # Mixxx's notes are on this stream too - the tempo note on every
+            # beat, the VU dozens of times a second - and neither the map nor
+            # a pad being learned is for them. See MidiEvent.origin.
+            if not event.is_for_the_map:
+                continue
             # Either of the panel's two armed modes takes the event whole:
             # a pad being learned must not also fire, and neither must one
             # being asked about.

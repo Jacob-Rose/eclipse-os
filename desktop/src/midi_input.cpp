@@ -319,6 +319,32 @@ std::vector<MidiPortInfo> MidiInput::enumeratePorts()
 
 #endif
 
+bool MidiInput::isClockNote(unsigned char status, unsigned char data1) const
+{
+    if ((status & 0xF0) != 0x90 || !followNotes.load())
+    {
+        return false;
+    }
+    const int wantedChannel = beatChannel.load();
+    if (wantedChannel >= 0 && static_cast<int>(status & 0x0F) + 1 != wantedChannel)
+    {
+        return false;
+    }
+    const int note = static_cast<int>(data1);
+    if (note == bpmNote.load() || note == beatNote.load())
+    {
+        return true;
+    }
+    for (int index = 0; index < kVuSourceCount; ++index)
+    {
+        if (vuNotes[index].load() == note)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
 bool MidiInput::markPads(const std::string& name, bool wholeDevice)
 {
     // The same match the ignore list uses: a fragment of the port's name.
@@ -555,6 +581,7 @@ std::vector<MidiMessage> MidiInput::drainMonitor(unsigned long long& outDropped)
         message.status = static_cast<unsigned char>(packed & 0xFF);
         message.data1  = static_cast<unsigned char>((packed >> 8) & 0xFF);
         message.data2  = static_cast<unsigned char>((packed >> 16) & 0xFF);
+        message.origin = static_cast<MidiMessage::Origin>((packed >> 24) & 0x03);
         out.push_back(message);
     }
 
@@ -569,9 +596,22 @@ void MidiInput::handleMessage(unsigned char status, unsigned char data1, unsigne
     // the one note you are trying to find; `midi status` counts them instead.
     if (monitoring.load() && status < 0xF0 && status >= 0x80)
     {
+        // The origin rides in the top byte, so the desk can keep Mixxx's
+        // notes out of its map: with a pad controller on this input, a
+        // message that is not the controller's is the beat's - and with
+        // none, a note the clock is about to take (the tempo, the beat, a
+        // VU level, on the beat channel) is the beat's whoever sent it.
+        // Mixxx says 52 on every beat, and 52 is also the flash pad.
+        const bool pads = fromPads || allPads.load();
+        unsigned int origin = pads ? 1u : (padsClient.load() >= 0 ? 2u : 0u);
+        if (origin == 0u && isClockNote(status, data1))
+        {
+            origin = 2u;
+        }
         const unsigned int packed = static_cast<unsigned int>(status)
                                   | (static_cast<unsigned int>(data1) << 8)
-                                  | (static_cast<unsigned int>(data2) << 16);
+                                  | (static_cast<unsigned int>(data2) << 16)
+                                  | (origin << 24);
 
         const unsigned long long slot = monitorWrites.load();
         monitorRing[slot % kMonitorSlots].store(packed);

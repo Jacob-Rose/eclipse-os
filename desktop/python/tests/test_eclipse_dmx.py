@@ -6221,15 +6221,19 @@ class TheHeadlessPads(unittest.TestCase):
         pads.open()
         try:
             self.assertIn("monitor True", rig.log)
-            # the geode's pad - note 12 - is the whole cue: the state, the
-            # layers, the scene. Queued on the reader thread, fired by the pump.
-            pads.on_midi("ch=1 note_on 12 127")
+            # Mixxx's tempo note first - 52, the flash pad's number - which
+            # must fire nothing; then the geode's pad, note 12, the whole
+            # cue: the state, the layers, the scene. Queued on the reader
+            # thread, fired by the pump.
+            pads.on_midi("ch=1 note_on 52 78 from=beat")
+            pads.on_midi("ch=1 note_on 12 127 from=pads")
             deadline = time.monotonic() + 2.0
             while "state geode" not in rig.log and time.monotonic() < deadline:
                 time.sleep(0.02)
         finally:
             pads.close()
         self.assertIn("state geode", rig.log)
+        # once, from the cue - not from Mixxx's 52 as well
         self.assertEqual(rig.layers["flash"].moved, ["flash"])
         self.assertIn(("scene", "Eclipse Voronoi", None), link.calls)
 
@@ -6258,6 +6262,19 @@ class TheMidiMap(unittest.TestCase):
         rig, link = _RecorderRig(), _RecorderLink()
         context = midi_map.ActionContext(show=rig, osc_factory=lambda: link)
         return midi_map.Dispatcher(midi_map.MappingSet(mappings), context), rig, link
+
+    def test_a_line_says_where_it_came_from(self):
+        """Mixxx sends its tempo note, 52, on every beat, and 52 is also the
+        flash pad. The executable says which was which; the map fires on
+        the pad's and on an input that cannot tell, never on the beat's."""
+        pad = midi_map.parse_midi_line("ch=1 note_on 52 127 from=pads")
+        beat = midi_map.parse_midi_line("ch=1 note_on 52 78 from=beat")
+        plain = midi_map.parse_midi_line("ch=1 note_on 52 127")
+        self.assertEqual((pad.origin, beat.origin, plain.origin), ("pads", "beat", ""))
+        self.assertTrue(pad.is_for_the_map)
+        self.assertFalse(beat.is_for_the_map)
+        self.assertTrue(plain.is_for_the_map)
+        self.assertIsNone(midi_map.parse_midi_line("ch=1 note_on 52 127 elsewhere"))
 
     def test_a_monitor_line_parses(self):
         event = midi_map.parse_midi_line("ch=1 cc 40 127")

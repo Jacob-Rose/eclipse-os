@@ -108,6 +108,16 @@ namespace edmx
         unsigned char data1{0};
         unsigned char data2{0};
 
+        /// Where it came from, when the input can tell: `Pads` is the pad
+        /// controller, `Beat` is any other source while a pad controller is
+        /// on this input - Mixxx, that is - and `Unknown` is an input with
+        /// no pad controller, where everything is everything. A desk
+        /// running a map fires it off Pads and Unknown, never Beat: Mixxx
+        /// sends its tempo note on every beat, and the pad that happens to
+        /// share the number must not fire with it.
+        enum class Origin : unsigned char { Unknown = 0, Pads = 1, Beat = 2 };
+        Origin origin{Origin::Unknown};
+
         int channel() const { return (status & 0x0F) + 1; }
         int kind() const { return status & 0xF0; }
     };
@@ -260,6 +270,12 @@ namespace edmx
 
     private:
         void onBeat(double when, bool fromNote);
+
+        /// Whether a note-on is one the clock takes: the tempo, the beat or
+        /// a VU note on the beat channel. For the monitor's origin, so a
+        /// desk with no pad controller to tell Mixxx from still keeps
+        /// Mixxx's notes out of its map.
+        bool isClockNote(unsigned char status, unsigned char data1) const;
 
         /// Whether `name` is a pad controller - see setPads - and if so
         /// remembers it: as the whole device when the backend opened it

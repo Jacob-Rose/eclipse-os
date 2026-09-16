@@ -89,6 +89,17 @@ class MidiEvent:
     channel: int   # 1..16
     data1: int     # note or controller or program number
     data2: int     # velocity or value; 0 for program change
+    #: Where it came from, when the executable can tell: "pads" is the pad
+    #: controller, "beat" is any other source while a pad controller is on
+    #: the input - Mixxx - and "" is an input with no pad controller. A map
+    #: fires off "pads" and "", never "beat": Mixxx sends its tempo note, 52,
+    #: on every beat, and the flash pad that shares the number must not fire
+    #: with it. See `is_for_the_map`.
+    origin: str = ""
+
+    @property
+    def is_for_the_map(self) -> bool:
+        return self.origin != "beat"
 
     @property
     def value(self) -> float:
@@ -109,14 +120,21 @@ def parse_midi_line(payload: str) -> Optional[MidiEvent]:
     not a message - so a None here is normal traffic, not an error.
     """
     parts = payload.split()
-    if len(parts) != 4 or not parts[0].startswith("ch="):
+    # four words, and a fifth when the executable can say where it came from
+    if len(parts) not in (4, 5) or not parts[0].startswith("ch="):
         return None
+    origin = ""
+    if len(parts) == 5:
+        if not parts[4].startswith("from="):
+            return None
+        origin = parts[4][len("from="):]
     try:
         return MidiEvent(
             kind=parts[1],
             channel=int(parts[0][len("ch="):]),
             data1=int(parts[2]),
             data2=int(parts[3]),
+            origin=origin,
         )
     except ValueError:
         return None

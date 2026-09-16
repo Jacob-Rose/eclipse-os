@@ -454,6 +454,18 @@ one device, everything on it is pads. `midi status` says `pads=yes`; the
 midi selftest sends 52 and 50 off the pads and checks the clock did not
 move.
 
+**And Mixxx was pressing the flash pad.** The other half of the same
+collision, and the one that showed as "flash comes back on while playing
+though I pressed off": the desk's map runs off the monitor stream, which
+carries everything on the input - and Mixxx says 52 on every beat, which
+is the `flash flash` binding. The monitor line now says where a message
+came from (`from=pads`, `from=beat`), and both desks - the viewer and the
+headless pads - fire the map on the pads' lines and never the beat's. On
+an input with no pad controller to tell the two apart, a note the clock
+takes is the beat's whoever sent it, so a desk with the Launchpad left in
+the case still does not get its flash pressed by the tempo. The selftest
+checks all three origins.
+
 **`--headless` runs the pads now.** It dropped to `run`/`osc`, which had
 no map - a set with no window was a set with a dead controller.
 `eclipse_dmx/pads.py` is the viewer's midi half with the window taken

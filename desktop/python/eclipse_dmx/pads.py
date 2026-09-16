@@ -79,7 +79,8 @@ class HeadlessPads:
     def on_midi(self, payload: str) -> None:
         """A `MIDI-IN` line. Parsed and queued; nothing fires here."""
         event = parse_midi_line(payload)
-        if event is not None:
+        # Mixxx's notes are on this stream too; the map is not for them.
+        if event is not None and event.is_for_the_map:
             self._events.append(event)
 
     # -- lifecycle ---------------------------------------------------------

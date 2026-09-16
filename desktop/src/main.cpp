@@ -1206,6 +1206,29 @@ namespace
             check("pads.tempo_note_is_a_pad", clock.getBpm(), kBpm, 0.5);
             check("pads.beat_note_is_a_pad", static_cast<double>(midi.getBeats()), kBeats, 0.0);
 
+            // And the monitor says which was which, so the desk's map fires
+            // on the pad and not on Mixxx's tempo note that shares its
+            // number. With no pad controller to tell them apart, a note the
+            // clock takes is still the beat's, and a note it does not is
+            // fair game for the map.
+            midi.setMonitor(true);
+            midi.handleMessage(0x90, 52, 78, end + 0.20);                     // Mixxx, unknown source
+            midi.handleMessage(0x90, 52, 127, end + 0.21, /*fromPads*/ true); // the flash pad
+            midi.handleMessage(0x90, 12, 127, end + 0.22);                    // a pad, unknown source
+            unsigned long long droppedLines = 0;
+            const std::vector<MidiMessage> seen = midi.drainMonitor(droppedLines);
+            midi.setMonitor(false);
+            check("monitor.three_lines", static_cast<double>(seen.size()), 3.0, 0.0);
+            if (seen.size() == 3)
+            {
+                check("monitor.tempo_note_is_the_beats",
+                      static_cast<double>(seen[0].origin == MidiMessage::Origin::Beat), 1.0, 0.0);
+                check("monitor.pad_is_pads",
+                      static_cast<double>(seen[1].origin == MidiMessage::Origin::Pads), 1.0, 0.0);
+                check("monitor.other_note_is_unknown",
+                      static_cast<double>(seen[2].origin == MidiMessage::Origin::Unknown), 1.0, 0.0);
+            }
+
             // Half a beat later the envelope should be half a beat in, which is
             // what a pattern actually reads.
             check("mixxx.phase_mid_beat", clock.timeSinceBeat(end + (kPeriod / 2.0)),
@@ -5512,6 +5535,16 @@ int main(int argc, char** argv)
                      << " " << describeMidiKind(message.kind())
                      << " " << static_cast<int>(message.data1)
                      << " " << static_cast<int>(message.data2);
+                // Said only when the input can tell, so an old desk reading
+                // four words still reads four. See MidiMessage::Origin.
+                if (message.origin == MidiMessage::Origin::Pads)
+                {
+                    line << " from=pads";
+                }
+                else if (message.origin == MidiMessage::Origin::Beat)
+                {
+                    line << " from=beat";
+                }
                 emit(line.str());
             }
             if (dropped > 0)

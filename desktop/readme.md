@@ -2217,6 +2217,30 @@ sitting there sending pad hits is not connected to it and never will be unless
 somebody wires it up on purpose. `ignore` still applies to what `auto` would
 subscribe to.
 
+##### the pad controller, on the same input as the beat
+
+The Launchpad is the opposite case: it *is* wired up on purpose - the
+launcher subscribes it on the same published port Mixxx connects to - and
+its notes are wanted, just not by the clock. A Launchpad X in Programmer mode
+sends the grid as notes 11..88 on channel 1; the flash pad is 52, and 52 off
+Mixxx is the tempo note. Two things have to hold and both are `midi.pads`'s
+job (a list of name fragments, `["Launchpad"]` by default):
+
+- **A pad never moves the clock.** Every sequencer event carries its source
+  client, and one from a port matching `pads` is a pad whatever its number:
+  recorded for the monitor, never a tick, a beat, a tempo or a VU level. A
+  backend that opened the pad controller as its one device treats all of it
+  so. Without this, pressing `flash` set the rig to 177bpm.
+- **Mixxx never presses a pad.** The monitor line says where a message came
+  from - `MIDI-IN ch=1 note_on 52 127 from=pads`, `... from=beat` - and the
+  desk's map fires on the pads' and never on the beat's. With no pad
+  controller on the input to tell them apart, a note the clock takes (the
+  tempo, the beat, the VU notes on the beat channel) is the beat's whoever
+  sent it. Without this, Mixxx's 52 on every beat pressed `flash` on every
+  beat, and `flash off` did not stay pressed.
+
+`midi status` says `pads=yes` when the input has one.
+
 ##### the full block
 
 ```json
@@ -2224,6 +2248,7 @@ subscribe to.
   "enabled": true,
   "port": "loopMIDI",
   "ignore": ["Traktor", "Kontrol"],
+  "pads": ["Launchpad"],
   "clock": true,
   "notes": true,
   "beat_note": 50,
