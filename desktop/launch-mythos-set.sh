@@ -58,15 +58,17 @@ OSC_ADDRESS="${ECLIPSE_OSC_ADDRESS:-Jakes-Mac-mini.local:6000}"
 
 # The way back: Synesthesia's audio engine, which is the source for this show.
 # Its FFT is the only thing in the room doing real analysis, so the levels, the
-# transients, the presence *and* the beat come back in on this port and land on
-# the channels config/oscmaps/synesthesia.json binds them to - see "audio" in
-# config/mythos26.json. Turn it on in the app: Settings > OSC > Output Audio
+# transients and the presence come back in on this port and land on the
+# channels config/oscmaps/synesthesia.json binds them to - see "audio" in
+# config/mythos-show.json. Not the beat: the show's config has "bpm" off, so
+# the grid is Mixxx's on the MIDI cable - the detector proved unreliable for
+# tempo. Turn the analysis on in the app: Settings > OSC > Output Audio
 # Variables, with the output port set to this number and the output IP naming
 # this machine.
 #
-# --no-osc-in is the fallback if it will not start: the beat goes back to
-# Mixxx's grid on the MIDI cable, the additive hit layers go dark, and every
-# cue runs as it did.
+# --no-osc-in is the fallback if it will not start: the presence cues sit at
+# their floors, the additive hit layers go dark, and every cue runs as it did
+# - the beat was already the cable's.
 OSC_IN_PORT="${ECLIPSE_OSC_IN_PORT:-7000}"
 
 # The controller, for the cue pads and the midi map's learn button.

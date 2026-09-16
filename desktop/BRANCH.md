@@ -432,6 +432,20 @@ The clouds cue grew two pads, `by hand` and `auto`, sending the scene's
 back to the scene's own flight. The rig has no auto height; it holds its
 last target, and the height pads still move it.
 
+### the beat goes back to mixxx
+
+Synesthesia's detector proved unreliable for tempo, so the show's config
+runs the split the audio block always allowed and nothing had used:
+`audio.bpm` off. The analysis - levels, transients, presence, the kicks
+the cues read - still comes in over OSC and fills the bus; the beat is
+Mixxx's grid on the MIDI cable, which is wired to the clock again in this
+mode. `midi status` says `beat_from=midi audio_from=synesthesia`. One
+config line and its comments; the executable already did both halves. The
+glitch cue is the one that still re-deals on `syn_OnBeat`, on purpose -
+its scene re-deals on the same signal, and the rig should tear with the
+picture. `config/mythos26.json` keeps the beat on the bus, and the audio
+bus tests run against it.
+
 ### commissioning
 
 Ten identical pars are indistinguishable from a config file, so:

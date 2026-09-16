@@ -906,19 +906,24 @@ One setting, and it is enforced rather than advisory:
 | | |
 | --- | --- |
 | `mixxx` | the VU notes fill `level` / `level_instant` / `level_meter`, as always, and the beat is Mixxx's grid. The other eighteen channels stay dark, so the hit layers sit at black — which, being additive, means they vanish rather than break |
-| `synesthesia` | the app fills all twenty-one over OSC **and owns the beat**. The MIDI VU notes are not wired to the bus, and the MIDI cable is not wired to the beat clock, so the two cannot both write the same thing |
+| `synesthesia` | the app fills all twenty-one over OSC, and with `"bpm": true` **owns the beat** too. The MIDI VU notes are not wired to the bus, and with the beat on the bus the MIDI cable is not wired to the clock, so the two cannot both write the same thing |
 | `none` | nothing fills it |
 
 A config declaring `synesthesia` opens the port on its own — `--osc-in` is then
 for overriding it, not for remembering it at a venue.
 
-**The beat comes with it.** `syn_BPM` sets the tempo, `syn_OnBeat` sets the
-phase, and the MIDI cable stops reaching the clock. Having picked the app that
-is actually listening to the music, taking its answer for where the beat is as
-well is the consistent choice — and a split is also the arrangement where the
-two quietly fight, because `markBeat` folds every gap between beats into the
-tempo. Set `"bpm": false` for the one supported split: analysis from the
-visualiser, beat from Mixxx's grid.
+**The beat can come with it — the show's config says not.** With `"bpm":
+true`, `syn_BPM` sets the tempo, `syn_OnBeat` sets the phase, and the MIDI
+cable stops reaching the clock: having picked the app that is actually
+listening to the music, taking its answer for where the beat is as well is
+the consistent choice, and a split is the arrangement where the two could
+quietly fight, because `markBeat` folds every gap between beats into the
+tempo. That is `config/mythos26.json`. **`config/mythos-show.json` runs the
+one supported split** — `"bpm": false`: the analysis from the visualiser,
+the beat from Mixxx's grid on the cable — because the detector proved
+unreliable for tempo on the night, and the DJ's own grid is the better
+source. The cable is wired to the clock in that mode and the bus's two beat
+channels are ignored by it; `midi status` says `beat_from=midi`.
 
 Both of Synesthesia's own channels imply a tempo — `syn_BPM` states it,
 `syn_OnBeat` implies it by when it fires — so while the first is live the second
@@ -944,9 +949,9 @@ Mixxx playing and the rig not following it reads as `beat_from=osc` with
 the cable is dead.
 
 So flipping that one word back to `"mixxx"` is a complete, working fallback for
-the night Synesthesia will not start: the beat returns to the cable, the hit
-layers go dark, and nothing else changes. `--no-osc-in` does the same without
-editing anything.
+the night Synesthesia will not start: the beat returns to the cable (where the
+show already has it), the hit layers go dark, and nothing else changes.
+`--no-osc-in` does the same without editing anything.
 
 ## Run it for real
 

@@ -49,15 +49,22 @@
     "free_run": true
   },
 
-  // The music, from Synesthesia: the levels, the presence, the kicks and the
-  // beat, on the bus the cues read. Flip "source" to "mixxx" (or run the
-  // launcher with --no-osc-in) for the night the visualiser will not start:
-  // the beat goes back to the cable, the presence cues sit at their floors,
-  // and the kick cues wait for a kick that never comes.
+  // The music, from Synesthesia: the levels, the presence and the kicks, on
+  // the bus the cues read. Not the beat: "bpm" is off, so the grid is
+  // Mixxx's - its clock and its beat note on the cable above - and the
+  // visualiser's syn_BPM / syn_OnBeat never reach the clock. The detector
+  // proved unreliable for tempo on the night; the cable is the DJ's own
+  // grid. `midi status` says beat_from=midi. (The glitch cue still re-deals
+  // on syn_OnBeat off the bus, on purpose: that is what its scene re-deals
+  // on, and the rig should tear with the picture, not with the grid.)
+  //
+  // Flip "source" to "mixxx" (or run the launcher with --no-osc-in) for the
+  // night the visualiser will not start: the presence cues sit at their
+  // floors, and the kick cues wait for a kick that never comes.
   "audio": {
     "source": "synesthesia",
     "port": 7000,
-    "bpm": true,
+    "bpm": false,
     "map": "oscmaps/synesthesia.json"
   },
 
