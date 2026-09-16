@@ -758,8 +758,15 @@ void MidiInput::handleMessage(unsigned char status, unsigned char data1, unsigne
             }
             if (audioLevel != nullptr)
             {
-                audioLevel->set(static_cast<VuSource>(index),
-                                static_cast<float>(data2) / 127.0f, when);
+                const VuSource source = static_cast<VuSource>(index);
+                const float level = static_cast<float>(data2) / 127.0f;
+                audioLevel->set(source, level, when);
+                // the average is `level` too when the cable owns the bus -
+                // the slot the churn reads, and syn_Level's when it does not
+                if (source == VuSource::Average && vuFillsLevel.load())
+                {
+                    audioLevel->set(AudioChannel::Level, level, when);
+                }
             }
             return;
         }

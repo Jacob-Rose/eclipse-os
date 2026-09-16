@@ -1554,10 +1554,10 @@ class TheAudioBus(ShowTest):
         for channel in filled:
             self.assertIn(channel, AUDIO_CHANNELS)
 
-        # Everything except the two Mixxx-only meters, which no visualiser
-        # sends and which stay dark on this source by design.
+        # Everything except the three Mixxx-only meters, which no visualiser
+        # sends: those are the cable's, on the bus under this source too.
         self.assertEqual(set(AUDIO_CHANNELS) - set(filled),
-                         {"level_instant", "level_meter"})
+                         {"level_instant", "level_average", "level_meter"})
 
         # `/audio/level/raw` is deliberately unbound: it is the unsmoothed
         # level beside `/audio/level/all`, and binding both would put two
@@ -3229,11 +3229,12 @@ class TheShowCues(unittest.TestCase):
         self.assertEqual(cues["tunnel"].layers["flash"], "off")
         self.assertEqual(cues["rain"].layers["uv"], "rainbow")
         self.assertEqual(cues["blown"].layers["uv"], "kick")
-        # the punk's strobe is the look's own, a drop to navy the way the
+        # the punk's drop is the look's own, toward navy the way the
         # scene's smoke goes dark on the beat - a white flash over it would
-        # white the beat out; the scaffold's strong white *is* the flash
+        # white the beat out; the scaffold's pattern comes and goes on the
+        # beat by itself, so no white flashes over it either
         self.assertEqual(cues["punk"].layers, {"flash": "off", "uv": "kick"})
-        self.assertEqual(cues["scaffold"].layers, {"flash": "flash", "uv": "off"})
+        self.assertEqual(cues["scaffold"].layers, {"flash": "off", "uv": "off"})
         self.assertEqual(cues["rain"].media, "black.mp4")
         self.assertEqual(cues["rain"].modes[2].media, "alien-message.mp4")
         self.assertEqual(cues["reaction"].scene, "Reaction-Confusion")
@@ -3351,28 +3352,54 @@ class TheShowCues(unittest.TestCase):
     # -- a cue's own pads ----------------------------------------------------
 
     def test_a_cues_pads_move_the_look_and_ramp_the_scene(self):
-        """The clouds' height and speed pads: each sets the look's target -
-        it glides on its own - and sends the scene's control with a ramp,
-        the rig first. The last two are the scene's auto height, a toggle
-        with nothing on the rig and no ramp."""
+        """The clouds' speed pads: each sets the look's target - it glides
+        on its own - and sends the scene's control with a ramp, the rig
+        first. The scene's auto height is off for good; the heights are
+        the modes, below."""
         clouds = self.config.cues["clouds"]
-        self.assertEqual([pad.label for pad in clouds.pads],
-                         ["fly low", "fly high", "slower", "faster", "by hand", "auto"])
+        self.assertEqual([pad.label for pad in clouds.pads], ["slower", "faster"])
         self.assertEqual(clouds.controls["auto_height"], 0.0)
-        for index, value in ((4, 0.0), (5, 1.0)):
-            self.assertEqual(cue_pad_actions(self.config, "clouds", index),
-                             [{"action": "syn_control",
-                               "params": {"address": "/controls/scene/autoheight",
-                                          "low": value, "high": value}}])
         entries = cue_pad_actions(self.config, "clouds", 1)
         self.assertEqual([e["action"] for e in entries], ["param", "syn_control"])
-        # the look's knob is `height`; the scene's is `manual_height`, its
-        # own name for the same thing, folded the way the app addresses it
-        self.assertEqual(entries[0]["params"], {"name": "height", "low": 0.85, "high": 0.85, "layer": ""})
-        self.assertEqual(entries[1]["params"], {"address": "/controls/scene/manualheight",
-                                                "low": 0.85, "high": 0.85, "ramp": 2.0})
+        self.assertEqual(entries[0]["params"], {"name": "speed", "low": 0.70, "high": 0.70, "layer": ""})
+        self.assertEqual(entries[1]["params"], {"address": "/controls/scene/speed",
+                                                "low": 0.70, "high": 0.70, "ramp": 2.0})
         self.assertEqual(cue_pad_actions(self.config, "clouds", 9), [])
         self.assertEqual(cue_pad_actions(self.config, "neuron", 0), [])
+
+    def test_the_clouds_modes_are_heights_and_the_scene_climbs_with_them(self):
+        """The clouds' modes are altitudes: the look's `height` is the
+        executable's half, and the cue table sends the scene's
+        `manual_height` for each - ramped over `mode_ramp`, so the scene
+        climbs over the same two seconds the look glides. Mode 1, with no
+        entry, still sends the cue's own height back, ramped the same way.
+        The cue coming up sends it at once: its scene is new."""
+        clouds = self.config.cues["clouds"]
+        self.assertEqual(sorted(clouds.modes), [2, 3])
+        self.assertEqual(clouds.mode_ramp, 2.0)
+        # the look's knob is `height`; the scene's is `manual_height`, its
+        # own name for the same thing, folded the way the app addresses it
+        for mode, value in ((1, 0.25), (2, 0.50), (3, 0.85)):
+            entries = cue_mode_actions(self.config, "clouds", mode)
+            self.assertEqual([e["action"] for e in entries], ["param", "syn_control"], mode)
+            self.assertEqual(entries[1]["params"], {"address": "/controls/scene/manualheight",
+                                                    "low": value, "high": value, "ramp": 2.0}, mode)
+        up = [e["params"] for e in cue_actions(self.config, "clouds")
+              if e["action"] == "syn_control"]
+        self.assertIn({"address": "/controls/scene/manualheight", "low": 0.25, "high": 0.25}, up)
+        self.assertFalse([p for p in up if "ramp" in p])
+
+    def test_a_mode_that_resends_the_scene_does_not_ramp(self):
+        """A scene re-sent comes up fresh, with nothing to glide from."""
+        cue = Cue.from_dict("x", {"scene": "A", "controls": {"k": 0.2}, "mode_ramp": 1.5,
+                                  "modes": {"2": {"scene": "B", "controls": {"k": 0.8}}}}, [])
+        two = [e["params"] for e in cue.mode_actions(2) if e["action"] == "syn_control"]
+        self.assertEqual(two, [{"address": "/controls/scene/k", "low": 0.8, "high": 0.8}])
+        self.assertEqual(cue.to_dict()["mode_ramp"], 1.5)
+        with self.assertRaises(ConfigError):
+            Cue.from_dict("x", {"mode_ramp": -1}, [])
+        with self.assertRaises(ConfigError):
+            Cue.from_dict("x", {"modes": {"2": {"mode_ramp": 1}}}, [])
 
     def test_a_pad_needs_a_label_and_something_to_set(self):
         for bad in ({"params": {"height": 1}},
@@ -3538,14 +3565,13 @@ class TheShowPage(unittest.TestCase):
                          ["mythos26 - mode"] + [m["label"] for m in named])
 
     def test_a_cues_own_pads_on_the_seventh_row(self):
-        """The clouds' six, above the layers, each the cue table's pad as
+        """The clouds' two, above the layers, each the cue table's pad as
         the surface fires it."""
         pads = self._pads("mythos26 - clouds ")
         self.assertEqual([m["label"] for m in pads],
-                         [f"mythos26 - clouds {label}" for label in
-                          ("fly low", "fly high", "slower", "faster", "by hand", "auto")])
+                         [f"mythos26 - clouds {label}" for label in ("slower", "faster")])
         self.assertEqual([m["trigger"]["number"] for m in pads],
-                         [launchpad.pad(7, c) for c in (1, 2, 3, 4, 5, 6)])
+                         [launchpad.pad(7, c) for c in (1, 2)])
         for index, mapping in enumerate(pads):
             expected = [midi_map.Action.from_dict(entry).to_dict()
                         for entry in cue_pad_actions(self.config, "clouds", index)]

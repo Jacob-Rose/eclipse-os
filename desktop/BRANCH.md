@@ -500,6 +500,60 @@ its scene re-deals on the same signal, and the rig should tear with the
 picture. `config/mythos26.json` keeps the beat on the bus, and the audio
 bus tests run against it.
 
+### seven cues fixed as specced, and Mixxx's meter on the bus
+
+A pass over the spec's notes after a night on the rig. Three of them ask
+for Mixxx's VU by name, which the bus could not give under the visualiser.
+
+**Mixxx's three meters are three slots of their own.** `level_average` is
+new beside `level_instant` and `level_meter`, and the MIDI input fills
+all three whatever `audio.source` says - a cue that names one is asking
+for the cable's meter, and should have it under `synesthesia` too. Only
+the average's second write, onto `level`, follows the source
+(`MidiInput::setVuFillsLevel`): that is the slot `syn_Level` fills, and
+the two never both write it. The bus keeps the slots apart; the input
+does the aliasing. Twenty-two channels, the audio page a pad longer, the
+meter cue amber like its two neighbours. And note 68 is not what the
+comments said: the mapping's script sends its "average fit" on 0x44 - the
+level against the min and max of the last two seconds, auto-ranged, not
+slow - so it still rises on a kick. The docs say so now, and where the
+plain two-second mean is (66, off by default).
+
+**The cues.** The geode's red rides `level_instant`, the cable's own bass.
+The tunnel's wash rides `level_average`, slewed to half a second so a
+fitted meter breathes rather than pumps; its flash stays off by default.
+The punk's drop toward navy is the meter's now, not the beat's:
+`Pattern_Mythos_GradientStrobe` grew `follow`, the channel's slewed level
+against the beat envelope, at 1 for the cue; modes 2 and 3 are the beat
+strobe as it was, in half and double time, so the old cue is a pad away.
+The reaction's rainbow blends in over most of the meter and a longer slew
+(threshold 0.08, knee 0.72, slew 0.6 - it was a third of the range and
+read as a switch). The canyon's bands are eased into each other -
+`LoopPalette` smoothsteps between its knots, whose corners were six lines
+marching down the obelisk - and half the loop is on the rig at once
+(`waves` 0.5; at 1 the six were seven rows each and under two pars). The
+scaffold's pattern is the beat: `Pattern_Mythos_Scaffold` fires the
+shared trigger like the canyon and its glint and ember come out on the
+hit and hide over the fall, the presence gone from it and the flash layer
+off - the spec's "emerging / hiding, bpm synced" instead of a white over
+a look that was there anyway.
+
+**The clouds' modes are its heights.** Low where the cue opens (0.25,
+the deck over three quarters of the rig), cruising (0.5), high (0.85) -
+so the mode pad is a climb and the numbered pads name an altitude. The
+scene's `auto_height` is off for good and its `by hand` / `auto` pads are
+gone with the height pads; `speed` keeps its two and a mode leaves it be
+(`keepAcrossModes` is the speed alone now). The scene's `manual_height`
+climbs with the look over `mode_ramp`, a cue-level field the table
+carries beside `modes`: seconds a mode's controls glide over, the way a
+pad's `ramp` does - only on a mode change, because a cue coming up and a
+mode that re-sends the scene are both a fresh scene with nothing to glide
+from. And more cloud: a `clouds` knob lights more of the deck's tops and
+puts wisps of the same in the sky above the horizon, on the deck's own
+loop, so a high flight is not a plain gradient. The dusk and golden-hour
+palettes went with the palette modes; `sky_high`, `sky_low` and `cloud`
+are still knobs.
+
 ### commissioning
 
 Ten identical pars are indistinguishable from a config file, so:

@@ -189,12 +189,15 @@ namespace edmx
     struct AudioConfig
     {
         /// "mixxx"       - the VU notes on the MIDI cable fill `level`,
-        ///                 `level_instant` and `level_meter`. The other
-        ///                 eighteen channels stay dark, which is what they
-        ///                 have always done.
-        /// "synesthesia" - the visualiser's audio uniforms fill all of them,
-        ///                 over OSC, and the MIDI VU notes are ignored so the
-        ///                 two cannot both write `level`.
+        ///                 `level_instant`, `level_average` and
+        ///                 `level_meter`. The other eighteen channels stay
+        ///                 dark, which is what they have always done.
+        /// "synesthesia" - the visualiser's audio uniforms fill `level` and
+        ///                 the bands over OSC. The MIDI VU notes still land
+        ///                 on their own three `level_*` slots - the cues
+        ///                 that ask for Mixxx's meter by name read those -
+        ///                 but not on `level`, so the two cannot both write
+        ///                 it.
         /// "none"        - nothing fills the bus. Modulations hold at zero.
         ///
         /// Deliberately *not* about tempo. The beat stays with `midi`, where

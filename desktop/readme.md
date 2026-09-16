@@ -356,7 +356,7 @@ its own.
   a pad per state: the flash off or on, the UV off / flash / on / kick /
   rainbow. So a layer can be moved off a cue's default by hand, and
   hitting the cue puts it back. Row 7 is the **cues' own pads** — the
-  clouds' fly low / fly high / slower / faster — off the table's `pads`.
+  clouds' slower / faster — off the table's `pads`.
   The viewer's cue buttons fire the same table, and its `mode` and pad
   buttons are the same pads. Both files come out of one run of the
   generator and carry the same rows, so they cannot disagree about what a
@@ -749,7 +749,7 @@ Mixxx ──VU notes over MIDI──┐
 Synesthesia ──OSC──> the OSC map ──┘         21 channels, 0..1
 ```
 
-Twenty-one channels, named after Synesthesia's uniforms, lowercased and
+Twenty-two channels, named after Synesthesia's uniforms, lowercased and
 un-camelled — `syn_BassLevel` is `bass`, `syn_MidHighHits` is `midhigh_hits`:
 
 | | |
@@ -758,16 +758,20 @@ un-camelled — `syn_BassLevel` is `bass`, `syn_MidHighHits` is `midhigh_hits`:
 | hits | `hits` `bass_hits` `mid_hits` `midhigh_hits` `high_hits` |
 | presence | `presence` `bass_presence` `mid_presence` `midhigh_presence` `high_presence` |
 | the grid | `beat` `bpm` `bpm_confidence` `intensity` |
-| Mixxx only | `level_instant` `level_meter` |
+| Mixxx only | `level_instant` `level_average` `level_meter` |
 
 Everything is 0..1, `bpm` included: it arrives already scaled across its
 50..220, so nothing downstream has to special-case one channel's units.
 `channels` at the desk prints what is on the bus right now and which of it is
 live.
 
-Mixxx's two-second average **is** `level` — the same slot `syn_Level` fills.
-That aliasing is the point: a look reading a level does not learn that the
-cable changed.
+Mixxx's three VU notes land on their own three slots whatever `audio.source`
+says — they are the cable's, and a cue that names one is asking for Mixxx's
+meter: the geode's red on `level_instant`, the tunnel's wash and the punk's
+drop on `level_average`. With `audio.source: mixxx` the average is **also**
+`level` — the same slot `syn_Level` fills the rest of the time. That
+aliasing is what makes the source a switch: a look reading a level does not
+learn that the cable changed.
 
 Deliberately absent are Synesthesia's `syn_*Time` clocks and its BPMSin/BPMTri
 waves. They are unbounded or generated, and the bus's hold-and-decay means
@@ -905,8 +909,8 @@ One setting, and it is enforced rather than advisory:
 
 | | |
 | --- | --- |
-| `mixxx` | the VU notes fill `level` / `level_instant` / `level_meter`, as always, and the beat is Mixxx's grid. The other eighteen channels stay dark, so the hit layers sit at black — which, being additive, means they vanish rather than break |
-| `synesthesia` | the app fills all twenty-one over OSC, and with `"bpm": true` **owns the beat** too. The MIDI VU notes are not wired to the bus, and with the beat on the bus the MIDI cable is not wired to the clock, so the two cannot both write the same thing |
+| `mixxx` | the VU notes fill `level` / `level_instant` / `level_average` / `level_meter`, as always, and the beat is Mixxx's grid. The other eighteen channels stay dark, so the hit layers sit at black — which, being additive, means they vanish rather than break |
+| `synesthesia` | the app fills `level` and the eighteen over OSC, and with `"bpm": true` **owns the beat** too. The MIDI VU notes still land on their own three `level_*` slots — the cues that name Mixxx's meter read those — but never on `level`, and with the beat on the bus the MIDI cable is not wired to the clock, so the two cannot both write the same thing |
 | `none` | nothing fills it |
 
 A config declaring `synesthesia` opens the port on its own — `--osc-in` is then
@@ -1412,19 +1416,19 @@ audio bus.
 | cue | the rig | the room |
 | --- | --- | --- |
 | 1 `neuron` | cyan into deep blue noise, drifting — the scene's own two colours, hue 170 to 232 | scene *Neuron Proximitors* |
-| 2 `geode` | red, riding the mid presence, never below 0.2; mode 2 takes the whole look blue, crystals included | *Eclipse Voronoi*; the probe sends the crystal colour, so the scene turns with the truss instead of staying red behind it; the flash layer on |
+| 2 `geode` | red, riding Mixxx's instant VU — the cable's own bass, on the bus whatever else fills it — never below 0.2; mode 2 takes the whole look blue, crystals included | *Eclipse Voronoi*; the probe sends the crystal colour, so the scene turns with the truss instead of staying red behind it; the flash layer on |
 | 3 `rain` | matrix rain, every drop its own colour; the truss read as a row through it | *VideoFX_1* on `black.mp4`, the video a mode away; the UV breathing through a hue wheel |
 | 4 `fire` | fire 2012; the truss read as a row through the flames | *Dynamical Flame* + `black.mp4` |
 | 5 `glitch` | the rig re-dealt to a new colour on every beat — the scene re-deals its background on the same one | *Glitch* + `alien-message.mp4` |
-| 6 `tunnel` | pink into purple noise, breathing with the mid presence | *Fire Tunnel* + `black.mp4`; the flash layer on |
+| 6 `tunnel` | pink into purple noise, breathing with Mixxx's average VU, slewed so it breathes rather than pumps | *Fire Tunnel* + `black.mp4`; the flash layer off — the pad is there |
 | 7 `blown` | pink riding the mids, never below 0.65; a kick pops it to full and leaves a green afterglow — the scene's default palette runs black through magenta to green | *Filter Blown v2* + `275593_medium.mp4`; the UV on the kick |
-| 8 `punk` | punk purple into honey orange, scrolling slowly, dropping to navy on the beat — a strobe down, the way the scene's goes | *Milk, Honey, Smoke, Bile* with its `smoke` on, which inverts its lightness on the beat; the flash layer off (a white over the drop whited it out), the UV on the kick |
-| 9 `reaction` | the rainbow across the stage, turning slowly, coming up on the presence over a low white grain | *Reaction-Confusion* + `87841-602894456.mp4` |
-| 10 `canyon` | orange, rust, brown, green and blue bands pouring down the stage, one seamless loop, blended round the wheel so nothing between them is grey; on the beat the colours turn toward a rainbow and back, each band keeping its own level — a colour pulse, not a light pulse | *Vibe Thresholds* + `361331_medium.mp4` |
-| 11 `scaffold` | mostly dark: a cyan glint where a slow field peaks on a near-black ground, red-orange in patches that open with the mids | *Scaffold Fractal*; the flash layer on — the strong white is its |
+| 8 `punk` | punk purple into honey orange, scrolling slowly, dropping toward navy as far as Mixxx's average VU says — a drop, the way the scene's goes, riding the meter rather than the grid; modes 2 and 3 are the beat strobe instead, in half and double time | *Milk, Honey, Smoke, Bile* with its `smoke` on, which inverts its lightness on the beat; the flash layer off (a white over the drop whited it out), the UV on the kick |
+| 9 `reaction` | the rainbow across the stage, turning slowly, blended in by the presence over a low white grain — across most of the meter and slewed, so it swells rather than switches | *Reaction-Confusion* + `87841-602894456.mp4` |
+| 10 `canyon` | orange, rust, brown, green and blue bands pouring down the stage, one seamless loop, blended round the wheel so nothing between them is grey and eased into each other so no band has an edge, half the loop on the rig at once; on the beat the colours turn toward a rainbow and back, each band keeping its own level — a colour pulse, not a light pulse | *Vibe Thresholds* + `361331_medium.mp4` |
+| 11 `scaffold` | mostly dark: a cyan glint where a slow field peaks on a near-black ground, red-orange in patches — both out on the beat and hidden again before the next, the pattern coming and going with the grid | *Scaffold Fractal*; the flash layer off — the pattern is the beat, and a white over it was a flash over something already there |
 | 12 `churn` | the neuron's field in the churn's two colours — red into blue — busier, and pushed by the level the way the paint is; three palettes and a rainbow on the mode pads | *Eclipse Churn* + `black.mp4`; the probe sends colour A, the cue table colour B |
 | 13 `nova` | galaxies on a wash over a dark ground, the galaxies swelling with the bass presence — cyan on yellow over dark blue, by hand; three palettes and a rainbow | *Eclipse Nova*, `auto_second` off; the probe sends the galaxy colour, the cue table the wash |
-| 14 `clouds` | a sunset down the stage — yellow overhead into pink at the horizon — over a cloud deck in shadow, streaming past on a loop that has no seam; `height` and `speed` glide to where four pads put them, and a mode change leaves them be | *Cloud Ten* + `white.mp4`, with its auto height off; the same four pads ramp its `manual_height` and `speed`. Checked against the scene — white, not black, because this one multiplies by its media rather than tinting with it |
+| 14 `clouds` | a sunset down the stage — yellow overhead into pink at the horizon — over a cloud deck in shadow, streaming past on a loop that has no seam, with wisps of it in the sky; the modes are the heights — low where the cue opens, cruising, high — and `height` glides between them; `speed` glides to where two pads put it, and a mode leaves it be | *Cloud Ten* + `white.mp4`, with its auto height off for good; the modes ramp its `manual_height` over `mode_ramp` and the two pads its `speed`. Checked against the scene — white, not black, because this one multiplies by its media rather than tinting with it |
 | 15 `white` | the house lights: white at half | both layers off |
 | 16 `blackout` | everything off | both layers off |
 
@@ -1586,9 +1590,9 @@ through the wheel and hand the scene its own rainbow — Churning's
 ##### a cue's own pads
 
 A cue can carry `pads`: buttons of its own on the surface, for a control
-the operator flies by hand. The clouds have four — fly low, fly high,
-slower, faster — and each moves the look's knob (`params`) and the scene's
-control (`controls`) together, the rig first. Neither snaps: the look's
+the operator flies by hand. The clouds have two — slower, faster; the
+heights are its modes — and each moves the look's knob (`params`) and the
+scene's control (`controls`) together, the rig first. Neither snaps: the look's
 `height` and `speed` are targets it glides to over its `glide` seconds, and
 the pad's `ramp` is the scene's half of the same move, the control re-sent
 in steps from wherever this desk last put it until it lands on the target,
@@ -1597,6 +1601,12 @@ nothing to glide from — the app does not say where its sliders are. The
 generator lays a cue's pads on the rows above the layers; the viewer has a
 button each. A pad pressed under another cue aims its knob at a look that
 has no such knob and is refused harmlessly.
+
+A cue whose modes move a scene control the look glides to — the clouds'
+`manual_height` — carries `mode_ramp`, seconds the mode's controls glide
+over the same way a pad's `ramp` does. Only a mode change ramps: the cue
+coming up sends its controls at once, its scene being new, and so does a
+mode that re-sends the scene.
 
 Writing a cue for real is a `GeneratorHSV` in `mythos26.h`/`.cpp` and a
 changed line in `makeMythos26StateMachine()`; nothing in the runner, the
@@ -1680,12 +1690,13 @@ make.
 
 ##### the VU meter, and what reads it
 
-Nothing in the show reads the VU meter today — `vu_pulse`, the white flash over
-a red wash that followed it, went with the rest of the show's cue list. The
-wiring stayed: Mixxx's meter still lands on the bus, and the `level_instant`
-and `level_meter` cues on the [audio bus](#the-audio-bus) are how you look at
-it. This is here because getting it wrong twice is what these paragraphs are
-for.
+Three cues read it by name — the geode's red rides `level_instant`, the
+tunnel's wash and the punk's drop ride `level_average` — and they read it
+under `audio.source: synesthesia` too, because the three VU slots are the
+cable's whichever source owns the rest of the bus. The `level_instant`,
+`level_average` and `level_meter` cues on the [audio bus](#the-audio-bus)
+are how you look at it. This is here because getting it wrong twice is what
+these paragraphs are for.
 
 **A wash wants the loudness of the track, not the waveform.** Mixxx sends
 several meters and they behave differently, so all three useful ones are read
@@ -1694,7 +1705,7 @@ and kept apart — a look picks one by name, never by note number:
 | `VuSource` | note | what it is |
 | --- | --- | --- |
 | `Instant` | 64 | the level right now, resent every 40ms — peaks on every kick |
-| `Average` | 68 | the same averaged over ~2 seconds — the loudness of the *track* |
+| `Average` | 68 | the level against its two-second window — 0 at the quietest the last two seconds got, 1 at the loudest |
 | `Meter` | 69 | a meter bar, quantised — moves in visible steps |
 
 `Average` is the one a backdrop wants, and that is the whole fix for a wash
@@ -1702,6 +1713,14 @@ that flashes: `Instant` peaks on every kick, so anything driven from it pulses
 at beat rate no matter what you do downstream. `Average` is also one of the few
 VU options the mapping enables by default. Reach for `Instant` when you want
 something to *hit* on transients, which is a different look, not a broken one.
+
+*What note 68 actually is.* The mapping's script (`Midi_for_light-scripts.js`,
+the one shipped with Mixxx) sends its "average fit" on 0x44 = 68: the current
+level fitted to the min and max of the last two seconds. So it still rises on
+a kick — it is auto-ranged, not slow — and a wash on it wants a longer slew
+than the geode's, which the tunnel has. The plain two-second *mean* is note 66,
+"Enable VU mono average mid" in the mapping's settings, off by default; point
+`vu_average_note` at it if a set wants the slower thing.
 
 *How a reading is smoothed.* Take a symmetric one-pole — equally slow up and
 down. Deliberately not VU ballistics (fast attack, limited release): that is
@@ -1715,9 +1734,10 @@ with how long ago the last message landed; the fade is a dead-man's switch,
 because a level held up forever after the link dropped would be the rig lying
 about having a signal.
 
-Any of this needs **Enable VU mono current** ticked in the mapping's settings —
-note 64, and the one VU option worth having on. Without it the meter cues sit
-at their dead-channel blink and everything else still works.
+`Instant` needs **Enable VU mono current** ticked in the mapping's settings —
+note 64, off by default there, and the one the geode's red rides. Without it
+that cue sits at its floor and the `level_instant` meter cue at its
+dead-channel blink; everything else still works.
 
 ##### the static looks
 

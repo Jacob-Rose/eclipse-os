@@ -193,8 +193,17 @@ namespace edmx
         void setBeatClock(BeatClock* inClock) { clock = inClock; }
 
         /// Where VU readings go. Optional — leave it null and they are parsed
-        /// and dropped.
+        /// and dropped. Each lands on its own slot - `level_instant`,
+        /// `level_average`, `level_meter` - so a cue that wants Mixxx's
+        /// meter by name has it whatever else is filling the bus.
         void setAudioLevel(AudioLevel* inLevel) { audioLevel = inLevel; }
+
+        /// Whether the average also lands on `level`, the slot Synesthesia's
+        /// syn_Level fills. On when Mixxx is the source - the looks reading
+        /// a level do not learn that the cable changed - and off when the
+        /// visualiser is, so the two never both write it. On by default: a
+        /// MidiInput nobody configured is the cable as it always was.
+        void setVuFillsLevel(bool enable) { vuFillsLevel.store(enable); }
 
         /// Follow 0xF8 beat clock. On by default.
         void setFollowClock(bool enable) { followClock.store(enable); }
@@ -214,7 +223,8 @@ namespace edmx
         ///
         /// All three are read at once and kept separately, because they behave
         /// differently and a look should be able to pick: 64 instantaneous,
-        /// 68 the two-second average, 69 a meter bar. See VuSource.
+        /// 68 the level against its two-second window, 69 a meter bar. See
+        /// VuSource.
         void setVuNote(VuSource source, int note);
         int getVuNote(VuSource source) const;
 
@@ -298,6 +308,7 @@ namespace edmx
 
         BeatClock* clock{nullptr};
         AudioLevel* audioLevel{nullptr};
+        std::atomic<bool> vuFillsLevel{true};
         std::string portName;
         std::atomic<bool> opened{false};
 

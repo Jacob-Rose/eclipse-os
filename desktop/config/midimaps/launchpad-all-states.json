@@ -599,7 +599,7 @@
           "action": "layer",
           "params": {
             "layer": "flash",
-            "name": "flash"
+            "name": "off"
           }
         },
         {
@@ -871,8 +871,8 @@
           "action": "syn_control",
           "params": {
             "address": "/controls/scene/manualheight",
-            "low": 0.45,
-            "high": 0.45,
+            "low": 0.25,
+            "high": 0.25,
             "values": [],
             "ramp": 0.0
           }
@@ -3287,11 +3287,37 @@
       "colour": 3
     },
     {
-      "label": "audio - level_meter",
+      "label": "audio - level_average",
       "trigger": {
         "kind": "note",
         "channel": 1,
         "number": 35
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "audio"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "level_average"
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "audio",
+      "colour": 3
+    },
+    {
+      "label": "audio - level_meter",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 36
       },
       "mode": "press",
       "actions": [
@@ -3317,7 +3343,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 36
+        "number": 37
       },
       "mode": "press",
       "actions": [
@@ -3591,77 +3617,11 @@
       "colour": 49
     },
     {
-      "label": "mythos26 - clouds fly low",
-      "trigger": {
-        "kind": "note",
-        "channel": 1,
-        "number": 71
-      },
-      "mode": "press",
-      "actions": [
-        {
-          "action": "param",
-          "params": {
-            "name": "height",
-            "low": 0.15,
-            "high": 0.15,
-            "layer": ""
-          }
-        },
-        {
-          "action": "syn_control",
-          "params": {
-            "address": "/controls/scene/manualheight",
-            "low": 0.15,
-            "high": 0.15,
-            "values": [],
-            "ramp": 2.0
-          }
-        }
-      ],
-      "enabled": true,
-      "page": "mythos26",
-      "colour": 37
-    },
-    {
-      "label": "mythos26 - clouds fly high",
-      "trigger": {
-        "kind": "note",
-        "channel": 1,
-        "number": 72
-      },
-      "mode": "press",
-      "actions": [
-        {
-          "action": "param",
-          "params": {
-            "name": "height",
-            "low": 0.85,
-            "high": 0.85,
-            "layer": ""
-          }
-        },
-        {
-          "action": "syn_control",
-          "params": {
-            "address": "/controls/scene/manualheight",
-            "low": 0.85,
-            "high": 0.85,
-            "values": [],
-            "ramp": 2.0
-          }
-        }
-      ],
-      "enabled": true,
-      "page": "mythos26",
-      "colour": 37
-    },
-    {
       "label": "mythos26 - clouds slower",
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 73
+        "number": 71
       },
       "mode": "press",
       "actions": [
@@ -3694,7 +3654,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 74
+        "number": 72
       },
       "mode": "press",
       "actions": [
@@ -3715,54 +3675,6 @@
             "high": 0.7,
             "values": [],
             "ramp": 2.0
-          }
-        }
-      ],
-      "enabled": true,
-      "page": "mythos26",
-      "colour": 37
-    },
-    {
-      "label": "mythos26 - clouds by hand",
-      "trigger": {
-        "kind": "note",
-        "channel": 1,
-        "number": 75
-      },
-      "mode": "press",
-      "actions": [
-        {
-          "action": "syn_control",
-          "params": {
-            "address": "/controls/scene/autoheight",
-            "low": 0.0,
-            "high": 0.0,
-            "values": [],
-            "ramp": 0.0
-          }
-        }
-      ],
-      "enabled": true,
-      "page": "mythos26",
-      "colour": 37
-    },
-    {
-      "label": "mythos26 - clouds auto",
-      "trigger": {
-        "kind": "note",
-        "channel": 1,
-        "number": 76
-      },
-      "mode": "press",
-      "actions": [
-        {
-          "action": "syn_control",
-          "params": {
-            "address": "/controls/scene/autoheight",
-            "low": 1.0,
-            "high": 1.0,
-            "values": [],
-            "ramp": 0.0
           }
         }
       ],

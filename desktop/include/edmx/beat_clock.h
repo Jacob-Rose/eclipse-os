@@ -360,8 +360,11 @@ namespace edmx
         /// sit still will flash.
         Instant,
 
-        /// The same level averaged over about two seconds: the loudness of the
-        /// track rather than of the waveform. What a backdrop wants.
+        /// The level against its two-second window - 0 at the quietest the
+        /// last two seconds got, 1 at the loudest. The mapping calls it the
+        /// "average fit" and sends it by default; the plain two-second mean
+        /// is its note 66, off by default. Auto-ranged rather than slow, so
+        /// it still rises on a kick: what a backdrop wants, with a slew.
         Average,
 
         /// A meter bar — quantised, steppy, and useful for something that
@@ -383,10 +386,13 @@ namespace edmx
     /// the same four bands would mean translating twice.
     ///
     /// Which source filled a channel is deliberately not recorded. Mixxx's VU
-    /// notes land on `level` / `level_instant` / `level_meter` and Synesthesia's
-    /// uniforms land on all of them; a look asks for `bass` and gets whatever is
-    /// wired tonight. That is the whole point of putting a bus here rather than
-    /// letting patterns read a MIDI cable.
+    /// notes land on `level_instant` / `level_average` / `level_meter` - and
+    /// on `level` when Mixxx is the source - and Synesthesia's uniforms land
+    /// on all the rest; a look asks for `bass` and gets whatever is wired
+    /// tonight. That is the whole point of putting a bus here rather than
+    /// letting patterns read a MIDI cable. The three `level_*` slots are the
+    /// one exception, on purpose: they are always the cable's, for the cues
+    /// that ask for Mixxx's meter by name.
     ///
     /// Everything is 0..1, including `bpm` — which arrives already scaled
     /// across its 50..220 by whatever fed it, because a bus that held one value
@@ -426,10 +432,15 @@ namespace edmx
         BpmConfidence,  ///< syn_BPMConfidence - how sure the detector is
         Intensity,      ///< syn_Intensity     - accumulated song intensity
 
-        // -- Mixxx's other two meters. No Synesthesia equivalent; `level` is
-        //    the one both apps fill, so a config that switches source keeps
-        //    working and only these two go quiet.
+        // -- Mixxx's own three meters, off the MIDI cable. These are the
+        //    cable's whichever source owns the rest of the bus: a cue that
+        //    names one is asking for Mixxx's meter, not for whatever is
+        //    wired tonight - the geode's red on the instant, the tunnel's
+        //    wash and the punk's drop on the average. With `audio.source:
+        //    mixxx` the average is also `level`, the slot Synesthesia's
+        //    syn_Level fills the rest of the time - see MidiInput.
         LevelInstant,   ///< Mixxx note 64 - peaks on every kick
+        LevelAverage,   ///< Mixxx note 68 - the level against its two-second window
         LevelMeter,     ///< Mixxx note 69 - the quantised meter bar
 
         Count           ///< not a channel; the size of the bus
@@ -445,15 +456,19 @@ namespace edmx
     /// channel zero.
     bool findAudioChannel(const std::string& name, AudioChannel& outChannel);
 
-    /// The channel a VU source is. Mixxx's two-second average *is* `level` —
-    /// the same slot Synesthesia's `syn_Level` fills — which is what makes
-    /// `audio.source` a switch rather than a rewrite: the looks reading a
-    /// level do not learn that the cable changed.
+    /// The channel a VU source is: each of Mixxx's three has a slot of its
+    /// own, filled from the cable whatever `audio.source` says, so a cue
+    /// that wants Mixxx's meter can name it. The average is *also* `level`
+    /// - the slot Synesthesia's `syn_Level` fills - when Mixxx is the
+    /// source, which is what makes `audio.source` a switch rather than a
+    /// rewrite: the looks reading a level do not learn that the cable
+    /// changed. That second write is the MIDI input's, not this table's;
+    /// see MidiInput::setVuFillsLevel.
     constexpr AudioChannel channelFor(VuSource source)
     {
         return (source == VuSource::Instant) ? AudioChannel::LevelInstant
              : (source == VuSource::Meter)   ? AudioChannel::LevelMeter
-             :                                 AudioChannel::Level;
+             :                                 AudioChannel::LevelAverage;
     }
 
 

@@ -142,10 +142,12 @@ namespace
             case AudioChannel::Intensity:
                 return ecore::HSV(120.0f, 1.0f, 1.0f);
 
-            // Mixxx's own two meters: amber, because they are the ones that
-            // stay dark on `audio.source: synesthesia` by design, and a cue
-            // that is *meant* to be dead should not look like the accident.
+            // Mixxx's own three meters: amber, because they are the cable's
+            // whichever source owns the rest of the bus - lit under the
+            // visualiser only if Mixxx is sending, and dark with no accident
+            // behind it when the mapping's box for that note is unticked.
             case AudioChannel::LevelInstant:
+            case AudioChannel::LevelAverage:
             case AudioChannel::LevelMeter:
                 return ecore::HSV(38.0f, 1.0f, 1.0f);
 

@@ -476,10 +476,11 @@ namespace edmx
         /// A channel of the bus the field's level rides, and how much of the
         /// ride shows: at `follow` 0 the wash drifts on its own, which is the
         /// neuron cue; at 1 its brightness above the floor is the channel's,
-        /// slewed. The tunnel follows the mid presence the way the geode and
-        /// blown do, because a cue between two that move with the track and
-        /// one that does not reads as the rig losing the music. The channel
-        /// is set per cue, not a knob - see Pattern_Mythos_BusWash::channel.
+        /// slewed. The tunnel follows Mixxx's average - the cable's own
+        /// presence, on the bus whatever else is filling it - because a cue
+        /// between two that move with the track and one that does not reads
+        /// as the rig losing the music. The channel is set per cue, not a
+        /// knob - see Pattern_Mythos_BusWash::channel.
         AudioChannel channel{AudioChannel::MidPresence};
         float follow{0.0f};
         float gain{1.0f};
@@ -510,8 +511,9 @@ namespace edmx
     /// A colour whose level follows a channel of the audio bus, with a second
     /// colour that lands on the kick.
     ///
-    /// The presence cues: red riding the mids for the geode, purple riding
-    /// them for filter blown - and on the second, green on every kick. The
+    /// The presence cues: red riding Mixxx's instant VU for the geode,
+    /// purple riding the mids for filter blown - and on the second, green
+    /// on every kick. The
     /// wash never falls below `floor`, which is what the spec's "clamp to 0.2"
     /// means: a wash keyed to a track that has gone quiet is still a wash.
     ///
@@ -655,8 +657,12 @@ namespace edmx
 
         /// Palette cycles per second past a point, downward.
         float speed{0.12f};
-        /// How many times the palette repeats over the stage's height.
-        float waves{1.0f};
+        /// How many times the palette repeats over the stage's height. Half:
+        /// three of the six bands on the rig at once, each spanning a good
+        /// stretch of pillar and a few pars, so what is seen is the blend
+        /// between them. At one the six were seven rows each on the
+        /// obelisk and under two pars each on the truss - stripes.
+        float waves{0.5f};
         /// How far a dark band comes up under the rainbow, 0..1: 0 keeps
         /// the canyon's levels exactly, 1 takes everything to full.
         float rainbowLift{0.35f};
@@ -687,16 +693,22 @@ namespace edmx
     };
 
 
-    /// A gradient between two colours up the stage, strobing on the beat.
+    /// A gradient between two colours up the stage, dropping to a third on
+    /// the music.
     ///
     /// The punk cue: punk purple into honey orange - Milk, Honey, Smoke,
-    /// Bile's own two - scrolling slowly, and on every hit of `rate` the
-    /// whole rig drops to a navy dark blue and comes back. A strobe *down*,
-    /// because that is what the scene's `smoke` does: it inverts lightness
-    /// on the beat, so the visual goes dark where a flash layer would go
-    /// white. On the grid rather than free-running, so it lands with the
-    /// UV on the kick. Bright by design between the hits: the gradient's
-    /// floor is high.
+    /// Bile's own two - scrolling slowly, and the whole rig dropping toward
+    /// a navy dark blue and coming back. A strobe *down*, because that is
+    /// what the scene's `smoke` does: it inverts lightness on the beat, so
+    /// the visual goes dark where a flash layer would go white. Bright by
+    /// design between the drops: the gradient's floor is high.
+    ///
+    /// What drives the drop is `follow`. At 1 - the cue - it is a channel
+    /// of the bus, Mixxx's average: the rig sits as dark as the meter says,
+    /// slewed, so the drop is the level of the track and not a grid's
+    /// guess at it. At 0 it is the beat: on every hit of `rate` the
+    /// envelope fires and the rig drops and comes back, on the grid so it
+    /// lands with the UV on the kick - the half- and double-time modes.
     ///
     /// The scroll is slow on purpose. At half a cycle a second the whole
     /// rig went purple, white, purple every two seconds - a second pulse
@@ -717,6 +729,15 @@ namespace edmx
         float speed{0.12f};
         float waves{1.0f};
 
+        /// How much of the drop is the channel's rather than the beat's,
+        /// 0..1, and the channel: Mixxx's average, gained and slewed. The
+        /// slew is short - the meter arrives every 40ms and the drop should
+        /// follow it, not smear it.
+        float follow{1.0f};
+        AudioChannel channel{AudioChannel::LevelAverage};
+        float gain{1.0f};
+        float slew{0.05f};
+
         void setEnvelope(float attackSeconds, float decaySeconds);
         void setPulseRate(float pulsesPerBeat);
         float getPulseRate() const { return pulseRate; }
@@ -730,9 +751,13 @@ namespace edmx
         virtual void reflectCurves(eanim::CurveBag& bag) override;
 
         float getStrobeLevel() const { return strobe; }
+        /// The channel's slewed level, 0..1, for tests.
+        float getLevel() const { return level; }
 
     private:
         TriggerRack* triggers{nullptr};
+        AudioLevel* bus{nullptr};
+        float level{0.0f};
         float attackSeconds{0.0f};
         /// Long enough to be seen on every beat: 0.12s was three frames,
         /// and a beat that fell between them was a beat the rig missed.
@@ -893,10 +918,18 @@ namespace edmx
     /// the rig, climb and it falls away to sky.
     ///
     /// Both `height` and `speed` are targets: the look glides to them over
-    /// `glide` seconds rather than snapping, which is what the spec's two
-    /// buttons each ask for - a pad sets the target, the flight takes its
-    /// time. The scene's own height and speed are ramped from the desk the
-    /// same way; see the cue's pads in config/mythos-show.json.
+    /// `glide` seconds rather than snapping - a pad or a mode sets the
+    /// target, the flight takes its time. The modes are the heights: low,
+    /// where the cue opens, then cruising, then high - so the mode pad is
+    /// a climb and the numbered pads name an altitude outright. The speed
+    /// is the cue's two pads, and a mode leaves it be. The scene's own
+    /// height and speed are ramped from the desk the same way; see the
+    /// cue in config/mythos-show.json.
+    ///
+    /// `clouds` is how much cloud there is: the share of the deck lit as
+    /// tops catching the sunset, and wisps of the same streaming through
+    /// the sky above the horizon - so a low flight is mostly cloud and a
+    /// high one still has some.
     class Pattern_Mythos_CloudFlight : public Pattern_MythosLook
     {
     public:
@@ -906,15 +939,18 @@ namespace edmx
         ecore::HSV skyLow{330.0f, 0.70f, 1.0f};     // the pink at the horizon
         ecore::HSV cloud{270.0f, 0.60f, 0.16f};     // the deck, in shadow
 
-        /// Where the horizon is, 0..1 up the stage - the target.
-        float height{0.45f};
+        /// Where the horizon is, 0..1 up the stage - the target. Opens low:
+        /// the deck over three quarters of the rig.
+        float height{0.25f};
         /// How fast the deck streams past, in stage heights a second - the target.
         float speed{0.25f};
         /// Seconds a change of either takes to arrive.
         float glide{2.0f};
         /// How much of the deck is lit from above, 0..1: the tops of the
         /// clouds catching the sunset.
-        float glow{0.35f};
+        float glow{0.45f};
+        /// How much cloud, 0..1: the tops on the deck and the wisps in the sky.
+        float clouds{0.6f};
 
         void init();
 
@@ -930,7 +966,7 @@ namespace edmx
         float getTravelled() const { return travelled; }
 
     private:
-        float heightNow{0.45f};
+        float heightNow{0.25f};
         float speedNow{0.25f};
         /// The deck's place in its loop, 0..1. The deck is a field periodic
         /// in y - see valueNoiseLoop - so 1 is 0 and the wrap is not seen.
@@ -950,9 +986,12 @@ namespace edmx
     /// Over it, the rainbow: the wheel spread across the stage - `span`
     /// wheels from one side to the other, so the pars step through it one
     /// hue apart - and turning at `hue_rate`. How much of the rainbow shows
-    /// is the presence above `threshold`, over a `knee` so it comes up
-    /// rather than switching on, slewed like every other cue that reads
-    /// the bus. The probe is painted the rainbow's colour at the centre.
+    /// is the presence above `threshold`, over a `knee` that spans most of
+    /// the meter - so the presence *blends* the rainbow in, through the
+    /// white, rather than switching it on at a level - and slewed longer
+    /// than the other cues that read the bus, so a presence that jumps is a
+    /// rainbow that swells. The probe is painted the rainbow's colour at
+    /// the centre.
     class Pattern_Mythos_Reaction : public Pattern_MythosLook
     {
     public:
@@ -965,13 +1004,15 @@ namespace edmx
         float hueRate{0.04f};
 
         /// Where the presence has to get to before the rainbow shows, and
-        /// how far above that it takes to show all of it.
-        float threshold{0.30f};
-        float knee{0.35f};
+        /// how far above that it takes to show all of it. Nearly the whole
+        /// meter: this was 0.3 and 0.35, which put the entire blend inside a
+        /// third of the range and read as a switch.
+        float threshold{0.08f};
+        float knee{0.72f};
 
         AudioChannel channel{AudioChannel::Presence};
         float gain{1.0f};
-        float slew{0.30f};
+        float slew{0.60f};
 
         void init();
 
@@ -989,49 +1030,61 @@ namespace edmx
     };
 
 
-    /// Mostly dark, with red-orange on the music and a cyan blue in the
-    /// dark - the scaffold cue. The strong white is the flash layer's.
+    /// Mostly dark, with red-orange and a cyan blue emerging on the beat
+    /// and hiding again before the next - the scaffold cue.
     ///
     /// Two things on a ground that is nearly black. The `glint`: a cyan
     /// blue where a slow, fine field peaks, the rig's own cold light - a
     /// few nodes at a time, drifting, the way the scene's struts catch it.
-    /// The `ember`: red-orange rising with the mid presence, in patches of
-    /// a second field that open wider as the presence climbs, so a quiet
-    /// passage is a glow in a corner and a loud one is the rig gone hot.
-    /// The white the spec asks for lands over this from the flash layer,
-    /// which the cue table turns on - the same white, on the same beat, as
-    /// every other cue that flashes, rather than a second one of this
-    /// look's own on the kicks beside it. The probe is painted the glint.
+    /// The `ember`: red-orange in patches of a second field. Both come and
+    /// go with the grid: on every hit of `rate` the envelope fires, the
+    /// ember's patches open to `ember_spread` and the glint comes up, and
+    /// over the fall they close and the rig goes back to its ground - the
+    /// pattern emerging and hiding in time, which is what the spec asks
+    /// for instead of a white flash over a look that was there anyway. So
+    /// no flash layer on this cue, and the envelope is the same shape
+    /// beat_pulse plays, off the same shared trigger, so it lands with
+    /// everything else on the rate. The probe is painted the glint.
     class Pattern_Mythos_Scaffold : public Pattern_MythosLook
     {
     public:
+        Pattern_Mythos_Scaffold();
+
         ecore::HSV ground{200.0f, 0.90f, 0.05f};
         ecore::HSV glint{190.0f, 0.85f, 0.75f};
         ecore::HSV ember{18.0f, 0.95f, 1.00f};
 
-        /// How much of the field peaks as glint: the share of the range,
-        /// from the top. 0 is none.
+        /// How much of the field peaks as glint at the top of the beat: the
+        /// share of the range, from the top. 0 is none.
         float glintAmount{0.30f};
 
-        /// The ember's channel, and how far its patches open at full
-        /// presence, 0..1.
-        AudioChannel channel{AudioChannel::MidPresence};
+        /// How far the ember's patches open at the top of the beat, 0..1.
         float emberSpread{0.8f};
-        float gain{1.0f};
-        float slew{0.20f};
 
-        void init();
+        void setEnvelope(float attackSeconds, float decaySeconds);
+        void setPulseRate(float pulsesPerBeat);
+        float getPulseRate() const { return pulseRate; }
 
+        eanim::AutomationCurveTrigger envelope;
+
+        virtual void reset() override;
         virtual void tick(float deltaTime) override;
         virtual void render(eio::HSVStripNode* node, ecore::HSV& inOutColor) const override;
         virtual void reflect(ecore::PropertyBag& bag) override;
+        virtual void reflectCurves(eanim::CurveBag& bag) override;
 
-        /// The slewed presence, 0..1, for tests.
-        float getLevel() const { return level; }
+        /// How far the pattern is out right now, 0..1, for tests.
+        float getPulseLevel() const { return pulse; }
 
     private:
-        AudioLevel* bus{nullptr};
-        float level{0.0f};
+        TriggerRack* triggers{nullptr};
+        /// Quick out, and gone before the next beat at a club tempo: the
+        /// pattern is there on the hit and hidden by the time the next one
+        /// lands, so each beat is seen to bring it back.
+        float attackSeconds{0.06f};
+        float decaySeconds{0.38f};
+        float pulseRate{edmx::kOnBeat};
+        float pulse{0.0f};
     };
 
 

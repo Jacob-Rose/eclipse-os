@@ -48,7 +48,7 @@ MODE_PAD = ("mode", lp.Colour.AMBER)
 MODE_COUNT = 4
 NAMED_MODE_COLOUR = lp.Colour.YELLOW
 
-#: A cue's own pads - the clouds' height and speed - on the rows above the
+#: A cue's own pads - the clouds' speed - on the rows above the
 #: layers, in the order the cue table lists them. They act on whatever cue
 #: is up, and a knob the running look does not have is refused harmlessly.
 CUE_PAD_COLOUR = lp.Colour.SPRING

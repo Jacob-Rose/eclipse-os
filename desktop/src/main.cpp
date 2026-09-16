@@ -1410,6 +1410,10 @@ namespace
             check("vu.average", meter.get(VuSource::Average, 30.0), 64.0 / 127.0, 0.001);
             check("vu.meter", meter.get(VuSource::Meter, 30.0), 32.0 / 127.0, 0.001);
 
+            // The average is `level` too, by default - the cable as it
+            // always was.
+            check("vu.average_is_level", meter.get(AudioChannel::Level, 30.0), 64.0 / 127.0, 0.001);
+
             // Held flat, not decaying from the instant of the reading. A
             // backdrop tracking this every frame would otherwise ripple.
             check("vu.holds_between_messages",
@@ -1430,6 +1434,20 @@ namespace
             // from a neighbour.
             AudioLevel untouched;
             check("vu.unfed_is_zero", untouched.get(VuSource::Instant, 30.0), 0.0, 0.0);
+
+            // And the average stops being `level` when the visualiser owns
+            // that slot. Its own slot is filled either way: a cue asking for
+            // Mixxx's meter by name gets it under either source.
+            // Inside the hold, so `level` still reading the earlier value
+            // means the new message did not write it, not that it went
+            // stale.
+            midi.setVuFillsLevel(false);
+            midi.handleMessage(0x90, 68, 127, 30.2);
+            check("vu.average_still_its_own",
+                  meter.get(AudioChannel::LevelAverage, 30.2), 1.0, 0.001);
+            check("vu.level_left_to_the_visualiser",
+                  meter.get(AudioChannel::Level, 30.2), 64.0 / 127.0, 0.001);
+            midi.setVuFillsLevel(true);
         }
 
         // ---- the audio bus --------------------------------------------------
@@ -1454,16 +1472,20 @@ namespace
             check("bus.a_typo_is_not_channel_zero",
                   findAudioChannel("bass_hit", unused) ? 1.0 : 0.0, 0.0, 0.0);
 
-            // Mixxx's two-second average *is* `level` - the slot Synesthesia's
-            // syn_Level fills. That aliasing is what makes audio.source a
-            // switch rather than a rewrite, so it is worth pinning: a look
-            // reading a level must not learn that the cable changed.
+            // Mixxx's three meters are three slots of their own, so a cue
+            // can ask for the cable's meter by name and get it whichever
+            // source owns the rest of the bus. The average onto `level` -
+            // what makes audio.source a switch rather than a rewrite - is
+            // the MIDI input's doing, checked above; the bus itself keeps
+            // them apart.
             AudioLevel bus;
             bus.set(VuSource::Average, 0.5f, 10.0);
-            check("bus.mixxx_average_is_level",
-                  bus.get(AudioChannel::Level, 10.0), 0.5, 0.001);
+            check("bus.mixxx_average_has_its_own_slot",
+                  bus.get(AudioChannel::LevelAverage, 10.0), 0.5, 0.001);
+            check("bus.and_is_not_level_on_its_own",
+                  bus.get(AudioChannel::Level, 10.0), 0.0, 0.0);
 
-            bus.set(AudioChannel::Level, 0.25f, 10.0);
+            bus.set(AudioChannel::LevelAverage, 0.25f, 10.0);
             check("bus.and_the_alias_reads_back",
                   bus.get(VuSource::Average, 10.0), 0.25, 0.001);
 
@@ -3145,13 +3167,15 @@ namespace
         show.midi.setVuNote(VuSource::Average, show.config.midi.vuAverageNote);
         show.midi.setVuNote(VuSource::Meter, show.config.midi.vuMeterNote);
         show.midi.setBeatChannel(show.config.midi.beatChannel);
-        // And the same for the meters: Mixxx's average and Synesthesia's
-        // syn_Level land on the same channel, so with both wired `level` is
-        // whichever spoke last and the wash flickers between two readings of
-        // the same music.
-        show.midi.setAudioLevel(show.config.audio.source == "mixxx"
-                                    ? &sharedAudioLevel()
-                                    : nullptr);
+        // And the meters. Mixxx's three land on their own slots whichever
+        // source owns the bus - the geode, the tunnel and the punk ask for
+        // the cable's meter by name, and should have it under the visualiser
+        // too. Only the average's second write, onto `level`, follows the
+        // source: that is the slot syn_Level fills, and with both wired it
+        // is whichever spoke last and the wash flickers between two
+        // readings of the same music. `none` is nothing on the bus.
+        show.midi.setAudioLevel(show.config.audio.isNone() ? nullptr : &sharedAudioLevel());
+        show.midi.setVuFillsLevel(show.config.audio.source == "mixxx");
     }
 
     /// Every device's output, for a status line.

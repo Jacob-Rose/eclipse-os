@@ -46,11 +46,11 @@
   //      "MIDI for light" mapping, Apply. On Linux the output to pick is
   //      "eclipse-dmx IN", which is this program - start it first, because
   //      Mixxx only looks for MIDI devices once, at startup.
-  //   2. In that mapping's Settings tab, leave "Enable VU mono average" on -
-  //      that is note 68, the two-second average, and it is what vu_pulse's red
-  //      backdrop reads. Tick "Enable VU mono current" too if you want note 64
-  //      available to looks that should hit on transients. Turn OFF MTC
-  //      timecode; nothing here reads it.
+  //   2. In that mapping's Settings tab, leave "Enable VU mono average fit"
+  //      on - that is note 68, the level against its two-second window, and
+  //      it is what the tunnel's wash and the punk's drop read. Tick "Enable
+  //      VU mono current" too: note 64, off by default there, is what the
+  //      geode's red rides. Turn OFF MTC timecode; nothing here reads it.
   //   3. Run this config.
   //
   // The mapping sends notes, not beat clock. On its "Midi Channel" setting,
@@ -60,7 +60,7 @@
   //     note 50   the beat, velocity 100      <- beat_note
   //     note 52   the tempo, velocity bpm-50  <- bpm_note
   //     note 64   VU mono, instantaneous      <- vu_instant_note
-  //     note 68   VU mono, 2-second average   <- vu_average_note
+  //     note 68   VU mono, against its 2s window <- vu_average_note
   //     note 69   VU meter bar                <- vu_meter_note
   //
   // Which is why beat_note is a number and not -1. Take any note as a beat and
@@ -159,14 +159,18 @@
   // "source" is the one switch, and it is enforced rather than advisory:
   //
   //   "mixxx"        the VU notes on the MIDI cable fill level / level_instant
-  //                  / level_meter, the way they always did, and the beat is
-  //                  Mixxx's grid. The other eighteen channels stay dark, so
-  //                  the hit layers below sit at black - which, being
-  //                  additive, means they vanish rather than break. The show
-  //                  runs exactly as it did before any of this existed.
-  //   "synesthesia"  the app fills all twenty-one and owns the beat. The MIDI
-  //                  VU notes and, with "bpm" on, the MIDI beat notes are not
-  //                  wired, so the two cannot both write the same thing.
+  //                  / level_average / level_meter, the way they always did,
+  //                  and the beat is Mixxx's grid. The other eighteen
+  //                  channels stay dark, so the hit layers below sit at
+  //                  black - which, being additive, means they vanish rather
+  //                  than break. The show runs exactly as it did before any
+  //                  of this existed.
+  //   "synesthesia"  the app fills level and the eighteen, and owns the beat.
+  //                  The MIDI VU notes still land on their own three level_*
+  //                  slots - the cues that name Mixxx's meter read those -
+  //                  but not on level, and with "bpm" on the MIDI beat notes
+  //                  are not wired, so the two cannot both write the same
+  //                  thing.
   //   "none"         nothing fills the bus; the show keeps its own time.
   //
   // So flipping this one word back to "mixxx" is a complete, working fallback

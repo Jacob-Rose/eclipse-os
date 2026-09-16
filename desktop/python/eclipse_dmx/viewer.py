@@ -113,6 +113,7 @@ STATE_GROUPS: List[Tuple[str, List[Tuple[str, Tuple[str, str]]]]] = [
         ("bpm_confidence", ("state", "bpm_confidence")),
         ("intensity", ("state", "intensity")),
         ("level_instant", ("state", "level_instant")),
+        ("level_average", ("state", "level_average")),
         ("level_meter", ("state", "level_meter")),
         # not a channel: the show's beat look, parked on this list while
         # mythos26 is empty. Labelled with the state's own name like every
@@ -152,12 +153,11 @@ STATE_GROUPS: List[Tuple[str, List[Tuple[str, Tuple[str, str]]]]] = [
         ("mode 2", ("mode", "2")),
         ("mode 3", ("mode", "3")),
         ("mode 4", ("mode", "4")),
-        # the cues' own pads - the clouds' height and speed - by cue and
-        # index into the cue table's `pads`; see ViewerApp._fire_pad
-        ("fly low", ("pad", "clouds:0")),
-        ("fly high", ("pad", "clouds:1")),
-        ("slower", ("pad", "clouds:2")),
-        ("faster", ("pad", "clouds:3")),
+        # the cues' own pads - the clouds' speed; its heights are the modes
+        # - by cue and index into the cue table's `pads`; see
+        # ViewerApp._fire_pad
+        ("slower", ("pad", "clouds:0")),
+        ("faster", ("pad", "clouds:1")),
     ]),
     # The static pair moved here with the machine that holds them - the rest
     # of the generic list is left to the generated buttons.

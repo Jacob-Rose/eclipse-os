@@ -444,7 +444,7 @@ namespace
         "hits", "bass_hits", "mid_hits", "midhigh_hits", "high_hits",
         "presence", "bass_presence", "mid_presence", "midhigh_presence", "high_presence",
         "beat", "bpm", "bpm_confidence", "intensity",
-        "level_instant", "level_meter",
+        "level_instant", "level_average", "level_meter",
     };
 }
 

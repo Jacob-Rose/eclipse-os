@@ -125,7 +125,7 @@ AUDIO_CHANNELS = (
     "hits", "bass_hits", "mid_hits", "midhigh_hits", "high_hits",
     "presence", "bass_presence", "mid_presence", "midhigh_presence", "high_presence",
     "beat", "bpm", "bpm_confidence", "intensity",
-    "level_instant", "level_meter",
+    "level_instant", "level_average", "level_meter",
 )
 
 #: The `audio` pattern's cues, in machine order - one per channel, named after
@@ -1004,6 +1004,13 @@ class Cue:
     in the executable (see ShowModes in desktop/include/edmx/mythos26.h);
     this is the half the executable cannot reach. A mode with no entry
     changes nothing but the look, and mode 1 is the cue itself.
+
+    `mode_ramp` is seconds the scene's controls a mode changes glide over,
+    the way a pad's `ramp` does - the clouds' modes are its heights, and
+    the scene's height should climb with the look's rather than snap. Only
+    a mode change ramps: a cue coming up sends its controls at once, its
+    scene being new and having nothing to glide from, and a mode that
+    re-sends the scene does the same for the same reason.
     """
 
     state: str = ""
@@ -1013,6 +1020,7 @@ class Cue:
     controls: Dict[str, ControlValue] = field(default_factory=dict)
     modes: Dict[int, "Cue"] = field(default_factory=dict)
     pads: List["CuePad"] = field(default_factory=list)
+    mode_ramp: float = 0.0
 
     #: The most modes any show look has. Every look has at least three
     #: (ShowModes::kModeCount); the ones with a fourth - the churn, the nova:
@@ -1069,7 +1077,8 @@ class Cue:
         where = _where or f"cues['{state}']"
         if not isinstance(data, dict):
             raise ConfigError(f"{where} must be an object")
-        allowed = {"scene", "media", "layers", "controls"} | ({"modes", "pads"} if not _where else set())
+        allowed = {"scene", "media", "layers", "controls"} | (
+            {"modes", "pads", "mode_ramp"} if not _where else set())
         unknown = set(data) - allowed
         if unknown:
             raise ConfigError(
@@ -1091,6 +1100,9 @@ class Cue:
             raise ConfigError(f"{where}.pads must be a list")
         pads = [CuePad.from_dict(entry, f"{where}.pads[{index}]")
                 for index, entry in enumerate(pads_raw)]
+        mode_ramp = data.get("mode_ramp", 0.0)
+        if isinstance(mode_ramp, bool) or not isinstance(mode_ramp, (int, float)) or mode_ramp < 0:
+            raise ConfigError(f"{where}.mode_ramp must be seconds, 0 or more")
         modes: Dict[int, "Cue"] = {}
         modes_raw = data.get("modes") or {}
         if not isinstance(modes_raw, dict):
@@ -1112,7 +1124,8 @@ class Cue:
                    layers=layers,
                    controls=controls,
                    modes=modes,
-                   pads=pads)
+                   pads=pads,
+                   mode_ramp=float(mode_ramp))
 
     def to_dict(self) -> Dict[str, Any]:
         out: Dict[str, Any] = {}
@@ -1128,11 +1141,13 @@ class Cue:
         if self.modes:
             out["modes"] = {str(number): mode.to_dict()
                             for number, mode in sorted(self.modes.items())}
+        if self.mode_ramp:
+            out["mode_ramp"] = self.mode_ramp
         if self.pads:
             out["pads"] = [pad.to_dict() for pad in self.pads]
         return out
 
-    def actions(self, pattern: str = "") -> List[Dict[str, Any]]:
+    def actions(self, pattern: str = "", ramp: float = 0.0) -> List[Dict[str, Any]]:
         """The cue as the actions a pad fires, in the order they should run.
 
         The same shape midi_map.Action.to_dict writes, so a map can carry a
@@ -1153,7 +1168,7 @@ class Cue:
         if self.media:
             out.append({"action": "syn_media", "params": {"name": self.media}})
         for name, value in self.controls.items():
-            out.append(self.control_action(name, value))
+            out.append(self.control_action(name, value, ramp=ramp))
         return out
 
     def pad_actions(self, index: int) -> List[Dict[str, Any]]:
@@ -1215,7 +1230,9 @@ class Cue:
         room.layers = {name: wanted for name, wanted in room.layers.items() if wanted}
         room.controls = {name: value for name, value in room.controls.items()
                          if value is not None}
-        out.extend(room.actions())
+        # the controls glide over `mode_ramp` - unless the scene is being
+        # re-sent, which comes up fresh with nothing to glide from
+        out.extend(room.actions(ramp=0.0 if scene_now else self.mode_ramp))
         return out
 
 

@@ -64,9 +64,18 @@
   // on syn_OnBeat off the bus, on purpose: that is what its scene re-deals
   // on, and the rig should tear with the picture, not with the grid.)
   //
+  // And Mixxx's VU notes, on the same cable, land on the bus under this
+  // source too - on their own three slots, level_instant / level_average /
+  // level_meter, never on `level`, which is the visualiser's here. Three
+  // cues ask for the cable's meter by name: the geode's red rides the
+  // instant (note 64, "Enable VU mono current" in the mapping's settings -
+  // it is off by default there), the tunnel's wash and the punk's drop ride
+  // the average (note 68, on by default). `channels` shows them landing.
+  //
   // Flip "source" to "mixxx" (or run the launcher with --no-osc-in) for the
-  // night the visualiser will not start: the presence cues sit at their
-  // floors, and the kick cues wait for a kick that never comes.
+  // night the visualiser will not start: those three carry on, the other
+  // presence cues sit at their floors, and the kick cues wait for a kick
+  // that never comes.
   "audio": {
     "source": "synesthesia",
     "port": 7000,
@@ -183,6 +192,10 @@
   //            The pad steps round however many the cue has (three, or
   //            four for the churn and the nova); hitting the cue again is
   //            mode 1, and the four numbered pads name one outright.
+  //   mode_ramp seconds the scene's controls a mode changes glide over
+  //            instead of snapping - the clouds' height, which the look
+  //            glides to on its own. Only a mode change ramps; a cue
+  //            coming up sends its controls at once, its scene being new.
   //   pads     the cue's own buttons on the surface, for a control flown
   //            by hand: a label, the look's knobs to set (`params`), the
   //            scene's controls to send (`controls`), and a `ramp` in
@@ -247,8 +260,8 @@
     },
     "tunnel": {
       // The tunnel adds a little of its media into the walls on the highs.
-      // No strobe by default: the wash breathes with the mids on its own,
-      // and the flash pad is there for the night that wants it.
+      // No strobe by default: the wash breathes with Mixxx's average on its
+      // own, and the flash pad is there for the night that wants it.
       "scene": "Fire Tunnel",
       "media": "black.mp4",
       "layers": { "flash": "off", "uv": "off" }
@@ -261,8 +274,10 @@
     "punk": {
       // `smoke` is the scene's own beat flash - it inverts lightness on
       // syn_OnBeat, so the visual goes *dark* on the beat - and the look
-      // does the same, dropping to navy on the same trigger. The white
-      // flash layer is off: added over the drop it whited the beat out.
+      // does the same, dropping toward navy as far as Mixxx's average VU
+      // says, so the rig's drop is the track's level and not the grid's.
+      // The white flash layer is off: added over the drop it whited the
+      // beat out.
       "scene": "Milk, Honey, Smoke, Bile",
       "layers": { "flash": "off", "uv": "kick" },
       "controls": { "smoke": 1 }
@@ -280,10 +295,12 @@
       "layers": { "flash": "off", "uv": "off" }
     },
     "scaffold": {
-      // Mostly dark, like the scene: the strong white is the flash layer,
-      // on the beat, over the look's glint and ember.
+      // Mostly dark, like the scene. No flash: the look's glint and ember
+      // come out on the beat and hide again before the next on their own,
+      // and a white over that was a flash over a pattern that was there
+      // anyway.
       "scene": "Scaffold Fractal",
-      "layers": { "flash": "flash", "uv": "off" }
+      "layers": { "flash": "off", "uv": "off" }
     },
     "churn": {
       // Eclipse Churn (scenes/eclipse_churn.synScene) paints Churning in
@@ -328,10 +345,12 @@
       }
     },
     "clouds": {
-      // The flight. The scene's auto height is turned off so the pads own
-      // it, and each pad moves the look's target and the scene's control
-      // together - the look glides over its own `glide`, the scene over
-      // the pad's `ramp`, the same two seconds.
+      // The flight. The scene's auto height is off, for good: the modes
+      // are the heights - low, where the cue opens; cruising; high - and
+      // each moves the look's target and the scene's manual_height
+      // together, the look gliding over its own `glide` and the scene over
+      // `mode_ramp`, the same two seconds. The speed is the cue's two
+      // pads, the same way.
       //
       // CHECKED AGAINST THE SCENE. Synesthesia 1.25.4,
       // Contents/Resources/release/cloudten.synScene. Two corrections:
@@ -361,20 +380,15 @@
       "scene": "Cloud Ten",
       "media": "white.mp4",
       "layers": { "flash": "off", "uv": "off" },
-      //
-      // The last two pads are the scene's auto height, off and on: `by hand`
-      // is the cue as it opens - the height pads own it - and `auto` hands
-      // it back to the scene's own flight. A toggle, so no ramp. Only the
-      // scene has an auto height; the rig sits at its last target either
-      // way, so the height pads still move it.
-      "controls": { "auto_height": 0, "manual_height": 0.45, "speed": 0.25 },
+      "controls": { "auto_height": 0, "manual_height": 0.25, "speed": 0.25 },
+      "modes": {
+        "2": { "controls": { "manual_height": 0.50 } },
+        "3": { "controls": { "manual_height": 0.85 } }
+      },
+      "mode_ramp": 2.0,
       "pads": [
-        { "label": "fly low",  "params": { "height": 0.15 }, "controls": { "manual_height": 0.15 }, "ramp": 2.0 },
-        { "label": "fly high", "params": { "height": 0.85 }, "controls": { "manual_height": 0.85 }, "ramp": 2.0 },
         { "label": "slower",   "params": { "speed": 0.08 },  "controls": { "speed": 0.08 },  "ramp": 2.0 },
-        { "label": "faster",   "params": { "speed": 0.70 },  "controls": { "speed": 0.70 },  "ramp": 2.0 },
-        { "label": "by hand",  "controls": { "auto_height": 0 } },
-        { "label": "auto",     "controls": { "auto_height": 1 } }
+        { "label": "faster",   "params": { "speed": 0.70 },  "controls": { "speed": 0.70 },  "ramp": 2.0 }
       ]
     },
     "white": {

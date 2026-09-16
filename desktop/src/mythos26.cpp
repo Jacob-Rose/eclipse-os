@@ -56,6 +56,13 @@ namespace
     /// level put back over it is a light grey. Six bands of canyon with
     /// five smears of grey between them, on ten pars, was most of the
     /// truss.
+    ///
+    /// And eased between the knots, not straight. A straight blend has a
+    /// corner at every colour - the value falling from the orange at one
+    /// rate and rising toward the green at another - and on the obelisk's
+    /// forty rows each corner was a line across the pillar, six of them
+    /// marching down it once a cycle. Eased, each band is a plateau of its
+    /// own colour and the blend into the next has no edge at either end.
     class LoopPalette
     {
     public:
@@ -70,7 +77,8 @@ namespace
             const float scaled = frac(t) * static_cast<float>(colors.size());
             const size_t index = static_cast<size_t>(scaled) % colors.size();
             const size_t next = (index + 1) % colors.size();
-            return blendHsv(colors[index], colors[next], scaled - static_cast<float>(index));
+            const float f = scaled - static_cast<float>(index);
+            return blendHsv(colors[index], colors[next], f * f * (3.0f - 2.0f * f));
         }
 
     private:
@@ -822,6 +830,7 @@ void Pattern_Mythos_GradientStrobe::reset()
     Pattern_MythosLook::reset();
     envelope.reset();
     strobe = 0.0f;
+    level = 0.0f;
 }
 
 void Pattern_Mythos_GradientStrobe::tick(float deltaTime)
@@ -835,7 +844,27 @@ void Pattern_Mythos_GradientStrobe::tick(float deltaTime)
     }
     envelope.tick(deltaTime);
 
-    strobe = std::clamp(envelope.getValue(), 0.0f, 1.0f) * std::clamp(intensity, 0.0f, 1.0f);
+    // the channel, slewed - the same read every cue on the bus does, only
+    // quicker, so the drop tracks the meter rather than trailing it
+    if (bus == nullptr)
+    {
+        bus = &sharedAudioLevel();
+    }
+    const float target = std::clamp(bus->get(channel, nowSeconds()) * gain, 0.0f, 1.0f);
+    if (slew <= 0.0f || deltaTime <= 0.0f)
+    {
+        level = target;
+    }
+    else
+    {
+        level += (target - level) * (1.0f - std::exp(-deltaTime / slew));
+    }
+
+    // the drop is the channel's or the beat's by `follow`: the cue rides
+    // the meter, the half- and double-time modes strobe on the grid
+    const float onBeat = std::clamp(envelope.getValue(), 0.0f, 1.0f);
+    strobe = lerp(onBeat, level, std::clamp(follow, 0.0f, 1.0f))
+           * std::clamp(intensity, 0.0f, 1.0f);
 }
 
 void Pattern_Mythos_GradientStrobe::render(eio::HSVStripNode* node, ecore::HSV& inOutColor) const
@@ -862,6 +891,9 @@ void Pattern_Mythos_GradientStrobe::reflect(ecore::PropertyBag& bag)
     bag.add("attack", attackSeconds, 0.0f, 0.5f, [this] { setEnvelope(attackSeconds, decaySeconds); });
     bag.add("decay", decaySeconds, 0.01f, 1.0f, [this] { setEnvelope(attackSeconds, decaySeconds); });
     bag.add("rate", pulseRate, kQuarterTime, kDoubleTime, [this] { setPulseRate(pulseRate); });
+    bag.add("follow", follow, 0.0f, 1.0f);
+    bag.add("gain", gain, 0.0f, 4.0f);
+    bag.add("slew", slew, 0.0f, 1.0f);
     bag.add("color_a", colorA);
     bag.add("color_b", colorB);
     bag.add("strobe_color", strobeColor);
@@ -1109,9 +1141,9 @@ namespace
 
 Pattern_Mythos_CloudFlight::Pattern_Mythos_CloudFlight()
 {
-    // the pads' two: a palette change must not fly the rig back to where
-    // the cue opened
-    keepAcrossModes({"height", "speed"});
+    // the speed is the pads': a mode is an altitude and must not put the
+    // throttle back where the cue opened. The height is the modes' own.
+    keepAcrossModes({"speed"});
 }
 
 void Pattern_Mythos_CloudFlight::init()
@@ -1162,9 +1194,23 @@ void Pattern_Mythos_CloudFlight::render(eio::HSVStripNode* node, ecore::HSV& inO
     // high flight looks down on a deck that has fallen away to the bottom
     const float horizon = 1.0f - std::clamp(heightNow, 0.0f, 1.0f);
 
+    const float amount = std::clamp(clouds, 0.0f, 1.0f);
+
     // the sky: yellow overhead into pink at the horizon
     const float skyT = horizon >= 0.999f ? 0.0f : std::clamp((up - horizon) / (1.0f - horizon), 0.0f, 1.0f);
-    const ecore::HSV sky = blendRgb(skyLow, skyHigh, skyT);
+    ecore::HSV sky = blendRgb(skyLow, skyHigh, skyT);
+
+    // and the wisps in it: a third field on the deck's loop, streaming with
+    // the flight, lit as pale cloud where it peaks - so the sky has cloud
+    // in it too, and a high flight is not a rig gone to plain gradient
+    const float w = scanner::valueNoiseLoop(at.x * 0.55f + 23.0f,
+                                            at.y * 0.30f + travelled * kDeckLoopCoarse,
+                                            kDeckLoopCoarse);
+    const float wisp = std::clamp((w - 0.55f) / 0.30f, 0.0f, 1.0f) * amount
+                     * std::clamp(intensity, 0.0f, 1.0f);
+    ecore::HSV pale(skyLow.getHueFloat(), skyLow.getSatFloat() * 0.35f, 1.0f);
+    pale.setBrightnessAlpha(1.0f);
+    sky = blendRgb(sky, pale, wisp * 0.7f);
 
     // the deck: the cloud's own noise, streaming down the stage, each
     // octave scrolled by its own whole number of cells per turn
@@ -1175,7 +1221,9 @@ void Pattern_Mythos_CloudFlight::render(eio::HSVStripNode* node, ecore::HSV& inO
                                                    at.y * 0.45f + travelled * kDeckLoopFine,
                                                    kDeckLoopFine);
     // the tops catch the sunset: the pink, at `glow`, where the deck peaks
-    const float lit = std::clamp((n - 0.55f) / 0.3f, 0.0f, 1.0f) * std::clamp(glow, 0.0f, 1.0f)
+    // - and more of the deck peaks the more cloud there is
+    const float crest = 0.60f - 0.30f * amount;
+    const float lit = std::clamp((n - crest) / 0.3f, 0.0f, 1.0f) * std::clamp(glow, 0.0f, 1.0f)
                     * std::clamp(intensity, 0.0f, 1.0f);
     ecore::HSV deck = blendRgb(cloud, skyLow, lit);
     deck.setBrightnessAlpha(lerp(cloud.getValFloat() * (0.6f + 0.4f * n), skyLow.getValFloat(), lit));
@@ -1193,6 +1241,7 @@ void Pattern_Mythos_CloudFlight::reflect(ecore::PropertyBag& bag)
     bag.add("speed", speed, 0.0f, 2.0f);
     bag.add("glide", glide, 0.0f, 10.0f);
     bag.add("glow", glow, 0.0f, 1.0f);
+    bag.add("clouds", clouds, 0.0f, 1.0f);
     bag.add("sky_high", skyHigh);
     bag.add("sky_low", skyLow);
     bag.add("cloud", cloud);
@@ -1312,23 +1361,53 @@ void Pattern_Mythos_Reaction::reflect(ecore::PropertyBag& bag)
 // scaffold
 // ============================================================================
 
-void Pattern_Mythos_Scaffold::init()
+Pattern_Mythos_Scaffold::Pattern_Mythos_Scaffold()
+    : triggers(&sharedTriggerRack())
 {
-    bus = &sharedAudioLevel();
-    level = 0.0f;
+    // RestartHold, like beat_pulse: a beat landing in the fall lifts the
+    // pattern back out from wherever it got to rather than snapping it to
+    // nothing first.
+    envelope.retriggerMode = eanim::RetriggerMode::RestartHold;
+    setEnvelope(attackSeconds, decaySeconds);
+}
+
+void Pattern_Mythos_Scaffold::setEnvelope(float inAttackSeconds, float inDecaySeconds)
+{
+    attackSeconds = std::max(inAttackSeconds, 0.0f);
+    decaySeconds  = std::max(inDecaySeconds, 0.001f);
+
+    envelope.curve.clear();
+    envelope.curve.addKey(0.0f, 0.0f);
+    envelope.curve.addKey(attackSeconds, 1.0f, easing_functions::EaseOutCubic);
+    envelope.curve.addKey(attackSeconds + decaySeconds, 0.0f);
+}
+
+void Pattern_Mythos_Scaffold::setPulseRate(float pulsesPerBeat)
+{
+    pulseRate = snapPulseRate(pulsesPerBeat);
+}
+
+void Pattern_Mythos_Scaffold::reset()
+{
+    Pattern_MythosLook::reset();
+    envelope.reset();
+    pulse = 0.0f;
 }
 
 void Pattern_Mythos_Scaffold::tick(float deltaTime)
 {
     PatternScanner::tick(deltaTime);
-    if (bus == nullptr)
-    {
-        bus = &sharedAudioLevel();
-    }
-    const double now = nowSeconds();
 
-    const float target = std::clamp(bus->get(channel, now) * gain, 0.0f, 1.0f);
-    slewToward(level, target, slew, deltaTime);
+    // the same shared trigger beat_pulse fires off, so the pattern comes
+    // out on the same frame as anything else on the rate
+    const BeatTrigger& trigger = triggers->forRate(pulseRate);
+    if (trigger.fired)
+    {
+        envelope.triggerAt(trigger.sinceHit);
+    }
+    envelope.tick(deltaTime);
+
+    pulse = std::clamp(envelope.getValue(), 0.0f, 1.0f) * std::clamp(intensity, 0.0f, 1.0f);
 }
 
 void Pattern_Mythos_Scaffold::render(eio::HSVStripNode* node, ecore::HSV& inOutColor) const
@@ -1341,20 +1420,22 @@ void Pattern_Mythos_Scaffold::render(eio::HSVStripNode* node, ecore::HSV& inOutC
     }
 
     const Coordinate at = nodeCoord(node);
-    const float amount = std::clamp(intensity, 0.0f, 1.0f);
 
-    // the glint: a slow fine field, lit only where it peaks
+    // the glint: a slow fine field, lit only where it peaks - and only as
+    // far out as the beat has it: the share of the field that glints is
+    // the pulse's share of `glint_amount`
     const float tg = timeActive * 0.12f;
     const float g = scanner::valueNoise(at.x * 0.9f + tg * 1.1f + 11.0f, at.y * 0.55f - tg * 0.7f);
-    const float glintShare = std::clamp(glintAmount, 0.0f, 1.0f);
-    const float cold = glintShare > 0.0f ? smoothstep(1.0f - glintShare, 1.0f, g) : 0.0f;
+    const float glintShare = std::clamp(glintAmount, 0.0f, 1.0f) * pulse;
+    const float cold = glintShare > 0.0f ? smoothstep(1.0f - glintShare, 1.0f, g) * pulse : 0.0f;
 
-    // the ember: a second field, opened by the presence - the threshold the
-    // patch has to clear falls as the presence climbs
+    // the ember: a second field, opened by the beat - the threshold the
+    // patch has to clear falls as the pulse rises, and climbs back over
+    // the fall so the patches close from their edges in
     const float te = timeActive * 0.35f;
     const float e = scanner::valueNoise(at.x * 0.5f - te * 0.9f + 53.0f, at.y * 0.3f + te * 1.4f);
-    const float open = level * amount * std::clamp(emberSpread, 0.0f, 1.0f);
-    const float hot = smoothstep(1.0f - open, 1.0f - open + 0.25f, e) * level * amount;
+    const float open = pulse * std::clamp(emberSpread, 0.0f, 1.0f);
+    const float hot = smoothstep(1.0f - open, 1.0f - open + 0.25f, e) * pulse;
 
     // built up from the ground: the glint on it, the ember over that
     HSV out = blendRgb(ground, glint, cold);
@@ -1371,11 +1452,17 @@ void Pattern_Mythos_Scaffold::reflect(ecore::PropertyBag& bag)
     Pattern_MythosLook::reflect(bag);
     bag.add("glint_amount", glintAmount, 0.0f, 1.0f);
     bag.add("ember_spread", emberSpread, 0.0f, 1.0f);
-    bag.add("gain", gain, 0.0f, 4.0f);
-    bag.add("slew", slew, 0.0f, 2.0f);
+    bag.add("attack", attackSeconds, 0.0f, 1.0f, [this] { setEnvelope(attackSeconds, decaySeconds); });
+    bag.add("decay", decaySeconds, 0.01f, 3.0f, [this] { setEnvelope(attackSeconds, decaySeconds); });
+    bag.add("rate", pulseRate, kQuarterTime, kDoubleTime, [this] { setPulseRate(pulseRate); });
     bag.add("ground", ground);
     bag.add("glint", glint);
     bag.add("ember", ember);
+}
+
+void Pattern_Mythos_Scaffold::reflectCurves(eanim::CurveBag& bag)
+{
+    bag.add("envelope", envelope.curve);
 }
 
 // ============================================================================
@@ -1709,14 +1796,16 @@ std::unique_ptr<StateMachinePattern> edmx::makeMythos26StateMachine()
             [](NoiseWash& look) { look.speed = 0.35f; look.scale = 1.6f; },
             [](NoiseWash& look) { look.speed = 2.5f;  look.scale = 0.7f; },
         }),
-        // 2. red, riding the mids, never below a fifth; the flash layer is
-        //    the cue's other half. The geode shifts to blue, so 2 is blue: a
-        //    grained blue field on the mids with a paler blue landing on
-        //    the kick, the white flash layer off (the cue table does that).
-        //    3 keeps the red and lands blue on the kick instead.
+        // 2. red, riding Mixxx's instant VU - the meter that peaks on
+        //    every kick, the cable's own bass - never below a fifth; the
+        //    flash layer is the cue's other half. The geode shifts to blue,
+        //    so 2 is blue: a grained blue field on the same meter with a
+        //    paler blue landing on the kick, the white flash layer off (the
+        //    cue table does that). 3 keeps the red and lands blue on the
+        //    kick instead.
         showLook<BusWash>("geode", [](BusWash& look) {
             look.color = HSV(0.0f, 1.0f, 1.0f);
-            look.channel = AudioChannel::MidPresence;
+            look.channel = AudioChannel::LevelInstant;
             look.floorLevel = 0.2f;
         }, {
             [](BusWash& look) {
@@ -1765,15 +1854,19 @@ std::unique_ptr<StateMachinePattern> edmx::makeMythos26StateMachine()
             [](KickColor& look) { look.floorLevel = 0.2f; look.scatter = 0.3f; look.decay = 0.2f; },
         }),
         // 6. pink into purple, drifting - the fire tunnel behind it - and
-        //    breathing with the mids the way the geode and blown do, so it
-        //    moves with the track like the cues either side of it. The same
-        //    2 and 3 as the neuron.
+        //    breathing with Mixxx's average VU, the cable's presence, so it
+        //    moves with the track like the cues either side of it. Slewed
+        //    longer than the geode: that meter is the level against its
+        //    two-second window, so it still rises on a kick, and a wash
+        //    should breathe with the track rather than pump. No flash by
+        //    default; the pad is there. The same 2 and 3 as the neuron.
         showLook<NoiseWash>("tunnel", [](NoiseWash& look) {
             look.colorA = HSV(325.0f, 0.85f, 1.00f);
             look.colorB = HSV(275.0f, 1.00f, 0.55f);
-            look.channel = AudioChannel::MidPresence;
+            look.channel = AudioChannel::LevelAverage;
             look.follow = 1.0f;
             look.floorLevel = 0.3f;
+            look.slew = 0.5f;
         }, {
             [](NoiseWash& look) { look.speed = 0.35f; look.scale = 1.6f; },
             [](NoiseWash& look) { look.speed = 2.5f;  look.scale = 0.7f; },
@@ -1796,47 +1889,55 @@ std::unique_ptr<StateMachinePattern> edmx::makeMythos26StateMachine()
             [](BusWash& look) { look.floorLevel = 0.85f; },
             [](BusWash& look) { look.floorLevel = 0.25f; },
         }),
-        // 8. punk purple into honey orange, dropping to navy on the beat -
-        //    the strobe is the look's own and goes dark, the way the scene's
-        //    `smoke` does; the flash layer stays off so nothing whites over
-        //    it. The UV on the kick is the cue table's half. 2 strobes in
-        //    half time, 3 in double.
+        // 8. punk purple into honey orange, dropping toward navy as far as
+        //    Mixxx's average VU says - the drop is the look's own and goes
+        //    dark, the way the scene's `smoke` does, and it rides the meter
+        //    rather than the grid; the flash layer stays off so nothing
+        //    whites over it. The UV on the kick is the cue table's half. 2
+        //    and 3 are the beat strobe instead, in half time and in double.
         showLook<Strobe>("punk", {}, {
-            [](Strobe& look) { look.setPulseRate(edmx::kHalfTime); },
-            [](Strobe& look) { look.setPulseRate(edmx::kDoubleTime); },
+            [](Strobe& look) { look.follow = 0.0f; look.setPulseRate(edmx::kHalfTime); },
+            [](Strobe& look) { look.follow = 0.0f; look.setPulseRate(edmx::kDoubleTime); },
         }),
         // 9. the rainbow when the track is there, white noise when it is
-        //    not: the wheel across the stage turning slowly, coming up on
-        //    the presence over a low white grain. 2 is the rainbow whatever
-        //    the music; 3 quick - the wheel twice across the stage and
-        //    turning fast.
+        //    not: the wheel across the stage turning slowly, blended in by
+        //    the presence over a low white grain - over most of the meter,
+        //    and slewed, so it swells rather than switches. 2 is the rainbow
+        //    whatever the music; 3 quick - the wheel twice across the stage
+        //    and turning fast.
         showLook<Reaction>("reaction", {}, {
             [](Reaction& look) { look.threshold = 0.0f; look.knee = 0.01f; },
             [](Reaction& look) { look.span = 2.0f; look.hueRate = 0.3f; },
         }),
-        // 10. the canyon fly-through, and a rainbow on the beat. 2 is a slow
-        //    fly with the rainbow once a bar; 3 fast, the rainbow in double.
+        // 10. the canyon fly-through - the bands eased into one another and
+        //     half the loop on the rig at once, so it is a gradient and not
+        //     stripes - and a rainbow on the beat. 2 is a slow fly with the
+        //     whole loop on the rig and the rainbow once a bar; 3 fast, the
+        //     rainbow in double.
         showLook<Canyon>("canyon", {}, {
-            [](Canyon& look) { look.speed = 0.05f; look.waves = 2.0f; look.setPulseRate(edmx::kQuarterTime); },
+            [](Canyon& look) { look.speed = 0.05f; look.waves = 1.0f; look.setPulseRate(edmx::kQuarterTime); },
             [](Canyon& look) { look.speed = 0.30f; look.setPulseRate(edmx::kDoubleTime); },
         }),
         // 11. mostly dark: a cyan glint where a slow field peaks on a
-        //     near-black ground, and red-orange in patches that open with
-        //     the mids. The white is the flash layer's, on the beat - the
-        //     cue table's half. 2 is the scaffold lit - more glint, the
-        //     ground up; 3 is hard - the ground gone, the ember wide open
-        //     and quick to the music, less glint.
+        //     near-black ground, and red-orange in patches - both out on
+        //     the beat and hidden again before the next, so the pattern
+        //     comes and goes with the grid rather than a white flashing
+        //     over it (the flash layer is off; the cue table's half). 2 is
+        //     the scaffold lit - more glint, the ground up, the pattern
+        //     lingering; 3 is hard - the ground gone, the ember wide open,
+        //     less glint, and the pattern in double time.
         showLook<Scaffold>("scaffold", {}, {
             [](Scaffold& look) {
                 look.glintAmount = 0.5f;
                 look.ground = HSV(200.0f, 0.90f, 0.14f);
+                look.setEnvelope(0.06f, 0.60f);
             },
             [](Scaffold& look) {
                 look.ground = HSV(200.0f, 0.90f, 0.0f);
                 look.glintAmount = 0.15f;
                 look.emberSpread = 1.0f;
-                look.gain = 1.5f;
-                look.slew = 0.08f;
+                look.setEnvelope(0.03f, 0.18f);
+                look.setPulseRate(edmx::kDoubleTime);
             },
         }),
         // 12. the churn: Eclipse Churn is Churning painted in two rig
@@ -1889,22 +1990,16 @@ std::unique_ptr<StateMachinePattern> edmx::makeMythos26StateMachine()
         }),
         // 14. the clouds: a sunset down the stage, yellow overhead into
         //     pink at the horizon, and the deck below it in shadow,
-        //     streaming past. `height` and `speed` are targets the look
-        //     glides to - the cue's four pads move them. 2 is dusk, the
-        //     sky gone pink into violet and the deck darker; 3 is golden
-        //     hour, orange down to the horizon and the deck warm.
+        //     streaming past, with wisps of it in the sky. The modes are
+        //     the heights: the cue opens low, the deck over most of the
+        //     rig; 2 is cruising, the horizon at half; 3 is high, the deck
+        //     fallen away to a strip. The look glides between them over
+        //     its `glide`, and the cue table ramps the scene's own height
+        //     with it. `speed` is the cue's two pads, and a mode leaves it
+        //     where they put it.
         showLook<Clouds>("clouds", {}, {
-            [](Clouds& look) {
-                look.skyHigh = HSV(330.0f, 0.70f, 1.00f);
-                look.skyLow = HSV(285.0f, 0.75f, 0.80f);
-                look.cloud = HSV(260.0f, 0.70f, 0.10f);
-            },
-            [](Clouds& look) {
-                look.skyHigh = HSV(42.0f, 0.90f, 1.00f);
-                look.skyLow = HSV(18.0f, 0.90f, 1.00f);
-                look.cloud = HSV(25.0f, 0.70f, 0.14f);
-                look.glow = 0.5f;
-            },
+            [](Clouds& look) { look.height = 0.50f; },
+            [](Clouds& look) { look.height = 0.85f; },
         }),
         // 15. the house lights: white at half, for the room after the
         //     show. 16. the blackout, for before it - the cue table turns
