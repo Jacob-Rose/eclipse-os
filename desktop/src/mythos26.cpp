@@ -1249,6 +1249,206 @@ void Pattern_Mythos_CloudFlight::reflect(ecore::PropertyBag& bag)
 }
 
 // ============================================================================
+// reaction
+// ============================================================================
+
+namespace
+{
+    /// Where a node is across the stage, 0..1. The truss reads its own run
+    /// - the pars stand at one x beside the sculpture, and a rainbow keyed
+    /// to that would put one hue on all ten - so a par is its place along
+    /// the truss, and everything else is its x over the stage's columns.
+    float stageAcross(const eio::HSVStripNode* node)
+    {
+        const eio::HSVStripNode_Space* spaced = eio::spaceOf(node);
+        if (spaced != nullptr && spaced->space == eio::NodeSpace::Truss)
+        {
+            return spaced->u;
+        }
+        if (node != nullptr && node->GetStripNodeType() == eio::StripNodeType::MAPPED2D)
+        {
+            const float x = static_cast<const eio::HSVStripNode_Mapped2D*>(node)->coord.x;
+            return std::clamp(x / static_cast<float>(scanner::kStageColumns - 1), 0.0f, 1.0f);
+        }
+        return 0.5f;
+    }
+
+    /// The slewed read every cue on the bus does, so they breathe alike.
+    void slewToward(float& value, float target, float seconds, float deltaTime)
+    {
+        if (seconds <= 0.0f || deltaTime <= 0.0f)
+        {
+            value = target;
+        }
+        else
+        {
+            value += (target - value) * (1.0f - std::exp(-deltaTime / seconds));
+        }
+    }
+
+    float smoothstep(float edge0, float edge1, float x)
+    {
+        const float t = std::clamp((x - edge0) / std::max(edge1 - edge0, 0.0001f), 0.0f, 1.0f);
+        return t * t * (3.0f - 2.0f * t);
+    }
+}
+
+void Pattern_Mythos_Reaction::init()
+{
+    bus = &sharedAudioLevel();
+    level = 0.0f;
+}
+
+void Pattern_Mythos_Reaction::tick(float deltaTime)
+{
+    PatternScanner::tick(deltaTime);
+    if (bus == nullptr)
+    {
+        bus = &sharedAudioLevel();
+    }
+    const float target = std::clamp(bus->get(channel, nowSeconds()) * gain, 0.0f, 1.0f);
+    slewToward(level, target, slew, deltaTime);
+}
+
+float Pattern_Mythos_Reaction::getRainbow() const
+{
+    return smoothstep(threshold, threshold + std::max(knee, 0.0001f), level)
+         * std::clamp(intensity, 0.0f, 1.0f);
+}
+
+void Pattern_Mythos_Reaction::render(eio::HSVStripNode* node, ecore::HSV& inOutColor) const
+{
+    const float turn = timeActive * hueRate;
+
+    if (isProbe(node))
+    {
+        inOutColor = HSV(frac(0.5f * span + turn) * 360.0f, 1.0f, 1.0f);
+        return;
+    }
+
+    // the rainbow: the wheel across the stage, turning
+    const float across = stageAcross(node);
+    const HSV rainbow(frac(across * span + turn) * 360.0f, 1.0f, 1.0f);
+
+    // the white: a fine grain drifting, at the floor and never above it
+    const Coordinate at = nodeCoord(node);
+    const float t = timeActive * 0.4f;
+    const float n = scanner::valueNoise(at.x * 0.9f + t * 1.3f, at.y * 0.6f - t * 0.9f);
+    const float floorValue = std::clamp(floorLevel, 0.0f, 1.0f);
+    const float whiteValue = floorValue * (1.0f - std::clamp(grain, 0.0f, 1.0f) * (1.0f - n));
+    const HSV white(0.0f, 0.0f, whiteValue);
+
+    // the presence decides: white comes through as the rainbow comes up,
+    // mixed as light so the hues arrive tinted rather than through grey
+    const float amount = getRainbow();
+    inOutColor = blendRgb(white, rainbow, amount);
+    inOutColor.setBrightnessAlpha(lerp(whiteValue, 1.0f, amount));
+}
+
+void Pattern_Mythos_Reaction::reflect(ecore::PropertyBag& bag)
+{
+    Pattern_MythosLook::reflect(bag);
+    bag.add("floor", floorLevel, 0.0f, 1.0f);
+    bag.add("grain", grain, 0.0f, 1.0f);
+    bag.add("span", span, 0.0f, 3.0f);
+    bag.add("hue_rate", hueRate, 0.0f, 1.0f);
+    bag.add("threshold", threshold, 0.0f, 1.0f);
+    bag.add("knee", knee, 0.01f, 1.0f);
+    bag.add("gain", gain, 0.0f, 4.0f);
+    bag.add("slew", slew, 0.0f, 2.0f);
+}
+
+// ============================================================================
+// scaffold
+// ============================================================================
+
+void Pattern_Mythos_Scaffold::init()
+{
+    bus = &sharedAudioLevel();
+    level = 0.0f;
+    whiteLevel = 0.0f;
+}
+
+void Pattern_Mythos_Scaffold::tick(float deltaTime)
+{
+    PatternScanner::tick(deltaTime);
+    if (bus == nullptr)
+    {
+        bus = &sharedAudioLevel();
+    }
+    const double now = nowSeconds();
+
+    const float target = std::clamp(bus->get(channel, now) * gain, 0.0f, 1.0f);
+    slewToward(level, target, slew, deltaTime);
+
+    // the white: up on the instant, down over whiteDecay - the same peak
+    // follower the bus wash runs on its hit
+    const float hitNow = std::clamp(bus->get(hitChannel, now), 0.0f, 1.0f);
+    if (hitNow >= whiteLevel)
+    {
+        whiteLevel = hitNow;
+    }
+    else
+    {
+        slewToward(whiteLevel, hitNow, whiteDecay, deltaTime);
+    }
+}
+
+void Pattern_Mythos_Scaffold::render(eio::HSVStripNode* node, ecore::HSV& inOutColor) const
+{
+    if (isProbe(node))
+    {
+        inOutColor = glint;
+        inOutColor.setBrightnessAlpha(glint.getValFloat());
+        return;
+    }
+
+    const Coordinate at = nodeCoord(node);
+    const float amount = std::clamp(intensity, 0.0f, 1.0f);
+
+    // the glint: a slow fine field, lit only where it peaks
+    const float tg = timeActive * 0.12f;
+    const float g = scanner::valueNoise(at.x * 0.9f + tg * 1.1f + 11.0f, at.y * 0.55f - tg * 0.7f);
+    const float glintShare = std::clamp(glintAmount, 0.0f, 1.0f);
+    const float cold = glintShare > 0.0f ? smoothstep(1.0f - glintShare, 1.0f, g) : 0.0f;
+
+    // the ember: a second field, opened by the presence - the threshold the
+    // patch has to clear falls as the presence climbs
+    const float te = timeActive * 0.35f;
+    const float e = scanner::valueNoise(at.x * 0.5f - te * 0.9f + 53.0f, at.y * 0.3f + te * 1.4f);
+    const float open = level * amount * std::clamp(emberSpread, 0.0f, 1.0f);
+    const float hot = smoothstep(1.0f - open, 1.0f - open + 0.25f, e) * level * amount;
+
+    // built up from the ground: the glint on it, the ember over that
+    HSV out = blendRgb(ground, glint, cold);
+    float value = lerp(ground.getValFloat(), glint.getValFloat(), cold);
+    out = blendRgb(out, ember, hot);
+    value = lerp(value, ember.getValFloat(), hot);
+
+    // and the white over everything on the kick, to full
+    const float pop = std::clamp(whiteLevel * white * amount, 0.0f, 1.0f);
+    out = blendRgb(out, HSV(0.0f, 0.0f, 1.0f), pop);
+    value = lerp(value, 1.0f, pop);
+
+    inOutColor = out;
+    inOutColor.setBrightnessAlpha(value);
+}
+
+void Pattern_Mythos_Scaffold::reflect(ecore::PropertyBag& bag)
+{
+    Pattern_MythosLook::reflect(bag);
+    bag.add("glint_amount", glintAmount, 0.0f, 1.0f);
+    bag.add("ember_spread", emberSpread, 0.0f, 1.0f);
+    bag.add("gain", gain, 0.0f, 4.0f);
+    bag.add("slew", slew, 0.0f, 2.0f);
+    bag.add("white", white, 0.0f, 1.0f);
+    bag.add("white_decay", whiteDecay, 0.02f, 1.0f);
+    bag.add("ground", ground);
+    bag.add("glint", glint);
+    bag.add("ember", ember);
+}
+
+// ============================================================================
 // hue cycle
 // ============================================================================
 
@@ -1580,6 +1780,8 @@ std::unique_ptr<StateMachinePattern> edmx::makeMythos26StateMachine()
     using Canyon = Pattern_Mythos_CanyonWave;
     using Nova = Pattern_Mythos_Nova;
     using Clouds = Pattern_Mythos_CloudFlight;
+    using Reaction = Pattern_Mythos_Reaction;
+    using Scaffold = Pattern_Mythos_Scaffold;
 
     std::vector<StateDef> states = {
         // 1. cyan into deep blue, drifting - the neuron scene's own colours:
@@ -1686,14 +1888,38 @@ std::unique_ptr<StateMachinePattern> edmx::makeMythos26StateMachine()
             [](Strobe& look) { look.setPulseRate(edmx::kHalfTime); },
             [](Strobe& look) { look.setPulseRate(edmx::kDoubleTime); },
         }),
-        placeholder("slot_9", 240.0f),
+        // 9. the rainbow when the track is there, white noise when it is
+        //    not: the wheel across the stage turning slowly, coming up on
+        //    the presence over a low white grain. 2 is the rainbow whatever
+        //    the music; 3 quick - the wheel twice across the stage and
+        //    turning fast.
+        showLook<Reaction>("reaction", {}, {
+            [](Reaction& look) { look.threshold = 0.0f; look.knee = 0.01f; },
+            [](Reaction& look) { look.span = 2.0f; look.hueRate = 0.3f; },
+        }),
         // 10. the canyon fly-through, and a rainbow on the beat. 2 is a slow
         //    fly with the rainbow once a bar; 3 fast, the rainbow in double.
         showLook<Canyon>("canyon", {}, {
             [](Canyon& look) { look.speed = 0.05f; look.waves = 2.0f; look.setPulseRate(edmx::kQuarterTime); },
             [](Canyon& look) { look.speed = 0.30f; look.setPulseRate(edmx::kDoubleTime); },
         }),
-        placeholder("slot_11", 300.0f),
+        // 11. mostly dark: a cyan glint where a slow field peaks on a
+        //     near-black ground, red-orange in patches that open with the
+        //     mids, and white to full on the kick. 2 is the scaffold lit -
+        //     more glint, the ground up; 3 is hard - white on every hit,
+        //     falling fast, the ground gone.
+        showLook<Scaffold>("scaffold", {}, {
+            [](Scaffold& look) {
+                look.glintAmount = 0.5f;
+                look.ground = HSV(200.0f, 0.90f, 0.14f);
+            },
+            [](Scaffold& look) {
+                look.hitChannel = AudioChannel::Hits;
+                look.whiteDecay = 0.08f;
+                look.ground = HSV(200.0f, 0.90f, 0.0f);
+                look.glintAmount = 0.15f;
+            },
+        }),
         // 12. the churn: Eclipse Churn is Churning painted in two rig
         //     colours, so this is the field in the same two, busier than
         //     the neuron and pushed by the level the way the paint is. Four

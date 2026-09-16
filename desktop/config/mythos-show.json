@@ -20,7 +20,7 @@
     "gamma": 2.2
   },
 
-  // The show. Sixteen cues, twelve of them written so far - see
+  // The show. Sixteen cues, fourteen of them written so far - see
   // makeMythos26StateMachine. The frame is the stage's, so the pars are
   // placed below with a fit rather than left on the frame's diagonal.
   "pattern": {
@@ -237,9 +237,21 @@
       "layers": { "flash": "flash", "uv": "kick" },
       "controls": { "smoke": 1 }
     },
+    "reaction": {
+      // The rig reads the room the way the scene does: the rainbow when
+      // the presence is up, a low white grain when it is not.
+      "scene": "Reaction-Confusion",
+      "media": "87841-602894456.mp4",
+      "layers": { "flash": "off", "uv": "off" }
+    },
     "canyon": {
       "scene": "Vibe Thresholds",
       "media": "361331_medium.mp4",
+      "layers": { "flash": "off", "uv": "off" }
+    },
+    "scaffold": {
+      // Mostly dark, like the scene: the white lands on the kick.
+      "scene": "Scaffold Fractal",
       "layers": { "flash": "off", "uv": "off" }
     },
     "churn": {

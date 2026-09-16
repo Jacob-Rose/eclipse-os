@@ -3218,6 +3218,10 @@ class TheShowCues(unittest.TestCase):
         self.assertEqual(cues["punk"].layers, {"flash": "flash", "uv": "kick"})
         self.assertEqual(cues["rain"].media, "black.mp4")
         self.assertEqual(cues["rain"].modes[2].media, "alien-message.mp4")
+        self.assertEqual(cues["reaction"].scene, "Reaction-Confusion")
+        self.assertEqual(cues["reaction"].media, "87841-602894456.mp4")
+        self.assertEqual(cues["scaffold"].scene, "Scaffold Fractal")
+        self.assertEqual(cues["scaffold"].media, "")
         self.assertEqual(cues["glitch"].media, "alien-message.mp4")
         self.assertEqual(cues["neuron"].scene, "Neuron Proximitors")
 
@@ -3267,7 +3271,7 @@ class TheShowCues(unittest.TestCase):
 
     def test_a_state_without_a_cue_is_the_state_alone(self):
         self.assertEqual(
-            [entry["action"] for entry in cue_actions(self.config, "slot_9")],
+            [entry["action"] for entry in cue_actions(self.config, "slot_15")],
             ["pattern", "state"])
 
     # -- palettes: a colour as a control, and a fourth mode -----------------
@@ -3382,7 +3386,7 @@ class TheShowCues(unittest.TestCase):
                                             "params": {"layer": "flash", "name": "flash"}}], mode)
 
     def test_a_cue_with_no_modes_is_the_knob_alone(self):
-        for state in ("fire", "slot_9"):
+        for state in ("fire", "slot_15"):
             self.assertEqual([e["action"] for e in cue_mode_actions(self.config, state, 3)],
                              ["param"], state)
 
@@ -3632,7 +3636,7 @@ class TheModeAction(unittest.TestCase):
         self.assertEqual(flash.moved, [])
 
     def test_a_look_without_modes_says_so(self):
-        rig = _FakeModedRig("slot_9")
+        rig = _FakeModedRig("slot_15")
         rig.params = []
         said = midi_map.ACTIONS["mode"].run(self._context(rig), {"mode": 0, "step": 1}, 1.0)
         self.assertIn("no modes", said)
@@ -5221,8 +5225,8 @@ class ViewerOnTheCues(GuiTest):
         self.app._run_button(("state", "blown"))
         self.settle_until(lambda: self.app.show.layers["uv"].current_state == "kick",
                           message="the UV on the kick")
-        self.app._run_button(("state", "slot_9"))
-        self.settle_until(lambda: self.app.show.current_state == "slot_9",
+        self.app._run_button(("state", "slot_15"))
+        self.settle_until(lambda: self.app.show.current_state == "slot_15",
                           message="the placeholder up")
         self.assertEqual(self.app.show.layers["uv"].current_state, "kick",
                          "a slot with no cue leaves the layers where they were")

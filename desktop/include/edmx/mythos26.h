@@ -907,6 +907,108 @@ namespace edmx
     };
 
 
+    /// The rainbow when the track is there, white noise when it is not -
+    /// the reaction cue.
+    ///
+    /// Two looks and the presence deciding between them. Underneath, a low
+    /// white grain: a fine field drifting over the stage at `floor`, never
+    /// more than that, which is what an empty room sounds like on the rig.
+    /// Over it, the rainbow: the wheel spread across the stage - `span`
+    /// wheels from one side to the other, so the pars step through it one
+    /// hue apart - and turning at `hue_rate`. How much of the rainbow shows
+    /// is the presence above `threshold`, over a `knee` so it comes up
+    /// rather than switching on, slewed like every other cue that reads
+    /// the bus. The probe is painted the rainbow's colour at the centre.
+    class Pattern_Mythos_Reaction : public Pattern_MythosLook
+    {
+    public:
+        /// The white grain, when nothing is playing.
+        float floorLevel{0.30f};
+        float grain{0.6f};
+
+        /// The rainbow: wheels across the stage, and wheels a second.
+        float span{0.6f};
+        float hueRate{0.04f};
+
+        /// Where the presence has to get to before the rainbow shows, and
+        /// how far above that it takes to show all of it.
+        float threshold{0.30f};
+        float knee{0.35f};
+
+        AudioChannel channel{AudioChannel::Presence};
+        float gain{1.0f};
+        float slew{0.30f};
+
+        void init();
+
+        virtual void tick(float deltaTime) override;
+        virtual void render(eio::HSVStripNode* node, ecore::HSV& inOutColor) const override;
+        virtual void reflect(ecore::PropertyBag& bag) override;
+
+        /// The slewed presence and how much rainbow it buys, 0..1, for tests.
+        float getLevel() const { return level; }
+        float getRainbow() const;
+
+    private:
+        AudioLevel* bus{nullptr};
+        float level{0.0f};
+    };
+
+
+    /// Mostly dark, with strong white, red-orange on the music, and a cyan
+    /// blue in the dark - the scaffold cue.
+    ///
+    /// Three things on a ground that is nearly black. The `glint`: a cyan
+    /// blue where a slow, fine field peaks, the rig's own cold light - a
+    /// few nodes at a time, drifting, the way the scene's struts catch it.
+    /// The `ember`: red-orange rising with the mid presence, in patches of
+    /// a second field that open wider as the presence climbs, so a quiet
+    /// passage is a glow in a corner and a loud one is the rig gone hot.
+    /// And the `white`: a pop to full white across everything on the kick,
+    /// a peak follower over the bass hits falling over `white_decay`, which
+    /// is the strong white the spec asks for and the only thing here that
+    /// is ever bright. The probe is painted the glint.
+    class Pattern_Mythos_Scaffold : public Pattern_MythosLook
+    {
+    public:
+        ecore::HSV ground{200.0f, 0.90f, 0.05f};
+        ecore::HSV glint{190.0f, 0.85f, 0.75f};
+        ecore::HSV ember{18.0f, 0.95f, 1.00f};
+
+        /// How much of the field peaks as glint: the share of the range,
+        /// from the top. 0 is none.
+        float glintAmount{0.30f};
+
+        /// The ember's channel, and how far its patches open at full
+        /// presence, 0..1.
+        AudioChannel channel{AudioChannel::MidPresence};
+        float emberSpread{0.8f};
+        float gain{1.0f};
+        float slew{0.20f};
+
+        /// The white's channel, how much of it lands (0 is none), and how
+        /// long a pop takes to fall away.
+        AudioChannel hitChannel{AudioChannel::BassHits};
+        float white{1.0f};
+        float whiteDecay{0.18f};
+
+        void init();
+
+        virtual void tick(float deltaTime) override;
+        virtual void render(eio::HSVStripNode* node, ecore::HSV& inOutColor) const override;
+        virtual void reflect(ecore::PropertyBag& bag) override;
+
+        /// The slewed presence and the white's level, 0..1, for tests.
+        float getLevel() const { return level; }
+        float getWhiteLevel() const { return whiteLevel; }
+
+    private:
+        AudioLevel* bus{nullptr};
+        float level{0.0f};
+        float whiteLevel{0.0f};
+    };
+
+
     /// One hue after another, on every fixture at once.
     ///
     /// For the UV par, whose three channels are three banks of the same
@@ -936,7 +1038,7 @@ namespace edmx
 
     /// The show's sixteen slots, in the order a UI shows them.
     ///
-    /// Twelve of them written, the rest placeholders waiting on the spec. The
+    /// Fourteen of them written, the rest placeholders waiting on the spec. The
     /// static pair and the beat flash that used to live here are cues on the
     /// generic machine and the audio bus. See makeGenericStateMachine and
     /// beatPulseState.

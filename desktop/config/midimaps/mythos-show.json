@@ -419,7 +419,7 @@
       "colour": 41
     },
     {
-      "label": "mythos26 - slot_9",
+      "label": "mythos26 - reaction",
       "trigger": {
         "kind": "note",
         "channel": 1,
@@ -436,7 +436,34 @@
         {
           "action": "state",
           "params": {
-            "name": "slot_9"
+            "name": "reaction"
+          }
+        },
+        {
+          "action": "layer",
+          "params": {
+            "layer": "flash",
+            "name": "off"
+          }
+        },
+        {
+          "action": "layer",
+          "params": {
+            "layer": "uv",
+            "name": "off"
+          }
+        },
+        {
+          "action": "syn_scene",
+          "params": {
+            "scene": "Reaction-Confusion",
+            "preset": ""
+          }
+        },
+        {
+          "action": "syn_media",
+          "params": {
+            "name": "87841-602894456.mp4"
           }
         }
       ],
@@ -498,7 +525,7 @@
       "colour": 41
     },
     {
-      "label": "mythos26 - slot_11",
+      "label": "mythos26 - scaffold",
       "trigger": {
         "kind": "note",
         "channel": 1,
@@ -515,7 +542,28 @@
         {
           "action": "state",
           "params": {
-            "name": "slot_11"
+            "name": "scaffold"
+          }
+        },
+        {
+          "action": "layer",
+          "params": {
+            "layer": "flash",
+            "name": "off"
+          }
+        },
+        {
+          "action": "layer",
+          "params": {
+            "layer": "uv",
+            "name": "off"
+          }
+        },
+        {
+          "action": "syn_scene",
+          "params": {
+            "scene": "Scaffold Fractal",
+            "preset": ""
           }
         }
       ],

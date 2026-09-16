@@ -263,6 +263,31 @@ synthetic time - a four-lamp rig of three solid looks, ticked by hand, where
 the frame halfway through a fade is a number - and `StateBlends` in the suite
 covers the wire.
 
+### two more cues: the reaction and the scaffold
+
+Cues 9 and 11 of the spec, the last two that had a description. Both read
+the bus the way the geode and the tunnel do.
+
+**Reaction** is two looks and the presence deciding between them: a low
+white grain drifting over the stage when the room is quiet, and the rainbow
+- the wheel spread across the stage so the pars step through it one hue
+apart, turning slowly - coming up as the presence clears a threshold, over a
+knee so it arrives rather than switches on. Across the stage means along the
+truss for a par: the ten stand at one x beside the sculpture, and a rainbow
+keyed to that put one hue on all of them. Mode 2 is the rainbow whatever the
+music; 3 is quick, two wheels across and turning fast.
+
+**Scaffold** is mostly dark, which is the spec's first word for it. Three
+things on a near-black ground: a cyan glint where a slow field peaks - a
+dozen pixels at a time - red-orange in patches of a second field that open
+wider as the mid presence climbs, and white to full across everything on the
+kick, a peak follower like the bus wash's hit. Mode 2 lights the scaffold -
+the ground up, twice the glint; 3 is hard, white on every hit falling fast
+over a black ground.
+
+Slots 15 and 16 - the idles - are the placeholders now, and the tests that
+wanted a state with no cue use 15.
+
 ### the rain glides, and the tunnel stops strobing
 
 Three cue notes from running the show against the blends.

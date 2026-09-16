@@ -33,7 +33,8 @@ media - none
 3. rain
 pattern - matrix rain effect, multicolored rain. no noise on the trails.
 mode 2 - video on (alien-message.mp4)
-mode 3 - green, downpour (one hue, 28 drops, fall speed 18)
+mode 3 - green, downpour (one hue, 80 drops, fall speed 18) - the colour glides in over a second rather than cutting
+mode 4 - the same downpour gone white
 uv - cycle pattern between rgb rainbow so its fluctuating but always on
 par lights read horizontal through the rain, at the 5th row of the obelisk from the bottom (same as fire)
 synesthesia - VideoFX_1 (an empty scene)
@@ -80,8 +81,12 @@ mode 3 - double time
 uv - on kick
 synesthesia - Milk, Honey, Smoke, Bile (with its own beat strobe "smoke" on)
 
-9. todo
-pattern - rainbow when presence is high, slow moving hue shift among par lights. low white noise when no presence
+9. reaction
+pattern - rainbow when presence is high, slow moving hue shift among par lights. low white noise when no presence.
+palette - the wheel spread across the stage (0.6 of a wheel side to side, so the pars step through it a hue apart) turning at 0.04 wheels a second; under it a white grain at floor 0.3. the rainbow comes up on the presence above 0.3, all of it by 0.65.
+mode 2 - the rainbow whatever the music
+mode 3 - quick: two wheels across the stage, turning at 0.3 a second
+uv - off
 synesthesia - Reaction-Confusion
 media - 87841-602894456.mp4
 
@@ -94,8 +99,12 @@ mode 3 - fast (speed 0.30), the rainbow in double time
 synesthesia - Vibe Thresholds
 media - 361331_medium.mp4
 
-11. todo
-pattern - mostly dark, with strong white, red/orange reactive, and cyan blue colors
+11. scaffold
+pattern - mostly dark, with strong white, red/orange reactive, and cyan blue colors.
+palette - a near-black ground (200 / 0.90 / 0.05); a cyan glint (190 / 0.85 / 0.75) where a slow field peaks; red-orange (18 / 0.95 / 1.00) in patches that open with the mid presence; white to full on the kick, falling over 0.18s.
+mode 2 - lit: the ground up (0.14), twice the glint
+mode 3 - hard: white on every hit, falling in 0.08s, the ground black
+uv - off
 synesthesia - Scaffold Fractal
 media - none
 

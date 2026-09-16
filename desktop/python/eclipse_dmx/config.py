@@ -155,9 +155,9 @@ MYTHOS26_STATES = (
     "tunnel",    # 6. pink into purple noise, the flash layer on
     "blown",     # 7. purple riding the mids, green on the kick, the UV on the kick
     "punk",      # 8. purple into white, strobing on the beat, the flash and UV on
-    "slot_9",
+    "reaction",  # 9. the rainbow across the stage on the presence, white noise without it
     "canyon",    # 10. canyon bands pouring down, a rainbow on the beat
-    "slot_11",
+    "scaffold",  # 11. mostly dark: a cyan glint, red-orange on the mids, white on the kick
     "churn",     # 12. the field in two rig colours, pushed by the level; three palettes and a rainbow
     "nova",      # 13. galaxies on a wash over a dark ground; three palettes and a rainbow
     "clouds",    # 14. a sunset over a cloud deck, flown through; height and speed glide
