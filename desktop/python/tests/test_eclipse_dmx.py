@@ -1298,7 +1298,8 @@ class TheUvLayer(ShowTest):
         self.assertEqual(uv.fixtures, [389])
         self.assertEqual(frames[-1][389], (0, 0, 0))
 
-        uv.set_state("on")
+        # cut: this reads what `on` is, and the layer's own fade is a second
+        uv.set_state("on", seconds=0)
         time.sleep(0.5)
         self.assertEqual(frames[-1][389], (255, 255, 255))
         # the par beside it is still the show's - dark in scan_idle
@@ -3211,7 +3212,7 @@ class TheShowCues(unittest.TestCase):
     def test_the_spec_cues_ask_for_what_the_spec_says(self):
         cues = self.config.cues
         self.assertEqual(cues["geode"].layers["flash"], "flash")
-        self.assertEqual(cues["tunnel"].layers["flash"], "flash")
+        self.assertEqual(cues["tunnel"].layers["flash"], "off")
         self.assertEqual(cues["rain"].layers["uv"], "rainbow")
         self.assertEqual(cues["blown"].layers["uv"], "kick")
         self.assertEqual(cues["punk"].layers, {"flash": "flash", "uv": "kick"})
@@ -3749,8 +3750,9 @@ class TheShowLooks(ShowTest):
             self.assertIn("intensity", names, state)
             mode = show.get_param("mode")
             # three is the floor; the churn and the nova have a fourth, the
-            # rainbow, and the pad reads the maximum to know how far to step
-            count = 4.0 if state in ("churn", "nova") else 3.0
+            # rainbow, and the rain its white downpour - and the pad reads
+            # the maximum to know how far to step
+            count = 4.0 if state in ("churn", "nova", "rain") else 3.0
             self.assertEqual((mode.value, mode.minimum, mode.maximum), (1.0, 1.0, count), state)
 
     def test_a_mode_moves_the_looks_knobs_and_the_echo_carries_them(self):

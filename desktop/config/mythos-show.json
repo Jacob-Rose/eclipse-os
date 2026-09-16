@@ -196,7 +196,8 @@
     "rain": {
       // Opens on black - the app's only "no media", see the note above - and
       // mode 2 is the toggle that puts the video up. 3 is the film's green,
-      // black again.
+      // a downpour the colour glides into, black again; 4 the same gone
+      // white. Both rig-side, in makeMythos26StateMachine.
       "scene": "VideoFX_1",
       "media": "black.mp4",
       "layers": { "flash": "off", "uv": "rainbow" },
@@ -218,9 +219,11 @@
     },
     "tunnel": {
       // The tunnel adds a little of its media into the walls on the highs.
+      // No strobe by default: the wash breathes with the mids on its own,
+      // and the flash pad is there for the night that wants it.
       "scene": "Fire Tunnel",
       "media": "black.mp4",
-      "layers": { "flash": "flash", "uv": "off" }
+      "layers": { "flash": "off", "uv": "off" }
     },
     "blown": {
       "scene": "Filter Blown v2",

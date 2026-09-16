@@ -263,6 +263,38 @@ synthetic time - a four-lamp rig of three solid looks, ticked by hand, where
 the frame halfway through a fade is a number - and `StateBlends` in the suite
 covers the wire.
 
+### the rain glides, and the tunnel stops strobing
+
+Three cue notes from running the show against the blends.
+
+**The rain's colour glides.** Mode 3 turned the rain green by writing
+`hueSpread = 0` into the look, which recoloured every drop in the air on the
+same frame - a cut, on a cue whose mode pad promised a mode. So on the show's
+rain `hue_spread` and the new `white` are *targets*: the knob a mode or a desk
+sets, with the live values the drops render at easing toward them over
+`blend` seconds (one, by default). A fresh cue lands on its targets at once,
+so nothing swims in from wherever the last cue left the look. The mode
+mechanism's restore-then-variant writes the targets through the bag like any
+other knob, which is why the targets are what the bag reflects and the live
+values are not.
+
+Modes: 1 every drop its own colour, 2 the same with the video up (the cue
+table's half), 3 the film's green as a downpour, 4 the downpour gone white.
+The storm holds 96 drops now rather than 32 (`Pattern_Generic_MatrixRain`
+takes its pool size; a relic's is still 32), `intensity` runs 8..48 and the
+downpours ask for 80. The `drops` knob's ceiling is the pool, not a number.
+
+**The UV layer fades over a second** like the cues do: flash into on, or on
+into the kick wash, is a change the eye follows across, and at 0.15s it was a
+cut. The flash layer stays at 0.15s - off and flash are the only two states,
+and a strobe fading in is not a strobe.
+
+**The tunnel opens without its strobe.** `flash: off` in the cue table; the
+wash breathes with the mids on its own, and the flash pad is there for the
+night that wants it. The pad maps are regenerated from the table
+(`tools/make-launchpad-map.py --probe`), which is the only thing that changed
+in them.
+
 ### commissioning
 
 Ten identical pars are indistinguishable from a config file, so:

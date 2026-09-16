@@ -70,8 +70,8 @@ float scanner::valueNoise(float x, float y)
 // Matrix rain
 // ============================================================================
 
-Pattern_Generic_MatrixRain::Pattern_Generic_MatrixRain()
-    : drops(32)
+Pattern_Generic_MatrixRain::Pattern_Generic_MatrixRain(int capacity)
+    : drops(capacity)
 {
 }
 
@@ -221,14 +221,21 @@ void Pattern_Generic_MatrixRain::renderAt(const Coordinate& at, HSV& inOutColor)
         brightness * lerp(0.8f * churn, 1.0f, headness));
 }
 
-void Pattern_Generic_MatrixRain::reflect(ecore::PropertyBag& bag)
+void Pattern_Generic_MatrixRain::reflectStorm(ecore::PropertyBag& bag)
 {
     bag.add("fall_speed", fallSpeed, 2.0f, 30.0f);
     bag.add("tail", tailLength, 2.0f, 30.0f);
-    bag.add("drops", dropCount, 2.0f, 30.0f);
+    // the pool is the ceiling: a knob past it would ask for drops that
+    // cannot spawn
+    bag.add("drops", dropCount, 2.0f, static_cast<float>(drops.all().size()));
     bag.add("width", dropWidth, 0.3f, 2.0f);
     bag.add("flicker", flicker, 0.0f, 1.0f);
     bag.add("churn_rate", churnRate, 1.0f, 20.0f);
+}
+
+void Pattern_Generic_MatrixRain::reflect(ecore::PropertyBag& bag)
+{
+    reflectStorm(bag);
     bag.add("hue_spread", hueSpread, 0.0f, 1.0f);
 }
 

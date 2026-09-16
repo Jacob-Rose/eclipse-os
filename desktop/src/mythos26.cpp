@@ -988,21 +988,29 @@ void Pattern_Mythos_Fire::reflect(ecore::PropertyBag& bag)
 }
 
 Pattern_Mythos_Rain::Pattern_Mythos_Rain()
+    : Pattern_Generic_MatrixRain(kDropPool)
 {
     hueSpread = 1.0f;   // every drop its own colour
+    targetHueSpread = hueSpread;
     applyIntensity();
 }
 
 void Pattern_Mythos_Rain::applyIntensity()
 {
-    // a few drops at the bottom of the knob, a downpour at the top
-    dropCount = lerp(4.0f, 22.0f, std::clamp(intensity, 0.0f, 1.0f));
+    // a handful of drops at the bottom of the knob, heavy rain at the top;
+    // the downpour modes go past this on their own
+    dropCount = lerp(8.0f, 48.0f, std::clamp(intensity, 0.0f, 1.0f));
 }
 
 void Pattern_Mythos_Rain::reset()
 {
     Pattern_Generic_MatrixRain::reset();
     resetMode();
+
+    // a cue opens on its colour: the glide is for a mode change after that,
+    // not for a look arriving from wherever the last cue left it
+    hueSpread = targetHueSpread;
+    white = targetWhite;
 
     // Roll the storm forward until the first drops have crossed the stage:
     // spawned up to tail + 20 above the top and falling at 0.6..1.4 of
@@ -1021,15 +1029,33 @@ void Pattern_Mythos_Rain::reset()
     timeActive = 0.0f;
 }
 
+void Pattern_Mythos_Rain::tick(float deltaTime)
+{
+    Pattern_Generic_MatrixRain::tick(deltaTime);
+
+    // straight toward the target at a rate that lands in blendSeconds,
+    // so green arrives when the blend knob says and not asymptotically
+    const float step = (blendSeconds > 0.0f) ? deltaTime / blendSeconds : 1.0f;
+    hueSpread += std::clamp(targetHueSpread - hueSpread, -step, step);
+    white += std::clamp(targetWhite - white, -step, step);
+}
+
 void Pattern_Mythos_Rain::render(eio::HSVStripNode* node, ecore::HSV& inOutColor) const
 {
     Coordinate at;
     if (trussRowCoord(node, trussRow, at))
     {
         renderAt(at, inOutColor);
-        return;
     }
-    Pattern_Generic_MatrixRain::render(node, inOutColor);
+    else
+    {
+        Pattern_Generic_MatrixRain::render(node, inOutColor);
+    }
+
+    if (white > 0.0f)
+    {
+        inOutColor.setSaturationAlpha(inOutColor.getSatFloat() * (1.0f - std::clamp(white, 0.0f, 1.0f)));
+    }
 }
 
 void Pattern_Mythos_Rain::reflect(ecore::PropertyBag& bag)
@@ -1037,7 +1063,12 @@ void Pattern_Mythos_Rain::reflect(ecore::PropertyBag& bag)
     reflectMode(bag);
     bag.add("intensity", intensity, 0.0f, 1.0f, [this] { applyIntensity(); });
     bag.add("truss_row", trussRow, scanner::kStageBottom, scanner::kStageTop);
-    Pattern_Generic_MatrixRain::reflect(bag);
+    reflectStorm(bag);
+    // the colour knobs are the targets - a mode's restore-then-variant
+    // writes these, and the drops glide to wherever that lands them
+    bag.add("hue_spread", targetHueSpread, 0.0f, 1.0f);
+    bag.add("white", targetWhite, 0.0f, 1.0f);
+    bag.add("blend", blendSeconds, 0.0f, 4.0f);
 }
 
 // ============================================================================
@@ -1483,9 +1514,11 @@ std::unique_ptr<StateMachinePattern> edmx::makeUvStateMachine()
     };
 
     CoordFrame frame;
-    // a short cross-fade: a light changing mode should snap, not swim
+    // A second, like the show's cues: flash into on, or on into the kick
+    // wash, is a mode the eye follows across, and at 0.15s it was a cut.
+    // A cue that wants the snap says `layer uv state on 0` or `cut`.
     return std::unique_ptr<StateMachinePattern>(new StateMachinePattern(
-        "uv", std::move(states), 0, frame, 0.15f));
+        "uv", std::move(states), 0, frame, 1.0f));
 }
 
 std::unique_ptr<StateMachinePattern> edmx::makeFlashStateMachine()
@@ -1586,12 +1619,16 @@ std::unique_ptr<StateMachinePattern> edmx::makeMythos26StateMachine()
         // 3. the rain, every drop its own colour, and no churn on the tails:
         //    smooth streaks rather than the film's glyph flicker. 2 is the
         //    same rain with the video up (the cue table's half); 3 is the
-        //    film's green, a downpour.
+        //    film's green, a downpour, the colour gliding to it over a
+        //    second rather than cutting; 4 is the same downpour gone white.
+        //    The pool is 96, so 80 is a real number.
         showLook<Rain>("rain", [](Rain& look) {
             look.flicker = 0.0f;
         }, {
             {},
-            [](Rain& look) { look.hueSpread = 0.0f; look.dropCount = 28.0f; look.fallSpeed = 18.0f; },
+            [](Rain& look) { look.targetHueSpread = 0.0f; look.dropCount = 80.0f; look.fallSpeed = 18.0f; },
+            [](Rain& look) { look.targetHueSpread = 0.0f; look.targetWhite = 1.0f;
+                             look.dropCount = 80.0f; look.fallSpeed = 18.0f; },
         }),
         // 4. fire. 2 is embers - a few risers, dying young; 3 is the whole
         //    bed alight and climbing fast.

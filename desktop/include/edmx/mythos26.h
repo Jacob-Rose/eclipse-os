@@ -765,17 +765,40 @@ namespace edmx
     /// reset() rolls the storm forward before anyone sees it.
     ///
     /// The truss is read as a row through the storm - see kTrussRowDefault.
+    ///
+    /// Its colour glides. A mode that turns the rain green - or white - is
+    /// a change to every drop in the air at once, and snapping it read as a
+    /// cut where the cue table promised a mode. So `hue_spread` and `white`
+    /// are *targets* here: the knob a mode or a desk sets, with the live
+    /// value the drops render at easing toward it over `blend` seconds. A
+    /// fresh cue lands on its targets at once; only a change after that
+    /// glides.
     class Pattern_Mythos_Rain : public scanner::Pattern_Generic_MatrixRain, public ShowModes
     {
     public:
         Pattern_Mythos_Rain();
 
+        /// The show's storm holds three times a relic's: the downpour modes
+        /// ask for 80 drops, and the ceiling on the knob is the pool.
+        static constexpr int kDropPool = 96;
+
         float intensity{1.0f};
         float trussRow{kTrussRowDefault};
+
+        /// Where the colour is going - see the class comment. The generic
+        /// look's `hueSpread` is where it is.
+        float targetHueSpread{1.0f};
+        /// 0 is the drops' own colour, 1 is white rain: the saturation is
+        /// scaled down by it, head and tail alike.
+        float white{0.0f};
+        float targetWhite{0.0f};
+        /// seconds for a colour change to arrive
+        float blendSeconds{1.0f};
 
         void applyIntensity();
 
         virtual void reset() override;
+        virtual void tick(float deltaTime) override;
         virtual void render(eio::HSVStripNode* node, ecore::HSV& inOutColor) const override;
         virtual void reflect(ecore::PropertyBag& bag) override;
     };

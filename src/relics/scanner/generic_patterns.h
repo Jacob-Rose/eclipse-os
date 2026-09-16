@@ -56,7 +56,10 @@ namespace scanner
     class Pattern_Generic_MatrixRain : public PatternScanner
     {
     public:
-        Pattern_Generic_MatrixRain();
+        /// `capacity` is the most drops the storm can hold - the ceiling on
+        /// `drops`. 32 is plenty for a relic; a show that wants a downpour
+        /// asks for more.
+        explicit Pattern_Generic_MatrixRain(int capacity = 32);
 
         /// stage units per second, before the per-drop scatter. Live: it
         /// rescales the falling drops, not just the next ones.
@@ -86,6 +89,10 @@ namespace scanner
         /// has asked the node where it is, split out so a look can read the
         /// storm somewhere other than where its fixture stands.
         void renderAt(const Coordinate& at, HSV& inOutColor) const;
+
+        /// The storm's knobs without its colour - for a look that gives
+        /// hue_spread a meaning of its own (the show's rain glides to it).
+        void reflectStorm(ecore::PropertyBag& bag);
 
     private:
         eanim::ParticleSystem drops;
