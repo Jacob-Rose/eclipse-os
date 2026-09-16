@@ -2782,7 +2782,7 @@ class JacketStateMachine(ShowTest):
         seen = []
         for state in ("parrot", "blue_magic", "campfire"):
             show.set_state(state)
-            time.sleep(1.0)          # past the 0.4s cross-fade
+            time.sleep(1.5)          # past the 1s cross-fade
             seen.append(tuple(frames[-1]))
         self.assertEqual(len(set(seen)), 3)
 
@@ -2813,6 +2813,122 @@ class JacketStateMachine(ShowTest):
         time.sleep(1.2)
         after = tuple(frames[-1])
         self.assertNotEqual(before, after)
+
+
+class StateBlends(ShowTest):
+    """How a machine gets from one look to the next is a cue's to choose.
+
+    The blends themselves - and a cue landing mid-fade - are proved by the
+    executable's own self-test, in synthetic time, where the frame halfway
+    through a fade is a number. What is checked here is the wire: that a cue
+    can name one, that the wrapper reads it back, and that a bad name is an
+    error rather than a silent crossfade.
+    """
+
+    def test_selftest_passes(self):
+        result = subprocess.run(
+            [str(self.executable), "--blend-selftest"], capture_output=True, text=True, timeout=30
+        )
+        failures = [line for line in result.stdout.splitlines() if "FAIL" in line]
+        self.assertEqual(failures, [], "\n".join(failures))
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertIn("OK blend selftest passed", result.stdout)
+        checks = [line for line in result.stdout.splitlines() if line.startswith("SELFTEST")]
+        self.assertGreaterEqual(len(checks), 25)
+
+    def test_the_wrapper_reads_the_blend(self):
+        show = ShowController(SCANNER, remote="nowhere", autostart=False)
+        for line in [
+            "STATES scan_idle power_up",
+            "STATE scan_idle",
+            "BLEND crossfade",
+            "LAYER uv STATES off flash on",
+            "LAYER uv STATE off",
+            "LAYER uv BLEND dip",
+            "BLENDS cut crossfade rgb dip wipe",
+            "BLEND rgb",
+            "READY",
+        ]:
+            show._handle_stdout(line)
+        self.assertEqual(show.current_blend, "rgb")
+        self.assertEqual(show.blend_names, ["cut", "crossfade", "rgb", "dip", "wipe"])
+        self.assertEqual(show.layers["uv"].current_blend, "dip")
+
+        # a plain pattern has no states and so no blend either
+        show._handle_stdout("STATES")
+        self.assertEqual(show.current_blend, "")
+
+    def test_a_cue_names_its_blend(self):
+        show = self.running_show(RIG)
+        show.command("pattern jacket")
+        time.sleep(0.4)
+        self.assertEqual(show.current_blend, "crossfade")
+
+        show.set_state("parrot", seconds=0.3, blend="dip")
+        self.assertEqual(show.current_blend, "dip")
+        reply = show.command("blend")
+        self.assertIn("dip", reply)
+        self.assertEqual(show.blend_names, ["cut", "crossfade", "rgb", "dip", "wipe"])
+
+        # sticky: the next cue fades the same way until told otherwise
+        show.set_state("campfire")
+        self.assertEqual(show.command("blend"), "OK blend dip")
+
+        # and either word can stand alone
+        show.set_state("blue_magic", blend="wipe")
+        self.assertEqual(show.command("blend"), "OK blend wipe")
+        show.set_blend("rgb")
+        self.assertEqual(show.command("blend"), "OK blend rgb")
+
+    def test_a_bad_blend_is_an_error_not_a_crossfade(self):
+        show = self.running_show(RIG)
+        show.command("pattern jacket")
+        time.sleep(0.4)
+        with self.assertRaises(ShowError):
+            show.set_blend("sideways")
+        with self.assertRaises(ShowError):
+            show.set_state("parrot", blend="sideways")
+        self.assertEqual(show.command("blend"), "OK blend crossfade")
+        self.assertTrue(show.is_running)
+
+    def test_a_blend_needs_a_state_machine(self):
+        show = self.running_show(RIG)
+        show.command("pattern obelisk_seasons")
+        time.sleep(0.4)
+        with self.assertRaises(ShowError):
+            show.set_blend("dip")
+
+    def test_a_pad_pressed_twice_is_one_press(self):
+        """Every pad in the show map says `pattern` before its `state`.
+        Neither may disturb what is already running: a repeated pattern name
+        does not rebuild the machine (which snapped every cue through the
+        opening state on its way in), and a repeated state does not restart
+        the look."""
+        show = self.running_show(RIG)
+        show.command("pattern jacket")
+        show.set_state("parrot", seconds=0.2)
+        time.sleep(0.6)
+        self.assertEqual(show.current_state, "parrot")
+
+        self.assertEqual(show.command("pattern jacket"), "OK pattern jacket")
+        show.set_state("parrot")
+        time.sleep(0.2)
+        # still parrot - not digital_void, which a rebuilt machine opens on
+        self.assertEqual(show.current_state, "parrot")
+        self.assertEqual(len(show.state_names), 12)
+        # and the fade length and blend survived, being the machine's
+        self.assertEqual(show.command("blend"), "OK blend crossfade")
+
+    def test_a_layer_has_its_own(self):
+        show = self.running_show(DESKTOP / "config" / "scanner_stage.json")
+        time.sleep(0.8)
+        uv = show.layers["uv"]
+        self.assertEqual(uv.current_blend, "crossfade")
+        uv.set_state("on", seconds=0.2, blend="cut")
+        self.assertEqual(show.command("layer uv blend"), "OK layer uv blend cut")
+        self.assertEqual(uv.blend_names, ["cut", "crossfade", "rgb", "dip", "wipe"])
+        # the show's own machine was not touched
+        self.assertEqual(show.command("blend"), "OK blend crossfade")
 
 
 class MidiSettings(unittest.TestCase):
@@ -3054,7 +3170,7 @@ class Mythos26(ShowTest):
         seen = []
         for state in MYTHOS26_STATES:
             show.set_state(state)
-            time.sleep(0.8)  # past the 0.25s cross-fade
+            time.sleep(1.4)  # past the 1s cross-fade
             seen.append(tuple(frames[-1]))
 
         for frame in seen:
@@ -3594,7 +3710,10 @@ class TheShowLooks(ShowTest):
         kwargs.setdefault("emit_rate", 30.0)
         show = self.running_show(CUES, **kwargs)
         show.set_pattern("mythos26")
-        show.set_state(state)
+        # cut, and sticky for the cues that follow: these tests read what a
+        # look is, not how it arrives, and the show's one-second fade would
+        # put every sample here somewhere inside it
+        show.set_state(state, seconds=0)
         return show
 
     def _peak(self, frames, since, seconds, channel):
@@ -4001,7 +4120,7 @@ class TvStatic(ShowTest):
             on_frame=frames.append, emit_rate=40.0
         )
         show.set_state(state)
-        time.sleep(0.9)     # past the generic machine's 0.5s cross-fade
+        time.sleep(1.3)     # past the generic machine's 1s cross-fade
         frames.clear()
         time.sleep(seconds)
         self.assertTrue(frames, "no frames arrived")

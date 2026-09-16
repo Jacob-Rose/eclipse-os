@@ -293,23 +293,46 @@ bool obelisk::ObeliskCore::handleCommand(string msg)
     // names are the ones the desk's own buttons send, so a cue list works over
     // the link without either end knowing about the other's spelling.
     //
-    // `state <name> [seconds]` - the optional seconds set the blend time for
-    // this change, which is how the scanner's transitionTo(state, time) pairs
-    // arrive as a single line.
+    // `state <name> [seconds] [blend]` - the optional seconds set the blend
+    // time for this change, which is how the scanner's transitionTo(state,
+    // time) pairs arrive as a single line; the optional blend sets its shape
+    // (esm::findStateBlend has the names). A word that reads as a number is
+    // the seconds, anything else the blend, so either can stand alone. Both
+    // stick until the next override. The desk sends its own cue line here
+    // verbatim, so the two ends read the same words the same way.
     if (msg.rfind("state ", 0) == 0)
     {
         string wanted = msg.substr(6);
 
-        const size_t space = wanted.find(' ');
+        size_t space = wanted.find(' ');
         if (space != string::npos)
         {
-            const string seconds = wanted.substr(space + 1);
+            string tail = wanted.substr(space + 1);
             wanted = wanted.substr(0, space);
 
-            const float requested = static_cast<float>(atof(seconds.c_str()));
-            if (requested >= 0.0f)
+            while (!tail.empty())
             {
-                stateMachine->transitionTime = requested;
+                space = tail.find(' ');
+                const string word = tail.substr(0, space);
+                tail = (space == string::npos) ? string() : tail.substr(space + 1);
+                if (word.empty())
+                {
+                    continue;
+                }
+
+                char* end = nullptr;
+                const float requested = strtof(word.c_str(), &end);
+                if (end != nullptr && *end == '\0')
+                {
+                    if (requested >= 0.0f)
+                    {
+                        stateMachine->transitionTime = requested;
+                    }
+                }
+                else if (!stateMachine->setBlend(word.c_str()))
+                {
+                    say("EOSLINK unknown blend " + word);
+                }
             }
         }
 

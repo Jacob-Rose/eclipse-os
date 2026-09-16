@@ -1736,9 +1736,11 @@ std::unique_ptr<StateMachinePattern> edmx::makeMythos26StateMachine()
     // ------------------------------------------------------------------
     CoordFrame stage;
 
-    // Shorter than the jacket's 0.4s. These are cues in a show rather than
-    // moods on a garment, and a beat-locked look wants to arrive promptly.
-    const float transitionTime = 0.25f;
+    // A second. This was 0.25s - seven frames - on the theory that a
+    // beat-locked look wants to arrive promptly, and at that length a blend
+    // is not something anyone can see. A cue that must land on the beat
+    // says so: `state <name> 0` or `cut` on the line.
+    const float transitionTime = 1.0f;
 
     return std::unique_ptr<StateMachinePattern>(new StateMachinePattern(
         "mythos26", std::move(states),

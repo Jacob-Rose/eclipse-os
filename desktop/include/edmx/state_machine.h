@@ -116,6 +116,13 @@ namespace edmx
         /// transitionTo(state, time) pairs - gets each blend at its length.
         void setTransitionTime(float seconds);
 
+        /// How the next cross-fades look - one of esm's built-in blends, by
+        /// name (`cut`, `crossfade`, `rgb`, `dip`, `wipe`). Sticky like the
+        /// time. False and outError, naming the choices, for a name that is
+        /// not one of them.
+        bool setBlend(const std::string& blendName, std::string& outError);
+        std::string blendName() const;
+
         /// The two momentary inputs the relic patterns read. On a jacket these
         /// are remote buttons; here they are whatever the UI wires them to.
         void setInput(bool inputA, bool inputB);
@@ -135,6 +142,7 @@ namespace edmx
         uint8_t segmentId;
         CoordFrame frame;
         float transitionTime;
+        const esm::StateBlend* blend{&esm::defaultStateBlend()};
 
         bool inputA{false};
         bool inputB{false};

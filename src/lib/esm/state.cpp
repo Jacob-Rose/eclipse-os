@@ -167,6 +167,7 @@ void StateMachine::setActiveState(std::shared_ptr<State> inNewState)
     inNewState->onStateChangeState(StateStatus::Active);
     currentTransitionTime = 0.0f;
     NextState = nullptr;
+    bBlendFromSnapshot = false;
 
     ActiveState = inNewState;
 }
@@ -180,7 +181,7 @@ void StateMachine::setNextState(std::shared_ptr<State> inNextState)
         dbgLog(msg.c_str(), Verbosity::Error, Category::State | Category::Library);
         return;
     }
-    if(inNextState == ActiveState)
+    if(inNextState == ActiveState && !NextState)
     {
         std::string msg = "StateMachine::setNextState - inNextState is the same as ActiveState!";
         dbgLog(msg.c_str(), Verbosity::Error, Category::State | Category::Library);
@@ -188,7 +189,52 @@ void StateMachine::setNextState(std::shared_ptr<State> inNextState)
     }
 #endif
 
-    if(ActiveState)
+    if(inNextState == NextState)
+    {
+        // Already on its way in. Restarting the clock here would stall a
+        // fade a caller resends the cue for - the scanner does, on reconnect.
+        return;
+    }
+
+    if(NextState)
+    {
+        // Mid-fade. The picture on the rig is a mix of two looks, and
+        // neither of their buffers is what the eye is seeing - so freeze the
+        // mix and blend from that. The dropped incoming look goes Off; so
+        // does the outgoing one, which is no longer contributing. It stays
+        // as ActiveState only because the machine needs one until the new
+        // target lands, and tick() does not run an Off active.
+        //
+        // This is also how "go back" works: the active state is a legal
+        // target now, because the fade is from the snapshot, not from it.
+        captureBlendSource();
+        bBlendFromSnapshot = true;
+
+        NextState->onStateChangeState(StateStatus::Off);
+        if(ActiveState && ActiveState != NextState)
+        {
+            ActiveState->onStateChangeState(StateStatus::Off);
+        }
+        ActiveState = NextState;
+        NextState = nullptr;
+    }
+    else
+    {
+        if(inNextState == ActiveState)
+        {
+            return;
+        }
+        bBlendFromSnapshot = false;
+    }
+
+    if(blend->isInstant() || transitionTime <= 0.0f)
+    {
+        // Nothing to show between here and there.
+        setActiveState(inNextState);
+        return;
+    }
+
+    if(ActiveState && ActiveState->GetStatus() != StateStatus::Off)
     {
         ActiveState->onStateChangeState(StateStatus::TransitionOut);
     }
@@ -198,6 +244,36 @@ void StateMachine::setNextState(std::shared_ptr<State> inNextState)
     NextState = inNextState;
 }
 
+bool StateMachine::setBlend(const char* name)
+{
+    const StateBlend* found = findStateBlend(name);
+    if(found == nullptr)
+    {
+        return false;
+    }
+    blend = found;
+    return true;
+}
+
+float StateMachine::getTransitionProgress() const
+{
+    if(!NextState || transitionTime <= 0.0f)
+    {
+        return 1.0f;
+    }
+    const float alpha = currentTransitionTime / transitionTime;
+    return alpha < 0.0f ? 0.0f : (alpha > 1.0f ? 1.0f : alpha);
+}
+
+int StateMachine::getBlendSourceBuffer() const
+{
+    if(bBlendFromSnapshot)
+    {
+        return kSnapshotBuffer;
+    }
+    return ActiveState ? ActiveState->getStateID() : kNoBuffer;
+}
+
 void StateMachine::restartState(std::shared_ptr<State> inState)
 {
     // Only a state the machine is actually running can be restarted; anything
@@ -205,6 +281,12 @@ void StateMachine::restartState(std::shared_ptr<State> inState)
     // state would fight whatever is.
     if (inState == nullptr || (inState != ActiveState && inState != NextState))
     {
+        return;
+    }
+    if (inState == ActiveState && inState->GetStatus() == StateStatus::Off)
+    {
+        // The Off placeholder a retarget leaves as ActiveState - see
+        // setNextState. Waking it would put two looks on the way in.
         return;
     }
 
@@ -254,7 +336,7 @@ void StateMachine::tick(float deltaTime)
         }
     }
 
-    if(ActiveState != nullptr)
+    if(ActiveState != nullptr && ActiveState->GetStatus() != StateStatus::Off)
     {
         ActiveState->tick(deltaTime);
     }

@@ -66,6 +66,7 @@ set(ECLIPSE_CORE_SOURCES
 
     ${ECLIPSE_SRC}/lib/esm/state.cpp
     ${ECLIPSE_SRC}/lib/esm/state_generic.cpp
+    ${ECLIPSE_SRC}/lib/esm/state_blend.cpp
 
     ${ECLIPSE_SRC}/lib/external/easing.cpp
 

@@ -58,6 +58,10 @@ public:
     void setRelicIO(RelicIO* inIO) { io = inIO; }
     RelicIO* getRelicIO() const { return io; }
 
+protected:
+    /// The picture on the strip right now, into every node's snapshot buffer.
+    virtual void captureBlendSource() override;
+
 private:
     RelicIO* io{nullptr};
 

@@ -2335,9 +2335,9 @@ brightness <float>        master <float>         color <#rrggbb | h s v>
 palette <name|#a,#b,...>  blackout <on|off>      status
 quit
 
-state <name>              states                 input <a|b> <on|off>
-params                    params dump            param <name> <value>
-trigger <tag>
+state <name> [s] [blend]  states                 input <a|b> <on|off>
+blend [name]              params                 params dump
+param <name> <value>      trigger <tag>
 
 bpm <float>               beat                   latency [ms | nudge <ms>]
 midi open <spec>          midi close             midi align
@@ -2347,13 +2347,24 @@ link pixels               link cue               link take
 link release              link sim               link cmd <text>
 link hello
 
-layers                    layer <name> state <s> [seconds]
-layer <name> states       layer <name> params [dump]
+layers                    layer <name> state <s> [seconds] [blend]
+layer <name> states       layer <name> blend [name]
+layer <name> params [dump]
 layer <name> param <k> <v>    layer <name> curve <k> <t:v...>
 layer <name> trigger <tag>
 ```
 
-`state` and `input` need a state machine pattern; the rest work on anything.
+`state`, `blend` and `input` need a state machine pattern; the rest work on
+anything. A `state` cue can carry how long its fade is and how it looks -
+`state fire 0.5 dip` - in either order, either alone, and both stick until the
+next cue says otherwise; `blend <name>` sets the look without cueing a state,
+and `blend` alone answers `BLENDS` (the choices) and `BLEND` (the current one).
+The blends are `cut` (at once), `crossfade` (the straight HSV lerp the relics
+have always done, and the default), `rgb` (mixed like two lamps, so orange into
+blue does not pass through green), `dip` (through black) and `wipe` (the new
+look sweeps along the rig). A cue that lands mid-fade continues from the
+picture on the rig rather than snapping back to the look it was leaving, so any
+state can be cued at any moment - including the one being left.
 The `link` commands need `device.type` to be a relic — see
 [over usb](#over-usb). In cue mode `state <name>` goes to the relic rather than
 to our own state machine, so a cue list drives either end without changing.

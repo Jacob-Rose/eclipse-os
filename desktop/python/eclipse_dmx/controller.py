@@ -187,6 +187,9 @@ class LayerView:
         self.pattern_name: str = ""
         self.state_names: List[str] = []
         self.current_state: str = ""
+        #: How this layer's machine fades between states - see ShowController.current_blend.
+        self.current_blend: str = ""
+        self.blend_names: List[str] = []
         self.params: List[Param] = []
         self.params_revision: int = 0
         self.curves: dict = {}
@@ -227,6 +230,10 @@ class LayerView:
             self.state_names = line.split()[1:]
         elif line.startswith("STATE "):
             self.current_state = line[len("STATE "):].strip()
+        elif line.startswith("BLENDS"):
+            self.blend_names = line.split()[1:]
+        elif line.startswith("BLEND "):
+            self.current_blend = line[len("BLEND "):].strip()
         elif line.startswith("PARAMS"):
             parts = line.split()
             self._look_key = (parts[1] if len(parts) > 1 else "",
@@ -277,9 +284,17 @@ class LayerView:
 
     # -- what a desk does to it --------------------------------------------
 
-    def set_state(self, name: str) -> None:
-        self.show.command(f"layer {self.name} state {name}")
+    def set_state(self, name: str, seconds: Optional[float] = None,
+                  blend: Optional[str] = None) -> None:
+        self.show.command(f"layer {self.name} state {name}{_cue_tail(seconds, blend)}")
         self.current_state = name
+        if blend:
+            self.current_blend = blend
+
+    def set_blend(self, name: str) -> None:
+        """Picks how every fade from here on looks - see ShowController.set_blend."""
+        self.show.command(f"layer {self.name} blend {name}")
+        self.current_blend = name
 
     def set_param(self, name: str, value: Union[float, bool, str],
                   wait: bool = True) -> None:
@@ -312,6 +327,20 @@ class LayerView:
 
     def __repr__(self) -> str:
         return f"LayerView({self.name}: {self.pattern_name} {self.current_state or '-'})"
+
+
+def _cue_tail(seconds: Optional[float], blend: Optional[str]) -> str:
+    """The optional tail of a `state` line: `[seconds] [blend]`.
+
+    Either may be given alone - the executable tells them apart by whether
+    the word reads as a number - and both stick until the next override.
+    """
+    tail = ""
+    if seconds is not None:
+        tail += f" {seconds:g}"
+    if blend:
+        tail += f" {blend}"
+    return tail
 
 
 def _parse_frame(line: str) -> Optional[Frame]:
@@ -456,6 +485,12 @@ class ShowController:
         self.state_names: List[str] = []
         #: The state showing now, or "" when the pattern has no states.
         self.current_state: str = ""
+        #: How the machine fades between states: one of `blend_names`
+        #: (`cut`, `crossfade`, `rgb`, `dip`, `wipe`). Read off the BLEND
+        #: line a state machine announces with its states, and the reply to
+        #: `blend`. "" when the pattern has no states.
+        self.current_blend: str = ""
+        self.blend_names: List[str] = []
         #: The pattern running now - which, for a state machine pattern, is
         #: another way of saying *which machine* is loaded. Read off READY at
         #: startup and off every PARAMS block after, so it costs no polling
@@ -850,8 +885,13 @@ class ShowController:
                 # lit pad) would go on claiming a state the rig is no longer
                 # in, on a pattern that has none.
                 self.current_state = ""
+                self.current_blend = ""
         elif line.startswith("STATE "):
             self.current_state = line[len("STATE "):].strip()
+        elif line.startswith("BLENDS"):
+            self.blend_names = line.split()[1:]
+        elif line.startswith("BLEND "):
+            self.current_blend = line[len("BLEND "):].strip()
 
         # PARAMS opens a new set and PARAM/CURVE lines fill it. Collected here
         # rather than by asking, because the set changes under a UI whenever
@@ -1110,13 +1150,37 @@ class ShowController:
         """Switches the look. Speed/width/brightness carry across."""
         self.command(f"pattern {name}")
 
-    def set_state(self, name: str) -> None:
-        """Cross-fades a state machine pattern to `name`.
+    def set_state(self, name: str, seconds: Optional[float] = None,
+                  blend: Optional[str] = None) -> None:
+        """Fades a state machine pattern to `name`.
 
-        Raises ShowError if the running pattern has no states, or no such one.
+        `seconds` is how long the fade takes and `blend` how it looks (see
+        `set_blend`); both stick for the fades that follow. Cued mid-fade,
+        the machine continues from the picture it is showing rather than
+        snapping back to the look it was leaving - any state, any time.
+
+        Raises ShowError if the running pattern has no states, or no such
+        one, or no such blend.
         """
-        self.command(f"state {name}")
+        self.command(f"state {name}{_cue_tail(seconds, blend)}")
         self.current_state = name
+        if blend:
+            self.current_blend = blend
+
+    def set_blend(self, name: str) -> None:
+        """Picks how every fade from here on looks.
+
+        `cut` lands at once; `crossfade` is the straight HSV lerp the relics
+        have always done; `rgb` mixes like two lamps, so orange into blue
+        does not pass through green; `dip` goes through black; `wipe` sweeps
+        the new look along the rig. A single fade that should differ says so
+        on its own `set_state`.
+
+        Raises ShowError if the running pattern has no states, or no such
+        blend.
+        """
+        self.command(f"blend {name}")
+        self.current_blend = name
 
     def send_frame(self, frame: Frame) -> None:
         """One frame down to a sink, as the `F` line it already speaks.

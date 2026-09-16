@@ -115,6 +115,7 @@ void StateMachinePattern::ensureBuilt(const PatternContext& context)
     manager.reset(new esm::StateManager());
     machine.reset(new StateMachine_GenericHSV());
     machine->transitionTime = transitionTime;
+    machine->setBlend(*blend);
     machine->setRelicIO(io.get());
 
     instances.clear();
@@ -296,16 +297,14 @@ bool StateMachinePattern::setState(const std::string& stateName, std::string& ou
 
     if (target == activeIndex)
     {
-        // Not a no-op: naming the showing state again restarts it. The game
-        // rewinds a look by transitioning to it. (State 0, what the machine
-        // shows from process launch, used to be power_up - so a boot's first
-        // `state power_up` landed on a look already played out, and this
-        // restart was what made it visible. The scanner's state 0 is `none`
-        // now, dark, and the first power_up is a real change.)
-        if (machine && target < instances.size())
-        {
-            machine->restartState(instances[target]);
-        }
+        // A no-op, whether the look is showing or still on its way in - the
+        // same answer the obelisk gives the same line. This used to restart
+        // the look, for a boot whose first `state power_up` landed on a
+        // machine already sitting in power_up; the scanner's state 0 is
+        // `none` now, so that case is gone, and what a restart did to a
+        // show was fire the cue's entry hit again on every second press of
+        // the pad. esm::StateMachine::restartState is still there for a
+        // caller that means it.
         return true;
     }
 
@@ -333,6 +332,36 @@ void StateMachinePattern::setTransitionTime(float seconds)
     {
         machine->transitionTime = transitionTime;
     }
+}
+
+bool StateMachinePattern::setBlend(const std::string& blendName, std::string& outError)
+{
+    const esm::StateBlend* found = esm::findStateBlend(blendName.c_str());
+    if (found == nullptr)
+    {
+        std::string known;
+        for (const char* const* name = esm::stateBlendNames(); *name != nullptr; ++name)
+        {
+            known += (known.empty() ? "" : ", ") + std::string(*name);
+        }
+        outError = "no blend '" + blendName + "' (have: " + known + ")";
+        return false;
+    }
+
+    // Kept on the pattern as well as the machine: the machine does not exist
+    // before the first render, and a rebuild on a rig-shape change starts a
+    // fresh one - see ensureBuilt.
+    blend = found;
+    if (machine)
+    {
+        machine->setBlend(*blend);
+    }
+    return true;
+}
+
+std::string StateMachinePattern::blendName() const
+{
+    return blend->getName();
 }
 
 // ============================================================================
@@ -423,7 +452,7 @@ std::unique_ptr<StateMachinePattern> edmx::makeJacketStateMachine()
         "jacket", std::move(states),
         static_cast<uint8_t>(jacket::JacketSegmentID::MONOWIRE),
         whip,
-        0.4f)); // the jacket's own cross-fade
+        1.0f)); // the garment fades in 0.4s; a second, so a blend can be seen on a rig
 }
 
 // ============================================================================
@@ -613,7 +642,7 @@ std::unique_ptr<StateMachinePattern> edmx::makeScannerStateMachine()
     // 0.5s covers most of the game's transitionTo times; the game overrides
     // per change with `state <tag> <seconds>`.
     return std::unique_ptr<StateMachinePattern>(new StateMachinePattern(
-        "scanner", std::move(states), 0, frame, 0.5f));
+        "scanner", std::move(states), 0, frame, 1.0f));
 }
 
 std::unique_ptr<StateMachinePattern> edmx::makeGenericStateMachine()
@@ -652,7 +681,7 @@ std::unique_ptr<StateMachinePattern> edmx::makeGenericStateMachine()
 
     CoordFrame frame;
     return std::unique_ptr<StateMachinePattern>(new StateMachinePattern(
-        "generic", std::move(states), 0, frame, 0.5f));
+        "generic", std::move(states), 0, frame, 1.0f));
 }
 
 std::shared_ptr<eanim::GeneratorHSV> edmx::makeObeliskLook(const std::string& name)
@@ -678,5 +707,5 @@ std::unique_ptr<StateMachinePattern> edmx::makeObeliskStateMachine()
 
     CoordFrame frame;
     return std::unique_ptr<StateMachinePattern>(new StateMachinePattern(
-        "obelisk", std::move(states), 0, frame, 0.5f));
+        "obelisk", std::move(states), 0, frame, 1.0f));
 }

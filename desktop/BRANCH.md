@@ -199,6 +199,70 @@ and now looks like one.
 entering `flash` at 0.13, 0.27 and 0.41 of a beat, and checking the first flash
 lands on the grid rather than under the operator's thumb.
 
+### the fade is a cue's to choose, and a cue can land mid-fade
+
+Every state change on every machine - the jacket's, the scanner's, the show's,
+the obelisk's on its cable - went through one line: `color.blendWith(color2,
+alpha)` in `StateMachine_GenericHSV::tick`. A straight lerp in HSV, hue
+included, so orange into sky blue walked through yellow and green on every
+cue. And `setNextState` mid-fade replaced the incoming look and reset the
+clock, with the outgoing one still the "from" - so cueing a third look while a
+fade was running **snapped the rig back to the look it was already leaving**
+and faded again from there. A pad hit twice in a bar did exactly that.
+
+Both are now `esm::StateBlend` (`src/lib/esm/state_blend.h`). A blend is a pure
+function - *this far through, given the colour leaving and the colour
+arriving, what is this node?* - with no per-node state, so one instance serves
+every machine on the device and a cue swapping it rebuilds nothing. The machine
+owns the clock and the states and asks the blend per node; where the outgoing
+picture lives is the machine's business (`getBlendSourceBuffer`), which is
+what makes the second fix possible.
+
+**Five built in**, by the name a cue spells: `cut`, `crossfade` (the old lerp,
+byte for byte, and still the default - a machine that never chooses looks
+exactly as it always has), `rgb` (two lamps making one; the level lerped on its
+own so a saturated pair does not dip to grey in the middle - the same mix the
+show's gradients already use), `dip` (through black, the two never sharing a
+frame) and `wipe` (each node its own crossfade, started later the further along
+the strip it sits, with a soft edge). Adding one is a class in
+`state_blend.cpp` and a line in its table.
+
+**A cue mid-fade continues from the picture.** The rig is showing a mix of two
+looks and neither of their buffers is what the eye sees, so the machine freezes
+the mix into every node's snapshot buffer and blends from *that* to the new
+target. The dropped look goes Off; so does the one being left. It stays as
+`ActiveState` only because the machine needs one until the target lands, and
+`tick()` no longer runs an Off active. Which also makes the look being left a
+legal target: "go back" is a fade from the snapshot to it, not a self-transition,
+and `setNextState` accepts it. Re-cueing the look already on its way in is a
+no-op rather than a clock reset, which the scanner's resend-on-reconnect leans
+on.
+
+**And the cue machines now fade over a second** - the show's was 0.25s, seven
+frames, at which length a blend is not something anyone can see. The mode
+layers (the UV's off/flash/on, the flash, the audio bus) still snap: a light
+changing mode should not swim. A cue that must land on the beat says so on the
+line - `state punk 0`, or `cut`.
+
+**A pad pressed twice is one press.** Two things made a cue look like a snap
+and then a fade, and neither was the blend. Every pad in the show map says
+`pattern mythos26` before its `state`, and `pattern` rebuilt the machine even
+when it was the one already running - so every press went through the
+machine's opening state on its way to the cue. It is a no-op now when it names
+the running pattern. And re-cueing the state already showing (or arriving)
+restarted the look, which on a show cue meant the entry hit fired again; that
+is a no-op too, the answer the obelisk already gave the same line.
+`esm::StateMachine::restartState` is still there for a caller that means it.
+
+On the wire it is the tail of the cue: `state fire 0.5 dip`, either word alone,
+in either order, sticky like the seconds always were; `blend <name>` sets it
+without cueing; `BLEND` goes out beside `STATE`. The obelisk reads the same
+line the same way, so a cue over the cable fades on the sculpture the way it
+fades on the truss. `eclipse-dmx --blend-selftest` proves all of it in
+synthetic time - a four-lamp rig of three solid looks, ticked by hand, where
+the frame halfway through a fade is a number - and `StateBlends` in the suite
+covers the wire.
+
 ### commissioning
 
 Ten identical pars are indistinguishable from a config file, so:

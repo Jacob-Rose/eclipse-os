@@ -56,6 +56,7 @@
 #endif
 #include "edmx/midi_input.h"
 #include "edmx/midi_output.h"
+#include "edmx/mythos26.h"
 #include "edmx/pattern.h"
 #include "edmx/serial_port.h"
 #include "edmx/state_machine.h"
@@ -88,6 +89,7 @@ namespace
             "  eclipse-dmx --list-ports\n"
             "  eclipse-dmx --list-midi\n"
             "  eclipse-dmx --midi-selftest\n"
+            "  eclipse-dmx --blend-selftest\n"
             "  eclipse-dmx --link-selftest\n"
             "  eclipse-dmx --probe-relics\n"
             "  eclipse-dmx --reboot-bootsel [--port <path>]\n"
@@ -1546,6 +1548,234 @@ namespace
         return 1;
     }
 
+    /// Every built-in blend, and a cue landing mid-fade, in synthetic time.
+    /// Returns 0 on success.
+    ///
+    /// A four-fixture rig running a machine of three solid looks, ticked by
+    /// hand: the frame at any point in a fade is then a number, and the
+    /// numbers are what each blend promises. The last section is the one
+    /// that was actually broken - a third look cued during a cross-fade used
+    /// to snap the rig back to the look it was already leaving.
+    int runBlendSelfTest()
+    {
+        int failures = 0;
+
+        const auto check = [&failures](const char* what, double got, double expected,
+                                       double tolerance) {
+            std::ostringstream line;
+            line.setf(std::ios::fixed);
+            line.precision(3);
+            const bool ok = std::fabs(got - expected) <= tolerance;
+            line << (ok ? "SELFTEST ok   " : "SELFTEST FAIL ") << what
+                 << " got=" << got << " expected=" << expected;
+            emit(line.str());
+            if (!ok)
+            {
+                ++failures;
+            }
+        };
+
+        const auto solid = [](const char* name, float hue) {
+            StateDef def;
+            def.name = name;
+            def.make = [hue]() {
+                auto look = std::make_shared<Pattern_Mythos_Solid>();
+                look->color = ecore::HSV(hue, 1.0f, 1.0f);
+                return std::static_pointer_cast<eanim::GeneratorHSV>(look);
+            };
+            return def;
+        };
+
+        // A line of four, so a wipe has somewhere to travel.
+        PatternContext context;
+        context.fixtureCount = 4;
+        context.positions = {0.0f, 1.0f / 3.0f, 2.0f / 3.0f, 1.0f};
+        std::vector<ecore::HSV> frame;
+
+        const auto fresh = [&]() {
+            auto machine = std::make_unique<StateMachinePattern>(
+                "blend_selftest",
+                std::vector<StateDef>{solid("red", 0.0f), solid("blue", 240.0f), solid("green", 120.0f)},
+                0, CoordFrame{}, 1.0f);
+            // one frame settles the machine on red
+            machine->tick(0.0f);
+            machine->render(context, frame);
+            return machine;
+        };
+        const auto step = [&](StateMachinePattern& machine, float seconds) {
+            machine.tick(seconds);
+            machine.render(context, frame);
+        };
+        const auto cue = [&](StateMachinePattern& machine, const char* state, const char* blend) {
+            std::string error;
+            if (!machine.setBlend(blend, error) || !machine.setState(state, error))
+            {
+                emit("SELFTEST FAIL cue " + std::string(state) + " " + blend + ": " + error);
+                ++failures;
+            }
+        };
+
+        // ---- crossfade: what every machine did before blends had names ----
+        {
+            auto machine = fresh();
+            cue(*machine, "blue", "crossfade");
+            step(*machine, 0.5f);
+            const ecore::HSV expected = ecore::HSV::blend(ecore::HSV(0.0f, 1.0f, 1.0f),
+                                                          ecore::HSV(240.0f, 1.0f, 1.0f), 0.5f);
+            check("crossfade.is_the_old_lerp", frame[0].getHueFloat(), expected.getHueFloat(), 0.5);
+            check("crossfade.keeps_level", frame[0].getValFloat(), 1.0, 0.01);
+            step(*machine, 0.6f);
+            check("crossfade.lands", frame[0].getHueFloat(), 240.0, 0.5);
+        }
+
+        // ---- rgb: lamps, not a walk round the wheel ----------------------
+        {
+            auto machine = fresh();
+            cue(*machine, "blue", "rgb");
+            step(*machine, 0.5f);
+            // half red and half blue is magenta at full level - not the green
+            // the hue lerp passes through
+            check("rgb.midpoint_is_magenta", frame[0].getHueFloat(), 300.0, 1.0);
+            check("rgb.level_does_not_dip", frame[0].getValFloat(), 1.0, 0.01);
+        }
+
+        // ---- dip: through black, never both at once ----------------------
+        {
+            auto machine = fresh();
+            cue(*machine, "blue", "dip");
+            step(*machine, 0.25f);
+            check("dip.first_half_is_the_old_look", frame[0].getHueFloat(), 0.0, 0.5);
+            check("dip.first_half_dimming", frame[0].getValFloat(), 0.5, 0.02);
+            step(*machine, 0.25f);
+            check("dip.midpoint_is_black", frame[0].getValFloat(), 0.0, 0.02);
+            step(*machine, 0.25f);
+            check("dip.second_half_is_the_new_look", frame[0].getHueFloat(), 240.0, 0.5);
+            check("dip.second_half_rising", frame[0].getValFloat(), 0.5, 0.02);
+        }
+
+        // ---- wipe: the first lamp is across before the last has moved ----
+        {
+            auto machine = fresh();
+            cue(*machine, "blue", "wipe");
+            step(*machine, 0.3f);
+            check("wipe.front_has_arrived", frame[0].getHueFloat(), 240.0, 0.5);
+            check("wipe.back_still_waiting", frame[3].getHueFloat(), 0.0, 0.5);
+            step(*machine, 0.8f);
+            check("wipe.back_arrives", frame[3].getHueFloat(), 240.0, 0.5);
+        }
+
+        // ---- cut: no in-between, and no frame of it either ----------------
+        {
+            auto machine = fresh();
+            cue(*machine, "blue", "cut");
+            step(*machine, 0.001f);
+            check("cut.lands_at_once", frame[0].getHueFloat(), 240.0, 0.5);
+            check("cut.at_full", frame[0].getValFloat(), 1.0, 0.01);
+        }
+
+        // ---- zero seconds is a cut whatever the blend --------------------
+        {
+            auto machine = fresh();
+            machine->setTransitionTime(0.0f);
+            cue(*machine, "blue", "crossfade");
+            step(*machine, 0.001f);
+            check("zero_seconds.lands_at_once", frame[0].getHueFloat(), 240.0, 0.5);
+        }
+
+        // ---- a cue mid-fade continues from the picture, not the old look --
+        {
+            auto machine = fresh();
+            cue(*machine, "blue", "rgb");
+            step(*machine, 0.5f);          // magenta: halfway red -> blue
+            cue(*machine, "green", "rgb");
+            step(*machine, 0.01f);
+            // the frame after the cue is still (almost) the magenta it left
+            // from - not red, which is what snapping back to the outgoing
+            // look would show
+            check("retarget.continues_from_the_mix", frame[0].getHueFloat(), 300.0, 5.0);
+            check("retarget.does_not_snap_back", frame[0].getHueFloat() < 5.0 ? 1.0 : 0.0, 0.0, 0.0);
+            step(*machine, 0.5f);
+            // halfway from magenta to green in rgb is (0.49, 0.51, 0.49):
+            // complementary colours meet near white, so a faint green that
+            // is neither end - not the saturated green a snap would show
+            check("retarget.is_a_real_fade", frame[0].getHueFloat(), 120.0, 1.0);
+            check("retarget.halfway_is_mixed", frame[0].getSatFloat() < 0.5 ? 1.0 : 0.0, 1.0, 0.0);
+            step(*machine, 0.6f);
+            check("retarget.lands", frame[0].getHueFloat(), 120.0, 0.5);
+            check("retarget.lands_at_full", frame[0].getSatFloat(), 1.0, 0.01);
+            check("retarget.names_the_target",
+                  machine->currentStateName() == "green" ? 1.0 : 0.0, 1.0, 0.0);
+        }
+
+        // ---- and the look being left is a legal target: going back -------
+        {
+            auto machine = fresh();
+            cue(*machine, "blue", "rgb");
+            step(*machine, 0.5f);
+            cue(*machine, "red", "rgb");
+            step(*machine, 0.01f);
+            check("go_back.continues_from_the_mix", frame[0].getHueFloat(), 300.0, 5.0);
+            step(*machine, 1.1f);
+            check("go_back.lands", frame[0].getHueFloat(), 0.0, 0.5);
+            check("go_back.at_full", frame[0].getSatFloat(), 1.0, 0.01);
+            check("go_back.names_the_target",
+                  machine->currentStateName() == "red" ? 1.0 : 0.0, 1.0, 0.0);
+        }
+
+        // ---- the same cue twice is one cue -------------------------------
+        {
+            auto machine = fresh();
+            cue(*machine, "blue", "rgb");
+            step(*machine, 0.5f);
+            cue(*machine, "blue", "rgb");     // the pad, pressed again mid-fade
+            step(*machine, 0.01f);
+            // neither restarted from red nor snapped to blue: still the
+            // magenta halfway point the fade had reached
+            check("recue.mid_fade_keeps_its_place", frame[0].getHueFloat(), 300.0, 5.0);
+            step(*machine, 0.5f);
+            // and the clock was not reset - a second after the first cue it
+            // has landed
+            check("recue.mid_fade_keeps_its_clock", frame[0].getHueFloat(), 240.0, 0.5);
+            check("recue.landed_at_full", frame[0].getSatFloat(), 1.0, 0.01);
+
+            cue(*machine, "blue", "rgb");     // and again, once it has settled
+            step(*machine, 0.01f);
+            check("recue.settled_is_untouched", frame[0].getHueFloat(), 240.0, 0.5);
+            check("recue.settled_stays_at_full", frame[0].getValFloat(), 1.0, 0.01);
+            check("recue.settled_names_the_state",
+                  machine->currentStateName() == "blue" ? 1.0 : 0.0, 1.0, 0.0);
+        }
+
+        // ---- the names a cue can spell -----------------------------------
+        {
+            auto machine = fresh();
+            std::string error;
+            check("names.unknown_is_refused", machine->setBlend("sideways", error) ? 1.0 : 0.0, 0.0, 0.0);
+            check("names.refusal_lists_them", error.find("crossfade") != std::string::npos ? 1.0 : 0.0, 1.0, 0.0);
+            check("names.unchanged_after_refusal", machine->blendName() == "crossfade" ? 1.0 : 0.0, 1.0, 0.0);
+            int count = 0;
+            for (const char* const* name = esm::stateBlendNames(); *name != nullptr; ++name)
+            {
+                if (esm::findStateBlend(*name) == nullptr)
+                {
+                    emit(std::string("SELFTEST FAIL names.listed_but_missing ") + *name);
+                    ++failures;
+                }
+                ++count;
+            }
+            check("names.five_built_in", count, 5, 0);
+        }
+
+        if (failures == 0)
+        {
+            emit("OK blend selftest passed");
+            return 0;
+        }
+
+        emit("ERR blend selftest: " + std::to_string(failures) + " checks failed");
+        return 1;
+    }
+
     std::vector<std::string> splitWords(const std::string& line)
     {
         std::vector<std::string> words;
@@ -2292,6 +2522,42 @@ namespace
     /// `prefix` is "" for the show's own pattern and "LAYER <name> " for a
     /// layer's, on every line - one announcement format, and a client that
     /// reads the show's reads a layer's by stripping the prefix.
+    /// The tail of a cue line - `state <name> [seconds] [blend]` - applied to
+    /// a machine. Either may be given, in either order: a word that reads as
+    /// a number is the blend's length, anything else is its name. Both are
+    /// sticky until the next override, like the relic end of the same
+    /// command. False and outError for a blend name the machine does not
+    /// have; the seconds are still applied.
+    bool applyCueTail(StateMachinePattern& machine, const std::vector<std::string>& words,
+                      size_t from, std::string& outError)
+    {
+        for (size_t idx = from; idx < words.size(); ++idx)
+        {
+            float seconds = 0.0f;
+            if (parseFloatArg(words[idx], seconds))
+            {
+                machine.setTransitionTime(seconds);
+            }
+            else if (!machine.setBlend(words[idx], outError))
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /// Every blend a machine can be asked for, as one `BLENDS ...` line.
+    std::string blendsLine()
+    {
+        std::ostringstream out;
+        out << "BLENDS";
+        for (const char* const* name = esm::stateBlendNames(); *name != nullptr; ++name)
+        {
+            out << " " << *name;
+        }
+        return out.str();
+    }
+
     void emitStatesFor(Pattern* pattern, const std::string& prefix)
     {
         StateMachinePattern* machine = pattern ? pattern->asStateMachine() : nullptr;
@@ -2309,6 +2575,7 @@ namespace
         }
         emit(prefix + out.str());
         emit(prefix + "STATE " + machine->currentStateName());
+        emit(prefix + "BLEND " + machine->blendName());
     }
 
     /// Emitted whenever the pattern changes, so a client that switches to a
@@ -3189,6 +3456,20 @@ namespace
                 return;
             }
 
+            // Naming the pattern already running is not a request to rebuild
+            // it. Every pad in a show map says `pattern mythos26` before its
+            // `state`, so a rebuild here put every press through the
+            // machine's opening state on the way to its cue - a snap, then
+            // the fade - and a pad pressed twice did it twice. The reply is
+            // the same as a real switch, so a UI re-syncs either way.
+            if (show.pattern && show.config.pattern.name == words[1])
+            {
+                emit("OK pattern " + words[1]);
+                emitStates(show);
+                emitParams(show);
+                return;
+            }
+
             // Carry the live values across the switch: changing look should not
             // silently reset the speed someone just dialled in.
             PatternConfig next = show.config.pattern;
@@ -3273,13 +3554,15 @@ namespace
                 return;
             }
 
-            // `state <name> [seconds]` - the optional seconds are this blend's
-            // length, which is how afterglow's transitionTo(state, time) pairs
-            // arrive as one line. Sticky until the next override, like the
-            // relic end of the same command.
-            if (words.size() > 2)
+            // `state <name> [seconds] [blend]` - the optional seconds are this
+            // blend's length, which is how afterglow's transitionTo(state,
+            // time) pairs arrive as one line; the optional blend is its
+            // shape. Sticky until the next override, like the relic end of
+            // the same command.
+            if (!applyCueTail(*machine, words, 2, error))
             {
-                machine->setTransitionTime(static_cast<float>(atof(words[2].c_str())));
+                emit("ERR " + error);
+                return;
             }
 
             if (!machine->setState(words[1], error))
@@ -3301,6 +3584,34 @@ namespace
         if (command == "states")
         {
             emitStates(show);
+            return;
+        }
+
+        if (command == "blend" || command == "blends")
+        {
+            // `blend` alone says what the next fade will be and what it could
+            // be; `blend <name>` picks one for every fade from here on, the
+            // way `state <name> <seconds>` leaves its seconds behind. A cue
+            // list that wants one fade different says so on the cue.
+            StateMachinePattern* machine = show.pattern ? show.pattern->asStateMachine() : nullptr;
+            if (!machine)
+            {
+                emit("ERR pattern '" + std::string(show.pattern ? show.pattern->getName() : "none")
+                   + "' is not a state machine");
+                return;
+            }
+            if (words.size() > 1)
+            {
+                std::string error;
+                if (!machine->setBlend(words[1], error))
+                {
+                    emit("ERR " + error);
+                    return;
+                }
+            }
+            emit(blendsLine());
+            emit("BLEND " + machine->blendName());
+            emit("OK blend " + machine->blendName());
             return;
         }
 
@@ -3474,12 +3785,8 @@ namespace
                        + "', which is not a state machine");
                     return;
                 }
-                if (words.size() > 4)
-                {
-                    machine->setTransitionTime(static_cast<float>(atof(words[4].c_str())));
-                }
                 std::string error;
-                if (!machine->setState(words[3], error))
+                if (!applyCueTail(*machine, words, 4, error) || !machine->setState(words[3], error))
                 {
                     emit("ERR layer " + layer->name + ": " + error);
                     return;
@@ -3494,6 +3801,30 @@ namespace
             {
                 emitStatesFor(&pattern, prefix);
                 emit("OK layer " + layer->name + " states");
+                return;
+            }
+
+            if (sub == "blend" || sub == "blends")
+            {
+                StateMachinePattern* machine = pattern.asStateMachine();
+                if (machine == nullptr)
+                {
+                    emit("ERR layer '" + layer->name + "' runs '" + pattern.getName()
+                       + "', which is not a state machine");
+                    return;
+                }
+                if (words.size() > 3)
+                {
+                    std::string error;
+                    if (!machine->setBlend(words[3], error))
+                    {
+                        emit("ERR layer " + layer->name + ": " + error);
+                        return;
+                    }
+                }
+                emit(prefix + blendsLine());
+                emit(prefix + "BLEND " + machine->blendName());
+                emit("OK layer " + layer->name + " blend " + machine->blendName());
                 return;
             }
 
@@ -4188,6 +4519,10 @@ int main(int argc, char** argv)
         else if (arg == "--midi-selftest")
         {
             return runMidiSelfTest();
+        }
+        else if (arg == "--blend-selftest")
+        {
+            return runBlendSelfTest();
         }
         else if (arg == "--link-selftest")
         {
