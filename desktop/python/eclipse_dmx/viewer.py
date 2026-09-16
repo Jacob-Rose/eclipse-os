@@ -119,9 +119,9 @@ STATE_GROUPS: List[Tuple[str, List[Tuple[str, Tuple[str, str]]]]] = [
         # row above it - TheAudioMeter holds the two together.
         ("beat_pulse", ("state", "beat_pulse")),
     ]),
-    # The show: sixteen cues, numbered as "pattern spec.txt" numbers them,
-    # the unwritten ones still slots. Rename them here when they are renamed
-    # in makeMythos26StateMachine(). A button here fires the state, and then
+    # The show: sixteen cues, numbered as "pattern spec.txt" numbers them.
+    # Rename them here when they are renamed in makeMythos26StateMachine().
+    # A button here fires the state, and then
     # whatever config/mythos-show.json's cue table says goes with it - see
     # ViewerApp._fire_cue.
     ("mythos26", [
@@ -139,8 +139,8 @@ STATE_GROUPS: List[Tuple[str, List[Tuple[str, Tuple[str, str]]]]] = [
         ("12 churn", ("state", "churn")),
         ("13 nova", ("state", "nova")),
         ("14 clouds", ("state", "clouds")),
-        ("slot 15", ("state", "slot_15")),
-        ("slot 16", ("state", "slot_16")),
+        ("15 white", ("state", "white")),
+        ("16 blackout", ("state", "blackout")),
         # the mode pad: steps the running cue through its modes, and fires
         # what the cue table says the room does in each - see the `mode`
         # action in midi_map, which this runs. Then a button per mode

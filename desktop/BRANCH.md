@@ -285,8 +285,8 @@ kick, a peak follower like the bus wash's hit. Mode 2 lights the scaffold -
 the ground up, twice the glint; 3 is hard, white on every hit falling fast
 over a black ground.
 
-Slots 15 and 16 - the idles - are the placeholders now, and the tests that
-wanted a state with no cue use 15.
+Slots 15 and 16 - the idles - were the placeholders at this point, and the
+tests that wanted a state with no cue used 15.
 
 ### the rain glides, and the tunnel stops strobing
 
@@ -319,6 +319,77 @@ wash breathes with the mids on its own, and the flash pad is there for the
 night that wants it. The pad maps are regenerated from the table
 (`tools/make-launchpad-map.py --probe`), which is the only thing that changed
 in them.
+
+### four cues off the rig, and the flash that came out cyan
+
+Notes from running 8, 10, 11 and 14 in the room, and the two idles written.
+
+**The flash layer flashed cyan.** Every cue with the flash on. The additive
+compositor kept the black-layer guarantee by weighting a *hue lerp* by each
+side's share of the light - and `ecore::HSV::blend` lerps the hue as a
+number, so half a white (hue 0) over the punk's purple (280) landed at 140:
+green-cyan, on every beat, on every cue that asked for the white. It sums
+as light now - RGB, channel by channel, clamped - which is what two lamps on
+one surface do, and the same guarantee falls out of it. `edmx/color_mix.h`
+is the one place the desktop mixes colour: `addRgb`, `blendRgb` (light on
+light, the level lerped on its own), and `blendHsv` (round the short side of
+the wheel, for a gradient that has to stay a colour). The midi selftest
+checks the white over the purple stays purple.
+
+**Punk** went dark on the beat instead of white. The scene's `smoke` inverts
+lightness on `syn_OnBeat` - the visual goes *dark* - so the look now drops
+to a navy and comes back, and the white flash layer is off for it: added
+over the drop it whited the beat out. The gradient is punk purple into honey
+orange (the scene's own honey), and it scrolls at 0.12 cycles a second where
+it was 0.5: at half a cycle a second the rig went purple, white, purple every
+two seconds, a second pulse under the strobe on no beat at all, which is
+what made the strobe feel sporadic. The dip is 0.22s where the strobe was
+0.12s - three frames, and a beat that fell between them was one the rig
+missed.
+
+**Canyon** stopped strobing. The rainbow was a cross-fade of the whole rig to
+a full-saturation, full-brightness wheel on every beat, 0.05s up - a strobe,
+and a blown-out one. The hit now *turns* the canyon's colours toward the
+wheel: the hue swings, the saturation fills, and each band keeps its own
+level (lifted by `rainbow_lift`, 0.35, so the dark ones are seen to turn).
+A colour pulse rather than a light pulse; the rig does not get brighter on
+the beat. 0.12s up, 0.45 down, and held over a beat that lands mid-fall the
+way beat_pulse is, so double time swells rather than flickers. And the bands
+themselves blend round the short side of the wheel: they were mixed in RGB,
+and two saturated bands mixed in RGB meet in grey, which with the level put
+back over it is a *light* grey - five smears of it between six bands, on
+ten pars, was most of the truss.
+
+**Scaffold's white is the flash layer's.** The look had its own - a peak
+follower on the bass hits - beside the flash layer every other cue uses,
+which put two whites on the rig on two different signals. The look is the
+glint and the ember now; the cue table turns the flash on. Mode 3, which was
+"white on every hit", is the ground black and the ember wide open and quick.
+
+**The clouds reset themselves.** Two things. The deck's noise scrolled on a
+clock wrapped at 1 - "so the field never runs out of bits" - and the field
+is an open lattice, not a periodic one, so the wrap was a jump of seven
+cells: the deck visibly resetting every sixteen seconds at the cue's speed
+and every six at the pad's fast one. `scanner::valueNoiseLoop` is the same
+field periodic in y, and the deck's two octaves scroll a whole number of
+cells each per turn of the clock, so the wrap is not seen (the loop is half
+a minute). And the mode pad restored `height` and `speed` with every other
+knob - a palette change flew the rig back to where the cue opened.
+`ShowModes::keepAcrossModes` takes a knob out of the snapshot; the clouds
+keep those two. And the cue sends `white.mp4`: the scene reads its media,
+and after a cue that loaded `black.mp4` it came up black. There is still no
+"no media" message (nor is there a way to clear one - the app's media panel
+has a `Lock` that carries media across scene changes, and nothing else), so
+the cue sends the one that leaves the sky alone, made the same way as
+black.mp4.
+
+**15 and 16 are written**: `white`, the house lights at half, and
+`blackout`. Plain flat looks (`Pattern_Mythos_House`) on the show base so
+they have the mode and intensity knobs every pad expects, with cue entries
+that take both layers off - a flash left running under a blackout is not a
+blackout. The placeholder look is gone with the last two slots; the tests
+that wanted a state with no cue take the white's entry away for the check.
+The pad maps are regenerated.
 
 ### commissioning
 
@@ -2146,11 +2217,10 @@ listing online.
 - **Moving heads** — no pan/tilt representation.
 - **Config hot reload** — restart to change the patch. Look, brightness and
   tempo are live over the control protocol.
-- **Seven of mythos26's sixteen states** — placeholders, waiting on the spec.
-  That is the point of them, but they are not looks.
 - **A cue cannot clear the visualiser's media.** Synesthesia has a message to
   select a media file and none to deselect one, so a cue with no `media`
   leaves the last one loaded, and whether it shows is the scene's business.
+  The clouds send `white.mp4` for the same reason the flame sends black.
 - **MIDI out, and MIDI for anything but tempo and loudness** — no
   control-change mapping to patterns, no faders. `MidiInput::handleMessage` is
   where that starts.

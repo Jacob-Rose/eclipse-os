@@ -14,6 +14,7 @@
 
 #include "edmx/beat_clock.h"
 #include "edmx/beat_trigger.h"
+#include "edmx/color_mix.h"
 
 using namespace edmx;
 
@@ -22,19 +23,6 @@ namespace
     float frac(float v)
     {
         return v - std::floor(v);
-    }
-
-    /// The stage's height as 0..1 at this node - scanner::PatternScanner's
-    /// stageAlpha, for the placeholder, which is not one.
-    float stageAlphaOf(const eio::HSVStripNode* node)
-    {
-        if (node != nullptr && node->GetStripNodeType() == eio::StripNodeType::MAPPED2D)
-        {
-            const float y = static_cast<const eio::HSVStripNode_Mapped2D*>(node)->coord.y;
-            return std::clamp((y - scanner::kStageBottom) / (scanner::kStageTop - scanner::kStageBottom),
-                              0.0f, 1.0f);
-        }
-        return 0.0f;
     }
 
     /// Whether this node is the visualiser's probe - see NodeSpace::Probe.
@@ -57,95 +45,21 @@ namespace
         return out;
     }
 
-    struct Rgb
-    {
-        float r{0.0f};
-        float g{0.0f};
-        float b{0.0f};
-    };
-
-    Rgb toRgb(const ecore::HSV& hsv)
-    {
-        const float h = hsv.getHueFloat();
-        const float s = hsv.getSatFloat();
-        const float v = hsv.getValFloat();
-
-        const float chroma = v * s;
-        const float sector = std::fmod(h < 0.0f ? h + 360.0f : h, 360.0f) / 60.0f;
-        const float x = chroma * (1.0f - std::fabs(std::fmod(sector, 2.0f) - 1.0f));
-        const float m = v - chroma;
-
-        Rgb out;
-        switch (static_cast<int>(sector))
-        {
-            case 0:  out = {chroma, x, 0.0f};   break;
-            case 1:  out = {x, chroma, 0.0f};   break;
-            case 2:  out = {0.0f, chroma, x};   break;
-            case 3:  out = {0.0f, x, chroma};   break;
-            case 4:  out = {x, 0.0f, chroma};   break;
-            default: out = {chroma, 0.0f, x};   break;
-        }
-        out.r += m;
-        out.g += m;
-        out.b += m;
-        return out;
-    }
-
-    ecore::HSV toHsv(const Rgb& rgb)
-    {
-        const float maxC = std::max(rgb.r, std::max(rgb.g, rgb.b));
-        const float minC = std::min(rgb.r, std::min(rgb.g, rgb.b));
-        const float delta = maxC - minC;
-
-        float hue = 0.0f;
-        if (delta > 0.00001f)
-        {
-            if (maxC == rgb.r)      hue = 60.0f * std::fmod((rgb.g - rgb.b) / delta, 6.0f);
-            else if (maxC == rgb.g) hue = 60.0f * (((rgb.b - rgb.r) / delta) + 2.0f);
-            else                    hue = 60.0f * (((rgb.r - rgb.g) / delta) + 4.0f);
-        }
-        if (hue < 0.0f)
-        {
-            hue += 360.0f;
-        }
-        const float sat = (maxC <= 0.00001f) ? 0.0f : (delta / maxC);
-        return ecore::HSV(hue, sat, maxC);
-    }
-
-    /// A cross-fade between two colours the way two lamps make one: in RGB.
+    /// A palette that loops: `t` 0..1 runs through every colour and back to
+    /// the first, so a scrolling field has no seam. The HSVPalette the
+    /// generic looks use clamps at its ends, which on the canyon was a hard
+    /// edge marching down the stage once a cycle.
     ///
-    /// ecore::HSV::blend walks the hue the long way round the wheel, so
-    /// orange into sky blue passes through yellow and green, and a rainbow
-    /// fading up over a canyon band is a band of every other colour first.
-    /// That is the fixed-point library's business on a microcontroller; the
-    /// show's gradients go through this instead and arrive seamless.
-    ///
-    /// The brightness is lerped on its own and put back over the mix. Two
-    /// saturated colours mixed in RGB meet at a colour with half the level
-    /// of either - a pink into a green dips to a dim grey in the middle -
-    /// and a lamp cross-fading should not go dark on the way. The hue and
-    /// the saturation take the RGB path; the level takes the straight one.
-    ecore::HSV blendRgb(const ecore::HSV& a, const ecore::HSV& b, float t)
-    {
-        t = std::clamp(t, 0.0f, 1.0f);
-        const Rgb ra = toRgb(a);
-        const Rgb rb = toRgb(b);
-        ecore::HSV out = toHsv({ra.r + (rb.r - ra.r) * t,
-                                ra.g + (rb.g - ra.g) * t,
-                                ra.b + (rb.b - ra.b) * t});
-        out.setBrightnessAlpha(a.getValFloat() + (b.getValFloat() - a.getValFloat()) * t);
-        return out;
-    }
-
-    /// A palette that loops and blends in RGB: `t` 0..1 runs through every
-    /// colour and back to the first, so a scrolling field has no seam. The
-    /// HSVPalette the generic looks use clamps at its ends and blends in HSV,
-    /// which on the canyon was a hard edge marching down the stage once a
-    /// cycle with a smear of green above it.
-    class RgbLoopPalette
+    /// Blended round the short side of the wheel - blendHsv - so a band
+    /// stays a colour on its way to the next: this was an RGB mix, and
+    /// between two saturated bands an RGB mix is a grey, which with the
+    /// level put back over it is a light grey. Six bands of canyon with
+    /// five smears of grey between them, on ten pars, was most of the
+    /// truss.
+    class LoopPalette
     {
     public:
-        RgbLoopPalette(std::initializer_list<ecore::HSV> inColors) : colors(inColors) {}
+        LoopPalette(std::initializer_list<ecore::HSV> inColors) : colors(inColors) {}
 
         ecore::HSV at(float t) const
         {
@@ -156,7 +70,7 @@ namespace
             const float scaled = frac(t) * static_cast<float>(colors.size());
             const size_t index = static_cast<size_t>(scaled) % colors.size();
             const size_t next = (index + 1) % colors.size();
-            return blendRgb(colors[index], colors[next], scaled - static_cast<float>(index));
+            return blendHsv(colors[index], colors[next], scaled - static_cast<float>(index));
         }
 
     private:
@@ -175,6 +89,11 @@ void ShowModes::reflectMode(ecore::PropertyBag& bag)
     bag.add("mode", mode, 1.0f, static_cast<float>(modeCount()), [this] { applyMode(); });
 }
 
+void ShowModes::keepAcrossModes(std::initializer_list<const char*> names)
+{
+    kept.assign(names.begin(), names.end());
+}
+
 void ShowModes::initModes(eanim::GeneratorHSV& inLook, std::vector<std::function<void()>> inVariants)
 {
     look = &inLook;
@@ -182,14 +101,16 @@ void ShowModes::initModes(eanim::GeneratorHSV& inLook, std::vector<std::function
     mode = 1.0f;
 
     // the snapshot: every knob the cue opened with, by name, so a mode can be
-    // undone by writing them back through the same bag the desk writes
+    // undone by writing them back through the same bag the desk writes -
+    // less the ones flown by hand, which no mode owns
     baseValues.clear();
     baseColors.clear();
     ecore::PropertyBag bag;
     look->reflect(bag);
     for (const ecore::Property& property : bag.all())
     {
-        if (property.name == "mode")
+        if (property.name == "mode"
+            || std::find(kept.begin(), kept.end(), property.name) != kept.end())
         {
             continue;
         }
@@ -453,39 +374,21 @@ void Pattern_Mythos_TvStatic::render(eio::HSVStripNode* node, ecore::HSV& inOutC
 }
 
 // ============================================================================
-// placeholders
+// house
 // ============================================================================
 
-void Pattern_Mythos_Placeholder::reflect(ecore::PropertyBag& bag)
+void Pattern_Mythos_House::render(eio::HSVStripNode* /*node*/, ecore::HSV& inOutColor) const
 {
-    bag.add("hue", hue, 0.0f, 360.0f);
+    inOutColor = color;
+    inOutColor.setBrightnessAlpha(color.getValFloat() * std::clamp(level, 0.0f, 1.0f)
+                                  * std::clamp(intensity, 0.0f, 1.0f));
 }
 
-void Pattern_Mythos_Placeholder::init()
+void Pattern_Mythos_House::reflect(ecore::PropertyBag& bag)
 {
-    phase = 0.0f;
-}
-
-void Pattern_Mythos_Placeholder::tick(float deltaTime)
-{
-    // ~9 seconds a cycle. Slow enough to read as "nothing is happening here
-    // yet" rather than as a look someone meant.
-    phase += deltaTime * 0.11f;
-    if (phase > 1.0f)
-    {
-        phase -= 1.0f;
-    }
-}
-
-void Pattern_Mythos_Placeholder::render(eio::HSVStripNode* node, ecore::HSV& inOutColor) const
-{
-    // how far up the stage, 0..1 - the show's frame is the scanner's stage
-    const float position = stageAlphaOf(node);
-
-    const float breath = 0.5f + (0.5f * std::sin((phase + (position * 0.25f)) * 6.2831853f));
-
-    inOutColor = ecore::HSV(hue, 0.7f, 1.0f);
-    inOutColor.setBrightnessAlpha(0.10f + (0.15f * breath));
+    Pattern_MythosLook::reflect(bag);
+    bag.add("level", level, 0.0f, 1.0f);
+    bag.add("color", color);
 }
 
 // ============================================================================
@@ -772,26 +675,31 @@ void Pattern_Mythos_KickColor::reflect(ecore::PropertyBag& bag)
 namespace
 {
     /// The fly-through, as one loop: rock, shadow, the floor, the sky, and
-    /// back into rock without a seam. Blended in RGB - see RgbLoopPalette -
-    /// so the sky into the next band's orange is a dusk rather than a strip
-    /// of green.
-    const RgbLoopPalette kCanyon{
-        ecore::HSV(22.0f, 0.95f, 1.0f),    // canyon orange
-        ecore::HSV(18.0f, 0.85f, 0.45f),   // shadowed rock
-        ecore::HSV(35.0f, 0.75f, 0.30f),   // brown
-        ecore::HSV(95.0f, 0.80f, 0.75f),   // the green of the floor
-        ecore::HSV(205.0f, 0.85f, 0.95f),  // sky
-        ecore::HSV(225.0f, 0.90f, 0.55f),  // deep blue
+    /// back into rock without a seam. Each band is a colour and the next
+    /// is near it on the wheel, so the short way round between them is a
+    /// canyon colour too: the orange into the rust and the brown, the
+    /// brown up through olive to the floor's green, the green through
+    /// teal to the sky, and the deep blue back to orange the long way -
+    /// which is through violet and magenta, a dusk. See LoopPalette.
+    const LoopPalette kCanyon{
+        ecore::HSV(22.0f, 0.95f, 1.00f),   // canyon orange
+        ecore::HSV(12.0f, 0.90f, 0.55f),   // shadowed rock, rust
+        ecore::HSV(30.0f, 0.80f, 0.35f),   // brown
+        ecore::HSV(100.0f, 0.75f, 0.65f),  // the green of the floor
+        ecore::HSV(205.0f, 0.80f, 0.90f),  // sky
+        ecore::HSV(228.0f, 0.90f, 0.50f),  // deep blue
     };
 }
 
 Pattern_Mythos_CanyonWave::Pattern_Mythos_CanyonWave()
     : triggers(&sharedTriggerRack())
 {
-    // Restart, not RestartHold: the envelope fits inside a beat at any
-    // tempo this runs at, and a rainbow that held over would stop being a
-    // hit and become a tint.
-    envelope.retriggerMode = eanim::RetriggerMode::Restart;
+    // RestartHold, like beat_pulse, and for the same reason: the rise and
+    // the fall together are longer than a beat at a club tempo, and a beat
+    // landing in the fall would otherwise snap the rainbow to nothing and
+    // start it over - a flicker on every beat. Held, the rainbow swells
+    // between wherever the fall got to and full.
+    envelope.retriggerMode = eanim::RetriggerMode::RestartHold;
     setEnvelope(attackSeconds, decaySeconds);
 }
 
@@ -844,11 +752,22 @@ void Pattern_Mythos_CanyonWave::render(eio::HSVStripNode* node, ecore::HSV& inOu
 
     // the rainbow: the wheel over the same height, drifting slowly the other
     // way so two hits in a row are not the same picture
-    const ecore::HSV wheel(frac(up + timeActive * 0.05f) * 360.0f, 1.0f, 1.0f);
+    const float wheel = frac(up + timeActive * 0.05f) * 360.0f;
 
-    // a cross-fade in RGB: the wheel arrives over the rock as light on light,
-    // not as the hue between them
-    inOutColor = blendRgb(rock, wheel, rainbow);
+    // The hit turns the canyon's colours toward the wheel's; it does not
+    // replace them. The bands keep their own levels - the rust stays dim
+    // under the rainbow and the sky stays bright - lifted by `rainbow_lift`
+    // so the dark ones are seen to turn. This was a cross-fade to the wheel
+    // at full, which on every beat took the whole rig to full white-bright
+    // saturated colour and back: a strobe, and a blown-out one.
+    const float lift = std::clamp(rainbowLift, 0.0f, 1.0f);
+    const float value = rock.getValFloat();
+    const float lifted = value + (1.0f - value) * lift;
+    ecore::HSV out(blendHue(rock.getHueFloat(), wheel, rainbow),
+                   lerp(rock.getSatFloat(), 1.0f, rainbow),
+                   lerp(value, lifted, rainbow));
+    out.setBrightnessAlpha(lerp(value, lifted, rainbow));
+    inOutColor = out;
 }
 
 void Pattern_Mythos_CanyonWave::reflect(ecore::PropertyBag& bag)
@@ -859,6 +778,7 @@ void Pattern_Mythos_CanyonWave::reflect(ecore::PropertyBag& bag)
     bag.add("attack", attackSeconds, 0.0f, 1.0f, [this] { setEnvelope(attackSeconds, decaySeconds); });
     bag.add("decay", decaySeconds, 0.01f, 3.0f, [this] { setEnvelope(attackSeconds, decaySeconds); });
     bag.add("rate", pulseRate, kQuarterTime, kDoubleTime, [this] { setPulseRate(pulseRate); });
+    bag.add("rainbow_lift", rainbowLift, 0.0f, 1.0f);
 }
 
 void Pattern_Mythos_CanyonWave::reflectCurves(eanim::CurveBag& bag)
@@ -874,8 +794,9 @@ Pattern_Mythos_GradientStrobe::Pattern_Mythos_GradientStrobe()
     : triggers(&sharedTriggerRack())
 {
     // Restart: a strobe that held over would smear into a wash. The envelope
-    // is far shorter than a beat at any tempo, so a retrigger never lands
-    // mid-fall anyway.
+    // is shorter than a beat at any tempo this runs at, so a retrigger never
+    // lands mid-fall anyway - except in double time, where the dip is nearly
+    // out by the next hit and the snap is nothing.
     envelope.retriggerMode = eanim::RetriggerMode::Restart;
     setEnvelope(attackSeconds, decaySeconds);
 }
@@ -922,12 +843,15 @@ void Pattern_Mythos_GradientStrobe::render(eio::HSVStripNode* node, ecore::HSV& 
     const float up = stageAlpha(node);
 
     // a triangle rather than a sawtooth, so the gradient runs purple to
-    // white and back with no seam marching up the stage
+    // orange and back with no seam marching up the stage
     const float phase = frac(up * waves + timeActive * speed);
     const float mix = 1.0f - std::fabs(phase * 2.0f - 1.0f);
 
-    const ecore::HSV gradient = blendRgb(colorA, colorB, mix);
-    inOutColor = blendRgb(gradient, strobeColor, strobe);
+    // round the short side of the wheel both ways: purple to orange
+    // through magenta, and down into the navy through violet, not
+    // through the grey an RGB mix of either pair passes
+    const ecore::HSV gradient = blendHsv(colorA, colorB, mix);
+    inOutColor = blendHsv(gradient, strobeColor, strobe);
 }
 
 void Pattern_Mythos_GradientStrobe::reflect(ecore::PropertyBag& bag)
@@ -1168,6 +1092,28 @@ void Pattern_Mythos_Nova::reflect(ecore::PropertyBag& bag)
 // cloud flight
 // ============================================================================
 
+namespace
+{
+    /// The deck's loop, in lattice cells of its two octaves: the coarse
+    /// field wraps every kDeckLoopCoarse cells and the fine one - at two
+    /// and a half times the frequency - every kDeckLoopFine, so one turn
+    /// of `travelled` is a whole number of cells on both and the deck
+    /// comes round on itself. A loop this long is half a minute at the
+    /// cue's speed.
+    constexpr int kDeckLoopCoarse = 16;
+    constexpr int kDeckLoopFine = 40;
+    /// Turns of the loop per second per unit of speed - what puts the
+    /// deck's streaming at the rate it had.
+    constexpr float kDeckLoopRate = 0.1125f;
+}
+
+Pattern_Mythos_CloudFlight::Pattern_Mythos_CloudFlight()
+{
+    // the pads' two: a palette change must not fly the rig back to where
+    // the cue opened
+    keepAcrossModes({"height", "speed"});
+}
+
 void Pattern_Mythos_CloudFlight::init()
 {
     heightNow = height;
@@ -1202,8 +1148,9 @@ void Pattern_Mythos_CloudFlight::tick(float deltaTime)
         heightNow += (height - heightNow) * k;
         speedNow += (speed - speedNow) * k;
     }
-    // the deck streams at the speed the flight is actually doing
-    travelled = frac(travelled + deltaTime * speedNow * 0.25f);
+    // the deck streams at the speed the flight is actually doing, round a
+    // loop the field is periodic on - see travelled
+    travelled = frac(travelled + deltaTime * speedNow * kDeckLoopRate);
 }
 
 void Pattern_Mythos_CloudFlight::render(eio::HSVStripNode* node, ecore::HSV& inOutColor) const
@@ -1219,11 +1166,14 @@ void Pattern_Mythos_CloudFlight::render(eio::HSVStripNode* node, ecore::HSV& inO
     const float skyT = horizon >= 0.999f ? 0.0f : std::clamp((up - horizon) / (1.0f - horizon), 0.0f, 1.0f);
     const ecore::HSV sky = blendRgb(skyLow, skyHigh, skyT);
 
-    // the deck: the cloud's own noise, streaming down the stage - the
-    // wrap is on `travelled`, so the field never runs out of bits
-    const float scroll = travelled * 40.0f;
-    const float n = 0.6f * scanner::valueNoise(at.x * 0.35f + 11.0f, at.y * 0.18f + scroll * 0.18f)
-                  + 0.4f * scanner::valueNoise(at.x * 0.80f - 7.0f, at.y * 0.45f + scroll * 0.45f);
+    // the deck: the cloud's own noise, streaming down the stage, each
+    // octave scrolled by its own whole number of cells per turn
+    const float n = 0.6f * scanner::valueNoiseLoop(at.x * 0.35f + 11.0f,
+                                                   at.y * 0.18f + travelled * kDeckLoopCoarse,
+                                                   kDeckLoopCoarse)
+                  + 0.4f * scanner::valueNoiseLoop(at.x * 0.80f - 7.0f,
+                                                   at.y * 0.45f + travelled * kDeckLoopFine,
+                                                   kDeckLoopFine);
     // the tops catch the sunset: the pink, at `glow`, where the deck peaks
     const float lit = std::clamp((n - 0.55f) / 0.3f, 0.0f, 1.0f) * std::clamp(glow, 0.0f, 1.0f)
                     * std::clamp(intensity, 0.0f, 1.0f);
@@ -1366,7 +1316,6 @@ void Pattern_Mythos_Scaffold::init()
 {
     bus = &sharedAudioLevel();
     level = 0.0f;
-    whiteLevel = 0.0f;
 }
 
 void Pattern_Mythos_Scaffold::tick(float deltaTime)
@@ -1380,18 +1329,6 @@ void Pattern_Mythos_Scaffold::tick(float deltaTime)
 
     const float target = std::clamp(bus->get(channel, now) * gain, 0.0f, 1.0f);
     slewToward(level, target, slew, deltaTime);
-
-    // the white: up on the instant, down over whiteDecay - the same peak
-    // follower the bus wash runs on its hit
-    const float hitNow = std::clamp(bus->get(hitChannel, now), 0.0f, 1.0f);
-    if (hitNow >= whiteLevel)
-    {
-        whiteLevel = hitNow;
-    }
-    else
-    {
-        slewToward(whiteLevel, hitNow, whiteDecay, deltaTime);
-    }
 }
 
 void Pattern_Mythos_Scaffold::render(eio::HSVStripNode* node, ecore::HSV& inOutColor) const
@@ -1425,11 +1362,6 @@ void Pattern_Mythos_Scaffold::render(eio::HSVStripNode* node, ecore::HSV& inOutC
     out = blendRgb(out, ember, hot);
     value = lerp(value, ember.getValFloat(), hot);
 
-    // and the white over everything on the kick, to full
-    const float pop = std::clamp(whiteLevel * white * amount, 0.0f, 1.0f);
-    out = blendRgb(out, HSV(0.0f, 0.0f, 1.0f), pop);
-    value = lerp(value, 1.0f, pop);
-
     inOutColor = out;
     inOutColor.setBrightnessAlpha(value);
 }
@@ -1441,8 +1373,6 @@ void Pattern_Mythos_Scaffold::reflect(ecore::PropertyBag& bag)
     bag.add("ember_spread", emberSpread, 0.0f, 1.0f);
     bag.add("gain", gain, 0.0f, 4.0f);
     bag.add("slew", slew, 0.0f, 2.0f);
-    bag.add("white", white, 0.0f, 1.0f);
-    bag.add("white_decay", whiteDecay, 0.02f, 1.0f);
     bag.add("ground", ground);
     bag.add("glint", glint);
     bag.add("ember", ember);
@@ -1480,7 +1410,7 @@ namespace
     /// state_machine.cpp: default-construct, init, hand back as a generator.
     ///
     /// Anything a look needs configuring is set on the instance afterwards
-    /// rather than passed to a constructor — see `placeholder`. Keeping every
+    /// rather than passed to a constructor — see `levelLook`. Keeping every
     /// entry built identically is what lets the table below read as a list.
     ///
     /// Both of these spell out the return type and return the derived pointer
@@ -1573,20 +1503,6 @@ namespace
             return std::static_pointer_cast<State_GenericHSV>(
                 std::make_shared<State_BeatHSV<PatternT>>(
                     stateName, io, std::static_pointer_cast<PatternT>(generator)));
-        };
-        return def;
-    }
-
-    /// An empty slot, tinted so the states are told apart on the rig.
-    StateDef placeholder(const char* name, float hue)
-    {
-        StateDef def;
-        def.name = name;
-        def.make = [hue]() -> std::shared_ptr<eanim::GeneratorHSV> {
-            auto pattern = std::make_shared<Pattern_Mythos_Placeholder>();
-            pattern->hue = hue;
-            pattern->init();
-            return pattern;
         };
         return def;
     }
@@ -1746,10 +1662,8 @@ std::unique_ptr<StateMachinePattern> edmx::makeMythos26StateMachine()
     // ------------------------------------------------------------------
     // The show, one line per cue, in the order a UI shows them - and the
     // order of "pattern spec.txt" at the top of the checkout, which is where
-    // the numbers on the surface come from. Sixteen cues, twelve of them
-    // written; a slot that exists is a cue that can be switched to, mapped
-    // to a button and seen on the rig before there is a look in it, so the
-    // rest are placeholders, tinted so they are told apart.
+    // the numbers on the surface come from. Sixteen cues: fourteen looks
+    // and the two house states either side of the set.
     //
     // What a cue asks of the *rest* of the room - its Synesthesia scene and
     // media, the flash layer, the UV - is not here. A look is a look; the
@@ -1782,6 +1696,7 @@ std::unique_ptr<StateMachinePattern> edmx::makeMythos26StateMachine()
     using Clouds = Pattern_Mythos_CloudFlight;
     using Reaction = Pattern_Mythos_Reaction;
     using Scaffold = Pattern_Mythos_Scaffold;
+    using House = Pattern_Mythos_House;
 
     std::vector<StateDef> states = {
         // 1. cyan into deep blue, drifting - the neuron scene's own colours:
@@ -1881,8 +1796,10 @@ std::unique_ptr<StateMachinePattern> edmx::makeMythos26StateMachine()
             [](BusWash& look) { look.floorLevel = 0.85f; },
             [](BusWash& look) { look.floorLevel = 0.25f; },
         }),
-        // 8. punk purple into white, strobing on the beat; the flash layer
-        //    and the UV on the kick are the cue's other half. 2 strobes in
+        // 8. punk purple into honey orange, dropping to navy on the beat -
+        //    the strobe is the look's own and goes dark, the way the scene's
+        //    `smoke` does; the flash layer stays off so nothing whites over
+        //    it. The UV on the kick is the cue table's half. 2 strobes in
         //    half time, 3 in double.
         showLook<Strobe>("punk", {}, {
             [](Strobe& look) { look.setPulseRate(edmx::kHalfTime); },
@@ -1904,20 +1821,22 @@ std::unique_ptr<StateMachinePattern> edmx::makeMythos26StateMachine()
             [](Canyon& look) { look.speed = 0.30f; look.setPulseRate(edmx::kDoubleTime); },
         }),
         // 11. mostly dark: a cyan glint where a slow field peaks on a
-        //     near-black ground, red-orange in patches that open with the
-        //     mids, and white to full on the kick. 2 is the scaffold lit -
-        //     more glint, the ground up; 3 is hard - white on every hit,
-        //     falling fast, the ground gone.
+        //     near-black ground, and red-orange in patches that open with
+        //     the mids. The white is the flash layer's, on the beat - the
+        //     cue table's half. 2 is the scaffold lit - more glint, the
+        //     ground up; 3 is hard - the ground gone, the ember wide open
+        //     and quick to the music, less glint.
         showLook<Scaffold>("scaffold", {}, {
             [](Scaffold& look) {
                 look.glintAmount = 0.5f;
                 look.ground = HSV(200.0f, 0.90f, 0.14f);
             },
             [](Scaffold& look) {
-                look.hitChannel = AudioChannel::Hits;
-                look.whiteDecay = 0.08f;
                 look.ground = HSV(200.0f, 0.90f, 0.0f);
                 look.glintAmount = 0.15f;
+                look.emberSpread = 1.0f;
+                look.gain = 1.5f;
+                look.slew = 0.08f;
             },
         }),
         // 12. the churn: Eclipse Churn is Churning painted in two rig
@@ -1982,8 +1901,11 @@ std::unique_ptr<StateMachinePattern> edmx::makeMythos26StateMachine()
                 look.glow = 0.5f;
             },
         }),
-        placeholder("slot_15", 60.0f),
-        placeholder("slot_16", 90.0f),
+        // 15. the house lights: white at half, for the room after the
+        //     show. 16. the blackout, for before it - the cue table turns
+        //     both layers off with it.
+        showLook<House>("white", [](House& look) { look.level = 0.5f; }),
+        showLook<House>("blackout", [](House& look) { look.level = 0.0f; }),
     };
 
     // ------------------------------------------------------------------

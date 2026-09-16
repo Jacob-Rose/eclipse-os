@@ -35,6 +35,14 @@ namespace scanner
     */
     float valueNoise(float x, float y);
 
+    /* @brief The same field, periodic in y: the lattice wraps every
+    * `periodY` cells, so a look that scrolls it by exactly `periodY` is back
+    * where it started. For a field that streams forever off a clock that
+    * has to wrap somewhere - the open lattice is not periodic at all, and
+    * the wrap was a visible jump.
+    */
+    float valueNoiseLoop(float x, float y, int periodY);
+
 
     /* @brief Matrix rain: green code falling down the stage.
     *

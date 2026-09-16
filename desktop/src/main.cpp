@@ -47,6 +47,7 @@
 
 #include "edmx/beat_clock.h"
 #include "edmx/beat_trigger.h"
+#include "edmx/color_mix.h"
 #include "edmx/config.h"
 #include "edmx/dmx_output.h"
 #include "edmx/relic_shadow.h"
@@ -315,29 +316,17 @@ namespace
 
     /// One fixture of an additive layer, over what the show put there.
     ///
-    /// Not ecore::HSV::add, which blends the two hues at a flat 50% however
-    /// dark either is. That breaks the one guarantee that makes an always-on
-    /// hit layer safe to leave patched: a layer sitting at black must be
-    /// invisible, and under a flat hue blend it would drag the show's colour
-    /// halfway to red while emitting no light of its own.
-    ///
-    /// So the hue is weighted by each side's share of the light, which is what
-    /// two lamps pointed at one surface actually do: at nothing from the layer
-    /// the show is untouched, at nothing from the show the layer is the whole
-    /// colour, and in between the mix follows the brightness.
+    /// Two lamps on one surface, so the light sums in RGB - see addRgb. Not
+    /// ecore::HSV::add, which blends the two hues at a flat 50% however dark
+    /// either is; and not a hue lerp weighted by the brightness, which is
+    /// what this was: at half its level a white flash over the punk's purple
+    /// landed halfway round the wheel from 280 to 0, and the rig flashed
+    /// green-cyan on every beat. The one guarantee an always-on hit layer
+    /// needs - a layer sitting at black is invisible - is what adding light
+    /// gives for free.
     ecore::HSV addOver(const ecore::HSV& base, const ecore::HSV& over)
     {
-        const float baseValue = base.getValFloat();
-        const float overValue = over.getValFloat();
-        const float sum = baseValue + overValue;
-        if (sum <= 0.0f)
-        {
-            return base;   // both dark; nothing to weight by
-        }
-
-        ecore::HSV out = ecore::HSV::blend(base, over, overValue / sum);
-        out.setBrightnessAlpha(std::min(sum, 1.0f));
-        return out;
+        return addRgb(base, over);
     }
 
     /// Drives the relic's end of the link with a synthesised desk and checks
@@ -1527,6 +1516,15 @@ namespace
                   addOver(half, half).getValFloat(), 1.0, 0.001);
             check("add.and_clamps",
                   addOver(red, red).getValFloat(), 1.0, 0.001);
+
+            // And the light sums as light: a white flash over a purple wash
+            // is a paler purple, not - as a hue lerp had it - a green. Purple
+            // (0.63, 0.05, 1) plus half a white is (1, 0.55, 1): hue 300.
+            const ecore::HSV purple(280.0f, 0.95f, 1.0f);
+            const ecore::HSV halfWhite(0.0f, 0.0f, 0.5f);
+            const ecore::HSV flashed = addOver(purple, halfWhite);
+            check("add.white_over_purple_stays_purple", flashed.getHueFloat(), 300.0, 2.0);
+            check("add.white_over_purple_desaturates", flashed.getSatFloat(), 0.45, 0.02);
         }
 
         // ---- the ignore list -----------------------------------------------

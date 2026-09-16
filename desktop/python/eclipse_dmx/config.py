@@ -143,9 +143,8 @@ AUDIO_STATES = AUDIO_CHANNELS + ("beat_pulse",)
 #: mythos26's states, in the order its state machine lists them. Must stay in
 #: step with makeMythos26StateMachine() in desktop/src/mythos26.cpp.
 #:
-#: Sixteen cues, numbered the way "pattern spec.txt" numbers them; the ones
-#: the spec has not named yet are placeholders. Rename a slot here when you
-#: rename it there.
+#: Sixteen cues, numbered the way "pattern spec.txt" numbers them. Rename a
+#: cue here when you rename it there.
 MYTHOS26_STATES = (
     "neuron",    # 1. cyan into deep blue noise
     "geode",     # 2. red riding the mid presence, the flash layer on
@@ -161,8 +160,8 @@ MYTHOS26_STATES = (
     "churn",     # 12. the field in two rig colours, pushed by the level; three palettes and a rainbow
     "nova",      # 13. galaxies on a wash over a dark ground; three palettes and a rainbow
     "clouds",    # 14. a sunset over a cloud deck, flown through; height and speed glide
-    "slot_15",
-    "slot_16",
+    "white",     # 15. the house lights: white at half
+    "blackout",  # 16. everything off
 )
 
 #: The generic looks' states, in machine order. Must stay in step with

@@ -20,9 +20,9 @@
     "gamma": 2.2
   },
 
-  // The show. Sixteen cues, fourteen of them written so far - see
-  // makeMythos26StateMachine. The frame is the stage's, so the pars are
-  // placed below with a fit rather than left on the frame's diagonal.
+  // The show. Sixteen cues - see makeMythos26StateMachine. The frame is
+  // the stage's, so the pars are placed below with a fit rather than left
+  // on the frame's diagonal.
   "pattern": {
     "name": "mythos26",
     "state": "neuron"
@@ -232,9 +232,11 @@
     },
     "punk": {
       // `smoke` is the scene's own beat flash - it inverts lightness on
-      // syn_OnBeat - so the visual strobes on the beat the flash layer does.
+      // syn_OnBeat, so the visual goes *dark* on the beat - and the look
+      // does the same, dropping to navy on the same trigger. The white
+      // flash layer is off: added over the drop it whited the beat out.
       "scene": "Milk, Honey, Smoke, Bile",
-      "layers": { "flash": "flash", "uv": "kick" },
+      "layers": { "flash": "off", "uv": "kick" },
       "controls": { "smoke": 1 }
     },
     "reaction": {
@@ -250,9 +252,10 @@
       "layers": { "flash": "off", "uv": "off" }
     },
     "scaffold": {
-      // Mostly dark, like the scene: the white lands on the kick.
+      // Mostly dark, like the scene: the strong white is the flash layer,
+      // on the beat, over the look's glint and ember.
       "scene": "Scaffold Fractal",
-      "layers": { "flash": "off", "uv": "off" }
+      "layers": { "flash": "flash", "uv": "off" }
     },
     "churn": {
       // Eclipse Churn (scenes/eclipse_churn.synScene) paints Churning in
@@ -303,8 +306,14 @@
       // the scene's scene.json, which is not in this checkout. Fold them
       // the way the app does (lowercase, no spaces, underscores or
       // hyphens) and correct them here; nothing else needs to change.
+      //
+      // white.mp4, not black: the scene reads its media, and after a cue
+      // that loaded black.mp4 it came up black. There is no "no media"
+      // message (see the note on `media` above), so the cue sends the one
+      // that leaves the sky alone - two seconds of white, made the same
+      // way as black.mp4; see readme.md.
       "scene": "Cloud Ten",
-      "media": "black.mp4",
+      "media": "white.mp4",
       "layers": { "flash": "off", "uv": "off" },
       "controls": { "auto_height": 0, "height": 0.45, "speed": 0.25 },
       "pads": [
@@ -313,6 +322,16 @@
         { "label": "slower",   "params": { "speed": 0.08 },  "controls": { "speed": 0.08 },  "ramp": 2.0 },
         { "label": "faster",   "params": { "speed": 0.70 },  "controls": { "speed": 0.70 },  "ramp": 2.0 }
       ]
+    },
+    "white": {
+      // The house lights, after the show: white at half, nothing riding
+      // over it. No scene - the screen is left where the last cue put it.
+      "layers": { "flash": "off", "uv": "off" }
+    },
+    "blackout": {
+      // Before the show: everything off, the layers with it - a flash left
+      // on from the last cue is not a blackout.
+      "layers": { "flash": "off", "uv": "off" }
     }
   }
 }

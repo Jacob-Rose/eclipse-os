@@ -73,9 +73,9 @@ synesthesia - Filter Blown v2
 media - 275593_medium.mp4
 
 8. punk
-pattern - punk purple white gradient strobe effect bpm reactive, pretty bright (match shader aesthetic). good.
-palette - punk purple (280 / 0.95 / 1.00) into white, strobing to full white on the beat
-additional layer - bpm kick layers and on beat layers for various gradient flashes. flash layer on, uv on kick.
+pattern - punk purple / honey orange gradient, bpm reactive, pretty bright (match shader aesthetic). the strobe goes dark, not white: the scene's smoke inverts lightness on the beat.
+palette - punk purple (280 / 0.95 / 1.00) into honey orange (32 / 0.90 / 1.00), scrolling slowly (0.12 cycles a second - faster and the scroll is a second pulse off the beat), dropping to navy (228 / 1.00 / 0.22) on the beat, back over 0.22s
+additional layer - none. the flash layer is off: white added over the drop whited it out (and, blended in hsv, came out cyan). uv on kick.
 mode 2 - half time
 mode 3 - double time
 uv - on kick
@@ -92,8 +92,8 @@ media - 87841-602894456.mp4
 
 10. canyon
 pattern - cycling wave gradients moving top down with canyon orange browns greens and blues as we fly through the area. gradients and blending seamless.
-palette - canyon orange (22 / 0.95 / 1.00), shadowed rock (18 / 0.85 / 0.45), brown (35 / 0.75 / 0.30), floor green (95 / 0.80 / 0.75), sky (205 / 0.85 / 0.95), deep blue (225 / 0.90 / 0.55), looping, blended in rgb
-param - on bpm hit we fade to a rainbow effect among all the lights
+palette - canyon orange (22 / 0.95 / 1.00), rust (12 / 0.90 / 0.55), brown (30 / 0.80 / 0.35), floor green (100 / 0.75 / 0.65), sky (205 / 0.80 / 0.90), deep blue (228 / 0.90 / 0.50), looping, blended round the short side of the hue wheel (in rgb the bands met in grey)
+param - on bpm hit the colours turn toward a rainbow and back (attack 0.12, decay 0.45, held over a beat that lands mid-fall). the bands keep their own brightness, lifted 0.35 of the way to full - a colour pulse, not a light pulse; the cross-fade to a full-bright wheel was a strobe.
 mode 2 - slow fly (speed 0.05, two waves), the rainbow once a bar
 mode 3 - fast (speed 0.30), the rainbow in double time
 synesthesia - Vibe Thresholds
@@ -101,9 +101,10 @@ media - 361331_medium.mp4
 
 11. scaffold
 pattern - mostly dark, with strong white, red/orange reactive, and cyan blue colors.
-palette - a near-black ground (200 / 0.90 / 0.05); a cyan glint (190 / 0.85 / 0.75) where a slow field peaks; red-orange (18 / 0.95 / 1.00) in patches that open with the mid presence; white to full on the kick, falling over 0.18s.
+palette - a near-black ground (200 / 0.90 / 0.05); a cyan glint (190 / 0.85 / 0.75) where a slow field peaks; red-orange (18 / 0.95 / 1.00) in patches that open with the mid presence.
+additional layer - the white is the flash layer, on the beat. flash layer on.
 mode 2 - lit: the ground up (0.14), twice the glint
-mode 3 - hard: white on every hit, falling in 0.08s, the ground black
+mode 3 - hard: the ground black, the ember wide open and quick to the music, less glint
 uv - off
 synesthesia - Scaffold Fractal
 media - none
@@ -140,8 +141,11 @@ mode 2 - dusk: pink (330) overhead into violet (285 / 0.75 / 0.80), the deck dar
 mode 3 - golden hour: orange-yellow (42) overhead into orange (18) at the horizon, the deck warm (25 / 0.70 / 0.14), more glow on the tops
 uv - off
 synesthesia - Cloud Ten (CHECK: the scene name and its height / speed / auto_height control names are a guess from the spec; the scene is not in the checkout. fix them in the cue table.)
-media - black
+media - white.mp4 (the scene reads its media; black.mp4 left it black, and there is no "no media" message. two seconds of white, made like black.mp4 - see the readme.)
+mode pad - a palette change leaves height and speed where the pads put them.
 
-15. idle post show
+15. white - idle post show
+pattern - the house lights: white at 50%. flash and uv off.
 
-16. idle pre show
+16. blackout - idle pre show
+pattern - everything off, the layers with it.

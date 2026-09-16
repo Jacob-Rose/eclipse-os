@@ -386,7 +386,7 @@
           "action": "layer",
           "params": {
             "layer": "flash",
-            "name": "flash"
+            "name": "off"
           }
         },
         {
@@ -549,7 +549,7 @@
           "action": "layer",
           "params": {
             "layer": "flash",
-            "name": "off"
+            "name": "flash"
           }
         },
         {
@@ -804,7 +804,7 @@
         {
           "action": "syn_media",
           "params": {
-            "name": "black.mp4"
+            "name": "white.mp4"
           }
         },
         {
@@ -843,7 +843,7 @@
       "colour": 41
     },
     {
-      "label": "mythos26 - slot_15",
+      "label": "mythos26 - white",
       "trigger": {
         "kind": "note",
         "channel": 1,
@@ -860,7 +860,21 @@
         {
           "action": "state",
           "params": {
-            "name": "slot_15"
+            "name": "white"
+          }
+        },
+        {
+          "action": "layer",
+          "params": {
+            "layer": "flash",
+            "name": "off"
+          }
+        },
+        {
+          "action": "layer",
+          "params": {
+            "layer": "uv",
+            "name": "off"
           }
         }
       ],
@@ -869,7 +883,7 @@
       "colour": 41
     },
     {
-      "label": "mythos26 - slot_16",
+      "label": "mythos26 - blackout",
       "trigger": {
         "kind": "note",
         "channel": 1,
@@ -886,7 +900,21 @@
         {
           "action": "state",
           "params": {
-            "name": "slot_16"
+            "name": "blackout"
+          }
+        },
+        {
+          "action": "layer",
+          "params": {
+            "layer": "flash",
+            "name": "off"
+          }
+        },
+        {
+          "action": "layer",
+          "params": {
+            "layer": "uv",
+            "name": "off"
           }
         }
       ],

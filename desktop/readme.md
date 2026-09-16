@@ -828,9 +828,13 @@ invisible.** So a hit layer is safe to leave patched — it rides over every cue
 not just the one written for it, and a night with no visualiser costs the hits
 and nothing else. (This is why the compositor does not use `ecore::HSV::add`,
 which blends the two hues at a flat 50% however dark either is, and so would
-drag the show's colour halfway to red while emitting no light. The hue is
-weighted by each side's share of the light instead, which is what two lamps
-pointed at one surface actually do.)
+drag the show's colour halfway to red while emitting no light. The two are
+summed as light — in RGB, channel by channel, clamped — which is what two
+lamps pointed at one surface actually do. It was for a while a hue lerp
+weighted by each side's share of the light, which kept the black-layer
+guarantee but walked the hue as a number: a white flash over the punk's
+purple landed halfway from 280 to 0, and the rig flashed green-cyan on
+every beat. See `edmx/color_mix.h`.)
 
 A layer's `fixtures` take a trailing `*` as a prefix match, in the device's own
 order: `scanner_ring/*` is the whole ring, `pars/par_*` is the ten pars without
@@ -1409,15 +1413,17 @@ audio bus.
 | 5 `glitch` | the rig re-dealt to a new colour on every beat — the scene re-deals its background on the same one | *Glitch* + `alien-message.mp4` |
 | 6 `tunnel` | pink into purple noise, breathing with the mid presence | *Fire Tunnel* + `black.mp4`; the flash layer on |
 | 7 `blown` | pink riding the mids, never below 0.65; a kick pops it to full and leaves a green afterglow — the scene's default palette runs black through magenta to green | *Filter Blown v2* + `275593_medium.mp4`; the UV on the kick |
-| 8 `punk` | punk purple into white, strobing to full white on the beat | *Milk, Honey, Smoke, Bile* with its `smoke` on, which is its own beat strobe; the flash layer on, the UV on the kick |
-| 10 `canyon` | orange, brown, green and blue bands pouring down the stage, one seamless loop; a rainbow over everything on the beat | *Vibe Thresholds* + `361331_medium.mp4` |
+| 8 `punk` | punk purple into honey orange, scrolling slowly, dropping to navy on the beat — a strobe down, the way the scene's goes | *Milk, Honey, Smoke, Bile* with its `smoke` on, which inverts its lightness on the beat; the flash layer off (a white over the drop whited it out), the UV on the kick |
+| 9 `reaction` | the rainbow across the stage, turning slowly, coming up on the presence over a low white grain | *Reaction-Confusion* + `87841-602894456.mp4` |
+| 10 `canyon` | orange, rust, brown, green and blue bands pouring down the stage, one seamless loop, blended round the wheel so nothing between them is grey; on the beat the colours turn toward a rainbow and back, each band keeping its own level — a colour pulse, not a light pulse | *Vibe Thresholds* + `361331_medium.mp4` |
+| 11 `scaffold` | mostly dark: a cyan glint where a slow field peaks on a near-black ground, red-orange in patches that open with the mids | *Scaffold Fractal*; the flash layer on — the strong white is its |
 | 12 `churn` | the neuron's field in the churn's two colours — red into blue — busier, and pushed by the level the way the paint is; three palettes and a rainbow on the mode pads | *Eclipse Churn* + `black.mp4`; the probe sends colour A, the cue table colour B |
 | 13 `nova` | galaxies on a wash over a dark ground, the galaxies swelling with the bass presence — cyan on yellow over dark blue, by hand; three palettes and a rainbow | *Eclipse Nova*, `auto_second` off; the probe sends the galaxy colour, the cue table the wash |
-| 14 `clouds` | a sunset down the stage — yellow overhead into pink at the horizon — over a cloud deck in shadow, streaming past; `height` and `speed` glide to where four pads put them | *Cloud Ten* (the scene and its control names are unverified — see the cue) with its auto height off; the same four pads ramp its height and speed |
+| 14 `clouds` | a sunset down the stage — yellow overhead into pink at the horizon — over a cloud deck in shadow, streaming past on a loop that has no seam; `height` and `speed` glide to where four pads put them, and a mode change leaves them be | *Cloud Ten* (the scene and its control names are unverified — see the cue) + `white.mp4` — the scene reads its media, and black left it black — with its auto height off; the same four pads ramp its height and speed |
+| 15 `white` | the house lights: white at half | both layers off |
+| 16 `blackout` | everything off | both layers off |
 
-Slots 9, 11, 15 and 16 are placeholders — a dim tinted breath apiece — until
-the spec names them. Sixteen because that is what the spec says, and two rows
-of the surface.
+Sixteen because that is what the spec says, and two rows of the surface.
 
 **Every cue has a `mode`** — 1, 2 or 3, and on the churn and the nova a 4 —
 and the surface has one pad for it, stepping the running cue round, and
@@ -1433,7 +1439,9 @@ are the cue's own, a line each beside it in `src/mythos26.cpp`:
 | `glitch` | one colour across the rig | darker between beats, torn further apart on each |
 | `blown` | a brighter base | dark until the pop |
 | `punk` | half time | double time |
+| `reaction` | the rainbow whatever the music | quick: two wheels across the stage, turning fast |
 | `canyon` | a slow fly, the rainbow once a bar | fast, the rainbow in double time |
+| `scaffold` | lit: the ground up, twice the glint | hard: the ground black, the ember wide open and quick |
 | `churn` | magenta into cyan | orange into violet — and **4** the red-and-blue pair turned through the wheel, the scene let back to its own rainbow |
 | `nova` | Nova's regime 1: orange galaxies, a sky-blue wash, deep blue ground | its regime 2: violet galaxies, an azure wash, near-black — and **4** the hand palette through the wheel, the scene deriving its own second colour |
 | `clouds` | dusk: pink into violet, the deck darker | golden hour: orange down to the horizon, the deck warm |
@@ -1496,7 +1504,12 @@ folder the app watches:
 
 ```sh
 ffmpeg -f lavfi -i color=c=black:s=64x64:r=30:d=2 -c:v libx264 -pix_fmt yuv420p black.mp4
+ffmpeg -f lavfi -i color=c=white:s=64x64:r=30:d=2 -c:v libx264 -pix_fmt yuv420p white.mp4
 ```
+
+`white.mp4` is the same thing for the clouds: Cloud Ten reads its media too,
+and after a cue that loaded `black.mp4` it came up black, so the cue sends
+the one that leaves the sky alone.
 
 ##### what the shaders actually do
 

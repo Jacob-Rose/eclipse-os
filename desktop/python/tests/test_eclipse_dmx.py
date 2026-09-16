@@ -3161,11 +3161,11 @@ class Mythos26(ShowTest):
         self.assertEqual(max(frames[-1][0]), 0)
 
     def test_every_cue_is_visible_and_distinct(self):
-        """Every slot in the machine - the written cues and the placeholders
-        alike. Nothing on the bus and no beat, so this is each look at rest:
-        a wash at its floor, a kick look holding its last colour, a
-        placeholder breathing. None of them may be black - a cue that comes
-        up dark in front of a room is indistinguishable from a crash."""
+        """Every cue in the machine. Nothing on the bus and no beat, so this
+        is each look at rest: a wash at its floor, a kick look holding its
+        last colour, the house lights at half. None of them may be black -
+        a cue that comes up dark in front of a room is indistinguishable
+        from a crash - except the one whose job that is."""
         frames = []
         show = self._show(on_frame=frames.append, emit_rate=20.0)
         seen = []
@@ -3174,10 +3174,14 @@ class Mythos26(ShowTest):
             time.sleep(1.4)  # past the 1s cross-fade
             seen.append(tuple(frames[-1]))
 
-        for frame in seen:
-            self.assertGreater(max(max(f) for f in frame), 0, "a slot rendered black")
+        for state, frame in zip(MYTHOS26_STATES, seen):
+            peak = max(max(f) for f in frame)
+            if state == "blackout":
+                self.assertEqual(peak, 0, "the blackout is not black")
+            else:
+                self.assertGreater(peak, 0, f"{state} rendered black")
         self.assertEqual(len(set(seen)), len(MYTHOS26_STATES),
-                         "two slots look the same")
+                         "two cues look the same")
 
 
 class TheShowCues(unittest.TestCase):
@@ -3215,13 +3219,23 @@ class TheShowCues(unittest.TestCase):
         self.assertEqual(cues["tunnel"].layers["flash"], "off")
         self.assertEqual(cues["rain"].layers["uv"], "rainbow")
         self.assertEqual(cues["blown"].layers["uv"], "kick")
-        self.assertEqual(cues["punk"].layers, {"flash": "flash", "uv": "kick"})
+        # the punk's strobe is the look's own, a drop to navy the way the
+        # scene's smoke goes dark on the beat - a white flash over it would
+        # white the beat out; the scaffold's strong white *is* the flash
+        self.assertEqual(cues["punk"].layers, {"flash": "off", "uv": "kick"})
+        self.assertEqual(cues["scaffold"].layers, {"flash": "flash", "uv": "off"})
         self.assertEqual(cues["rain"].media, "black.mp4")
         self.assertEqual(cues["rain"].modes[2].media, "alien-message.mp4")
         self.assertEqual(cues["reaction"].scene, "Reaction-Confusion")
         self.assertEqual(cues["reaction"].media, "87841-602894456.mp4")
         self.assertEqual(cues["scaffold"].scene, "Scaffold Fractal")
         self.assertEqual(cues["scaffold"].media, "")
+        # the clouds' scene reads its media, and black.mp4 left it black
+        self.assertEqual(cues["clouds"].media, "white.mp4")
+        # the house states either side of the set take both layers off
+        for state in ("white", "blackout"):
+            self.assertEqual(cues[state].layers, {"flash": "off", "uv": "off"}, state)
+            self.assertEqual(cues[state].scene, "", state)
         self.assertEqual(cues["glitch"].media, "alien-message.mp4")
         self.assertEqual(cues["neuron"].scene, "Neuron Proximitors")
 
@@ -3270,8 +3284,10 @@ class TheShowCues(unittest.TestCase):
             Cue.from_dict("x", {"controls": ["smoke"]}, [])
 
     def test_a_state_without_a_cue_is_the_state_alone(self):
+        # every state of the show has an entry now; a state the table does
+        # not name - another machine's, say - is still the state alone
         self.assertEqual(
-            [entry["action"] for entry in cue_actions(self.config, "slot_15")],
+            [entry["action"] for entry in cue_actions(self.config, "beat_pulse")],
             ["pattern", "state"])
 
     # -- palettes: a colour as a control, and a fourth mode -----------------
@@ -3386,7 +3402,7 @@ class TheShowCues(unittest.TestCase):
                                             "params": {"layer": "flash", "name": "flash"}}], mode)
 
     def test_a_cue_with_no_modes_is_the_knob_alone(self):
-        for state in ("fire", "slot_15"):
+        for state in ("fire", "white"):
             self.assertEqual([e["action"] for e in cue_mode_actions(self.config, state, 3)],
                              ["param"], state)
 
@@ -3636,7 +3652,7 @@ class TheModeAction(unittest.TestCase):
         self.assertEqual(flash.moved, [])
 
     def test_a_look_without_modes_says_so(self):
-        rig = _FakeModedRig("slot_15")
+        rig = _FakeModedRig("white")
         rig.params = []
         said = midi_map.ACTIONS["mode"].run(self._context(rig), {"mode": 0, "step": 1}, 1.0)
         self.assertIn("no modes", said)
@@ -3740,7 +3756,7 @@ class TheShowLooks(ShowTest):
 
     def test_every_written_cue_has_the_mode_knob(self):
         """The mode pad steps `mode` on whatever cue is up, so every cue
-        that is not a placeholder has to announce it - 1..3, opening on 1 -
+        has to announce it - 1..3, opening on 1 -
         and the intensity knob it used to be is still there for a fader."""
         show = self.running_show(CUES, midi="")
         show.set_pattern("mythos26")
@@ -5225,11 +5241,14 @@ class ViewerOnTheCues(GuiTest):
         self.app._run_button(("state", "blown"))
         self.settle_until(lambda: self.app.show.layers["uv"].current_state == "kick",
                           message="the UV on the kick")
-        self.app._run_button(("state", "slot_15"))
-        self.settle_until(lambda: self.app.show.current_state == "slot_15",
-                          message="the placeholder up")
+        # every state of the show has a cue now; take the house lights' away
+        # so this is a state the table does not name
+        del self.app.config.cues["white"]
+        self.app._run_button(("state", "white"))
+        self.settle_until(lambda: self.app.show.current_state == "white",
+                          message="the house lights up")
         self.assertEqual(self.app.show.layers["uv"].current_state, "kick",
-                         "a slot with no cue leaves the layers where they were")
+                         "a state with no cue leaves the layers where they were")
 
 
 class ViewerOnTheShow(GuiTest):

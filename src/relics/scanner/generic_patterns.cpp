@@ -47,23 +47,42 @@ namespace
 
 }
 
+namespace
+{
+    /* The lattice sample both noises share. `periodY` 0 is the open lattice;
+    * otherwise the y cell wraps every `periodY`, and the field repeats. */
+    float latticeNoise(float x, float y, int periodY)
+    {
+        const int ix = static_cast<int>(std::floor(x));
+        const int iy = static_cast<int>(std::floor(y));
+        float fx = x - ix;
+        float fy = y - iy;
+        fx = fx * fx * (3.0f - 2.0f * fx);
+        fy = fy * fy * (3.0f - 2.0f * fy);
+
+        const auto corner = [&](int cx, int cy) {
+            if (periodY > 0)
+            {
+                cy = ((cy % periodY) + periodY) % periodY;
+            }
+            return hash01(static_cast<uint32_t>(cx * 311 + cy * 57));
+        };
+
+        return lerp(
+            lerp(corner(ix, iy),     corner(ix + 1, iy),     fx),
+            lerp(corner(ix, iy + 1), corner(ix + 1, iy + 1), fx),
+            fy);
+    }
+}
+
 float scanner::valueNoise(float x, float y)
 {
-    const int ix = static_cast<int>(std::floor(x));
-    const int iy = static_cast<int>(std::floor(y));
-    float fx = x - ix;
-    float fy = y - iy;
-    fx = fx * fx * (3.0f - 2.0f * fx);
-    fy = fy * fy * (3.0f - 2.0f * fy);
+    return latticeNoise(x, y, 0);
+}
 
-    const auto corner = [&](int cx, int cy) {
-        return hash01(static_cast<uint32_t>(cx * 311 + cy * 57));
-    };
-
-    return lerp(
-        lerp(corner(ix, iy),     corner(ix + 1, iy),     fx),
-        lerp(corner(ix, iy + 1), corner(ix + 1, iy + 1), fx),
-        fy);
+float scanner::valueNoiseLoop(float x, float y, int periodY)
+{
+    return latticeNoise(x, y, std::max(periodY, 1));
 }
 
 // ============================================================================

@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <functional>
+#include <initializer_list>
 #include <memory>
 #include <string>
 #include <utility>
@@ -297,31 +298,6 @@ namespace edmx
     };
 
 
-    /// A placeholder look, so a slot in the show can be switched to and seen
-    /// before it has been written.
-    ///
-    /// Deliberately plain — a dim, slow breath on one hue. It is not trying to
-    /// be good; it is trying to make it obvious that the state changed and that
-    /// this slot is still empty. Replace one by writing a real GeneratorHSV and
-    /// swapping the line in makeMythos26StateMachine().
-    class Pattern_Mythos_Placeholder : public eanim::GeneratorHSV
-    {
-    public:
-        void init();
-
-        virtual void tick(float deltaTime) override;
-        virtual void render(eio::HSVStripNode* node, ecore::HSV& inOutColor) const override;
-        virtual void reflect(ecore::PropertyBag& bag) override;
-
-        /// Degrees. Set after construction, so every look in the table is built
-        /// the same way — see the note on `look` in mythos26.cpp.
-        float hue{0.0f};
-
-    private:
-        float phase{0.0f};
-    };
-
-
     // ========================================================================
     // The show's own looks. See "pattern spec.txt" at the top of the checkout
     // for the list they were written from.
@@ -397,6 +373,13 @@ namespace edmx
         /// nothing else.
         void initModes(eanim::GeneratorHSV& look, std::vector<std::function<void()>> variants);
 
+        /// Knobs a mode change leaves where they are - out of the snapshot,
+        /// so no mode puts them back. For a knob that is flown by hand
+        /// rather than part of the look: the clouds' height and speed,
+        /// which a pad sets and the flight glides to, and which a palette
+        /// change has no business resetting. Call before initModes.
+        void keepAcrossModes(std::initializer_list<const char*> names);
+
         /// Snaps `mode`, restores the snapshot, runs the variant.
         void applyMode();
 
@@ -408,6 +391,7 @@ namespace edmx
     private:
         eanim::GeneratorHSV* look{nullptr};
         std::vector<std::function<void()>> variants;
+        std::vector<std::string> kept;
         std::vector<std::pair<std::string, float>> baseValues;
         std::vector<std::pair<std::string, ecore::HSV>> baseColors;
     };
@@ -433,6 +417,25 @@ namespace edmx
             reflectMode(bag);
             bag.add("intensity", intensity, 0.0f, 1.0f);
         }
+    };
+
+
+    /// A flat colour over the whole rig at a level - the house lights.
+    ///
+    /// The two idle cues either side of the show: white at half for the
+    /// room before and after, and the blackout. A show look rather than a
+    /// Pattern_Mythos_Solid so it has the mode and intensity knobs every
+    /// cue on the pad has; the mode pad puts it back where it was, and the
+    /// intensity fader takes it down.
+    class Pattern_Mythos_House : public Pattern_MythosLook
+    {
+    public:
+        ecore::HSV color{0.0f, 0.0f, 1.0f};
+        /// How much of the colour, 0..1. 0 is the blackout.
+        float level{0.5f};
+
+        virtual void render(eio::HSVStripNode* node, ecore::HSV& inOutColor) const override;
+        virtual void reflect(ecore::PropertyBag& bag) override;
     };
 
 
@@ -629,14 +632,22 @@ namespace edmx
 
 
     /// Bands of canyon colour pouring down the stage, and a rainbow that
-    /// takes the rig over on the beat.
+    /// turns the rig on the beat.
     ///
     /// The palette is the fly-through: orange rock, brown, the green of the
     /// floor, the blue of the sky - laid over the stage's height and
     /// scrolling downward so the ring and the obelisk are passed through
-    /// rather than lit. On every hit of `rate` the whole rig cross-fades to
-    /// a rainbow spread over its height and back, on the same kind of
-    /// envelope beat_pulse plays, off the same shared trigger.
+    /// rather than lit. The bands blend round the short side of the wheel,
+    /// so what lies between two of them is a colour and not a grey.
+    ///
+    /// On every hit of `rate` the canyon's colours turn toward a rainbow
+    /// spread over the rig's height and back - the hue swings, the
+    /// saturation fills, and each band keeps its own level, lifted by
+    /// `rainbow_lift` so the dark ones are seen to turn. A colour pulse,
+    /// not a light pulse: the rig does not get brighter on the beat, which
+    /// is what kept this from reading as a strobe. The envelope is the
+    /// same shape beat_pulse plays, held over a beat that lands mid-fall,
+    /// off the same shared trigger.
     class Pattern_Mythos_CanyonWave : public Pattern_MythosLook
     {
     public:
@@ -646,6 +657,9 @@ namespace edmx
         float speed{0.12f};
         /// How many times the palette repeats over the stage's height.
         float waves{1.0f};
+        /// How far a dark band comes up under the rainbow, 0..1: 0 keeps
+        /// the canyon's levels exactly, 1 takes everything to full.
+        float rainbowLift{0.35f};
 
         /// The rainbow's envelope: how fast it arrives and how long it stays.
         void setEnvelope(float attackSeconds, float decaySeconds);
@@ -665,7 +679,8 @@ namespace edmx
 
     private:
         TriggerRack* triggers{nullptr};
-        float attackSeconds{0.05f};
+        /// A swell rather than a snap: 0.05s up was the strobe.
+        float attackSeconds{0.12f};
         float decaySeconds{0.45f};
         float pulseRate{edmx::kOnBeat};
         float rainbow{0.0f};
@@ -674,24 +689,32 @@ namespace edmx
 
     /// A gradient between two colours up the stage, strobing on the beat.
     ///
-    /// The punk cue: purple into white, scrolling, and on every hit of
-    /// `rate` the whole rig snaps to the bright end and falls back - a strobe
-    /// on the grid rather than a free-running one, so it lands with the
-    /// flash layer and the UV. Bright by design: the gradient's floor is
-    /// high and the strobe goes to full white.
+    /// The punk cue: punk purple into honey orange - Milk, Honey, Smoke,
+    /// Bile's own two - scrolling slowly, and on every hit of `rate` the
+    /// whole rig drops to a navy dark blue and comes back. A strobe *down*,
+    /// because that is what the scene's `smoke` does: it inverts lightness
+    /// on the beat, so the visual goes dark where a flash layer would go
+    /// white. On the grid rather than free-running, so it lands with the
+    /// UV on the kick. Bright by design between the hits: the gradient's
+    /// floor is high.
+    ///
+    /// The scroll is slow on purpose. At half a cycle a second the whole
+    /// rig went purple, white, purple every two seconds - a second pulse
+    /// under the strobe, on no beat at all, which is what made the strobe
+    /// feel sporadic.
     class Pattern_Mythos_GradientStrobe : public Pattern_MythosLook
     {
     public:
         Pattern_Mythos_GradientStrobe();
 
         ecore::HSV colorA{280.0f, 0.95f, 1.0f};   // punk purple
-        ecore::HSV colorB{0.0f, 0.0f, 1.0f};      // white
-        /// What the strobe snaps to.
-        ecore::HSV strobeColor{0.0f, 0.0f, 1.0f};
+        ecore::HSV colorB{32.0f, 0.90f, 1.0f};    // honey orange
+        /// What the strobe drops to.
+        ecore::HSV strobeColor{228.0f, 1.0f, 0.22f};   // navy
 
         /// Gradient cycles per second past a point, and how many fit the
         /// stage's height.
-        float speed{0.5f};
+        float speed{0.12f};
         float waves{1.0f};
 
         void setEnvelope(float attackSeconds, float decaySeconds);
@@ -711,7 +734,9 @@ namespace edmx
     private:
         TriggerRack* triggers{nullptr};
         float attackSeconds{0.0f};
-        float decaySeconds{0.12f};
+        /// Long enough to be seen on every beat: 0.12s was three frames,
+        /// and a beat that fell between them was a beat the rig missed.
+        float decaySeconds{0.22f};
         float pulseRate{edmx::kOnBeat};
         float strobe{0.0f};
     };
@@ -875,6 +900,8 @@ namespace edmx
     class Pattern_Mythos_CloudFlight : public Pattern_MythosLook
     {
     public:
+        Pattern_Mythos_CloudFlight();
+
         ecore::HSV skyHigh{48.0f, 0.85f, 1.0f};     // the yellow overhead
         ecore::HSV skyLow{330.0f, 0.70f, 1.0f};     // the pink at the horizon
         ecore::HSV cloud{270.0f, 0.60f, 0.16f};     // the deck, in shadow
@@ -899,10 +926,17 @@ namespace edmx
         /// Where the flight actually is, for tests.
         float getHeightNow() const { return heightNow; }
         float getSpeedNow() const { return speedNow; }
+        /// How far through the deck's loop, 0..1, for tests.
+        float getTravelled() const { return travelled; }
 
     private:
         float heightNow{0.45f};
         float speedNow{0.25f};
+        /// The deck's place in its loop, 0..1. The deck is a field periodic
+        /// in y - see valueNoiseLoop - so 1 is 0 and the wrap is not seen.
+        /// It was an open field wrapped at 1, which put a jump in the deck
+        /// every sixteen seconds at the cue's speed and every six at the
+        /// pad's fast one: the clouds visibly resetting mid-flight.
         float travelled{0.0f};
     };
 
@@ -955,19 +989,19 @@ namespace edmx
     };
 
 
-    /// Mostly dark, with strong white, red-orange on the music, and a cyan
-    /// blue in the dark - the scaffold cue.
+    /// Mostly dark, with red-orange on the music and a cyan blue in the
+    /// dark - the scaffold cue. The strong white is the flash layer's.
     ///
-    /// Three things on a ground that is nearly black. The `glint`: a cyan
+    /// Two things on a ground that is nearly black. The `glint`: a cyan
     /// blue where a slow, fine field peaks, the rig's own cold light - a
     /// few nodes at a time, drifting, the way the scene's struts catch it.
     /// The `ember`: red-orange rising with the mid presence, in patches of
     /// a second field that open wider as the presence climbs, so a quiet
     /// passage is a glow in a corner and a loud one is the rig gone hot.
-    /// And the `white`: a pop to full white across everything on the kick,
-    /// a peak follower over the bass hits falling over `white_decay`, which
-    /// is the strong white the spec asks for and the only thing here that
-    /// is ever bright. The probe is painted the glint.
+    /// The white the spec asks for lands over this from the flash layer,
+    /// which the cue table turns on - the same white, on the same beat, as
+    /// every other cue that flashes, rather than a second one of this
+    /// look's own on the kicks beside it. The probe is painted the glint.
     class Pattern_Mythos_Scaffold : public Pattern_MythosLook
     {
     public:
@@ -986,26 +1020,18 @@ namespace edmx
         float gain{1.0f};
         float slew{0.20f};
 
-        /// The white's channel, how much of it lands (0 is none), and how
-        /// long a pop takes to fall away.
-        AudioChannel hitChannel{AudioChannel::BassHits};
-        float white{1.0f};
-        float whiteDecay{0.18f};
-
         void init();
 
         virtual void tick(float deltaTime) override;
         virtual void render(eio::HSVStripNode* node, ecore::HSV& inOutColor) const override;
         virtual void reflect(ecore::PropertyBag& bag) override;
 
-        /// The slewed presence and the white's level, 0..1, for tests.
+        /// The slewed presence, 0..1, for tests.
         float getLevel() const { return level; }
-        float getWhiteLevel() const { return whiteLevel; }
 
     private:
         AudioLevel* bus{nullptr};
         float level{0.0f};
-        float whiteLevel{0.0f};
     };
 
 
@@ -1036,9 +1062,8 @@ namespace edmx
     };
 
 
-    /// The show's sixteen slots, in the order a UI shows them.
-    ///
-    /// Fourteen of them written, the rest placeholders waiting on the spec. The
+    /// The show's sixteen cues, in the order a UI shows them: the fourteen
+    /// looks and the two house states either side of them. The
     /// static pair and the beat flash that used to live here are cues on the
     /// generic machine and the audio bus. See makeGenericStateMachine and
     /// beatPulseState.
