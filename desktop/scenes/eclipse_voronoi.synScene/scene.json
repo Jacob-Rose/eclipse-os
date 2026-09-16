@@ -1,0 +1,59 @@
+{
+  "CREDIT": "Shane (Voronoi Geode / Perspex Web Lattice) - recoloured for eclipse-os",
+  "TITLE": "Eclipse Voronoi",
+  "IMAGE_PATH": "eclipse_voronoi.png",
+  "IMAGES": [{"NAME": "agate2", "PATH":"images/agate2.jpg"},{"NAME": "agate1", "PATH":"images/agate1.jpg"}],
+  "WIDTH": 1280,
+  "HEIGHT":720,
+  "GPU":  4,
+  "TAGS" :
+  [
+  "eclipse",
+  "raymarching",
+  "realistic"
+  ],
+  "CONTROLS":[
+    {"NAME": "rig_color", "TYPE": "color", "DEFAULT": [1.0, 0.05, 0.05], "IS_META": true, "UI_GROUP": "Link",
+    "DESCRIPTION":"The crystals. FIRST colour control in this list, so it is /controls/global/color/1 and /controls/scene/rigcolor - the same address every eclipse scene answers to. Defaults to red, which is where the original sits, so the scene looks like itself before a sender is driving it."},
+
+    {"NAME": "rig_color_2", "TYPE": "color", "DEFAULT": [0.5, 0.7, 1.0], "UI_GROUP": "Link",
+    "DESCRIPTION":"The rim light and the environment reflection. SECOND colour control, so /controls/global/color/2 and /controls/scene/rigcolor2. Defaults to the original's cool blue rim. Read only with auto_second off."},
+
+    {"NAME": "auto_second", "TYPE": "toggle", "DEFAULT": 1.0, "UI_GROUP": "Link",
+    "DESCRIPTION":"Derive the second colour as the complement of rig_color instead of reading rig_color_2. On by default, because the sender is one fixture."},
+
+    {"NAME": "manual_color", "TYPE": "color", "DEFAULT": [1.0, 0.05, 0.05], "UI_GROUP": "Link",
+    "DESCRIPTION":"A first colour to try by hand while the link is live, which otherwise overwrites rig_color thirty times a second. Read only with color_by_hand on."},
+
+    {"NAME": "color_by_hand", "TYPE": "toggle", "DEFAULT": 0.0, "UI_GROUP": "Link",
+    "DESCRIPTION":"Read manual_color instead of rig_color."},
+
+    {"NAME": "rig_amount", "TYPE": "slider smooth", "MIN": 0.0, "MAX": 1.0, "DEFAULT": 1.0, "PARAMS": 0.05, "UI_GROUP": "Link",
+    "DESCRIPTION":"How much of the picture the rig paints. 0 is Shane's original fiery palette untouched; 1 is the rig's colour throughout. Everything between is a cross-fade."},
+
+    {"NAME": "texture_color", "TYPE": "slider smooth", "MIN": 0.0, "MAX": 1.0, "DEFAULT": 0.0, "PARAMS": 0.05, "UI_GROUP": "Link",
+    "DESCRIPTION":"How much of the agate photograph's own hue survives. 0 keeps its marbling as luminance only and lets the rig own the colour; 1 is the original's yellow-olive stone. The detail is the same either way - this is hue, not detail."},
+
+    {"NAME": "media_texture", "TYPE": "toggle", "DEFAULT": 0.0, "UI_GROUP": "Link",
+    "DESCRIPTION":"Use the loaded media as the crystal texture in place of the agate. OFF by default, unlike the original, so that a cue which names no media cannot inherit the last cue's clip into the stone - and so that black.mp4, which is how this show says 'no media', does not turn the crystals black."},
+
+    {"NAME": "pulse", "TYPE": "bang smooth", "UI_GROUP": "reactivity", "PARAMS":0.01,
+    "DESCRIPTION":"Causes a bright pulse to emanate from the center."},
+    {"NAME": "speed_motion", "TYPE": "slider", "MIN": 0.0, "MAX": 5.0, "DEFAULT": 2.0, "UI_GROUP":"reactivity",
+    "DESCRIPTION":"Affects the speed of the crystal gyration."},
+    {"NAME": "grid_growth", "TYPE": "toggle", "DEFAULT": 1.0, "UI_GROUP": "reactivity",
+    "DESCRIPTION":"Let the music open the cells out. On, the Voronoi seeds are pulled back to a regular grid as syn_Presence falls, so a quiet passage tightens to a lattice and a full one scatters into crystals. Off, the cells stay scattered whatever the music does."},
+    {"NAME": "highs_shimmer", "TYPE": "toggle", "DEFAULT": 1.0, "UI_GROUP": "reactivity",
+    "DESCRIPTION":"Modulate the surface noise with syn_HighHits, so the stone glitters on the hi-hats. Off, the noise is steady."},
+    {"NAME": "elevation", "TYPE": "slider smooth", "MIN": -1.0, "MAX": 1.0, "DEFAULT": 0.0, "UI_GROUP": "camera", "PARAMS": 0.025,
+    "DESCRIPTION":"Zooms the camera in or out. Fully out causes it to take on a 'planetoid' look."},
+    {"NAME": "spinning", "TYPE": "toggle", "DEFAULT": 1.0, "UI_GROUP": "camera",
+    "DESCRIPTION":"Whether or not the camera is rotating."},
+    {"NAME": "alternate_crystals", "TYPE": "toggle", "UI_GROUP": "geometry",
+    "DESCRIPTION":"OFF: Standard, angular crystals. ON: Grid-like crystals using the manhattan distance."},
+    {"NAME": "rot_distort", "TYPE": "slider smooth", "UI_GROUP": "geometry", "MIN":-0.1, "DEFAULT": 0.0, "MAX":0.1, "PARAMS":0.1,
+    "DESCRIPTION":"Deforms the surface, distorting the edges in glitchy ways."},
+    {"NAME": "alternate_stone", "TYPE": "toggle", "UI_GROUP": "background", "DEFAULT": 0.0,
+    "DESCRIPTION":"Which of the two agate photographs the crystals are cut from. OFF is the original's red geode stone, ON its circuit-like one. With texture_color at 0 this is a choice of marbling, not of colour - the original's red_geode and green_circuits toggles were a choice of both."}
+]
+}

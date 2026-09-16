@@ -87,8 +87,58 @@
         {
           "action": "syn_scene",
           "params": {
-            "scene": "Voronoi Geode",
+            "scene": "Eclipse Voronoi",
             "preset": ""
+          }
+        },
+        {
+          "action": "syn_control",
+          "params": {
+            "address": "/controls/scene/rigamount",
+            "low": 1.0,
+            "high": 1.0,
+            "values": [],
+            "ramp": 0.0
+          }
+        },
+        {
+          "action": "syn_control",
+          "params": {
+            "address": "/controls/scene/texturecolor",
+            "low": 0.0,
+            "high": 0.0,
+            "values": [],
+            "ramp": 0.0
+          }
+        },
+        {
+          "action": "syn_control",
+          "params": {
+            "address": "/controls/scene/mediatexture",
+            "low": 0.0,
+            "high": 0.0,
+            "values": [],
+            "ramp": 0.0
+          }
+        },
+        {
+          "action": "syn_control",
+          "params": {
+            "address": "/controls/scene/colorbyhand",
+            "low": 0.0,
+            "high": 0.0,
+            "values": [],
+            "ramp": 0.0
+          }
+        },
+        {
+          "action": "syn_control",
+          "params": {
+            "address": "/controls/scene/autosecond",
+            "low": 1.0,
+            "high": 1.0,
+            "values": [],
+            "ramp": 0.0
           }
         }
       ],
@@ -756,7 +806,7 @@
         {
           "action": "syn_media",
           "params": {
-            "name": "black.mp4"
+            "name": "white.mp4"
           }
         },
         {
@@ -772,7 +822,7 @@
         {
           "action": "syn_control",
           "params": {
-            "address": "/controls/scene/height",
+            "address": "/controls/scene/manualheight",
             "low": 0.45,
             "high": 0.45,
             "values": [],
@@ -3459,7 +3509,7 @@
         {
           "action": "syn_control",
           "params": {
-            "address": "/controls/scene/height",
+            "address": "/controls/scene/manualheight",
             "low": 0.15,
             "high": 0.15,
             "values": [],
@@ -3492,7 +3542,7 @@
         {
           "action": "syn_control",
           "params": {
-            "address": "/controls/scene/height",
+            "address": "/controls/scene/manualheight",
             "low": 0.85,
             "high": 0.85,
             "values": [],
