@@ -432,6 +432,48 @@ The clouds cue grew two pads, `by hand` and `auto`, sending the scene's
 back to the scene's own flight. The rig has no auto height; it holds its
 last target, and the height pads still move it.
 
+### the flash pad was the tempo note, and headless has pads
+
+Two things the first night on Mixxx's grid turned up.
+
+**Pressing the flash pad set the rig to 177bpm.** The Launchpad is
+subscribed on the same sequencer input Mixxx reaches, and a Launchpad X in
+Programmer mode sends the grid as notes 11..88 on channel 1 - the flash
+pad is 52, and 52 off Mixxx is the tempo note, velocity + 50. While the
+beat came off OSC the cable was cut from the clock and nobody noticed;
+with the cable wired back in, every press of `flash` was a tempo message
+at velocity 127. The launcher's own comment had predicted the collision
+and offered "move the custom mode to another channel", which Programmer
+mode does not allow. So the executable now tells the two apart: every
+sequencer event carries its source client (`snd_seq_event_t`, bytes 12
+and 13 - the kernel's ABI, read without alsa's headers), and a source that
+matches `midi.pads` (default `["Launchpad"]`) is pads: recorded for the
+monitor, which is how the desk's map sees it, and never a tick, a beat, a
+tempo or a VU level. On a backend that opened the pad controller as its
+one device, everything on it is pads. `midi status` says `pads=yes`; the
+midi selftest sends 52 and 50 off the pads and checks the clock did not
+move.
+
+**`--headless` runs the pads now.** It dropped to `run`/`osc`, which had
+no map - a set with no window was a set with a dead controller.
+`eclipse_dmx/pads.py` is the viewer's midi half with the window taken
+away: the map loaded, `MIDI-IN` lines queued off the reader thread and
+fired from a pump thread (firing on the reader thread deadlocks on the
+first reply, the viewer's reason), the lamps painted from the same map
+and put back to Live mode on the way out, the cue table read for the
+mode pad. `run` and `osc` take `--midimap` and `--midi-out`; the launcher
+passes them whether or not there is a window.
+
+On "cannot turn the flash off on the rain": the layer switches both ways
+over the wire, and the rain's cue puts the *UV* layer on `rainbow`, which
+pulses the blacklight for as long as the cue is up - the flash pads never
+touch it; the `uv off` pad does. If it was the flash layer itself, the
+tempo hijack above is the likelier cause: at 177bpm the flash is a
+flicker, and `off` on the next press was racing a rig at the wrong
+tempo. Every cue has one white flash now, the layer's - the scaffold's
+own went in the last commit and nothing else strobes white - so the two
+flash pads mean the same thing on every cue that has an additive flash.
+
 ### the beat goes back to mixxx
 
 Synesthesia's detector proved unreliable for tempo, so the show's config

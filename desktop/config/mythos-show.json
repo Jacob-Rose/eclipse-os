@@ -37,6 +37,12 @@
     "enabled": true,
     "port": "auto",
     "ignore": ["Traktor", "Kontrol"],
+    // The pad controller, by name fragment: the launcher subscribes the
+    // Launchpad on this same input, and its notes are pads and nothing
+    // else - never the beat, the tempo or a VU level, whatever number the
+    // grid gave them. Without this the flash pad, note 52, was Mixxx's
+    // tempo note and set the rig to 177bpm.
+    "pads": ["Launchpad"],
     "clock": true,
     "notes": true,
     "beat_note": 50,

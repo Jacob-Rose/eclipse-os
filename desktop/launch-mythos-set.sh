@@ -12,7 +12,7 @@
 #
 #   ./launch-mythos-set.sh              the set: live rig on the pi, viewer, OSC
 #   ./launch-mythos-set.sh --bench      the same look, nothing on the wire
-#   ./launch-mythos-set.sh --headless   no window (over ssh, or no tkinter)
+#   ./launch-mythos-set.sh --headless   no window; the pads and lamps still run
 #   ./launch-mythos-set.sh --local      the wires on this machine, not the pi's
 #
 # The rig is networked by default: the show renders here, where Mixxx, the
@@ -91,9 +91,11 @@ OSC_IN_PORT="${ECLIPSE_OSC_IN_PORT:-7000}"
 #
 # and press some pads. Whichever prints is the one to put here.
 #
-# Worth knowing once they are in: the pads share the input with the beat clock,
-# so a pad sending note 50, 52, 64, 68 or 69 on channel 1 reads as beat, tempo
-# or VU. Move the controller's custom mode to another channel if they collide.
+# The pads share the input with the beat clock, and a Launchpad X in
+# Programmer mode sends note 52 for the flash pad - Mixxx's tempo note. The
+# config's midi.pads names the controller, and the executable tells its
+# events from Mixxx's by their sequencer source: a pad is a pad whatever
+# number the grid gave it, never a beat, a tempo or a VU level.
 MIDI_PORT="${ECLIPSE_MIDI_PORT:-Launchpad X LPX MIDI In}"
 
 # The other direction down the same cable: the pads, lit from the map.
@@ -183,7 +185,9 @@ usage() {
 launch-mythos-set.sh - the mythos26 set, on this machine
 
   --bench, --dry-run   render and draw, but put nothing on any wire
-  --headless           run without the viewer window (ssh, or no tkinter)
+  --headless           run without the viewer window (ssh, or no tkinter).
+                       The pads, the lamps and the cue table still run, off
+                       the same map; only the picture is gone.
   --no-osc             do not send the rig's colour to a visualiser
   --no-osc-in          do not take the visualiser's audio analysis back in,
                        whatever the config declares. The hit layers go dark;
@@ -290,10 +294,11 @@ if [ -z "${ECLIPSE_MIDIMAP+x}" ] && [ "$midimap_named" = 0 ]; then
     fi
 fi
 
-# The map is the viewer's - `run` and `osc` have no pads - and a map that
-# is missing is a set with a dark, dead controller and nothing saying why,
-# so it is checked here with the rest of the load-in.
-if [ -n "$MIDIMAP" ] && [ "$viewer" = 1 ] && [ ! -f "$MIDIMAP" ]; then
+# A map that is missing is a set with a dark, dead controller and nothing
+# saying why, so it is checked here with the rest of the load-in. Headless
+# runs the same map: `run` and `osc` take --midimap and fire the pads off
+# it without the window (see eclipse_dmx/pads.py).
+if [ -n "$MIDIMAP" ] && [ ! -f "$MIDIMAP" ]; then
     echo "no midi map at '$MIDIMAP'" >&2
     echo "  regenerate it: PYTHONPATH=python $PYTHON tools/make-launchpad-map.py --probe" >&2
     exit 1
@@ -504,10 +509,8 @@ if [ -n "$MIDI_PORT" ]; then
     fi
 fi
 
-# Lamps are the viewer's job: they are painted from the midi map, and `run`
-# has no map to paint from. Headless is a set with no window and no pads lit,
-# which is what it already was.
-if [ -n "$MIDI_OUT" ] && [ "$viewer" = 1 ]; then
+# The lamps are painted from the midi map, with or without the window.
+if [ -n "$MIDI_OUT" ]; then
     # Same rule as the input: only when it is actually here. Never fatal in
     # the viewer either - a lamp that cannot be lit is a set without lamps -
     # but checking here means the reason is printed next to the rest of the
@@ -567,12 +570,15 @@ if [ "$viewer" = 1 ]; then
     [ -n "$MIDIMAP" ] && command+=(--midimap "$MIDIMAP")
 elif [ "$osc" = 1 ]; then
     # The osc subcommand is the same show without a window; it drives the rig
-    # unless told not to, which is the opposite of the viewer's default.
+    # unless told not to, which is the opposite of the viewer's default. The
+    # map rides along: the pads fire and the lamps paint, window or not.
     command+=(osc "$CONFIG" --device "$OSC_DEVICE" --address "$OSC_ADDRESS")
     [ "$live" = 0 ] && command+=(--dry-run)
+    [ -n "$MIDIMAP" ] && command+=(--midimap "$MIDIMAP")
 else
     command+=(run "$CONFIG")
     [ "$live" = 0 ] && command+=(--dry-run)
+    [ -n "$MIDIMAP" ] && command+=(--midimap "$MIDIMAP")
 fi
 
 if [ "$osc_in" = 1 ]; then

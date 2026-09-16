@@ -671,6 +671,29 @@ bool edmx::loadConfig(const std::string& path, Config& outConfig, std::string& o
             config.midi.ignore.push_back(ignore.asString());
         }
 
+        // The same shape for the pad controllers. Stated, it replaces the
+        // default rather than adding to it - an empty list is "no port is
+        // pads", which a config that runs its beat off a Launchpad's custom
+        // mode would need to say.
+        const JsonValue& pads = midi["pads"];
+        if (pads.isArray())
+        {
+            config.midi.pads.clear();
+            for (size_t i = 0; i < pads.size(); ++i)
+            {
+                const std::string fragment = pads[i].asString();
+                if (!fragment.empty())
+                {
+                    config.midi.pads.push_back(fragment);
+                }
+            }
+        }
+        else if (pads.getType() == JsonValue::Type::String)
+        {
+            config.midi.pads.clear();
+            config.midi.pads.push_back(pads.asString());
+        }
+
         if (config.midi.bpm < 30.0f || config.midi.bpm > 300.0f)
         {
             config.warnings.push_back("midi.bpm of " + std::to_string(config.midi.bpm)

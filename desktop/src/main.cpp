@@ -1197,6 +1197,15 @@ namespace
             check("mixxx.phase_on_beat", clock.timeSinceBeat(end), 0.0, 0.001);
             check("mixxx.locked", clock.isLocked(end) ? 1.0 : 0.0, 1.0, 0.0);
 
+            // The same notes off the pad controller are pads. A Launchpad X
+            // in Programmer mode sends the flash pad as note 52 at velocity
+            // 127, which read as Mixxx's tempo note is 177bpm; and its row
+            // below sends 50, which is the beat. Neither may move the clock.
+            midi.handleMessage(0x90, 52, 127, end + 0.10, /*fromPads*/ true);
+            midi.handleMessage(0x90, 50, 127, end + 0.11, /*fromPads*/ true);
+            check("pads.tempo_note_is_a_pad", clock.getBpm(), kBpm, 0.5);
+            check("pads.beat_note_is_a_pad", static_cast<double>(midi.getBeats()), kBeats, 0.0);
+
             // Half a beat later the envelope should be half a beat in, which is
             // what a pattern actually reads.
             check("mixxx.phase_mid_beat", clock.timeSinceBeat(end + (kPeriod / 2.0)),
@@ -4168,6 +4177,7 @@ namespace
                 const std::string spec = (words.size() >= 3) ? joinFrom(words, 2) : "auto";
 
                 std::string midiError;
+                show.midi.setPads(show.config.midi.pads);
                 if (!show.midi.open(spec, show.config.midi.ignore, &sharedBeatClock(), midiError))
                 {
                     emit("ERR " + midiError);
@@ -4958,6 +4968,7 @@ int main(int argc, char** argv)
         applyMidiConfig(show);
 
         std::string midiError;
+        show.midi.setPads(show.config.midi.pads);
         if (show.midi.open(show.config.midi.port, show.config.midi.ignore,
                            &sharedBeatClock(), midiError))
         {

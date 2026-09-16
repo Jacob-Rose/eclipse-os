@@ -82,6 +82,19 @@ namespace edmx
         /// still overrides this.
         std::vector<std::string> ignore;
 
+        /// Name fragments of a pad controller: a port whose notes are for
+        /// the desk's map - the cue pads, the layer pads - and never for the
+        /// clock. Its notes still arrive (the desk reads them off the
+        /// monitor), but none of them is taken as the beat, the tempo or a
+        /// VU level however its number falls. A Launchpad X in Programmer
+        /// mode sends notes 11..88 on channel 1, and Mixxx's tempo note is
+        /// 52: without this, the flash pad set the rig to 177bpm.
+        ///
+        /// On the sequencer the controller is one source among the clients
+        /// reaching the published port, told apart per event; on a backend
+        /// that opens one device, a named port that matches this is all pads.
+        std::vector<std::string> pads{"Launchpad"};
+
         /// Follow 0xF8 beat clock.
         bool followClock{true};
         /// Take the beat from a note. If a source sends both, notes win.

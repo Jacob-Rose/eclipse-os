@@ -2020,9 +2020,11 @@ the beat still arrives on `eclipse-dmx IN` exactly as before. `--midi SPEC` or
 
 It names the **lamps** the same way — `--midi-out SPEC` or
 `ECLIPSE_MIDI_OUT`, defaulting to the Launchpad's *MIDI Out* port (not "MIDI
-In", which is what the device listens on). Viewer only: the pads are painted
-from the midi map and `--headless` has no map to paint from. See
-[lighting the pads](#lighting-the-pads).
+In", which is what the device listens on). With or without the window:
+`--headless` runs the same map through `run`/`osc --midimap`, firing the
+pads and painting the lamps off the executable's `MIDI-IN` stream with no
+tkinter in the process - `eclipse_dmx/pads.py` is the viewer's midi half
+with the window taken away. See [lighting the pads](#lighting-the-pads).
 
 `--host [NAME]` runs the show on another machine — `scanner-pi` unless told
 otherwise, or `$ECLIPSE_HOST` — keeping the window here. That name is the ssh

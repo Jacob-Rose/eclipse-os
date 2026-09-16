@@ -235,14 +235,36 @@ namespace edmx
 
         /// One already-framed message. Public so the Windows callback, the
         /// byte-stream parser and a test can all reach the same logic.
-        void handleMessage(unsigned char status, unsigned char data1, unsigned char data2, double when);
+        ///
+        /// `fromPads` is a message off the pad controller - see setPads. It is
+        /// recorded for the monitor, which is how the desk's map gets it, and
+        /// then dropped: never a tick, a beat, a tempo or a VU level.
+        void handleMessage(unsigned char status, unsigned char data1, unsigned char data2, double when,
+                           bool fromPads = false);
 
         /// A run of raw bytes, with running status and realtime bytes possibly
         /// interleaved mid-message.
-        void handleBytes(const unsigned char* data, size_t length, double when);
+        void handleBytes(const unsigned char* data, size_t length, double when,
+                         bool fromPads = false);
+
+        /// Name fragments of the pad controllers - MidiConfig::pads. Set
+        /// before open(): a port opened that matches one is pads, and on the
+        /// sequencer its events are told from Mixxx's by their source client,
+        /// since both reach the one published port. A Launchpad X sends note
+        /// 52 for the pad that happens to sit there, and 52 off Mixxx is the
+        /// tempo; only the source says which.
+        void setPads(const std::vector<std::string>& fragments) { pads = fragments; }
+
+        /// The pad controller this input is reading, or empty. For status.
+        const std::string& getPadsName() const { return padsName; }
 
     private:
         void onBeat(double when, bool fromNote);
+
+        /// Whether `name` is a pad controller - see setPads - and if so
+        /// remembers it: as the whole device when the backend opened it
+        /// alone, else as a source the sequencer reader tells apart.
+        bool markPads(const std::string& name, bool wholeDevice);
 
 #if !defined(_WIN32)
         /// A device node, read as a byte stream.
@@ -262,6 +284,14 @@ namespace edmx
         AudioLevel* audioLevel{nullptr};
         std::string portName;
         std::atomic<bool> opened{false};
+
+        /// See setPads. `padsClient` is the sequencer client whose events are
+        /// pads, -1 for none; `allPads` is a backend that opened the pad
+        /// controller as its one device, where everything is.
+        std::vector<std::string> pads;
+        std::string padsName;
+        std::atomic<int> padsClient{-1};
+        std::atomic<bool> allPads{false};
 
         std::atomic<bool> followClock{true};
         std::atomic<bool> followNotes{true};

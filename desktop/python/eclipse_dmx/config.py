@@ -438,6 +438,12 @@ class MidiConfig:
     #: machine: it is a MIDI input, often the only one, and its pads all send
     #: notes. Naming ``port`` explicitly still overrides this.
     ignore: List[str] = field(default_factory=list)
+    #: Name fragments of a pad controller: a port whose notes are for the
+    #: desk's map and never for the clock. On the sequencer both it and Mixxx
+    #: reach the one published port, and the executable tells them apart per
+    #: event by source; a Launchpad X sends note 52 for whichever pad sits
+    #: there, and 52 off Mixxx is the tempo. Stated, it replaces the default.
+    pads: List[str] = field(default_factory=lambda: ["Launchpad"])
     clock: bool = True
     notes: bool = True
     beat_note: int = 50
@@ -523,6 +529,7 @@ class MidiConfig:
             "enabled": self.enabled,
             "port": self.port,
             "ignore": list(self.ignore),
+            "pads": list(self.pads),
             "clock": self.clock,
             "notes": self.notes,
             "beat_note": self.beat_note,
@@ -1749,11 +1756,15 @@ class Config:
         stated_ignore = midi.get("ignore", [])
         if isinstance(stated_ignore, str):
             stated_ignore = [stated_ignore]
+        stated_pads = midi.get("pads", list(config.midi.pads))
+        if isinstance(stated_pads, str):
+            stated_pads = [stated_pads]
 
         config.midi = MidiConfig(
             enabled=bool(midi.get("enabled", "port" in midi)),
             port=midi.get("port", config.midi.port),
             ignore=[str(fragment) for fragment in stated_ignore if fragment],
+            pads=[str(fragment) for fragment in stated_pads if fragment],
             clock=bool(midi.get("clock", config.midi.clock)),
             notes=bool(midi.get("notes", config.midi.notes)),
             beat_note=int(midi.get("beat_note", config.midi.beat_note)),

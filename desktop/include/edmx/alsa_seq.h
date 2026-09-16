@@ -99,6 +99,23 @@ namespace edmx
         /// error, just a machine with no sequencer to talk to. Loaded once and
         /// never unloaded: a reader thread may still be inside it.
         static const AlsaSeq* get();
+
+        /// The client that sent an event, off the event itself.
+        ///
+        /// Not a library call: `snd_seq_event_t` is a public struct in alsa's
+        /// headers with no accessor for it, and this file compiles without
+        /// those headers. The layout is the kernel's ABI
+        /// (uapi/sound/asequencer.h) and does not move - `type`, `flags`,
+        /// `tag`, `queue` a byte each, an eight-byte timestamp, then the
+        /// source address as client and port, a byte each, at 12 and 13.
+        ///
+        /// It is what tells a note from the pad controller apart from the
+        /// same note number off Mixxx: both arrive on the one published port,
+        /// and only one of them is a tempo. See MidiInput::setPads.
+        static int eventSourceClient(const void* event)
+        {
+            return static_cast<int>(static_cast<const unsigned char*>(event)[12]);
+        }
     };
 
     /// The rawmidi half of alsa-lib, loaded the same way and out of the same

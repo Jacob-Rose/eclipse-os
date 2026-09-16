@@ -623,6 +623,9 @@ def _cmd_run(args: argparse.Namespace) -> int:
     # `run` asks for none on its own, having no window to draw them in.
     client = _client_for(args, config_path)
 
+    # The pads, when a map was named: the viewer's, without the window.
+    pads = _pads_for(args, config_path, say=log)
+
     show = ShowController(
         config_path,
         executable=args.executable,
@@ -631,6 +634,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         midi=args.midi,
         bpm=args.bpm,
         on_log=log if args.verbose else None,
+        on_midi=pads.on_midi if pads is not None else None,
         remote=args.host,
         remote_command=args.remote_command,
         emit_frames=client is not None,
@@ -654,10 +658,14 @@ def _cmd_run(args: argparse.Namespace) -> int:
         # After the cue overrides, so a binding cannot be outrun by the state
         # it is aimed at; before the wait, so it is live for the whole set.
         listener = _osc_input_for(args, show)
+        if pads is not None:
+            pads.attach(show).open()
         try:
             print(f"running: {show.status()}", file=sys.stderr)
             code = show.wait(args.seconds)
         finally:
+            if pads is not None:
+                pads.close()
             if listener is not None:
                 listener.close()
             if client is not None:
@@ -762,6 +770,12 @@ def _cmd_osc(args: argparse.Namespace) -> int:
                       f"{len(colors)}-fixture frame; nothing is being sent",
                       file=sys.stderr)
 
+        # The pads, when a map was named. Their scene bindings go down the
+        # same link as the colour, so the app sees one peer.
+        pads = _pads_for(args, args.config,
+                         say=lambda line: print(line, file=sys.stderr),
+                         osc_factory=lambda: link)
+
         # autostart=False so `show` is bound before any frame can arrive: the
         # callback above reads it, and the reader thread starts inside start().
         show = ShowController(
@@ -771,6 +785,7 @@ def _cmd_osc(args: argparse.Namespace) -> int:
             midi=args.midi,
             bpm=args.bpm,
             on_frame=frame,
+            on_midi=pads.on_midi if pads is not None else None,
             emit_rate=args.rate,
             on_log=(lambda line: print(line, file=sys.stderr)) if args.verbose else None,
             autostart=False,
@@ -802,10 +817,14 @@ def _cmd_osc(args: argparse.Namespace) -> int:
                     show.set_state(args.state)
 
                 listener = _osc_input_for(args, show)
+                if pads is not None:
+                    pads.attach(show).open()
                 try:
                     print(f"running: {show.status()}", file=sys.stderr)
                     code = show.wait(args.seconds)
                 finally:
+                    if pads is not None:
+                        pads.close()
                     if listener is not None:
                         listener.close()
                     if client is not None:
@@ -1051,6 +1070,45 @@ def _add_client_arg(parser: argparse.ArgumentParser) -> None:
                              "Mixxx and a controller, which do not cross the link")
 
 
+def _add_pads_args(parser: argparse.ArgumentParser) -> None:
+    """--midimap and --midi-out, on the headless ways of running a show: the
+    viewer's pads and lamps with the window taken away. See pads.py."""
+    parser.add_argument("--midimap", metavar="FILE",
+                        help="a midi map to run the pads off, with the config's cue table "
+                             "(the viewer's --midimap); nothing by default")
+    parser.add_argument("--midi-out", metavar="SPEC",
+                        help="the controller to light from the map (a Launchpad X, put into "
+                             "Programmer mode); nothing by default")
+
+
+def _pads_for(args, config_path, say, osc_factory=None):
+    """The pads for a headless show, or None when no map was asked for.
+
+    Built before the show so its on_midi can be handed to the controller;
+    the caller attaches the show and opens it once the cues are up.
+    """
+    midimap = getattr(args, "midimap", None)
+    if not midimap:
+        return None
+    from .config import Config
+    from .pads import HeadlessPads
+    try:
+        config = Config.load(config_path)
+    except Exception as error:  # the map still fires; only the mode pad reads the table
+        say(f"pads: cue table not read: {error}")
+        config = None
+    if osc_factory is None:
+        held = []
+
+        def osc_factory():
+            if not held:
+                from .osc import SynesthesiaLink
+                held.append(SynesthesiaLink())
+            return held[0]
+    return HeadlessPads(midimap, config=config, osc_factory=osc_factory, say=say,
+                        midi_out=getattr(args, "midi_out", "") or "")
+
+
 def _add_tempo_args(parser: argparse.ArgumentParser) -> None:
     """Tempo overrides, shared by the subcommands that start a show."""
     parser.add_argument("--midi", metavar="SPEC",
@@ -1155,6 +1213,7 @@ def build_parser() -> argparse.ArgumentParser:
                      help="with --client, frames per second sent to the far end's wires "
                           "(default 30; at least the fastest device.fps over there)")
     _add_tempo_args(run)
+    _add_pads_args(run)
     _add_remote_args(run)
     _add_client_arg(run)
     _add_osc_input_args(run)
@@ -1203,6 +1262,7 @@ def build_parser() -> argparse.ArgumentParser:
                      help="render without driving hardware; the OSC still goes out")
     osc.add_argument("--verbose", "-v", action="store_true", help="echo the executable's logs")
     _add_tempo_args(osc)
+    _add_pads_args(osc)
     _add_client_arg(osc)
     _add_osc_input_args(osc)
     osc.set_defaults(func=_cmd_osc)

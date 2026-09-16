@@ -319,6 +319,21 @@ std::vector<MidiPortInfo> MidiInput::enumeratePorts()
 
 #endif
 
+bool MidiInput::markPads(const std::string& name, bool wholeDevice)
+{
+    // The same match the ignore list uses: a fragment of the port's name.
+    if (!isIgnored(name, pads))
+    {
+        return false;
+    }
+    padsName = name;
+    if (wholeDevice)
+    {
+        allPads.store(true);
+    }
+    return true;
+}
+
 bool MidiInput::isIgnored(const std::string& name, const std::vector<std::string>& ignore)
 {
     const std::string lowered = toLower(name);
@@ -547,7 +562,7 @@ std::vector<MidiMessage> MidiInput::drainMonitor(unsigned long long& outDropped)
 }
 
 void MidiInput::handleMessage(unsigned char status, unsigned char data1, unsigned char data2,
-                              double when)
+                              double when, bool fromPads)
 {
     // ---- the monitor -----------------------------------------------------
     // Channel messages only. Clock ticks arrive 24 times a beat and would bury
@@ -561,6 +576,16 @@ void MidiInput::handleMessage(unsigned char status, unsigned char data1, unsigne
         const unsigned long long slot = monitorWrites.load();
         monitorRing[slot % kMonitorSlots].store(packed);
         monitorWrites.store(slot + 1);
+    }
+
+    // ---- the pads --------------------------------------------------------
+    // A pad controller's message stops here. The monitor above is how the
+    // desk's map sees it, and that is all it is for: a note off a Launchpad
+    // is a button, whatever number the grid gave it, and the flash pad
+    // landing on Mixxx's tempo note must not set the rig to 177bpm.
+    if (fromPads || allPads.load())
+    {
+        return;
     }
 
     // ---- system realtime -------------------------------------------------
@@ -709,7 +734,8 @@ void MidiInput::handleMessage(unsigned char status, unsigned char data1, unsigne
     }
 }
 
-void MidiInput::handleBytes(const unsigned char* data, size_t length, double when)
+void MidiInput::handleBytes(const unsigned char* data, size_t length, double when,
+                            bool fromPads)
 {
     for (size_t idx = 0; idx < length; ++idx)
     {
@@ -719,7 +745,7 @@ void MidiInput::handleBytes(const unsigned char* data, size_t length, double whe
         // they are dispatched without touching the parser's state.
         if (byte >= 0xF8)
         {
-            handleMessage(byte, 0, 0, when);
+            handleMessage(byte, 0, 0, when, fromPads);
             continue;
         }
 
@@ -744,7 +770,7 @@ void MidiInput::handleBytes(const unsigned char* data, size_t length, double whe
 
             if (messageWanted == 0)
             {
-                handleMessage(byte, 0, 0, when);
+                handleMessage(byte, 0, 0, when, fromPads);
             }
             continue;
         }
@@ -768,7 +794,7 @@ void MidiInput::handleBytes(const unsigned char* data, size_t length, double whe
         }
         else
         {
-            handleMessage(messageBytes[0], messageBytes[1], byte, when);
+            handleMessage(messageBytes[0], messageBytes[1], byte, when, fromPads);
             messageLength = 0;
             messageWanted = 0;
             continue;
@@ -776,7 +802,7 @@ void MidiInput::handleBytes(const unsigned char* data, size_t length, double whe
 
         if (messageWanted == 1)
         {
-            handleMessage(messageBytes[0], messageBytes[1], 0, when);
+            handleMessage(messageBytes[0], messageBytes[1], 0, when, fromPads);
             messageLength = 0;
             messageWanted = 0;
         }
@@ -793,9 +819,10 @@ std::string MidiInput::describe() const
 {
     char text[384];
     std::snprintf(text, sizeof(text),
-                  "port=\"%s\" clock=%s notes=%s beat_note=%d bpm_note=%d "
+                  "port=\"%s\"%s clock=%s notes=%s beat_note=%d bpm_note=%d "
                   "vu_inst=%d vu_avg=%d vu_meter=%d channel=%d ticks=%llu beats=%llu",
                   portName.empty() ? "-" : portName.c_str(),
+                  padsName.empty() ? "" : " pads=yes",
                   followClock.load() ? "on" : "off",
                   followNotes.load() ? "on" : "off",
                   beatNote.load(), bpmNote.load(),
@@ -860,6 +887,7 @@ bool MidiInput::open(const std::string& spec, const std::vector<std::string>& ig
     }
 
     clock = inClock;
+    markPads(port.name, /*wholeDevice*/ true);
 
     HMIDIIN opened_handle = nullptr;
     const MMRESULT result = midiInOpen(&opened_handle, static_cast<UINT>(port.index),
@@ -910,6 +938,9 @@ void MidiInput::close()
 
     clock = nullptr;
     portName.clear();
+    padsName.clear();
+    padsClient.store(-1);
+    allPads.store(false);
 }
 
 #else
@@ -967,6 +998,7 @@ bool MidiInput::open(const std::string& spec, const std::vector<std::string>& ig
     {
         return openAlsaSeq(&port, inClock, outError);
     }
+    markPads(port.name, /*wholeDevice*/ true);
     return openRawMidi(port, inClock, outError);
 }
 
@@ -1063,6 +1095,14 @@ bool MidiInput::openAlsaSeq(const MidiPortInfo* source, BeatClock* inClock,
         alsa->close(handle);
         outError = "could not subscribe to '" + source->name + "' (" + source->address() + ")";
         return false;
+    }
+
+    // The subscribed source is one client among those reaching the published
+    // port - Mixxx arrives on it too, unasked - so a pad controller is told
+    // apart per event by its client, not by the port everything shares.
+    if (source != nullptr && markPads(source->name, /*wholeDevice*/ false))
+    {
+        padsClient.store(source->client);
     }
 
     // The sequencer hands over parsed events; this turns them back into the
@@ -1183,7 +1223,10 @@ void MidiInput::readAlsaSeq()
                                                       static_cast<long>(sizeof(bytes)), event);
             if (length > 0)
             {
-                handleBytes(bytes, static_cast<size_t>(length), nowSeconds());
+                const int padsFrom = padsClient.load();
+                const bool fromPads = padsFrom >= 0
+                    && AlsaSeq::eventSourceClient(event) == padsFrom;
+                handleBytes(bytes, static_cast<size_t>(length), nowSeconds(), fromPads);
             }
             // A negative length is an event with no wire form - a port
             // subscription notice, say. Not ours, and not a problem.
@@ -1261,6 +1304,9 @@ void MidiInput::close()
 
     clock = nullptr;
     portName.clear();
+    padsName.clear();
+    padsClient.store(-1);
+    allPads.store(false);
 }
 
 #endif

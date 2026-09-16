@@ -3869,15 +3869,18 @@ class TheShowLooks(ShowTest):
         frames = []
         show = self._show("blown", on_frame=frames.append)
         time.sleep(0.6)
-        at_rest = max(frames[-1][self.SAMPLE])
-        self.assertGreater(at_rest, 0, "the wash has a floor")
+        self.assertGreater(max(frames[-1][self.SAMPLE]), 0, "the wash has a floor")
+        # the channel that is measured, at rest: the blue in the pink. It was
+        # compared against the red - the brightest channel - which at hue 321
+        # the blue at full does not reach
+        at_rest = frames[-1][self.SAMPLE][2]
 
         mark = len(frames)
         for _ in range(8):
             show.command("audio mid_presence 1.0", expect_reply=False)
             time.sleep(0.05)
         self.assertGreater(self._peak(frames, mark, 0.4, 2), at_rest + 40,
-                           "the blue of the purple should climb with the mids")
+                           "the blue of the pink should climb with the mids")
 
     def test_a_kick_pops_pink_and_glows_green_after(self):
         """Blown: a pink base all the way through, a kick a pop of that pink
@@ -4254,6 +4257,23 @@ class IgnoredDevices(unittest.TestCase):
     def test_ignoring_the_port_you_named_is_rejected(self):
         with self.assertRaises(ConfigError):
             MidiConfig(enabled=True, port="loopMIDI", ignore=["loopmidi"]).validate()
+
+    # -- the pad controller: opened, and never the beat ---------------------
+
+    def test_the_pad_controller_is_pads_by_default(self):
+        """The Launchpad is subscribed on the same input Mixxx reaches, and a
+        Launchpad X in Programmer mode sends the flash pad as note 52 - which
+        off Mixxx is the tempo. Its notes are for the map and never the clock;
+        the executable tells the two apart by source, off this list."""
+        config = Config.load(CUES)
+        self.assertEqual(config.midi.pads, ["Launchpad"])
+        self.assertEqual(Config.from_dict(config.to_dict()).midi.pads, ["Launchpad"])
+        bare = Config.from_dict({"midi": {"port": "auto", "pads": "APC"},
+                                 "fixtures": [{"name": "a", "start_channel": 1}]})
+        self.assertEqual(bare.midi.pads, ["APC"])
+        none = Config.from_dict({"midi": {"port": "auto", "pads": []},
+                                 "fixtures": [{"name": "a", "start_channel": 1}]})
+        self.assertEqual(none.midi.pads, [])
 
     def test_auto_refuses_rather_than_opening_an_ignored_device(self):
         """Better a warning and free-run than a rig following a pad press."""
@@ -6180,6 +6200,49 @@ class _RecorderRig:
 
     def command(self, line, expect_reply=True):
         self.log.append(f"command {line}")
+
+
+class TheHeadlessPads(unittest.TestCase):
+    """eclipse_dmx/pads.py: the viewer's midi half with no window - the map
+    fired off MIDI-IN lines against a show, from a pump thread."""
+
+    def _pads(self, **kw):
+        from eclipse_dmx.pads import HeadlessPads
+        rig, link = _RecorderRig(), _RecorderLink()
+        rig.midi_monitor = lambda enable=True: rig.log.append(f"monitor {enable}")
+        rig.layers = {"flash": _FakeLayer("off"), "uv": _FakeLayer("off")}
+        pads = HeadlessPads(str(DESKTOP / "config" / "midimaps" / "mythos-show.json"),
+                            config=Config.load(CUES), osc_factory=lambda: link,
+                            say=lambda line: None, **kw)
+        return pads.attach(rig), rig, link
+
+    def test_a_pad_fires_its_cue_from_the_pump(self):
+        pads, rig, link = self._pads()
+        pads.open()
+        try:
+            self.assertIn("monitor True", rig.log)
+            # the geode's pad - note 12 - is the whole cue: the state, the
+            # layers, the scene. Queued on the reader thread, fired by the pump.
+            pads.on_midi("ch=1 note_on 12 127")
+            deadline = time.monotonic() + 2.0
+            while "state geode" not in rig.log and time.monotonic() < deadline:
+                time.sleep(0.02)
+        finally:
+            pads.close()
+        self.assertIn("state geode", rig.log)
+        self.assertEqual(rig.layers["flash"].moved, ["flash"])
+        self.assertIn(("scene", "Eclipse Voronoi", None), link.calls)
+
+    def test_a_missing_map_is_a_desk_with_no_pads_not_a_refusal(self):
+        from eclipse_dmx.pads import HeadlessPads
+        said = []
+        rig = _RecorderRig()
+        rig.midi_monitor = lambda enable=True: None
+        pads = HeadlessPads("/nowhere/none.json", say=said.append).attach(rig)
+        pads.open()
+        pads.close()
+        self.assertTrue(any("not found" in line for line in said), said)
+        self.assertEqual(len(pads.mappings.mappings), 0)
 
 
 class TheMidiMap(unittest.TestCase):
