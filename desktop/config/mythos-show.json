@@ -184,11 +184,26 @@
       "layers": { "flash": "off", "uv": "off" }
     },
     "geode": {
+      // Eclipse Voronoi (scenes/eclipse_voronoi.synScene): Shane's geode with
+      // its crystals painted rig_color, which the probe sends live - so this
+      // cue needs no colour in the table at all. The look's own half is in
+      // src/mythos26.cpp, and it is what makes the modes work: mode 1 is red
+      // riding the mids, mode 2 goes blue. On the stock scene only the truss
+      // went blue and the crystals stayed red, which is the exact
+      // incoherence this feature exists to remove.
+      //
+      // texture_color 0 keeps the agate's marbling and drops its yellow-olive
+      // hue, so the sent colour is the only colour. media_texture 0 so that
+      // this cue - which names no media, and so inherits the last cue's clip -
+      // cannot get the rain's video cut into its crystals.
+      //
       // 2 is the geode gone blue - a grained blue field with its own paler
       // blue landing on the kick - and the white flash layer is off for it,
       // so the blue is the only flash. 3 is the red with blue on the kick.
-      "scene": "Voronoi Geode",
+      "scene": "Eclipse Voronoi",
       "layers": { "flash": "flash", "uv": "off" },
+      "controls": { "rig_amount": 1, "texture_color": 0, "media_texture": 0,
+                    "color_by_hand": 0, "auto_second": 1 },
       "modes": {
         "2": { "layers": { "flash": "off" } }
       }
@@ -301,24 +316,38 @@
       // together - the look glides over its own `glide`, the scene over
       // the pad's `ramp`, the same two seconds.
       //
-      // CHECK AGAINST THE SCENE: the scene and its control names below
-      // (height, speed, auto_height) are written from the spec, not from
-      // the scene's scene.json, which is not in this checkout. Fold them
-      // the way the app does (lowercase, no spaces, underscores or
-      // hyphens) and correct them here; nothing else needs to change.
+      // CHECKED AGAINST THE SCENE. Synesthesia 1.25.4,
+      // Contents/Resources/release/cloudten.synScene. Two corrections:
       //
-      // white.mp4, not black: the scene reads its media, and after a cue
-      // that loaded black.mp4 it came up black. There is no "no media"
-      // message (see the note on `media` above), so the cue sends the one
-      // that leaves the sky alone - two seconds of white, made the same
-      // way as black.mp4; see readme.md.
+      //   height -> manual_height. `height` is not a control; the scene
+      //   calls it manual_height, and auto_height 0 is what hands it over,
+      //   which the cue already had right. `speed` and `auto_height` were
+      //   correct as written. (The scene's other controls, unused here:
+      //   flip_side, horizontal_motion, sun_position, city_fps.)
+      //
+      //   black.mp4 -> white.mp4. THIS IS WHY THE CUE CAME UP BLACK. The
+      //   scene's last pass ends with
+      //
+      //     if(_isMediaActive()){ mask = _loadMediaAsMask().r; }
+      //     col *= mask;
+      //
+      //   It does not tint by its media the way the flame and the tunnel do
+      //   - it MULTIPLIES by it. Black media is a mask of zero, so the two
+      //   seconds of nothing that mean "no media" everywhere else in this
+      //   table erase this scene completely. White media is a mask of one,
+      //   which is the same "ignore it" in the only language this scene
+      //   understands. Made the same way as black.mp4; see readme.md.
+      //
+      //   Note this cannot be fixed by leaving media out: with no entry the
+      //   cue inherits the last one's clip, and any clip that is not white
+      //   masks this scene by its own luminance. It needs white named.
       "scene": "Cloud Ten",
       "media": "white.mp4",
       "layers": { "flash": "off", "uv": "off" },
-      "controls": { "auto_height": 0, "height": 0.45, "speed": 0.25 },
+      "controls": { "auto_height": 0, "manual_height": 0.45, "speed": 0.25 },
       "pads": [
-        { "label": "fly low",  "params": { "height": 0.15 }, "controls": { "height": 0.15 }, "ramp": 2.0 },
-        { "label": "fly high", "params": { "height": 0.85 }, "controls": { "height": 0.85 }, "ramp": 2.0 },
+        { "label": "fly low",  "params": { "height": 0.15 }, "controls": { "manual_height": 0.15 }, "ramp": 2.0 },
+        { "label": "fly high", "params": { "height": 0.85 }, "controls": { "manual_height": 0.85 }, "ramp": 2.0 },
         { "label": "slower",   "params": { "speed": 0.08 },  "controls": { "speed": 0.08 },  "ramp": 2.0 },
         { "label": "faster",   "params": { "speed": 0.70 },  "controls": { "speed": 0.70 },  "ramp": 2.0 }
       ]

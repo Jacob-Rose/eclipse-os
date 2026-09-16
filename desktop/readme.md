@@ -1407,7 +1407,7 @@ audio bus.
 | cue | the rig | the room |
 | --- | --- | --- |
 | 1 `neuron` | cyan into deep blue noise, drifting — the scene's own two colours, hue 170 to 232 | scene *Neuron Proximitors* |
-| 2 `geode` | red, riding the mid presence, never below 0.2 | *Voronoi Geode*; the flash layer on |
+| 2 `geode` | red, riding the mid presence, never below 0.2; mode 2 takes the whole look blue, crystals included | *Eclipse Voronoi*; the probe sends the crystal colour, so the scene turns with the truss instead of staying red behind it; the flash layer on |
 | 3 `rain` | matrix rain, every drop its own colour; the truss read as a row through it | *VideoFX_1* on `black.mp4`, the video a mode away; the UV breathing through a hue wheel |
 | 4 `fire` | fire 2012; the truss read as a row through the flames | *Dynamical Flame* + `black.mp4` |
 | 5 `glitch` | the rig re-dealt to a new colour on every beat — the scene re-deals its background on the same one | *Glitch* + `alien-message.mp4` |
@@ -1419,7 +1419,7 @@ audio bus.
 | 11 `scaffold` | mostly dark: a cyan glint where a slow field peaks on a near-black ground, red-orange in patches that open with the mids | *Scaffold Fractal*; the flash layer on — the strong white is its |
 | 12 `churn` | the neuron's field in the churn's two colours — red into blue — busier, and pushed by the level the way the paint is; three palettes and a rainbow on the mode pads | *Eclipse Churn* + `black.mp4`; the probe sends colour A, the cue table colour B |
 | 13 `nova` | galaxies on a wash over a dark ground, the galaxies swelling with the bass presence — cyan on yellow over dark blue, by hand; three palettes and a rainbow | *Eclipse Nova*, `auto_second` off; the probe sends the galaxy colour, the cue table the wash |
-| 14 `clouds` | a sunset down the stage — yellow overhead into pink at the horizon — over a cloud deck in shadow, streaming past on a loop that has no seam; `height` and `speed` glide to where four pads put them, and a mode change leaves them be | *Cloud Ten* (the scene and its control names are unverified — see the cue) + `white.mp4` — the scene reads its media, and black left it black — with its auto height off; the same four pads ramp its height and speed |
+| 14 `clouds` | a sunset down the stage — yellow overhead into pink at the horizon — over a cloud deck in shadow, streaming past on a loop that has no seam; `height` and `speed` glide to where four pads put them, and a mode change leaves them be | *Cloud Ten* + `white.mp4`, with its auto height off; the same four pads ramp its `manual_height` and `speed`. Checked against the scene — white, not black, because this one multiplies by its media rather than tinting with it |
 | 15 `white` | the house lights: white at half | both layers off |
 | 16 `blackout` | everything off | both layers off |
 
@@ -1504,19 +1504,50 @@ folder the app watches:
 
 ```sh
 ffmpeg -f lavfi -i color=c=black:s=64x64:r=30:d=2 -c:v libx264 -pix_fmt yuv420p black.mp4
-ffmpeg -f lavfi -i color=c=white:s=64x64:r=30:d=2 -c:v libx264 -pix_fmt yuv420p white.mp4
 ```
 
-`white.mp4` is the same thing for the clouds: Cloud Ten reads its media too,
-and after a cue that loaded `black.mp4` it came up black, so the cue sends
-the one that leaves the sky alone.
+###### black is not always "nothing" — check which way the scene reads it
+
+`black.mp4` means "no media" only to a scene that **adds** or **mixes** its
+media in. To a scene that **multiplies** by it, black means *erase the
+picture*, and the cue comes up dead black with nothing in the logs to say why.
+
+Cloud Ten is the one in this set. Its last pass ends:
+
+```glsl
+if(_isMediaActive()){ mask = _loadMediaAsMask().r; }
+col *= mask;
+```
+
+So the clouds cue names **`white.mp4`** instead — a mask of one, which is the
+same "ignore it" in the only language that scene understands. Made the same
+way, at the render's aspect rather than square, because
+`_loadMediaAsMask` returns `vec4(0.0)` for any pixel whose corrected UV falls
+outside 0..1 — a square clip letterboxed on a 16:9 frame would mask the sides
+to black:
+
+```sh
+ffmpeg -f lavfi -i color=c=white:s=128x72:r=30:d=2 -c:v libx264 -pix_fmt yuv420p white.mp4
+```
+
+Leaving media out of such a cue does not work either: with no entry it
+inherits the last cue's clip, and any clip that is not white masks the scene
+by its own luminance. It has to be named.
+
+Worth grepping a new scene for before it goes in the table — `_loadMedia`,
+`_textureMedia` and `_loadMediaAsMask` are three different contracts:
+
+| the scene does | with `black.mp4` | give it |
+|---|---|---|
+| `col += media` / `mix(col, media, k)` | nothing, as intended | `black.mp4` |
+| `col *= _loadMediaAsMask()` | **the whole scene goes black** | `white.mp4` |
+| `col = media` (media replaces a texture) | **that surface goes black** | neither — a control that ignores media, as `media_texture` does in Eclipse Voronoi |
 
 ##### what the shaders actually do
 
 Read from the scenes themselves, because a look can only match a colour the
-scene holds. Five hold one: Neuron lerps two hard-coded blues and its hue
-rotation is commented out; Voronoi Geode is a fixed red texture with its
-rotation commented out too; Dynamical Flame is red into amber at palette 0
+scene holds. Four hold one: Neuron lerps two hard-coded blues and its hue
+rotation is commented out; Dynamical Flame is red into amber at palette 0
 (the slider has three others — pin it if anyone touches it); Fire Tunnel is a
 black-body ramp that at its defaults washes to a mauve haze; Filter Blown v2
 is ten fixed cosine palettes and its default runs black, magenta, pale pink,
@@ -1527,10 +1558,17 @@ mode off. Two do not hold: Glitch steps between four stock photos on every
 `syn_OnBeat`, and Milk, Honey is a feedback sim that cycles its channels every
 frame. For those the beat is the match, not the colour.
 
-The two eclipse scenes are the other way round: they hold no colour of
+Voronoi Geode was a fifth — a fixed red stone with its hue rotation
+commented out, which is what the `geode` cue used to match by hand. It is no
+longer in this list because the cue no longer runs it: see Eclipse Voronoi
+below.
+
+The three eclipse scenes are the other way round: they hold no colour of
 their own and take it from the rig. Eclipse Churn paints Churning in
 `rig_color` and `rig_color_2`; Eclipse Nova paints its galaxies `rig_color`
-and its wash `rig_color_2`. The first is the probe's, live — and for those
+and its wash `rig_color_2`; Eclipse Voronoi paints the geode's crystals
+`rig_color` and needs no second colour from the table at all — it derives one
+as the complement. The first is the probe's, live — and for those
 cues the probe is no longer a point of the field but **the palette's first
 colour outright**: the `synesthesia` device declares `"space": "probe"`, and
 a look with a palette (the washes, the nova) paints that node its colour A,

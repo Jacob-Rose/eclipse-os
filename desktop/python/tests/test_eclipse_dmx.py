@@ -840,11 +840,21 @@ class TheScenes(unittest.TestCase):
     def test_every_control_is_read_by_the_shader(self):
         # A control that nothing reads is a knob that does nothing, which on a
         # desk mid-set is indistinguishable from a broken one.
+        #
+        # "Nothing reads it" means neither half of the scene. A scene may carry
+        # a script.js, which the app runs once a frame with every control on
+        # `inputs` and which writes back through `uniforms` - Eclipse Voronoi's
+        # `speed_motion` is read only there, integrated into the `script_time`
+        # the shader spins the crystals by. Checking main.glsl alone would call
+        # that knob dead when it is the one driving the scene's clock.
         for scene in self.SCENES:
             with self.subTest(scene=scene.name):
-                shader = (scene / "main.glsl").read_text(encoding="utf-8")
+                read_by = (scene / "main.glsl").read_text(encoding="utf-8")
+                script = scene / "script.js"
+                if script.is_file():
+                    read_by += script.read_text(encoding="utf-8")
                 for control in self.manifest(scene)["CONTROLS"]:
-                    self.assertIn(control["NAME"], shader, control["NAME"])
+                    self.assertIn(control["NAME"], read_by, control["NAME"])
 
     def test_every_control_says_what_it_does(self):
         for scene in self.SCENES:
@@ -3347,8 +3357,10 @@ class TheShowCues(unittest.TestCase):
         self.assertEqual(clouds.controls["auto_height"], 0.0)
         entries = cue_pad_actions(self.config, "clouds", 1)
         self.assertEqual([e["action"] for e in entries], ["param", "syn_control"])
+        # the look's knob is `height`; the scene's is `manual_height`, its
+        # own name for the same thing, folded the way the app addresses it
         self.assertEqual(entries[0]["params"], {"name": "height", "low": 0.85, "high": 0.85, "layer": ""})
-        self.assertEqual(entries[1]["params"], {"address": "/controls/scene/height",
+        self.assertEqual(entries[1]["params"], {"address": "/controls/scene/manualheight",
                                                 "low": 0.85, "high": 0.85, "ramp": 2.0})
         self.assertEqual(cue_pad_actions(self.config, "clouds", 9), [])
         self.assertEqual(cue_pad_actions(self.config, "neuron", 0), [])

@@ -376,12 +376,12 @@ cells each per turn of the clock, so the wrap is not seen (the loop is half
 a minute). And the mode pad restored `height` and `speed` with every other
 knob - a palette change flew the rig back to where the cue opened.
 `ShowModes::keepAcrossModes` takes a knob out of the snapshot; the clouds
-keep those two. And the cue sends `white.mp4`: the scene reads its media,
-and after a cue that loaded `black.mp4` it came up black. There is still no
-"no media" message (nor is there a way to clear one - the app's media panel
-has a `Lock` that carries media across scene changes, and nothing else), so
-the cue sends the one that leaves the sky alone, made the same way as
-black.mp4.
+keep those two. And the cue sends `white.mp4` - the other session read the
+scene and found why black killed it: Cloud Ten multiplies by its media as a
+mask, so black is zero and white is one. There is still no "no media"
+message (nor a way to clear one - the app's media panel has a `Lock` that
+carries media across scene changes, and nothing else), so white has to be
+named. See the readme on the three media contracts.
 
 **15 and 16 are written**: `white`, the house lights at half, and
 `blackout`. Plain flat looks (`Pattern_Mythos_House`) on the show base so
@@ -2220,7 +2220,8 @@ listing online.
 - **A cue cannot clear the visualiser's media.** Synesthesia has a message to
   select a media file and none to deselect one, so a cue with no `media`
   leaves the last one loaded, and whether it shows is the scene's business.
-  The clouds send `white.mp4` for the same reason the flame sends black.
+  The clouds send `white.mp4` because their scene multiplies by its media;
+  see the readme on which of the three media contracts a scene uses.
 - **MIDI out, and MIDI for anything but tempo and loudness** — no
   control-change mapping to patterns, no faders. `MidiInput::handleMessage` is
   where that starts.

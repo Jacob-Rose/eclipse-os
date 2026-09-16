@@ -16,6 +16,7 @@ lighting it — one look, two surfaces, neither side knowing about the other.
 | `eclipse_churn.synScene` | Synesthesia's bundled Churning (Victor S.), painted in two rig colours instead of its own rainbow. First test of taking a shipped feedback scene and recolouring its readout. |
 | `eclipse_nova.synScene` | Synesthesia's bundled Nova (Felix Woitzel), its four random colour regimes replaced by a palette derived from the rig's colour — the galaxies are `rig_color`, the other five roles follow by one rule. Its readme explains why the rig drives the shader and not the reverse. |
 | `eclipse_crt.synScene` | A CRT styliser. Your media — with text baked into it — run through Timothy Lottes' Retro Video Monitor in arcade slot-mask mode: scanlines, a slot mask and tube warp. Warp, spot size and brightness are live controls. |
+| `eclipse_voronoi.synScene` | Synesthesia's bundled Voronoi Geode (Shane), its fiery blackbody ramp re-stopped on the rig's colour and the agate photographs kept as marbling but stripped of their own hue. Its readme explains why a scene whose palette is a ramp over one grey value is the easiest kind to recolour — and what a hue-driven original gives up to become colour-driven. |
 
 They are in that order on purpose: each one adds exactly what the one above it
 left out, so a scene that fails tells you which addition broke it. Minimal has

@@ -141,7 +141,7 @@ mode 2 - dusk: pink (330) overhead into violet (285 / 0.75 / 0.80), the deck dar
 mode 3 - golden hour: orange-yellow (42) overhead into orange (18) at the horizon, the deck warm (25 / 0.70 / 0.14), more glow on the tops
 uv - off
 synesthesia - Cloud Ten (CHECK: the scene name and its height / speed / auto_height control names are a guess from the spec; the scene is not in the checkout. fix them in the cue table.)
-media - white.mp4 (the scene reads its media; black.mp4 left it black, and there is no "no media" message. two seconds of white, made like black.mp4 - see the readme.)
+media - white.mp4. the scene multiplies by its media (col *= _loadMediaAsMask().r), so black.mp4 erased it; white is a mask of one. there is no "no media" message. made at 128x72 - see the readme.
 mode pad - a palette change leaves height and speed where the pads put them.
 
 15. white - idle post show
