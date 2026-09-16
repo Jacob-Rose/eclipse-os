@@ -5874,8 +5874,10 @@ class ScannerKnobs(ShowTest):
         # The knobs are announced before the cue has finished blending in, so
         # the flat green has to be waited for rather than assumed - and only
         # then is the span worth measuring. "Steady" is a claim about a span,
-        # so that part still has to watch one.
-        self.settle_until(lambda: frames and frames[-1][0][1] > 200,
+        # so that part still has to watch one. Waited for at *full*: at 200
+        # the crossfade still had its last stretch to climb, and the span
+        # measured was the blend's tail (238 up to 255), not the breath.
+        self.settle_until(lambda: frames and frames[-1][0][1] >= 254,
                           timeout=6.0, message="the cue to blend up to full green")
         frames.clear()
         self.settle(0.8)
