@@ -469,6 +469,14 @@ namespace edmx
         float speed{1.0f};
         float scale{1.0f};
 
+        /// How hard a patch picks a side, 0..1. The field spends most of
+        /// its time near the middle, and in RGB the middle of red and blue
+        /// is purple - so the churn was mostly purple with the pair at its
+        /// edges. This curves the mix toward the ends: at 0 it is the field
+        /// as it is, at 1 a patch that leans is that colour outright with a
+        /// narrow blend between. Never a cut; the blend is still there.
+        float contrast{0.0f};
+
         /// The dimmest the field goes, 0..1: the wash is a backdrop and a
         /// backdrop that blacks out in patches reads as fixtures failing.
         float floorLevel{0.25f};

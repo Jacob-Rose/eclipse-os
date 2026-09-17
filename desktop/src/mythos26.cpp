@@ -470,7 +470,17 @@ void Pattern_Mythos_NoiseWash::render(eio::HSVStripNode* node, ecore::HSV& inOut
     // intensity is the field's depth: at 0 the wash sits flat at the middle
     // of its range, at 1 it runs the whole way from one colour to the other
     const float depth = std::clamp(intensity, 0.0f, 1.0f);
-    const float mix = 0.5f + (n - 0.5f) * depth;
+    float mix = 0.5f + (n - 0.5f) * depth;
+
+    // contrast: the mix pushed toward whichever side it leans, by a power
+    // under one on its distance from the middle - a curve, not a step, so
+    // the two colours still meet, in a narrower band the harder it is set
+    const float pick = std::clamp(contrast, 0.0f, 1.0f);
+    if (pick > 0.0f)
+    {
+        const float x = mix * 2.0f - 1.0f;
+        mix = 0.5f + 0.5f * std::copysign(std::pow(std::fabs(x), 1.0f - 0.85f * pick), x);
+    }
 
     // The brightness is the colours' own - a pair of a bright cyan and a
     // deep blue is bright where it is cyan and deep where it is blue, which
@@ -491,6 +501,7 @@ void Pattern_Mythos_NoiseWash::reflect(ecore::PropertyBag& bag)
     Pattern_MythosLook::reflect(bag);
     bag.add("speed", speed, 0.1f, 4.0f);
     bag.add("scale", scale, 0.3f, 3.0f);
+    bag.add("contrast", contrast, 0.0f, 1.0f);
     bag.add("floor", floorLevel, 0.0f, 1.0f);
     bag.add("follow", follow, 0.0f, 1.0f);
     bag.add("gain", gain, 0.0f, 4.0f);
@@ -1941,7 +1952,10 @@ std::unique_ptr<StateMachinePattern> edmx::makeMythos26StateMachine()
         }),
         // 12. the churn: Eclipse Churn is Churning painted in two rig
         //     colours, so this is the field in the same two, busier than
-        //     the neuron and pushed by the level the way the paint is. Four
+        //     the neuron and pushed by the level the way the paint is - and
+        //     with the field's contrast up, so a patch is red or blue far
+        //     more often than the purple between them: the scene's paint
+        //     is hard-edged and the rig was mostly the mix. Four
         //     modes, a pad each: three palettes and a rainbow. 1 is the
         //     scene's own pair, red and blue; 2 magenta and cyan; 3 orange
         //     and violet; 4 the red-and-blue pair turned through the wheel,
@@ -1955,6 +1969,7 @@ std::unique_ptr<StateMachinePattern> edmx::makeMythos26StateMachine()
             look.floorLevel = 0.35f;
             look.speed = 1.6f;
             look.scale = 0.8f;
+            look.contrast = 0.7f;
         }, {
             [](NoiseWash& look) { look.colorA = HSV(300.0f, 0.90f, 1.00f); look.colorB = HSV(185.0f, 0.95f, 0.90f); },
             [](NoiseWash& look) { look.colorA = HSV(28.0f, 0.95f, 1.00f);  look.colorB = HSV(268.0f, 0.90f, 0.80f); },

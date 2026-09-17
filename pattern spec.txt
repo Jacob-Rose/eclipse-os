@@ -110,7 +110,7 @@ synesthesia - Scaffold Fractal
 media - none
 
 12. e-churn
-pattern - the noise field in the churn's two colours, busier than neuron (speed 1.6, scale 0.8), pushed by the level like the paint is (follow 0.6, floor 0.35).
+pattern - the noise field in the churn's two colours, busier than neuron (speed 1.6, scale 0.8), pushed by the level like the paint is (follow 0.6, floor 0.35). contrast 0.7: the mix curved toward whichever colour a patch leans, so it is red or blue far more often than the purple between - still a blend, in a narrower band.
 three colour palette buttons and one that cycles rainbow colors, matched across synesthesia and eclipse-os: colour A is the probe, colour B is sent to the scene per palette.
 mode 1 - red (0 / 0.95 / 1.00) and blue (237 / 0.95 / 0.85) - the scene's own pair. scene rig_color_2 = rgb 0.05 0.10 1.00
 mode 2 - magenta (300 / 0.90 / 1.00) and cyan (185 / 0.95 / 0.90). scene rig_color_2 = rgb 0.05 0.85 0.90
