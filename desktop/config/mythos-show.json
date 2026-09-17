@@ -223,16 +223,14 @@
       // this cue - which names no media, and so inherits the last cue's clip -
       // cannot get the rain's video cut into its crystals.
       //
-      // 2 is the geode gone blue - a grained blue field with its own paler
-      // blue landing on the kick - and the white flash layer is off for it,
-      // so the blue is the only flash. 3 is the red with blue on the kick.
+      // No flash to open on: the red is the meter, and a white over it on
+      // the beat was the cue coming up strobing. The flash pad is there. 2
+      // is the geode gone blue - a grained blue field with its own paler
+      // blue landing on the kick; 3 is the red with blue on the kick.
       "scene": "Eclipse Voronoi",
-      "layers": { "flash": "flash", "uv": "off" },
+      "layers": { "flash": "off", "uv": "off" },
       "controls": { "rig_amount": 1, "texture_color": 0, "media_texture": 0,
-                    "color_by_hand": 0, "auto_second": 1 },
-      "modes": {
-        "2": { "layers": { "flash": "off" } }
-      }
+                    "color_by_hand": 0, "auto_second": 1 }
     },
     "rain": {
       // Opens on black - the app's only "no media", see the note above - and

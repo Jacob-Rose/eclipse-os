@@ -74,7 +74,7 @@
           "action": "layer",
           "params": {
             "layer": "flash",
-            "name": "flash"
+            "name": "off"
           }
         },
         {

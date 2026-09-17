@@ -23,8 +23,8 @@ media - none
 pattern - one parameter reacts to the music, with optional bpm flash on midi.
 param - (mixxx vu instant, note 64 - the meter that peaks on every kick, the cable's bass; "Enable VU mono current" in the mapping's settings) -> red background layer (clamp to 0.2 alpha lowest)
 palette - red (0 / 1.00 / 1.00) riding mixxx's vu, floor 0.2
-additional layer - bpm matched flash with curve and bpm trigger system, ability to set color. flash layer on, white.
-mode 2 - the scene shifts to blue sometimes, so this goes blue: blue (228 / 1.00 / 1.00) on the same vu, floor 0.3, grained (texture 0.7), a paler blue (200 / 0.55 / 1.00) landing on the kick, white flash off
+additional layer - bpm matched flash with curve and bpm trigger system, ability to set color. flash layer off by default; the pad is there.
+mode 2 - the scene shifts to blue sometimes, so this goes blue: blue (228 / 1.00 / 1.00) on the same vu, floor 0.3, grained (texture 0.7), a paler blue (200 / 0.55 / 1.00) landing on the kick
 mode 3 - red with blue (225 / 1.00 / 1.00) on the kick
 uv - off
 synesthesia - Voronoi Geode

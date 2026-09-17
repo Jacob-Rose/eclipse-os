@@ -1416,7 +1416,7 @@ audio bus.
 | cue | the rig | the room |
 | --- | --- | --- |
 | 1 `neuron` | cyan into deep blue noise, drifting — the scene's own two colours, hue 170 to 232 | scene *Neuron Proximitors* |
-| 2 `geode` | red, riding Mixxx's instant VU — the cable's own bass, on the bus whatever else fills it — never below 0.2; mode 2 takes the whole look blue, crystals included | *Eclipse Voronoi*; the probe sends the crystal colour, so the scene turns with the truss instead of staying red behind it; the flash layer on |
+| 2 `geode` | red, riding Mixxx's instant VU — the cable's own bass, on the bus whatever else fills it — never below 0.2; mode 2 takes the whole look blue, crystals included | *Eclipse Voronoi*; the probe sends the crystal colour, so the scene turns with the truss instead of staying red behind it; the flash layer off — the meter is the beat |
 | 3 `rain` | matrix rain, every drop its own colour; the truss read as a row through it | *VideoFX_1* on `black.mp4`, the video a mode away; the UV breathing through a hue wheel |
 | 4 `fire` | fire 2012; the truss read as a row through the flames | *Dynamical Flame* + `black.mp4` |
 | 5 `glitch` | the rig re-dealt to a new colour on every beat — the scene re-deals its background on the same one | *Glitch* + `alien-message.mp4` |

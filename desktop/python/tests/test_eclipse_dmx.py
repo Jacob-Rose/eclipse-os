@@ -3225,7 +3225,9 @@ class TheShowCues(unittest.TestCase):
 
     def test_the_spec_cues_ask_for_what_the_spec_says(self):
         cues = self.config.cues
-        self.assertEqual(cues["geode"].layers["flash"], "flash")
+        # the geode's red is the meter; a white over it on the beat was the
+        # cue coming up strobing
+        self.assertEqual(cues["geode"].layers["flash"], "off")
         self.assertEqual(cues["tunnel"].layers["flash"], "off")
         self.assertEqual(cues["rain"].layers["uv"], "rainbow")
         self.assertEqual(cues["blown"].layers["uv"], "kick")
@@ -3433,14 +3435,18 @@ class TheShowCues(unittest.TestCase):
 
     def test_mode_one_puts_back_what_the_other_modes_took(self):
         """Mode 1 has no entry - it is the cue - and still has to undo 2:
-        the rain's video comes back, the geode's flash comes back on. Only
-        the fields a mode touches are re-sent, because a scene re-sent
-        restarts."""
+        the rain's video comes back, and on a cue whose mode 2 takes the
+        flash off, the flash comes back on. Only the fields a mode touches
+        are re-sent, because a scene re-sent restarts. No cue in the show
+        moves a layer by mode today, so the geode is given one here."""
         entries = cue_mode_actions(self.config, "rain", 1)
         self.assertEqual([e["action"] for e in entries], ["param", "syn_media"])
         self.assertEqual(entries[1]["params"], {"name": "black.mp4"})
         self.assertNotIn("syn_scene", [e["action"] for e in entries])
 
+        geode = self.config.cues["geode"]
+        geode.layers["flash"] = "flash"
+        geode.modes[2] = Cue(layers={"flash": "off"})
         entries = cue_mode_actions(self.config, "geode", 2)
         self.assertEqual(entries[1], {"action": "layer",
                                       "params": {"layer": "flash", "name": "off"}})
@@ -3479,7 +3485,7 @@ class TheShowCues(unittest.TestCase):
             Cue.from_dict("rain", {"modes": {"2": {"layers": {"strobe": "on"}}}}, ["flash"])
 
     def test_a_mode_putting_a_layer_where_it_cannot_go_is_rejected(self):
-        self.config.cues["geode"].modes[2].layers["flash"] = "rainbow"
+        self.config.cues["rain"].modes[2].layers["flash"] = "rainbow"
         with self.assertRaises(ConfigError):
             self.config.validate(strict_overlap=False)
 
@@ -3679,9 +3685,13 @@ class TheModeAction(unittest.TestCase):
         self.assertEqual(rig.set[-1], ("mode", 2))
 
     def test_it_fires_the_cue_tables_half_off_the_running_cue(self):
-        """The geode's blue takes the white flash layer with it, and mode 1
+        """A cue whose mode 2 takes the white flash layer off, and mode 1
         brings it back - read off the config at press time, because the
-        pad cannot know which cue is up when the map is written."""
+        pad cannot know which cue is up when the map is written. No cue in
+        the show moves a layer by mode today, so the geode is given one."""
+        geode = self.config.cues["geode"]
+        geode.layers["flash"] = "flash"
+        geode.modes[2] = Cue(layers={"flash": "off"})
         flash = _FakeLayer("flash")
         rig = _FakeModedRig("geode", mode=1.0, flash=flash)
         spec = midi_map.ACTIONS["mode"]
@@ -5287,11 +5297,13 @@ class ViewerOnTheCues(GuiTest):
                           message="the UV on the kick, as blown's cue says")
         self.assertEqual(self.app.show.layers["flash"].current_state, "off")
 
-        self.app._run_button(("state", "geode"))
+        self.app.show.layers["flash"].set_state("flash")
         self.settle_until(lambda: self.app.show.layers["flash"].current_state == "flash",
-                          message="the flash on, as geode's cue says")
-        self.assertEqual(self.app.show.layers["uv"].current_state, "off",
-                         "geode's cue puts the UV back")
+                          message="the flash on by hand")
+        self.app._run_button(("state", "geode"))
+        self.settle_until(lambda: self.app.show.layers["uv"].current_state == "off"
+                          and self.app.show.layers["flash"].current_state == "off",
+                          message="geode's cue puts both layers back")
 
     def test_a_cue_button_records_the_scene_it_asked_for(self):
         """The visualiser half goes out over OSC to whatever is listening;
@@ -6261,8 +6273,9 @@ class TheHeadlessPads(unittest.TestCase):
         finally:
             pads.close()
         self.assertIn("state geode", rig.log)
-        # once, from the cue - not from Mixxx's 52 as well
-        self.assertEqual(rig.layers["flash"].moved, ["flash"])
+        # once, from the cue (which puts the flash off) - not from Mixxx's
+        # 52 as well, which would have pressed the flash pad
+        self.assertEqual(rig.layers["flash"].moved, ["off"])
         self.assertIn(("scene", "Eclipse Voronoi", None), link.calls)
 
     def test_a_missing_map_is_a_desk_with_no_pads_not_a_refusal(self):

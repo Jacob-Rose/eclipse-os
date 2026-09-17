@@ -1797,12 +1797,11 @@ std::unique_ptr<StateMachinePattern> edmx::makeMythos26StateMachine()
             [](NoiseWash& look) { look.speed = 2.5f;  look.scale = 0.7f; },
         }),
         // 2. red, riding Mixxx's instant VU - the meter that peaks on
-        //    every kick, the cable's own bass - never below a fifth; the
-        //    flash layer is the cue's other half. The geode shifts to blue,
-        //    so 2 is blue: a grained blue field on the same meter with a
-        //    paler blue landing on the kick, the white flash layer off (the
-        //    cue table does that). 3 keeps the red and lands blue on the
-        //    kick instead.
+        //    every kick, the cable's own bass - never below a fifth, and no
+        //    flash over it: the meter is the beat. The geode shifts to
+        //    blue, so 2 is blue: a grained blue field on the same meter
+        //    with a paler blue landing on the kick. 3 keeps the red and
+        //    lands blue on the kick instead.
         showLook<BusWash>("geode", [](BusWash& look) {
             look.color = HSV(0.0f, 1.0f, 1.0f);
             look.channel = AudioChannel::LevelInstant;
