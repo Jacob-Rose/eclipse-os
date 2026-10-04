@@ -417,6 +417,15 @@ void Pattern_Mythos_NoiseWash::init()
     bus = &sharedAudioLevel();
     level = 0.0f;
     hueOffset = 0.0f;
+    fieldTime = 0.0f;
+    kickLevel = 0.0f;
+}
+
+void Pattern_Mythos_NoiseWash::reset()
+{
+    Pattern_MythosLook::reset();
+    fieldTime = 0.0f;
+    kickLevel = 0.0f;
 }
 
 ecore::HSV Pattern_Mythos_NoiseWash::turned(const ecore::HSV& color) const
@@ -430,7 +439,8 @@ void Pattern_Mythos_NoiseWash::tick(float deltaTime)
     // the wheel turns whether or not anything follows the bus - it is the
     // palette, not the level
     hueOffset = hueCycle > 0.0f ? frac(hueOffset + deltaTime * hueCycle) : 0.0f;
-    if (follow <= 0.0f)
+    fieldTime += std::max(deltaTime, 0.0f) * (1.0f + std::max(push, 0.0f) * level);
+    if (follow <= 0.0f && push <= 0.0f && kick <= 0.0f)
     {
         return;     // nothing reads the bus; leave the level where it was
     }
@@ -440,7 +450,8 @@ void Pattern_Mythos_NoiseWash::tick(float deltaTime)
     }
 
     // the same slewed read the bus wash does, so the two breathe alike
-    const float target = std::clamp(bus->get(channel, nowSeconds()) * gain, 0.0f, 1.0f);
+    const double now = nowSeconds();
+    const float target = std::clamp(bus->get(channel, now) * gain, 0.0f, 1.0f);
     if (slew <= 0.0f || deltaTime <= 0.0f)
     {
         level = target;
@@ -448,6 +459,20 @@ void Pattern_Mythos_NoiseWash::tick(float deltaTime)
     else
     {
         level += (target - level) * (1.0f - std::exp(-deltaTime / slew));
+    }
+
+    // the kick: up at once, down over kick_decay - the bus wash's follower
+    if (kick > 0.0f)
+    {
+        const float hitNow = std::clamp(bus->get(AudioChannel::BassHits, now), 0.0f, 1.0f);
+        if (hitNow >= kickLevel || kickDecay <= 0.0f || deltaTime <= 0.0f)
+        {
+            kickLevel = hitNow;
+        }
+        else
+        {
+            kickLevel += (hitNow - kickLevel) * (1.0f - std::exp(-deltaTime / kickDecay));
+        }
     }
 }
 
@@ -466,7 +491,7 @@ void Pattern_Mythos_NoiseWash::render(eio::HSVStripNode* node, ecore::HSV& inOut
     }
 
     const Coordinate at = nodeCoord(node);
-    const float t = timeActive * 0.10f * speed;
+    const float t = fieldTime * 0.10f * speed;
     const float s = scale;
 
     // two octaves drifting against each other, so patches form and dissolve
@@ -502,7 +527,9 @@ void Pattern_Mythos_NoiseWash::render(eio::HSVStripNode* node, ecore::HSV& inOut
     const float floorValue = std::clamp(floorLevel, 0.0f, 1.0f);
     const float ride = 1.0f - std::clamp(follow, 0.0f, 1.0f) * (1.0f - level);
     inOutColor = blendRgb(a, b, mix);
-    inOutColor.setBrightnessAlpha(floorValue + (1.0f - floorValue) * inOutColor.getValFloat() * ride);
+    const float value = floorValue + (1.0f - floorValue) * inOutColor.getValFloat() * ride;
+    const float punch = std::clamp(kick * kickLevel * depth, 0.0f, 1.0f);
+    inOutColor.setBrightnessAlpha(value + (1.0f - value) * punch);
 }
 
 void Pattern_Mythos_NoiseWash::reflect(ecore::PropertyBag& bag)
@@ -518,6 +545,9 @@ void Pattern_Mythos_NoiseWash::reflect(ecore::PropertyBag& bag)
     bag.add("color_a", colorA);
     bag.add("color_b", colorB);
     bag.add("hue_cycle", hueCycle, 0.0f, 1.0f);
+    bag.add("push", push, 0.0f, 3.0f);
+    bag.add("kick", kick, 0.0f, 1.0f);
+    bag.add("kick_decay", kickDecay, 0.05f, 1.0f);
 }
 
 // ============================================================================
@@ -603,10 +633,30 @@ void Pattern_Mythos_BusWash::render(eio::HSVStripNode* node, ecore::HSV& inOutCo
                      * std::clamp(kick / 0.25f, 0.0f, 1.0f);
     const float pop = std::clamp(kick * 1.5f, 0.0f, 1.0f);
     const float shape = std::clamp(afterglow, 0.0f, 1.0f);
-    const float share = lerp(kick, glow, shape);
+    float share = lerp(kick, glow, shape);
     const float lift = lerp(kick, std::max(pop, glow * 0.85f), shape);
 
-    inOutColor = blendRgb(color, hitColor, share);
+    ecore::HSV base = color;
+    if (blend > 0.0f || accent < 1.0f)
+    {
+        const Coordinate at = nodeCoord(node);
+        const float t = timeActive * 0.15f;
+        if (blend > 0.0f)
+        {
+            const float drift = scanner::valueNoise(at.x * 0.25f + t, at.y * 0.12f - t * 0.6f);
+            base = blendHsv(color, color2, std::clamp(blend, 0.0f, 1.0f) * drift);
+        }
+        if (accent < 1.0f)
+        {
+            // a different field from the pinks', so the green does not
+            // always land on the rose
+            const float patch = scanner::valueNoise(at.x * 0.3f - t * 0.8f + 17.0f, at.y * 0.2f + t);
+            const float line = 1.0f - std::clamp(accent, 0.0f, 1.0f);
+            share *= std::clamp((patch - line) / 0.12f + 0.5f, 0.0f, 1.0f);
+        }
+    }
+
+    inOutColor = blendRgb(base, hitColor, share);
     // the hit lifts the level as well as recolouring it: green landing on a
     // purple wash sitting at its floor should be a flash, not a tint
     inOutColor.setBrightnessAlpha(inOutColor.getValFloat() * std::max(wash, lift));
@@ -625,6 +675,9 @@ void Pattern_Mythos_BusWash::reflect(ecore::PropertyBag& bag)
     bag.add("hit_color", hitColor);
     bag.add("afterglow", afterglow, 0.0f, 1.0f);
     bag.add("truss_hit", trussHit, 0.0f, 1.0f);
+    bag.add("color_2", color2);
+    bag.add("blend", blend, 0.0f, 1.0f);
+    bag.add("accent", accent, 0.0f, 1.0f);
 }
 
 // ============================================================================
@@ -2125,8 +2178,11 @@ std::unique_ptr<StateMachinePattern> edmx::makeMythos26StateMachine()
         //    Blown v2's palette runs in: black through magenta (hue 321) to
         //    green (hue 119) at full motion. The kick at a little over half,
         //    falling slower, and a third of that on the pars - at full it
-        //    was a strobe, and on the truss worst. 2 lifts the base; 3 is
-        //    the old cue, dark until the pop.
+        //    was a strobe, and on the truss worst. The base drifts between
+        //    hot pink and a paler rose, and the green lands in patches over
+        //    a third of the rig - the accent, not the rig's second colour;
+        //    elsewhere the kick is the pink pop alone. 2 lifts the base; 3
+        //    is the old cue, dark until the pop.
         showLook<BusWash>("blown", [](BusWash& look) {
             look.color = HSV(321.0f, 0.95f, 1.0f);
             look.channel = AudioChannel::MidPresence;
@@ -2137,6 +2193,9 @@ std::unique_ptr<StateMachinePattern> edmx::makeMythos26StateMachine()
             look.hitDecay = 0.6f;
             look.afterglow = 1.0f;
             look.trussHit = 0.35f;
+            look.color2 = HSV(338.0f, 0.65f, 1.0f);
+            look.blend = 0.8f;
+            look.accent = 0.35f;
         }, {
             [](BusWash& look) { look.floorLevel = 0.85f; },
             [](BusWash& look) { look.floorLevel = 0.25f; },
@@ -2208,7 +2267,9 @@ std::unique_ptr<StateMachinePattern> edmx::makeMythos26StateMachine()
         //     the neuron and pushed by the level the way the paint is - and
         //     with the field's contrast up, so a patch is red or blue far
         //     more often than the purple between them: the scene's paint
-        //     is hard-edged and the rig was mostly the mix. Four
+        //     is hard-edged and the rig was mostly the mix. The level
+        //     speeds the field up as it pushes the scene's paint, and the
+        //     bass hits punch it toward full and let it fall. Four
         //     modes, a pad each: three palettes and a rainbow. 1 is the
         //     scene's own pair, red and blue; 2 magenta and cyan; 3 orange
         //     and violet; 4 the red-and-blue pair turned through the wheel,
@@ -2223,6 +2284,8 @@ std::unique_ptr<StateMachinePattern> edmx::makeMythos26StateMachine()
             look.speed = 1.6f;
             look.scale = 0.8f;
             look.contrast = 0.7f;
+            look.push = 1.5f;
+            look.kick = 0.45f;
         }, {
             [](NoiseWash& look) { look.colorA = HSV(300.0f, 0.90f, 1.00f); look.colorB = HSV(185.0f, 0.95f, 0.90f); },
             [](NoiseWash& look) { look.colorA = HSV(28.0f, 0.95f, 1.00f);  look.colorB = HSV(268.0f, 0.90f, 0.80f); },

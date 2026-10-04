@@ -494,14 +494,27 @@ namespace edmx
         float gain{1.0f};
         float slew{0.15f};
 
+        /// How much the channel speeds the field up: at 1 a full level runs
+        /// it twice as fast. The churn's paint is pushed harder the louder
+        /// the track, and a field drifting at one rate whatever the music
+        /// was the rig only dimming along with it.
+        float push{0.0f};
+
+        /// A lift toward full on the bass hits, 0..1, falling over
+        /// `kick_decay` - the punch the scene's paint takes on a kick.
+        float kick{0.0f};
+        float kickDecay{0.3f};
+
         void init();
 
+        virtual void reset() override;
         virtual void tick(float deltaTime) override;
         virtual void render(eio::HSVStripNode* node, ecore::HSV& inOutColor) const override;
         virtual void reflect(ecore::PropertyBag& bag) override;
 
         /// The channel's slewed level, 0..1, for tests.
         float getLevel() const { return level; }
+        float getKickLevel() const { return kickLevel; }
 
         /// The pair as the wheel has turned them, for tests.
         ecore::HSV colorANow() const { return turned(colorA); }
@@ -513,6 +526,8 @@ namespace edmx
         AudioLevel* bus{nullptr};
         float level{0.0f};
         float hueOffset{0.0f};
+        float fieldTime{0.0f};
+        float kickLevel{0.0f};
     };
 
 
@@ -585,6 +600,20 @@ namespace edmx
         /// The geode's blue mode, which wanted a small noise rather than a
         /// flat blue; 0 is a flat wash and the default.
         float texture{0.0f};
+
+        /// A second colour for the wash, drifting through it in slow
+        /// patches - `blend` 0..1 is how much of it the patches reach. Blown
+        /// is hot pink into a paler rose, so the base reads as the scene's
+        /// pinks rather than one flat one. 0 is the one colour.
+        ecore::HSV color2{0.0f, 1.0f, 1.0f};
+        float blend{0.0f};
+
+        /// How much of the rig the hit colour reaches, 0..1, in drifting
+        /// patches; the rest keeps the pop in the wash's own colour. Blown's
+        /// green glowed over the whole rig after every kick and the cue read
+        /// as green as often as pink - at a third it is the accent. 1 is
+        /// everywhere.
+        float accent{1.0f};
 
         void init();
 

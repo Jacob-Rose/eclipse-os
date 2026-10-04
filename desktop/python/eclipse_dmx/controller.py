@@ -668,6 +668,16 @@ class ShowController:
 
         self._ready = False
         self.offline_devices = []
+        # Its own process group, so a Ctrl-C at the terminal reaches this
+        # process and not the show. The way out speaks through the show - the
+        # Launchpad cleared and put back in Live mode, the dark frame - and
+        # with the show killed by the same keypress all of it went into a
+        # dead pipe, leaving the pads lit and the box in Programmer mode. It
+        # is not orphaned by this: it quits when its stdin closes.
+        if os.name == "nt":
+            detach = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
+        else:
+            detach = {"start_new_session": True}
         self._process = subprocess.Popen(
             self._build_args(),
             stdin=subprocess.PIPE,
@@ -675,6 +685,7 @@ class ShowController:
             stderr=subprocess.PIPE,
             text=True,
             bufsize=1,
+            **detach,
         )
 
         # A text pipe on Windows turns "\n" into "\r\n" on the way out. The

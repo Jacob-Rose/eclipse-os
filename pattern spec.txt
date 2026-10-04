@@ -67,6 +67,7 @@ media - black
 
 7. blown
 pattern - pink base throughout on presence, min 0.65 (was 0.3 and too dark until it popped). kick pops it to pink, green afterglow. (match shader aesthetic)
+more pinks, green the accent: the base drifts in slow patches between hot pink and a paler rose (338 / 0.65 / 1.00, blend 0.8); the green afterglow lands in patches over about a third of the rig (accent 0.35), the rest of the kick the pink pop alone.
 palette - pink (315 / 0.95 / 1.00) riding the mids, floor 0.65; the kick pops it to full pink then green (120 / 1.00 / 1.00) afterglow, decay 0.45
 mode 2 - brighter base (floor 0.85)
 mode 3 - the old cue, dark until the pop (floor 0.25)
@@ -114,6 +115,7 @@ media - none
 
 12. e-churn
 pattern - the noise field in the churn's two colours, busier than neuron (speed 1.6, scale 0.8), pushed by the level like the paint is (follow 0.6, floor 0.35). contrast 0.7: the mix curved toward whichever colour a patch leans, so it is red or blue far more often than the purple between - still a blend, in a narrower band.
+music - the level speeds the field up the way it pushes the scene's paint (push 1.5: a full level runs it two and a half times as fast), and the bass hits punch it toward full (kick 0.45), falling over 0.3s.
 three colour palette buttons and one that cycles rainbow colors, matched across synesthesia and eclipse-os: colour A is the probe, colour B is sent to the scene per palette.
 mode 1 - red (0 / 0.95 / 1.00) and blue (237 / 0.95 / 0.85) - the scene's own pair. scene rig_color_2 = rgb 0.05 0.10 1.00
 mode 2 - magenta (300 / 0.90 / 1.00) and cyan (185 / 0.95 / 0.90). scene rig_color_2 = rgb 0.05 0.85 0.90

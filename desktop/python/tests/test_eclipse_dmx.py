@@ -3942,7 +3942,14 @@ class TheShowLooks(ShowTest):
         time.sleep(0.05)
         show.command("audio bass_hits 0.0", expect_reply=False)
         self.assertGreater(self._peak(frames, mark, 0.15, 0), rest[0] + 60, "the pop is pink")
-        self.assertGreater(self._peak(frames, mark, 0.7, 1), 100, "green follows it")
+
+        # green is the accent: it follows the pop in patches, never over
+        # most of the rig
+        time.sleep(0.7)
+        after = frames[mark:]
+        green = [i for i in range(len(after[0])) if any(f[i][1] > 100 for f in after)]
+        self.assertGreater(len(green), 0, "green follows it somewhere")
+        self.assertLess(len(green), len(after[0]) / 2, "green is the accent, not the rig")
 
     def test_glitch_deals_a_new_colour_on_each_beat(self):
         """The glitch cue re-deals on `beat` - the signal its scene re-deals
@@ -4008,6 +4015,25 @@ class TheShowLooks(ShowTest):
             show.command("audio beat 0.0", expect_reply=False)
             time.sleep(0.4)
         self.assertAlmostEqual(_hue(before), _hue(frames[-1][self.SAMPLE]), delta=0.01)
+
+    def test_churn_punches_on_the_bass(self):
+        """The churn takes a kick the way its scene's paint does: lifted
+        toward full, then let fall back to the field."""
+        frames = []
+        show = self._show("churn", on_frame=frames.append)
+        time.sleep(0.8)
+        rest = max(frames[-1][self.SAMPLE])
+
+        mark = len(frames)
+        for _ in range(3):
+            show.command("audio bass_hits 1.0", expect_reply=False)
+            time.sleep(0.04)
+        show.command("audio bass_hits 0.0", expect_reply=False)
+        time.sleep(0.15)
+        peak = max(max(f[self.SAMPLE]) for f in frames[mark:])
+        self.assertGreater(peak, rest + 40, "a bass hit should punch the churn")
+        time.sleep(1.2)
+        self.assertLess(max(frames[-1][self.SAMPLE]), peak - 30, "and it falls back")
 
     def test_glitch_pars_jump_on_the_deal(self):
         """At the rig's floor a par moved a quarter of its range on the
