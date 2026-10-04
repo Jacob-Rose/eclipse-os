@@ -617,6 +617,14 @@ namespace edmx
     /// the signal the Glitch scene re-deals on. One edge, one colour: a
     /// transient a few frames wide must not re-deal the rig on every frame
     /// it is above the line.
+    ///
+    /// `split` tears the stage into `slices` bands up its height, dealt per
+    /// kick: some keep the hue, the rest take it turned by `split` of the
+    /// wheel - the scene's background re-dealt in pixelated slices rather
+    /// than one colour with a shimmer on it. The pars have their own floor
+    /// and take each deal as a ripple up the truss, `truss_sweep` seconds
+    /// bottom to top, so the beat is seen to climb them instead of the
+    /// whole line lifting a notch.
     class Pattern_Mythos_KickColor : public Pattern_MythosLook
     {
     public:
@@ -648,6 +656,18 @@ namespace edmx
         /// wheel. 0 is one colour on everything.
         float scatter{0.12f};
 
+        /// The torn bands: how many up the stage, and how far round the
+        /// wheel the turned ones sit. 0 split is one colour, as it was.
+        float slices{5.0f};
+        float split{0.0f};
+
+        /// The pars' own level between kicks, and seconds for a deal to
+        /// climb the truss. A par sat at the rig's 0.75 floor moved a
+        /// quarter of its range on the beat, which on a lamp reads as
+        /// nothing happening.
+        float trussFloor{-1.0f};
+        float trussSweep{0.0f};
+
         void init();
 
         virtual void tick(float deltaTime) override;
@@ -668,6 +688,12 @@ namespace edmx
         unsigned int kicks{0};
         float hue{0.0f};
         float flash{0.0f};
+        /// The deal before this one, which a par shows until the ripple
+        /// reaches it, and the flash it had fallen to when this one landed.
+        float lastHue{0.0f};
+        float lastFlash{0.0f};
+
+        float dealtHue(unsigned int deal, float base, float up, unsigned int index) const;
     };
 
 
@@ -759,6 +785,17 @@ namespace edmx
     /// rig went purple, white, purple every two seconds - a second pulse
     /// under the strobe, on no beat at all, which is what made the strobe
     /// feel sporadic.
+    ///
+    /// The pars move the way the scene's smoke does, which a level on the
+    /// whole rig could not show. The scene's bass hits are what push its
+    /// paint about - they open the warp and loosen the drag - so a bass hit
+    /// swirls the pars: each one's place on the gradient pushed by `swirl`,
+    /// some up and some down, and lifted from `truss_floor` toward full,
+    /// rising in a few frames and settling over `truss_decay`. And on the
+    /// beat the scene inverts its lightness, so the pars flip toward the
+    /// other end of the gradient by `truss_invert` and ease back - purple
+    /// turning honey and honey purple. Colour moving on a lamp that stays
+    /// lit: neither is ever a drop to dark.
     class Pattern_Mythos_GradientStrobe : public Pattern_MythosLook
     {
     public:
@@ -787,6 +824,16 @@ namespace edmx
         float gain{1.0f};
         float slew{0.05f};
 
+        /// The pars' own response; see the class comment. 0 swirl, a floor
+        /// of 1 and no invert is the truss reading the stage like the rest.
+        AudioChannel trussChannel{AudioChannel::BassHits};
+        float trussFloor{1.0f};
+        float swirl{0.0f};
+        float trussAttack{0.04f};
+        float trussDecay{0.35f};
+        float trussInvert{0.0f};
+        float invertDecay{0.3f};
+
         void setEnvelope(float attackSeconds, float decaySeconds);
         void setPulseRate(float pulsesPerBeat);
         float getPulseRate() const { return pulseRate; }
@@ -802,11 +849,14 @@ namespace edmx
         float getStrobeLevel() const { return strobe; }
         /// The channel's slewed level, 0..1, for tests.
         float getLevel() const { return level; }
+        float getTrussLevel() const { return trussLevel; }
 
     private:
         TriggerRack* triggers{nullptr};
         AudioLevel* bus{nullptr};
         float level{0.0f};
+        float trussLevel{0.0f};
+        float invert{0.0f};
         float attackSeconds{0.0f};
         /// Long enough to be seen on every beat: 0.12s was three frames,
         /// and a beat that fell between them was a beat the rig missed.

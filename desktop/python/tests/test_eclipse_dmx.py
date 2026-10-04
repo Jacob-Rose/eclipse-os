@@ -4009,6 +4009,56 @@ class TheShowLooks(ShowTest):
             time.sleep(0.4)
         self.assertAlmostEqual(_hue(before), _hue(frames[-1][self.SAMPLE]), delta=0.01)
 
+    def test_glitch_pars_jump_on_the_deal(self):
+        """At the rig's floor a par moved a quarter of its range on the
+        beat. The pars sit lower, and a deal takes them to full."""
+        frames = []
+        show = self._show("glitch", on_frame=frames.append)
+        pars = show.devices[2]
+        par = pars.first + 4
+        time.sleep(0.6)
+        self.assertGreater(max(frames[-1][par]), 0, "a par holds a colour between beats")
+
+        for _ in range(4):
+            show.command("audio level_average 0.5", expect_reply=False)
+            show.command("audio beat 1.0", expect_reply=False)
+            time.sleep(0.04)
+        show.command("audio beat 0.0", expect_reply=False)
+        time.sleep(1.5)
+        rest = max(frames[-1][par])
+
+        mark = len(frames)
+        show.command("audio level_average 0.5", expect_reply=False)
+        show.command("audio beat 1.0", expect_reply=False)
+        deadline = time.monotonic() + 0.4
+        peak = 0
+        while time.monotonic() < deadline:
+            peak = max([peak] + [max(f[par]) for f in frames[mark:]])
+            time.sleep(0.02)
+        self.assertGreater(peak, rest + 120, "the deal should land on the pars")
+
+    def test_punk_pars_swell_on_the_bass_and_stay_lit(self):
+        """The punk's pars move as the scene's smoke does: lifted on a bass
+        hit and settling back - never dropped to dark."""
+        frames = []
+        show = self._show("punk", on_frame=frames.append)
+        pars = show.devices[2]
+        par = pars.first + 4
+        time.sleep(0.8)
+        rest = max(frames[-1][par])
+        self.assertGreater(rest, 0, "the pars hold a level with no music")
+
+        mark = len(frames)
+        for _ in range(4):
+            show.command("audio bass_hits 1.0", expect_reply=False)
+            time.sleep(0.04)
+        show.command("audio bass_hits 0.0", expect_reply=False)
+        time.sleep(0.2)
+        peak = max(max(f[par]) for f in frames[mark:])
+        self.assertGreater(peak, rest + 60, "a bass hit should lift the pars")
+        time.sleep(1.5)
+        self.assertLess(max(frames[-1][par]), peak - 40, "and they settle back")
+
     def test_canyon_offers_its_beat_envelope(self):
         show = self.running_show(CUES, midi="")
         show.set_pattern("mythos26")

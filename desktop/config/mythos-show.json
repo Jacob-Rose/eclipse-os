@@ -276,6 +276,13 @@
       "media": "275593_medium.mp4",
       "layers": { "flash": "off", "uv": "off" }
     },
+    "reaction": {
+      // The rig reads the room the way the scene does: the rainbow when
+      // the presence is up, a low white grain when it is not.
+      "scene": "Reaction-Confusion",
+      "media": "87841-602894456.mp4",
+      "layers": { "flash": "off", "uv": "rainbow" }
+    },
     "punk": {
       // `smoke` is the scene's own beat flash - it inverts lightness on
       // syn_OnBeat, so the visual goes *dark* on the beat. The look used to
@@ -286,13 +293,6 @@
       "scene": "Milk, Honey, Smoke, Bile",
       "layers": { "flash": "off", "uv": "rainbow" },
       "controls": { "smoke": 1 }
-    },
-    "reaction": {
-      // The rig reads the room the way the scene does: the rainbow when
-      // the presence is up, a low white grain when it is not.
-      "scene": "Reaction-Confusion",
-      "media": "87841-602894456.mp4",
-      "layers": { "flash": "off", "uv": "rainbow" }
     },
     "canyon": {
       "scene": "Vibe Thresholds",

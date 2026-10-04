@@ -639,12 +639,16 @@ void Pattern_Mythos_KickColor::init()
     kicks = 0;
     hue = 0.0f;
     flash = 0.0f;
+    lastHue = 0.0f;
+    lastFlash = 0.0f;
 }
 
 void Pattern_Mythos_KickColor::onKick()
 {
     ++kicks;
     sinceKick = 0.0f;
+    lastHue = hue;
+    lastFlash = flash;
     // the golden angle: every step lands far from the last few, and the
     // sequence never closes into a cycle short enough to notice
     hue = std::fmod(hue + 137.508f, 360.0f);
@@ -695,21 +699,63 @@ void Pattern_Mythos_KickColor::tick(float deltaTime)
     }
 }
 
+float Pattern_Mythos_KickColor::dealtHue(unsigned int deal, float base, float up,
+                                         unsigned int index) const
+{
+    float shifted = base;
+    if (split > 0.0f && slices >= 1.0f)
+    {
+        // the band lines move with every deal too, so a tear never lands
+        // twice in the same place
+        const float offset = hash01(deal * 2246822519u + 7u);
+        const unsigned int band = static_cast<unsigned int>(std::floor(up * slices + offset));
+        if (hash01(band * 3266489917u + deal * 668265263u) >= 0.5f)
+        {
+            shifted += split * 360.0f;
+        }
+    }
+
+    // each fixture's own nudge off the hue, re-dealt on every kick: hashed on
+    // (fixture, kick) so it holds still between kicks and changes on one
+    const float nudge = (hash01(index * 2654435761u + deal * 40503u) - 0.5f) * scatter * 360.0f;
+    return std::fmod(shifted + nudge + 720.0f, 360.0f);
+}
+
 void Pattern_Mythos_KickColor::render(eio::HSVStripNode* node, ecore::HSV& inOutColor) const
 {
     const unsigned int index = (node != nullptr)
         ? static_cast<unsigned int>(node->getStripIdx())
         : 0u;
+    const float up = stageAlpha(node);
 
-    // each fixture's own nudge off the hue, re-dealt on every kick: hashed on
-    // (fixture, kick) so it holds still between kicks and changes on one
-    const float nudge = (hash01(index * 2654435761u + kicks * 40503u) - 0.5f) * scatter * 360.0f;
+    unsigned int deal = kicks;
+    float base = hue;
+    float lit = flash;
+    float floorValue = std::clamp(floorLevel, 0.0f, 1.0f);
+
+    if (trussFloor >= 0.0f && isTruss(node))
+    {
+        // the deal climbs the truss: below the ripple a par still shows the
+        // last one, falling as it was
+        floorValue = std::clamp(trussFloor, 0.0f, 1.0f);
+        const float arrive = std::max(trussSweep, 0.0f) * up;
+        const float falling = decay > 0.0f ? decay : 0.001f;
+        if (sinceKick < arrive && kicks > 0)
+        {
+            deal = kicks - 1;
+            base = lastHue;
+            lit = lastFlash * std::exp(-sinceKick / falling);
+        }
+        else
+        {
+            lit = (kicks > 0) ? std::exp(-(sinceKick - arrive) / falling) : 0.0f;
+        }
+    }
 
     const float amount = std::clamp(intensity, 0.0f, 1.0f);
-    const float floorValue = std::clamp(floorLevel, 0.0f, 1.0f);
-    const float value = floorValue + (1.0f - floorValue) * flash * amount;
+    const float value = floorValue + (1.0f - floorValue) * lit * amount;
 
-    inOutColor = ecore::HSV(std::fmod(hue + nudge + 360.0f, 360.0f), saturation, 1.0f);
+    inOutColor = ecore::HSV(dealtHue(deal, base, up, index), saturation, 1.0f);
     inOutColor.setBrightnessAlpha(value);
 }
 
@@ -724,6 +770,10 @@ void Pattern_Mythos_KickColor::reflect(ecore::PropertyBag& bag)
     bag.add("decay", decay, 0.02f, 2.0f);
     bag.add("saturation", saturation, 0.0f, 1.0f);
     bag.add("scatter", scatter, 0.0f, 1.0f);
+    bag.add("slices", slices, 1.0f, 16.0f);
+    bag.add("split", split, 0.0f, 1.0f);
+    bag.add("truss_floor", trussFloor, -1.0f, 1.0f);
+    bag.add("truss_sweep", trussSweep, 0.0f, 0.5f);
 }
 
 // ============================================================================
@@ -891,6 +941,8 @@ void Pattern_Mythos_GradientStrobe::reset()
     envelope.reset();
     strobe = 0.0f;
     level = 0.0f;
+    trussLevel = 0.0f;
+    invert = 0.0f;
 }
 
 void Pattern_Mythos_GradientStrobe::tick(float deltaTime)
@@ -925,6 +977,24 @@ void Pattern_Mythos_GradientStrobe::tick(float deltaTime)
     const float onBeat = std::clamp(envelope.getValue(), 0.0f, 1.0f);
     strobe = lerp(onBeat, level, std::clamp(follow, 0.0f, 1.0f))
            * std::clamp(intensity, 0.0f, 1.0f);
+
+    // the pars: a peak follower on the hits - up in a few frames, down
+    // slowly - so a kick is a swell and a roll of them holds it up rather
+    // than flickering on every one
+    if (deltaTime > 0.0f)
+    {
+        const float hit = std::clamp(bus->get(trussChannel, nowSeconds()), 0.0f, 1.0f);
+        const float seconds = (hit > trussLevel) ? trussAttack : trussDecay;
+        trussLevel = (seconds <= 0.0f)
+            ? hit
+            : trussLevel + (hit - trussLevel) * (1.0f - std::exp(-deltaTime / seconds));
+
+        if (trigger.fired)
+        {
+            invert = 1.0f;
+        }
+        invert = (invertDecay > 0.0f) ? invert * std::exp(-deltaTime / invertDecay) : 0.0f;
+    }
 }
 
 void Pattern_Mythos_GradientStrobe::render(eio::HSVStripNode* node, ecore::HSV& inOutColor) const
@@ -933,14 +1003,40 @@ void Pattern_Mythos_GradientStrobe::render(eio::HSVStripNode* node, ecore::HSV& 
 
     // a triangle rather than a sawtooth, so the gradient runs purple to
     // orange and back with no seam marching up the stage
-    const float phase = frac(up * waves + timeActive * speed);
-    const float mix = 1.0f - std::fabs(phase * 2.0f - 1.0f);
+    const bool truss = isTruss(node);
+    const float amount = std::clamp(intensity, 0.0f, 1.0f);
+
+    float place = up * waves + timeActive * speed;
+    if (truss && swirl > 0.0f)
+    {
+        // which way a par is pushed is its own, held still: neighbours
+        // part on a hit rather than the whole line sliding as one
+        const unsigned int index = static_cast<unsigned int>(node->getStripIdx());
+        const float side = hash01(index * 2654435761u + 11u) * 2.0f - 1.0f;
+        place += side * swirl * trussLevel * amount;
+    }
+
+    // a triangle rather than a sawtooth, so the gradient runs purple to
+    // orange and back with no seam marching up the stage
+    const float phase = frac(place);
+    float mix = 1.0f - std::fabs(phase * 2.0f - 1.0f);
+    if (truss)
+    {
+        mix = lerp(mix, 1.0f - mix, std::clamp(trussInvert, 0.0f, 1.0f) * invert * amount);
+    }
 
     // round the short side of the wheel both ways: purple to orange
     // through magenta, and down into the navy through violet, not
     // through the grey an RGB mix of either pair passes
     const ecore::HSV gradient = blendHsv(colorA, colorB, mix);
     inOutColor = blendHsv(gradient, strobeColor, strobe * std::clamp(depth, 0.0f, 1.0f));
+
+    if (truss && trussFloor < 1.0f)
+    {
+        const float floorValue = std::clamp(trussFloor, 0.0f, 1.0f);
+        const float lift = floorValue + (1.0f - floorValue) * std::clamp(trussLevel * amount, 0.0f, 1.0f);
+        inOutColor.setBrightnessAlpha(inOutColor.getValFloat() * lift);
+    }
 }
 
 void Pattern_Mythos_GradientStrobe::reflect(ecore::PropertyBag& bag)
@@ -958,6 +1054,12 @@ void Pattern_Mythos_GradientStrobe::reflect(ecore::PropertyBag& bag)
     bag.add("color_b", colorB);
     bag.add("strobe_color", strobeColor);
     bag.add("depth", depth, 0.0f, 1.0f);
+    bag.add("truss_floor", trussFloor, 0.0f, 1.0f);
+    bag.add("swirl", swirl, 0.0f, 1.0f);
+    bag.add("truss_attack", trussAttack, 0.0f, 0.3f);
+    bag.add("truss_decay", trussDecay, 0.05f, 1.5f);
+    bag.add("truss_invert", trussInvert, 0.0f, 1.0f);
+    bag.add("invert_decay", invertDecay, 0.05f, 1.0f);
 }
 
 void Pattern_Mythos_GradientStrobe::reflectCurves(eanim::CurveBag& bag)
@@ -1972,8 +2074,12 @@ std::unique_ptr<StateMachinePattern> edmx::makeMythos26StateMachine()
         //    music playing - Mixxx's meters or Synesthesia's presence up -
         //    because the detector carries on beating to silence. A high
         //    floor, so a re-deal is the colour changing more than the rig
-        //    flashing. 2 is one colour across the rig; 3 darker between
-        //    hits and torn further apart on each.
+        //    flashing - but torn: the stage in five bands, half of them
+        //    dealt the complement, the way the scene re-deals in slices.
+        //    The pars sit lower and take each deal as a ripple up the
+        //    truss; at the rig's floor they barely moved. 2 is one colour
+        //    across the rig; 3 darker between hits and torn further apart
+        //    on each.
         showLook<KickColor>("glitch", [](KickColor& look) {
             look.channel = AudioChannel::Beat;
             look.threshold = 0.8f;
@@ -1982,11 +2088,18 @@ std::unique_ptr<StateMachinePattern> edmx::makeMythos26StateMachine()
             look.gateChannels = {AudioChannel::LevelAverage, AudioChannel::LevelInstant,
                                  AudioChannel::Presence};
             look.gate = 0.1f;
-            look.floorLevel = 0.75f;
+            look.floorLevel = 0.65f;
             look.decay = 0.45f;
+            look.slices = 5.0f;
+            look.split = 0.5f;
+            look.trussFloor = 0.3f;
+            look.trussSweep = 0.15f;
         }, {
-            [](KickColor& look) { look.scatter = 0.0f; },
-            [](KickColor& look) { look.floorLevel = 0.2f; look.scatter = 0.3f; look.decay = 0.2f; },
+            [](KickColor& look) { look.scatter = 0.0f; look.split = 0.0f; },
+            [](KickColor& look) {
+                look.floorLevel = 0.2f; look.scatter = 0.3f; look.decay = 0.2f;
+                look.trussFloor = 0.1f;
+            },
         }),
         // 6. pink into purple, drifting - the fire tunnel behind it - and
         //    breathing with Mixxx's average VU, the cable's presence, so it
@@ -2028,24 +2141,7 @@ std::unique_ptr<StateMachinePattern> edmx::makeMythos26StateMachine()
             [](BusWash& look) { look.floorLevel = 0.85f; },
             [](BusWash& look) { look.floorLevel = 0.25f; },
         }),
-        // 8. punk purple into honey orange, leaning toward a deep blue as
-        //    far as Mixxx's average VU says. It used to drop to a navy at a
-        //    fifth of full and back on the meter's every wobble, which was
-        //    the rig flashing hard all the way through; now the blue is
-        //    nearly as bright as the gradient, the lean stops a little
-        //    short of it and is slewed, so the rig holds its level and the
-        //    track moves its colour. The flash layer and the UV stay off;
-        //    the UV's pad is there. 2 and 3 are the beat instead
-        //    of the meter, in half time and in double, the same colour lean.
-        showLook<Strobe>("punk", [](Strobe& look) {
-            look.strobeColor = HSV(228.0f, 1.0f, 0.8f);
-            look.depth = 0.6f;
-            look.slew = 0.3f;
-        }, {
-            [](Strobe& look) { look.follow = 0.0f; look.setPulseRate(edmx::kHalfTime); },
-            [](Strobe& look) { look.follow = 0.0f; look.setPulseRate(edmx::kDoubleTime); },
-        }),
-        // 9. the rainbow when the track is there, white noise when it is
+        // 8. the rainbow when the track is there, white noise when it is
         //    not: the wheel across the stage turning slowly, blended in by
         //    the presence over a low white grain - over most of the meter,
         //    and slewed, so it swells rather than switches. 2 is the rainbow
@@ -2054,6 +2150,29 @@ std::unique_ptr<StateMachinePattern> edmx::makeMythos26StateMachine()
         showLook<Reaction>("reaction", {}, {
             [](Reaction& look) { look.threshold = 0.0f; look.knee = 0.01f; },
             [](Reaction& look) { look.span = 2.0f; look.hueRate = 0.3f; },
+        }),
+        // 9. punk purple into honey orange, leaning toward a deep blue as
+        //    far as Mixxx's average VU says. It used to drop to a navy at a
+        //    fifth of full and back on the meter's every wobble, which was
+        //    the rig flashing hard all the way through; now the blue is
+        //    nearly as bright as the gradient, the lean stops a little
+        //    short of it and is slewed, so the rig holds its level and the
+        //    track moves its colour. The flash layer and the UV stay off;
+        //    the UV's pad is there. The pars move as the scene's smoke
+        //    does: swirled and lifted by the bass hits, flipped toward the
+        //    other colour on the beat - colour on lamps that stay lit, not a
+        //    strobe. 2 and 3 are the beat instead of the meter, in half time
+        //    and in double, the same colour lean.
+        showLook<Strobe>("punk", [](Strobe& look) {
+            look.strobeColor = HSV(228.0f, 1.0f, 0.8f);
+            look.depth = 0.6f;
+            look.slew = 0.3f;
+            look.trussFloor = 0.45f;
+            look.swirl = 0.3f;
+            look.trussInvert = 0.6f;
+        }, {
+            [](Strobe& look) { look.follow = 0.0f; look.setPulseRate(edmx::kHalfTime); },
+            [](Strobe& look) { look.follow = 0.0f; look.setPulseRate(edmx::kDoubleTime); },
         }),
         // 10. the canyon fly-through - the bands eased into one another and
         //     half the loop on the rig at once, so it is a gradient and not

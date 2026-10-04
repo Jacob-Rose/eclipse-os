@@ -50,8 +50,10 @@ media - black (the flame renders its media through itself)
 
 5. glitch
 pattern - on kick hit change color. good. re-deals on the beat (syn_OnBeat), which is what the scene re-deals its background on.
-mode 2 - one colour across the whole rig (no scatter)
-mode 3 - darker between hits (floor 0.2), torn further apart on each (scatter 0.3, decay 0.2)
+torn - five bands up the stage, re-cut on every deal, half of them the complement of the deal's hue (split 0.5): re-dealt in slices like the scene, not one colour with a shimmer. rig floor 0.65.
+pars - their own floor (0.3) so the beat is seen on them, and each deal climbs the truss bottom to top over 0.15s - a ripple, not a flash.
+mode 2 - one colour across the whole rig (no scatter, no split)
+mode 3 - darker between hits (floor 0.2, pars 0.1), torn further apart on each (scatter 0.3, decay 0.2)
 synesthesia - Glitch
 media - alien-message.mp4
 
@@ -72,16 +74,7 @@ uv - off
 synesthesia - Filter Blown v2
 media - 275593_medium.mp4
 
-8. punk
-pattern - punk purple / honey orange gradient, reactive, pretty bright (match shader aesthetic). the drop goes dark, not white: the scene's smoke inverts lightness on the beat.
-palette - punk purple (280 / 0.95 / 1.00) into honey orange (32 / 0.90 / 1.00), scrolling slowly (0.12 cycles a second - faster and the scroll is a second pulse off the beat), dropping toward navy (228 / 1.00 / 0.22) as far as mixxx's vu average says (note 68), slewed 0.05s - the drop blends on the meter, not on the bpm
-additional layer - none. the flash layer is off: white added over the drop whited it out (and, blended in hsv, came out cyan). uv off.
-mode 2 - the beat strobe instead, half time (the drop on the beat, back over 0.22s)
-mode 3 - the beat strobe, double time
-uv - off
-synesthesia - Milk, Honey, Smoke, Bile (with its own beat strobe "smoke" on)
-
-9. reaction
+8. reaction
 pattern - rainbow when presence is high, slow moving hue shift among par lights. low white noise when no presence.
 palette - the wheel spread across the stage (0.6 of a wheel side to side, so the pars step through it a hue apart) turning at 0.04 wheels a second; under it a white grain at floor 0.3. the presence blends the rainbow in: from 0.08, all of it by 0.8, slewed over 0.6s so it swells rather than switches.
 mode 2 - the rainbow whatever the music
@@ -89,6 +82,16 @@ mode 3 - quick: two wheels across the stage, turning at 0.3 a second
 uv - off
 synesthesia - Reaction-Confusion
 media - 87841-602894456.mp4
+
+9. punk
+pattern - punk purple / honey orange gradient, reactive, pretty bright (match shader aesthetic). the drop goes dark, not white: the scene's smoke inverts lightness on the beat.
+palette - punk purple (280 / 0.95 / 1.00) into honey orange (32 / 0.90 / 1.00), scrolling slowly (0.12 cycles a second - faster and the scroll is a second pulse off the beat), dropping toward navy (228 / 1.00 / 0.22) as far as mixxx's vu average says (note 68), slewed 0.05s - the drop blends on the meter, not on the bpm
+pars - move like the scene's smoke rather than strobing: the bass hits (syn_BassHits, peak-followed - up 0.04s, down 0.35s) swirl each par along the gradient (swirl 0.3, each par its own direction) and lift it from 0.45 to full; on the beat the pars flip toward the other end of the gradient (truss_invert 0.6, easing back over 0.3s). colour moving on lamps that stay lit.
+additional layer - none. the flash layer is off: white added over the drop whited it out (and, blended in hsv, came out cyan). uv off.
+mode 2 - the beat strobe instead, half time (the drop on the beat, back over 0.22s)
+mode 3 - the beat strobe, double time
+uv - off
+synesthesia - Milk, Honey, Smoke, Bile (with its own beat strobe "smoke" on)
 
 10. canyon
 pattern - cycling wave gradients moving top down with canyon orange browns greens and blues as we fly through the area. gradients and blending seamless: the bands eased into each other (a straight blend had a corner at every colour, six lines down the obelisk), and half the loop on the rig at once (waves 0.5 - at 1 the six bands were seven rows each and under two pars, stripes).

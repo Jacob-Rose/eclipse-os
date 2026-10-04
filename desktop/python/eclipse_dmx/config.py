@@ -153,8 +153,8 @@ MYTHOS26_STATES = (
     "glitch",    # 5. a new colour on every kick
     "tunnel",    # 6. pink into purple noise, the flash layer on
     "blown",     # 7. purple riding the mids, green on the kick, the UV on the kick
-    "punk",      # 8. purple into white, strobing on the beat, the flash and UV on
-    "reaction",  # 9. the rainbow across the stage on the presence, white noise without it
+    "reaction",  # 8. the rainbow across the stage on the presence, white noise without it
+    "punk",      # 9. purple into honey orange, leaning blue on the meter; the pars swirl on the bass
     "canyon",    # 10. canyon bands pouring down, a rainbow on the beat
     "scaffold",  # 11. cyan and red-orange struts sweeping down on the beat clock
     "churn",     # 12. the field in two rig colours, pushed by the level; three palettes and a rainbow

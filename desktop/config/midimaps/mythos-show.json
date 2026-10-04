@@ -412,11 +412,64 @@
       "colour": 41
     },
     {
-      "label": "mythos26 - punk",
+      "label": "mythos26 - reaction",
       "trigger": {
         "kind": "note",
         "channel": 1,
         "number": 18
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "mythos26"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "reaction"
+          }
+        },
+        {
+          "action": "layer",
+          "params": {
+            "layer": "flash",
+            "name": "off"
+          }
+        },
+        {
+          "action": "layer",
+          "params": {
+            "layer": "uv",
+            "name": "rainbow"
+          }
+        },
+        {
+          "action": "syn_scene",
+          "params": {
+            "scene": "Reaction-Confusion",
+            "preset": ""
+          }
+        },
+        {
+          "action": "syn_media",
+          "params": {
+            "name": "87841-602894456.mp4"
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "",
+      "colour": 41
+    },
+    {
+      "label": "mythos26 - punk",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 21
       },
       "mode": "press",
       "actions": [
@@ -461,59 +514,6 @@
             "high": 1.0,
             "values": [],
             "ramp": 0.0
-          }
-        }
-      ],
-      "enabled": true,
-      "page": "",
-      "colour": 41
-    },
-    {
-      "label": "mythos26 - reaction",
-      "trigger": {
-        "kind": "note",
-        "channel": 1,
-        "number": 21
-      },
-      "mode": "press",
-      "actions": [
-        {
-          "action": "pattern",
-          "params": {
-            "name": "mythos26"
-          }
-        },
-        {
-          "action": "state",
-          "params": {
-            "name": "reaction"
-          }
-        },
-        {
-          "action": "layer",
-          "params": {
-            "layer": "flash",
-            "name": "off"
-          }
-        },
-        {
-          "action": "layer",
-          "params": {
-            "layer": "uv",
-            "name": "rainbow"
-          }
-        },
-        {
-          "action": "syn_scene",
-          "params": {
-            "scene": "Reaction-Confusion",
-            "preset": ""
-          }
-        },
-        {
-          "action": "syn_media",
-          "params": {
-            "name": "87841-602894456.mp4"
           }
         }
       ],
