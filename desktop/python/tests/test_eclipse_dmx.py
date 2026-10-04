@@ -4091,6 +4091,36 @@ class TheShowLooks(ShowTest):
         seen = [max(f[par]) for f in frames[mark:]]
         self.assertGreater(max(seen) - min(seen), 40, "a ring should pass over the par")
 
+    def test_nova_wash_pulses_with_the_presence(self):
+        """The wash's beat pulse is the presence's to size: with none on
+        the bus it is not there, and with the bass presence up it is."""
+        def swing(show, frames):
+            mark = len(frames)
+            time.sleep(1.5)
+            seen = [sum(sum(p) for p in f) for f in frames[mark:]]
+            return max(seen) - min(seen)
+
+        frames = []
+        show = self._show("nova", on_frame=frames.append)
+        show.set_param("pulse", 0.0)        # the ring off: the wash alone
+        show.set_param("push", 0.0)
+        time.sleep(0.6)
+        quiet = swing(show, frames)
+
+        def feed():
+            while not done:
+                show.command("audio bass_presence 1.0", expect_reply=False)
+                time.sleep(0.05)
+        done = False
+        import threading
+        feeder = threading.Thread(target=feed, daemon=True)
+        feeder.start()
+        time.sleep(0.6)
+        loud = swing(show, frames)
+        done = True
+        feeder.join()
+        self.assertGreater(loud, quiet * 1.5 + 200, "the wash should pulse with the presence up")
+
     def test_clouds_pars_are_one_light_set_by_the_height(self):
         """The pars' level is the height's - dim down in the deck, brighter
         above it - with the clouds passing over it."""

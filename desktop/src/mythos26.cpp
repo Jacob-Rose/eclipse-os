@@ -1376,10 +1376,23 @@ void Pattern_Mythos_Nova::render(eio::HSVStripNode* node, ecore::HSV& inOutColor
 
     // ground, then the wash over it, then the galaxies over both - in RGB,
     // so yellow arriving over dark blue is light on dark and not green
-    ecore::HSV out = blendRgb(ground, between, washes);
+    // the wash on the beat, as far as the presence says: brighter where it
+    // is, and spread over the ground between - the ground being the wash
+    // dimmed, that is the yellow lighting up
+    float beatWash = 0.0f;
+    if (washPulse > 0.0f && sinceRing < 30.0f)
+    {
+        const float rise = std::max(washAttack, 0.001f);
+        const float shape = (sinceRing < rise)
+            ? sinceRing / rise
+            : std::exp(-(sinceRing - rise) / std::max(washDecay, 0.01f));
+        beatWash = std::clamp(washPulse * shape * level * depth, 0.0f, 1.0f);
+    }
+    ecore::HSV out = blendRgb(ground, between, washes + (1.0f - washes) * beatWash * 0.6f);
     out = blendRgb(out, stars, galaxies);
     inOutColor = out;
     float value = out.getValFloat() * (0.85f + 0.15f * swell);
+    value += (1.0f - value) * beatWash * washes * (1.0f - galaxies);
 
     // the beat ring: out from the middle to both ends over the beat, a
     // soft band lifting what it crosses and fading as it reaches the ends
@@ -1390,12 +1403,15 @@ void Pattern_Mythos_Nova::render(eio::HSVStripNode* node, ecore::HSV& inOutColor
         const bool truss = isTruss(node);
         const float width = (truss && trussRing >= 0.0f) ? trussRing : ring;
         const float off = (from - reach) / std::max(width, 0.02f);
-        float band = std::exp(-off * off) * (1.0f - 0.6f * reach);
-        if (truss && trussEase > 0.0f)
-        {
-            const float in = std::clamp(reach / trussEase, 0.0f, 1.0f);
-            band *= in * in * (3.0f - 2.0f * in);
-        }
+        // in over the first of the beat, out over the last, so one ring
+        // hands to the next through dark rather than with a cut at the ends
+        // and a pop in the middle
+        const float easeIn = (truss && trussEase > 0.0f) ? trussEase : ease;
+        const float in = easeIn > 0.0f ? std::clamp(reach / easeIn, 0.0f, 1.0f) : 1.0f;
+        const float out = std::clamp((1.0f - reach) / 0.3f, 0.0f, 1.0f);
+        const float band = std::exp(-off * off) * (1.0f - 0.6f * reach)
+                         * in * in * (3.0f - 2.0f * in)
+                         * out * out * (3.0f - 2.0f * out);
         value += (1.0f - value) * std::clamp(pulse * band * depth, 0.0f, 1.0f);
     }
     inOutColor.setBrightnessAlpha(value);
@@ -1418,8 +1434,12 @@ void Pattern_Mythos_Nova::reflect(ecore::PropertyBag& bag)
     bag.add("push_slew", pushSlew, 0.0f, 1.0f);
     bag.add("pulse", pulse, 0.0f, 1.0f);
     bag.add("ring", ring, 0.02f, 0.5f);
+    bag.add("ease", ease, 0.0f, 0.5f);
     bag.add("truss_ring", trussRing, -1.0f, 0.6f);
     bag.add("truss_ease", trussEase, 0.0f, 0.5f);
+    bag.add("wash_pulse", washPulse, 0.0f, 1.0f);
+    bag.add("wash_attack", washAttack, 0.0f, 0.3f);
+    bag.add("wash_decay", washDecay, 0.05f, 1.0f);
 }
 
 // ============================================================================
@@ -2418,12 +2438,15 @@ std::unique_ptr<StateMachinePattern> edmx::makeMythos26StateMachine()
         //     The probe sends the galaxy colour; the cue table sends the wash.
         //     Like the scene, the field turns faster on the bass and a ring
         //     runs out from the middle of the stage on every beat - wider
-        //     and eased in on the pars, so a lamp swells and lets go.
+        //     and eased in on the pars, so a lamp swells and lets go - and
+        //     the wash pulses on the beat as far as the presence says.
         showLook<Nova>("nova", [](Nova& look) {
             look.push = 2.0f;
             look.pulse = 0.75f;
             look.trussRing = 0.22f;
-            look.trussEase = 0.15f;
+            look.trussEase = 0.25f;
+            look.ease = 0.25f;
+            look.washPulse = 0.8f;
         }, {
             [](Nova& look) {
                 look.galaxy = HSV(37.0f, 0.80f, 1.00f);

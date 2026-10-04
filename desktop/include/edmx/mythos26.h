@@ -1049,12 +1049,25 @@ namespace edmx
         /// is the band's width, a share of the stage.
         float pulse{0.0f};
         float ring{0.12f};
+        /// The share of the beat a ring takes to come in, on the whole rig;
+        /// and it is gone before it reaches the ends, so a new one starting
+        /// in the middle is not the old one cut off.
+        float ease{0.1f};
         /// The ring as the pars see it: wider, so a lamp swells as it comes
         /// and lets go as it leaves rather than flicking on and off, and
         /// eased in over `truss_ease` of the beat so the middle pars do not
         /// snap on as each ring is born. Width below 0 is the rig's.
         float trussRing{-1.0f};
         float trussEase{0.0f};
+
+        /// The wash on the beat: lifted toward full and spread over the
+        /// ground, by `wash_pulse` times the presence the galaxies swell
+        /// with - a thin track a glimmer, a heavy one the yellow lighting
+        /// the room - rising over `wash_attack` and falling over
+        /// `wash_decay`.
+        float washPulse{0.0f};
+        float washAttack{0.04f};
+        float washDecay{0.35f};
 
         void init();
 
