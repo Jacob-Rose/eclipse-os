@@ -1049,6 +1049,12 @@ namespace edmx
         /// is the band's width, a share of the stage.
         float pulse{0.0f};
         float ring{0.12f};
+        /// The ring as the pars see it: wider, so a lamp swells as it comes
+        /// and lets go as it leaves rather than flicking on and off, and
+        /// eased in over `truss_ease` of the beat so the middle pars do not
+        /// snap on as each ring is born. Width below 0 is the rig's.
+        float trussRing{-1.0f};
+        float trussEase{0.0f};
 
         void init();
 

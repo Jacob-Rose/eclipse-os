@@ -1387,8 +1387,15 @@ void Pattern_Mythos_Nova::render(eio::HSVStripNode* node, ecore::HSV& inOutColor
     {
         const float reach = sinceRing / std::max(ringSeconds, 0.05f);
         const float from = std::fabs(stageAlpha(node) - 0.5f) * 2.0f;
-        const float off = (from - reach) / std::max(ring, 0.02f);
-        const float band = std::exp(-off * off) * (1.0f - 0.6f * reach);
+        const bool truss = isTruss(node);
+        const float width = (truss && trussRing >= 0.0f) ? trussRing : ring;
+        const float off = (from - reach) / std::max(width, 0.02f);
+        float band = std::exp(-off * off) * (1.0f - 0.6f * reach);
+        if (truss && trussEase > 0.0f)
+        {
+            const float in = std::clamp(reach / trussEase, 0.0f, 1.0f);
+            band *= in * in * (3.0f - 2.0f * in);
+        }
         value += (1.0f - value) * std::clamp(pulse * band * depth, 0.0f, 1.0f);
     }
     inOutColor.setBrightnessAlpha(value);
@@ -1411,6 +1418,8 @@ void Pattern_Mythos_Nova::reflect(ecore::PropertyBag& bag)
     bag.add("push_slew", pushSlew, 0.0f, 1.0f);
     bag.add("pulse", pulse, 0.0f, 1.0f);
     bag.add("ring", ring, 0.02f, 0.5f);
+    bag.add("truss_ring", trussRing, -1.0f, 0.6f);
+    bag.add("truss_ease", trussEase, 0.0f, 0.5f);
 }
 
 // ============================================================================
@@ -2408,10 +2417,13 @@ std::unique_ptr<StateMachinePattern> edmx::makeMythos26StateMachine()
         //     wash staying opposite the galaxies the way the scene's does.
         //     The probe sends the galaxy colour; the cue table sends the wash.
         //     Like the scene, the field turns faster on the bass and a ring
-        //     runs out from the middle of the stage on every beat.
+        //     runs out from the middle of the stage on every beat - wider
+        //     and eased in on the pars, so a lamp swells and lets go.
         showLook<Nova>("nova", [](Nova& look) {
             look.push = 2.0f;
             look.pulse = 0.75f;
+            look.trussRing = 0.22f;
+            look.trussEase = 0.15f;
         }, {
             [](Nova& look) {
                 look.galaxy = HSV(37.0f, 0.80f, 1.00f);
