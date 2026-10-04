@@ -156,7 +156,7 @@ MYTHOS26_STATES = (
     "punk",      # 8. purple into white, strobing on the beat, the flash and UV on
     "reaction",  # 9. the rainbow across the stage on the presence, white noise without it
     "canyon",    # 10. canyon bands pouring down, a rainbow on the beat
-    "scaffold",  # 11. mostly dark: a cyan glint, red-orange on the mids, white on the kick
+    "scaffold",  # 11. cyan and red-orange struts sweeping down on the beat clock
     "churn",     # 12. the field in two rig colours, pushed by the level; three palettes and a rainbow
     "nova",      # 13. galaxies on a wash over a dark ground; three palettes and a rainbow
     "clouds",    # 14. a sunset over a cloud deck, flown through; height and speed glide

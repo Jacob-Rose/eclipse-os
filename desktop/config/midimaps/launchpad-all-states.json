@@ -284,7 +284,7 @@
           "action": "layer",
           "params": {
             "layer": "uv",
-            "name": "off"
+            "name": "rainbow"
           }
         },
         {
@@ -337,7 +337,7 @@
           "action": "layer",
           "params": {
             "layer": "uv",
-            "name": "off"
+            "name": "rainbow"
           }
         },
         {
@@ -390,7 +390,7 @@
           "action": "layer",
           "params": {
             "layer": "uv",
-            "name": "kick"
+            "name": "off"
           }
         },
         {
@@ -443,7 +443,7 @@
           "action": "layer",
           "params": {
             "layer": "uv",
-            "name": "kick"
+            "name": "rainbow"
           }
         },
         {
@@ -500,7 +500,7 @@
           "action": "layer",
           "params": {
             "layer": "uv",
-            "name": "off"
+            "name": "rainbow"
           }
         },
         {
@@ -553,7 +553,7 @@
           "action": "layer",
           "params": {
             "layer": "uv",
-            "name": "off"
+            "name": "rainbow"
           }
         },
         {
@@ -653,7 +653,7 @@
           "action": "layer",
           "params": {
             "layer": "uv",
-            "name": "off"
+            "name": "rainbow"
           }
         },
         {
@@ -750,7 +750,7 @@
           "action": "layer",
           "params": {
             "layer": "uv",
-            "name": "off"
+            "name": "rainbow"
           }
         },
         {
@@ -841,7 +841,7 @@
           "action": "layer",
           "params": {
             "layer": "uv",
-            "name": "off"
+            "name": "rainbow"
           }
         },
         {
@@ -871,8 +871,8 @@
           "action": "syn_control",
           "params": {
             "address": "/controls/scene/manualheight",
-            "low": 0.25,
-            "high": 0.25,
+            "low": 0.0,
+            "high": 0.0,
             "values": [],
             "ramp": 0.0
           }

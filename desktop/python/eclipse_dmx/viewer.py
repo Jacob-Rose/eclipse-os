@@ -2085,8 +2085,8 @@ class ViewerApp:
                 mine = " or ".join(_my_addresses()) or "this machine"
                 self._say(f"osc in: nothing on {self._osc_listener.port} in "
                           f"{waited:.0f}s - is Synesthesia's OSC *output* on, and its "
-                          f"output IP {mine}? (127.0.0.1 there means the mac, not "
-                          f"this desk.) [o] for the panel")
+                          f"output IP 127.0.0.1 if it runs here, else {mine}?) "
+                          f"[o] for the panel")
             return
         self._osc_quiet_said = True
 

@@ -4,10 +4,11 @@ Felix Woitzel's **Nova** — the scene that ships with Synesthesia — painted i
 the colour the rig is showing. The galaxies are `rig_color`, which arrives over
 OSC from `eclipse-dmx`; the other five colours of the look are derived from it
 by one rule, so a colour change on the truss moves the whole picture and not a
-corner of it. Everything that is not colour is the original, untouched.
+corner of it. The other change is how the hi-hats move it (below). Everything
+else is the original, untouched.
 
-Credit where it is due: the scene is Woitzel's. `main.glsl` says exactly which
-block eclipse-os replaced, and it is one block.
+Credit where it is due: the scene is Woitzel's. `main.glsl` marks everything
+eclipse-os changed with `ECLIPSE`.
 
 ## Running it
 
@@ -93,10 +94,30 @@ day the sender carries two fixtures.
 | `manual_color` / `color_by_hand` | Try a first colour while the link is live, which otherwise overwrites `rig_color` thirty times a second. Same reason as in Eclipse Chroma Key. |
 | `base_amount` | How bright the wash is. 0 is the black background of regimes 2 and 3; 1 a full wash like 0 and 1. |
 | `simplify`, `sandstorm`, `flashing`, `pulsate`, `radial_grid`, `beat_rotate` | The original's, unchanged. |
+| `smoothing` | How softly the hi-hats move the picture; 0.6 by default, 0 is the original's jolt. See below. |
 
 The `light` / `dark` smooth transition of the original is kept: `dark` flips
 the add/subtract tint between subtracting and adding on each transition, and
 is not a colour, so it was not this scene's to remove.
+
+## The hats, followed rather than obeyed
+
+The original feeds `syn_HighHits` straight into its feedback loop: as the gain
+on the green channel, as a gate on the red, and as an offset on the
+coordinates the galaxies are sampled at. A hit is a step to 1 for one frame, so
+every hat shoved the whole picture sideways and back, and blinked the wash and
+bleed in, because those are keyed off red at ten times gain. The picture
+pumped against the music instead of moving with it, and with no bass it froze
+outright, because its rotation runs on `syn_BassTime`.
+
+So the hats now drive an envelope with a short attack and a long release,
+carried from frame to frame in buffA's alpha (nothing else uses it). Their gain
+on the green loop drops from 0.8 to 0.5, so a held envelope cannot bloom, and
+the rotation gets a slow drift so it keeps turning through a breakdown. In an
+offline render at 124 bpm with a hat on every off-beat, the worst
+frame-to-frame jump fell from 1.9× the median to 1.3×, the same as with the
+hats unplugged, and the picture still swells with them. `smoothing` at 0 brings
+the original's hats back for comparison. The drift stays on.
 
 ## Installing
 

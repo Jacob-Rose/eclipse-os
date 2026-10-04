@@ -1180,8 +1180,53 @@ bool edmx::loadConfig(const std::string& path, Config& outConfig, std::string& o
         }
     }
 
+    // ---- cues -------------------------------------------------------------
+    // Only the layers half: the scene, media and controls are the desk's to
+    // send, and the executable never speaks to the visualiser. A layer the
+    // show does not have is the desk's business too - a cue table written
+    // for the full room runs against a bench rig without its UV.
+    config.cuePattern = config.pattern.name;
+    const JsonValue& cues = root["cues"];
+    if (cues.isObject())
+    {
+        for (const std::string& state : cues.keys())
+        {
+            const JsonValue& wanted = cues[state]["layers"];
+            if (!wanted.isObject())
+            {
+                continue;
+            }
+            Config::CueLayers entry;
+            entry.state = state;
+            for (const std::string& layer : wanted.keys())
+            {
+                const std::string layerState = wanted[layer].asString("");
+                if (!layerState.empty())
+                {
+                    entry.layers.push_back(Config::CueLayer{layer, layerState});
+                }
+            }
+            if (!entry.layers.empty())
+            {
+                config.cueLayers.push_back(std::move(entry));
+            }
+        }
+    }
+
     outConfig = config;
     return true;
+}
+
+const Config::CueLayers* Config::cueLayersFor(const std::string& state) const
+{
+    for (const CueLayers& entry : cueLayers)
+    {
+        if (entry.state == state)
+        {
+            return &entry;
+        }
+    }
+    return nullptr;
 }
 
 size_t Config::fixtureCount() const

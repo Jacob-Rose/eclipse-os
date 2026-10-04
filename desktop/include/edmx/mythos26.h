@@ -539,6 +539,14 @@ namespace edmx
         /// point it elsewhere.
         AudioChannel channel{AudioChannel::MidPresence};
 
+        /// More channels the wash rides, the loudest of them winning. For a
+        /// cue that should move whichever source is up tonight: the geode
+        /// reads Mixxx's instant VU, which the mapping ships with off, and
+        /// sat at its floor all night for want of it - so it rides Mixxx's
+        /// average and Synesthesia's bass as well. A stale channel reads
+        /// zero, so one that is not there never holds the wash up.
+        std::vector<AudioChannel> alsoChannels;
+
         /// The level the wash never drops below, and how far a full channel
         /// takes it above that.
         float floorLevel{0.2f};
@@ -565,6 +573,12 @@ namespace edmx
         /// pink, popping pink, glowing green after - which is what the scene
         /// does, and which a green landing *on* the kick did not read as.
         float afterglow{0.0f};
+
+        /// How much of the hit the truss gets, 0..1. A par is one lamp
+        /// lighting the room where a run is a pixel among hundreds, so a pop
+        /// that reads as a pulse on the obelisk is a strobe on the pars -
+        /// blown's. 1 is the same hit everywhere.
+        float trussHit{1.0f};
 
         /// A fine grain over the wash, 0..1: value noise at a scale of a
         /// fixture or two, drifting, eating into the level where it is low.
@@ -608,6 +622,21 @@ namespace edmx
     public:
         AudioChannel channel{AudioChannel::BassHits};
         float threshold{0.45f};
+        /// The shortest gap between two re-deals, in seconds. A beat
+        /// detector double-fires on a busy bar, and a rig re-dealt twice in
+        /// a quarter second is noise rather than a glitch.
+        float holdoff{0.0f};
+        /// The same gap as a share of a beat at the clock's tempo; the
+        /// longer of the two wins. However the detector misbehaves, the rig
+        /// re-deals no faster than the music is going.
+        float beatHoldoff{0.0f};
+
+        /// Music has to be there for a kick to count: one of these channels
+        /// at `gate` or above. Synesthesia's beat detector keeps firing with
+        /// nothing playing, and the glitch re-dealt the rig several times a
+        /// second to silence. Empty is no gate.
+        std::vector<AudioChannel> gateChannels;
+        float gate{0.0f};
 
         /// The level held between kicks, and seconds for the flash to fall
         /// back to it.
@@ -635,6 +664,7 @@ namespace edmx
     private:
         AudioLevel* bus{nullptr};
         bool wasAbove{false};
+        float sinceKick{1000.0f};
         unsigned int kicks{0};
         float hue{0.0f};
         float flash{0.0f};
@@ -674,6 +704,13 @@ namespace edmx
         /// How far a dark band comes up under the rainbow, 0..1: 0 keeps
         /// the canyon's levels exactly, 1 takes everything to full.
         float rainbowLift{0.35f};
+        /// How far round the wheel the hit turns a band at most, in wheels.
+        /// A quarter: the orange to a yellow or a magenta, the sky to a
+        /// teal or a violet - a rainbow over the bands, not a new picture.
+        float rainbowTurn{0.25f};
+        /// How much of the hit the truss gets, 0..1. 1 is the same turn
+        /// everywhere.
+        float trussRainbow{0.4f};
 
         /// The rainbow's envelope: how fast it arrives and how long it stays.
         void setEnvelope(float attackSeconds, float decaySeconds);
@@ -731,6 +768,10 @@ namespace edmx
         ecore::HSV colorB{32.0f, 0.90f, 1.0f};    // honey orange
         /// What the strobe drops to.
         ecore::HSV strobeColor{228.0f, 1.0f, 0.22f};   // navy
+        /// How far toward `strobe_color` a full drop goes, 0..1. 1 is all
+        /// the way; the punk cue stops short so the rig keeps its level and
+        /// the music reads as the colour moving, not the lights going out.
+        float depth{1.0f};
 
         /// Gradient cycles per second past a point, and how many fit the
         /// stage's height.
@@ -806,6 +847,11 @@ namespace edmx
     public:
         float intensity{1.0f};
         float trussRow{kTrussRowDefault};
+        /// How wide a patch of the fire a par averages, in stage units. A
+        /// par is a whole lamp, and one point of a particle fire is a flame
+        /// arriving and leaving - a flicker. Averaged over a patch it is the
+        /// colour of that stretch of fire, moving. 0 is the point.
+        float trussBlur{0.0f};
 
         void applyIntensity();
 
@@ -1038,36 +1084,41 @@ namespace edmx
     };
 
 
-    /// Mostly dark, with red-orange and a cyan blue emerging on the beat
-    /// and hiding again before the next - the scaffold cue.
+    /// Struts of the scaffold flying past - the scaffold cue.
     ///
-    /// Two things on a ground that is nearly black. The `glint`: a cyan
-    /// blue where a slow, fine field peaks, the rig's own cold light - a
-    /// few nodes at a time, drifting, the way the scene's struts catch it.
-    /// The `ember`: red-orange in patches of a second field. Both come and
-    /// go with the grid: on every hit of `rate` the envelope fires, the
-    /// ember's patches open to `ember_spread` and the glint comes up, and
-    /// over the fall they close and the rig goes back to its ground - the
-    /// pattern emerging and hiding in time, which is what the spec asks
-    /// for instead of a white flash over a look that was there anyway. So
-    /// no flash layer on this cue, and the envelope is the same shape
-    /// beat_pulse plays, off the same shared trigger, so it lands with
-    /// everything else on the rate. The probe is painted the glint.
+    /// Scaffold Fractal is a flight forward through a lattice: its bars
+    /// come at the camera continuously, quicker as the music pushes the
+    /// scene's clock, in cyan and red-orange over a dark blue fog. So the
+    /// rig is bands across the stage sweeping down it, every other one
+    /// ember, over a ground that stays lit - and their motion is locked to
+    /// the beat clock, `strut_rate` of them passing any point per beat, so
+    /// the lines move through the space on the rhythm.
+    ///
+    /// The beat lifts the struts by `lift` and narrows nothing; the rig
+    /// is never taken to black between beats. It used to be: the whole
+    /// pattern came out of a nearly black ground on every hit and hid again
+    /// before the next, which on the room read as a flash, not a scaffold.
+    /// The envelope is the same shape beat_pulse plays, off the same shared
+    /// trigger. The probe is painted the glint.
     class Pattern_Mythos_Scaffold : public Pattern_MythosLook
     {
     public:
         Pattern_Mythos_Scaffold();
 
-        ecore::HSV ground{200.0f, 0.90f, 0.05f};
+        ecore::HSV ground{205.0f, 0.90f, 0.10f};
         ecore::HSV glint{190.0f, 0.85f, 0.75f};
-        ecore::HSV ember{18.0f, 0.95f, 1.00f};
+        ecore::HSV ember{18.0f, 0.95f, 0.85f};
 
-        /// How much of the field peaks as glint at the top of the beat: the
-        /// share of the range, from the top. 0 is none.
-        float glintAmount{0.30f};
-
-        /// How far the ember's patches open at the top of the beat, 0..1.
-        float emberSpread{0.8f};
+        /// Struts passing any point per beat. 1 is one on every beat.
+        float strutRate{1.0f};
+        /// How many struts are on the stage's height at once.
+        float struts{3.0f};
+        /// A strut's width, as a share of the gap between two.
+        float strutWidth{0.3f};
+        /// How much brighter the struts are at the top of a beat than
+        /// between, 0..1. Never more than a lift: between beats they are
+        /// at 1 - lift of their colour, and they move either way.
+        float lift{0.3f};
 
         void setEnvelope(float attackSeconds, float decaySeconds);
         void setPulseRate(float pulsesPerBeat);
@@ -1081,18 +1132,19 @@ namespace edmx
         virtual void reflect(ecore::PropertyBag& bag) override;
         virtual void reflectCurves(eanim::CurveBag& bag) override;
 
-        /// How far the pattern is out right now, 0..1, for tests.
+        /// How far the beat's lift is out right now, 0..1, for tests.
         float getPulseLevel() const { return pulse; }
 
     private:
         TriggerRack* triggers{nullptr};
-        /// Quick out, and gone before the next beat at a club tempo: the
-        /// pattern is there on the hit and hidden by the time the next one
-        /// lands, so each beat is seen to bring it back.
         float attackSeconds{0.06f};
         float decaySeconds{0.38f};
         float pulseRate{edmx::kOnBeat};
         float pulse{0.0f};
+        /// Where the struts are, in struts: the beat clock's position times
+        /// the rate, so the sweep is the tempo's and survives a tempo change
+        /// without a jump.
+        double travel{0.0};
     };
 
 

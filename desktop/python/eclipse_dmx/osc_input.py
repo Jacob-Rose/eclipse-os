@@ -88,10 +88,10 @@ from .osc import decode
 #: number; nothing here can tell whether it was.
 DEFAULT_INPUT_PORT = 7000
 
-#: Bind address. Everything, rather than loopback, because the visualiser is
-#: usually the machine *next* to this one - the mac mini running Synesthesia
-#: sending to the laptop running the rig. Loopback would take only a sender on
-#: this same machine and refuse the normal case in silence.
+#: Bind address. Everything, rather than loopback: the show's own visualiser
+#: runs on this machine now, but one on the machine next door - a mac sending
+#: to the laptop running the rig - is still a setup this has to take, and
+#: loopback would refuse it in silence.
 DEFAULT_BIND = "0.0.0.0"
 
 MODES = ("value", "trigger")

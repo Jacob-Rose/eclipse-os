@@ -41,20 +41,16 @@ OSC_DEVICE="synesthesia"        # devices/synesthesia.json: the room's colour
 MIDIMAP="${ECLIPSE_MIDIMAP:-}"
 PYTHON="${PYTHON:-python3}"
 
-# Where the visualiser is: the mac mini, which is the machine Synesthesia runs
-# on. Named rather than addressed on purpose - this network hands out addresses
-# by DHCP, the name follows the machine across a new lease and an address does
-# not, and the sender looks the name up again every 15s while the set runs.
+# Where the visualiser is: this machine. Synesthesia runs here under Wine
+# (~/.local/bin/synesthesia), so the colour goes out over loopback - no name to
+# resolve, no DHCP lease to follow, no firewall in the way.
 #
-# It answers to "Jakes-Mac-mini.local", not "mac-mini.local" - that is the name
-# macOS built from the computer's name in Sharing, and it is what it announces
-# on mDNS. On 2026-09-03 that resolved to 192.168.50.216, which is the number to
-# put here if a venue's network has no mDNS to ask (see readme.md, "naming the
-# machine instead of its address").
-#
-# ECLIPSE_OSC_ADDRESS overrides it for a machine that is not this rig, and --osc
-# overrides both.
-OSC_ADDRESS="${ECLIPSE_OSC_ADDRESS:-Jakes-Mac-mini.local:6000}"
+# It used to be the mac mini, by name ("Jakes-Mac-mini.local:6000") because the
+# network hands out addresses by DHCP and the sender re-resolves a name every
+# 15s. That still works for a visualiser on another machine: set
+# ECLIPSE_OSC_ADDRESS, or pass --osc, which overrides both (see readme.md,
+# "naming the machine instead of its address").
+OSC_ADDRESS="${ECLIPSE_OSC_ADDRESS:-127.0.0.1:6000}"
 
 # The way back: Synesthesia's audio engine, which is the source for this show.
 # Its FFT is the only thing in the room doing real analysis, so the levels, the
@@ -81,8 +77,8 @@ OSC_IN_PORT="${ECLIPSE_OSC_IN_PORT:-7000}"
 # Mixxx still reaches us on the same run.
 #
 # Named, not addressed: this is "20:1" to aconnect today and something else
-# after a replug, the same reason the mac mini is a name up there. The X shows
-# up as two ports and only one of them carries your pads - the MIDI port for
+# after a replug, the same reason a visualiser on the network is a name. The X
+# shows up as two ports and only one of them carries your pads - the MIDI port for
 # the standalone custom and note modes, the DAW port for a session-mode host.
 # Which one is a question for the controller, not for this file:
 #
@@ -195,8 +191,8 @@ launch-mythos-set.sh - the mythos26 set, on this machine
   --osc-in PORT        listen for it on this port instead (default 7000, or
                        $ECLIPSE_OSC_IN_PORT). Must match Synesthesia's OSC
                        *output* port; `osc-watch` shows what arrives.
-  --osc HOST:PORT      where the visualiser is listening. Defaults to the mac
-                       mini, Jakes-Mac-mini.local:6000, or $ECLIPSE_OSC_ADDRESS.
+  --osc HOST:PORT      where the visualiser is listening. Defaults to this
+                       machine, 127.0.0.1:6000, or $ECLIPSE_OSC_ADDRESS.
                        A name is followed if its address changes.
   --midi SPEC          controller to take pads from (default the Launchpad,
                        or $ECLIPSE_MIDI_PORT). Empty string opens none and

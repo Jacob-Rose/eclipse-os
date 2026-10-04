@@ -98,10 +98,19 @@
 			"NAME" : "beat_rotate",
 			"TYPE" : "toggle",
 			"UI_GROUP" : "action"
+		},
+		{
+			"DEFAULT" : 0.6,
+			"DESCRIPTION" : "How softly the hi-hats move the picture. The original jolts the whole feedback on every hat - one frame sideways and back, the wash blinking in. Up, the hats swell and settle instead. 0 is the original, for comparing.",
+			"MAX" : 1.0,
+			"MIN" : 0.0,
+			"NAME" : "smoothing",
+			"TYPE" : "slider",
+			"UI_GROUP" : "action"
 		}
 	],
 	"CREDIT" : "Felix Woitzel (Nova); colour link by eclipse-os",
-	"DESCRIPTION" : "Felix Woitzel's Nova with its palette taken from the rig: the galaxies are whatever colour the lights are showing, arriving over OSC from eclipse-dmx, and the other five colours of the look are derived from that one. Everything else is the original.",
+	"DESCRIPTION" : "Felix Woitzel's Nova with its palette taken from the rig: the galaxies are whatever colour the lights are showing, arriving over OSC from eclipse-dmx, and the other five colours of the look are derived from that one. The hi-hats swell and settle the picture instead of jolting it (smoothing). Everything else is the original.",
 	"GPU" : 2,
 	"IMAGE_PATH" : "eclipse_nova.png",
 	"PASSES" :

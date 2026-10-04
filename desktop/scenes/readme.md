@@ -34,15 +34,32 @@ python -m eclipse_dmx osc ../config/mythos26.json --device synesthesia
 
 ## Installing one
 
-A scene is a **folder** ending in `.synScene`. Copy the whole folder into the
-scenes directory Synesthesia is watching — the app names it in its settings; on
-this machine it is `%USERPROFILE%\Videos\obscuria`. It appears in the browser
+A scene is a **folder** ending in `.synScene`, and Synesthesia loads them from
+the folder named in **Settings → Custom Scene Folder**. It appears in the browser
 without a restart, and saving `main.glsl` hot-reloads the shader.
 
-They are kept here as well as there because a scene is part of this feature: the
-control it exposes is the sender's target, and the two are one thing that only
-works if both halves agree. The copy in the scenes directory is the one the app
-loads — edit either, but do not let them drift.
+**On the Linux rig there is nothing to copy.** Synesthesia runs there under
+Wine (`~/.local/bin/synesthesia`, prefix `~/.local/share/wineprefixes/synesthesia`),
+and its scene folder *is* this directory:
+
+```
+C:\users\jakee\Documents\eclipse-os\desktop\scenes
+```
+
+`Documents` in the prefix is a link to the real one, so that path is the
+checkout. A scene committed here is a scene in the app, and the two cannot
+drift. The clips the cue table names live in `~/Videos/obscuria`
+(`C:\users\jakee\Videos\obscuria`), added in the app's media panel.
+`black.mp4` and `white.mp4` are generated (see `readme.md` in `desktop/`). The
+four stock clips (`alien-message.mp4`, `275593_medium.mp4`,
+`87841-602894456.mp4` and `361331_medium.mp4`) are not in git and have to be
+copied in from wherever the last machine had them.
+
+Elsewhere (Windows, the mac), copy the whole folder into the scenes directory
+the app is watching. It is kept here as well as there because a scene is part
+of this feature: the control it exposes is the sender's target, and the two are
+one thing that only works if both halves agree. Edit either, but do not let
+them drift.
 
 ## Both scenes name the key colour `rig_color`
 

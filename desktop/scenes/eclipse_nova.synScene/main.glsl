@@ -7,8 +7,10 @@
 // the carpet/galaxy warps, the gradient flow, the radial grid and the pulses
 // are all his and are carried here unchanged.
 //
-// What eclipse-os changed is one thing, the palette - the block marked
-// ECLIPSE in mainImage4(). Everything else in this file is the original.
+// What eclipse-os changed is two things, each marked ECLIPSE: the palette,
+// in mainImage4(), and how the hi-hats move the picture - followHits(), the
+// idle drift on bassTime, and the hats' gain on the green feedback. Everything
+// else in this file is the original.
 // ============================================================================
 
 // Nova, with its colours taken from the rig.
@@ -44,7 +46,31 @@
 // exactly instead.
 
 float bassHits = syn_BassHits;
-float highHits = syn_HighHits;
+
+// ---- ECLIPSE: the hats, followed rather than obeyed ------------------------
+// The original feeds syn_HighHits straight into the feedback in pass 0 - as
+// the green channel's gain, as the red channel's gate - and into the
+// coordinates pass 4 samples the galaxies at. A hit is a one-frame step to 1,
+// so on every hat the whole picture jumped sideways and its wash and bleed
+// (keyed off red, at ten times gain) blinked in, then snapped back: the
+// "blending" that pumped against the music instead of with it. This is an
+// envelope instead, with a short attack and a long release, carried frame to
+// frame in buffA's alpha, which nothing else uses. Every pixel computes the
+// same value, so the channel stays uniform. `smoothing` 0 is the original's
+// hats, for comparing.
+// Per frame, not per second: Synesthesia has no TIMEDELTA, and it renders
+// at the display's rate.
+float followHits(float previous)
+{
+  float rate = syn_HighHits > previous ? mix(1.0, 0.3, smoothing) : mix(1.0, 0.04, smoothing);
+  return mix(previous, syn_HighHits, rate);
+}
+
+// The hats' gain on the green feedback. The original's 0.8 takes the loop
+// above unity on a hit, which a raw one-frame hit survives and a held
+// envelope does not - it blooms. 0.5 from half smoothing up; 0.8 at none.
+float hitGain = mix(0.8, 0.5, clamp(smoothing*2.0, 0.0, 1.0));
+// ---- end ECLIPSE --------------------------------------------------------
 float vuTimeUncorrected = syn_Time;
 float bassTimeUncorrected = syn_BassTime;
 float randomizerBeat = syn_RandomOnBeat;
@@ -61,7 +87,9 @@ int iFrame = int(TIME*60.0);
 float time = TIME;
 vec2 resolution = RENDERSIZE;
 float vuTime = vuTimeUncorrected*6*0.01 + time * 0.05;
-float bassTime = syn_BassTime*0.09;
+// ECLIPSE: syn_BassTime stands still without bass, and so did the whole
+// picture - frozen through every breakdown. A slow drift keeps it alive.
+float bassTime = (syn_BassTime + TIME*0.25)*0.09;
 float beatTime = beatTimeUncorrected*6;
 
 vec2 lightPos = vec2(resolution.x*(0.5+0.5*sin(bassTime*2*PI*0.18)),resolution.y*(0.5+0.5*cos(bassTime*2*PI*0.224)));
@@ -251,6 +279,7 @@ vec2 GradientA(vec2 uv, vec2 d, vec4 selector, int level){
 void mainImage0(out vec4 fragColor, in vec2 fragCoord)
 {
   vec2 uv = fragCoord.xy / iResolution.xy;
+  float highHits = followHits(texture(buffA, _uv).a); // ECLIPSE
 
   vec2 aspect = vec2(1.,iResolution.y/iResolution.x);
   vec2 pixelSize = 1. / iResolution.xy;
@@ -281,7 +310,7 @@ void mainImage0(out vec4 fragColor, in vec2 fragCoord)
   uv_galaxies = wrap_flip(uv_galaxies + offset);
 
   float bleedAmt = 0.5;
-  fragColor.g = pow(texture(buffA, _uv).g*(0.5+highHits*0.8)+BlurA(uv_galaxies, 0).b*bleedAmt,2.0);
+  fragColor.g = pow(texture(buffA, _uv).g*(0.5+highHits*hitGain)+BlurA(uv_galaxies, 0).b*bleedAmt,2.0);
 
   fragColor.g = mix(fragColor.g, 0.2, center_f1lter);
 
@@ -299,6 +328,7 @@ void mainImage0(out vec4 fragColor, in vec2 fragCoord)
   }
 
   fragColor = clamp(fragColor, 0., 1.);
+  fragColor.a = highHits; // ECLIPSE: next frame's previous
 
 }
 
@@ -567,6 +597,7 @@ void mainImage4(out vec4 fragColor, in vec2 fragCoord)
 {
   vec2 uv = fragCoord.xy / iResolution.xy;
   vec2 pixelSize = 1. / iResolution.xy;
+  float highHits = texture(buffA, vec2(0.5)).a; // ECLIPSE: this frame's, from pass 0
   vec2 aspect = vec2(1.,iResolution.y/iResolution.x);
 
 

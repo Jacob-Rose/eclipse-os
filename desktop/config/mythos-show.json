@@ -69,8 +69,10 @@
   // level_meter, never on `level`, which is the visualiser's here. Three
   // cues ask for the cable's meter by name: the geode's red rides the
   // instant (note 64, "Enable VU mono current" in the mapping's settings -
-  // it is off by default there), the tunnel's wash and the punk's drop ride
-  // the average (note 68, on by default). `channels` shows them landing.
+  // it is off by default there) and the average, and Synesthesia's bass as
+  // well, whichever is loudest; the tunnel's wash and the punk's colour
+  // lean ride the average (note 68, on by default). `channels` shows them
+  // landing.
   //
   // Flip "source" to "mixxx" (or run the launcher with --no-osc-in) for the
   // night the visualiser will not start: those three carry on, the other
@@ -177,7 +179,12 @@
   //            cue before it does not colour it.
   //   layers   the state each layer takes, by layer name. A layer left out
   //            is left alone; every cue here names both, so a cue never
-  //            inherits the last one's flash.
+  //            inherits the last one's flash. The executable reads this
+  //            half itself and applies it on *every* change of the show's
+  //            state, however it arrived - a pad, a button, a `state` at
+  //            the desk, an OSC binding - so the UV is what the cue wants
+  //            even when only the state was sent. A mode's layers are
+  //            still the desk's, fired by the mode pad.
   //   controls the scene's own controls to set, by control name as the
   //            scene declares it (folded the way the app addresses it), a
   //            number each - a toggle is 0 or 1 - or [r, g, b] 0..1 for a
@@ -254,7 +261,7 @@
     "glitch": {
       "scene": "Glitch",
       "media": "alien-message.mp4",
-      "layers": { "flash": "off", "uv": "off" }
+      "layers": { "flash": "off", "uv": "rainbow" }
     },
     "tunnel": {
       // The tunnel adds a little of its media into the walls on the highs.
@@ -262,22 +269,22 @@
       // own, and the flash pad is there for the night that wants it.
       "scene": "Fire Tunnel",
       "media": "black.mp4",
-      "layers": { "flash": "off", "uv": "off" }
+      "layers": { "flash": "off", "uv": "rainbow" }
     },
     "blown": {
       "scene": "Filter Blown v2",
       "media": "275593_medium.mp4",
-      "layers": { "flash": "off", "uv": "kick" }
+      "layers": { "flash": "off", "uv": "off" }
     },
     "punk": {
       // `smoke` is the scene's own beat flash - it inverts lightness on
-      // syn_OnBeat, so the visual goes *dark* on the beat - and the look
-      // does the same, dropping toward navy as far as Mixxx's average VU
-      // says, so the rig's drop is the track's level and not the grid's.
-      // The white flash layer is off: added over the drop it whited the
-      // beat out.
+      // syn_OnBeat, so the visual goes *dark* on the beat. The look used to
+      // follow it down to navy and flashed the whole way through; now it
+      // holds its level and leans toward a bright blue as far as Mixxx's
+      // average VU says, so the track moves the colour, not the lights.
+      // The white flash layer is off.
       "scene": "Milk, Honey, Smoke, Bile",
-      "layers": { "flash": "off", "uv": "kick" },
+      "layers": { "flash": "off", "uv": "rainbow" },
       "controls": { "smoke": 1 }
     },
     "reaction": {
@@ -285,18 +292,17 @@
       // the presence is up, a low white grain when it is not.
       "scene": "Reaction-Confusion",
       "media": "87841-602894456.mp4",
-      "layers": { "flash": "off", "uv": "off" }
+      "layers": { "flash": "off", "uv": "rainbow" }
     },
     "canyon": {
       "scene": "Vibe Thresholds",
       "media": "361331_medium.mp4",
-      "layers": { "flash": "off", "uv": "off" }
+      "layers": { "flash": "off", "uv": "rainbow" }
     },
     "scaffold": {
-      // Mostly dark, like the scene. No flash: the look's glint and ember
-      // come out on the beat and hide again before the next on their own,
-      // and a white over that was a flash over a pattern that was there
-      // anyway.
+      // The scene's flight through the lattice: the look's struts sweep
+      // down the stage on the beat clock over a dim fog. No flash: a white
+      // over moving lines turns them back into a strobe.
       "scene": "Scaffold Fractal",
       "layers": { "flash": "off", "uv": "off" }
     },
@@ -311,7 +317,7 @@
       // turns its pair through the wheel.
       "scene": "Eclipse Churn",
       "media": "black.mp4",
-      "layers": { "flash": "off", "uv": "off" },
+      "layers": { "flash": "off", "uv": "rainbow" },
       "controls": { "rig_amount": 1, "rig_contrast": 0.6, "color_phasing": 0,
                     "rig_color_2": [0.05, 0.10, 1.00] },
       "modes": {
@@ -333,7 +339,7 @@
       // again - the complement of the probe - so it cycles with it; the
       // look moves its galaxies to the blue whose complement is the yellow.
       "scene": "Eclipse Nova",
-      "layers": { "flash": "off", "uv": "off" },
+      "layers": { "flash": "off", "uv": "rainbow" },
       "controls": { "color_by_hand": 0, "auto_second": 0, "base_amount": 0.35,
                     "rig_color_2": [1.00, 0.85, 0.15] },
       "modes": {
@@ -377,8 +383,8 @@
       //   masks this scene by its own luminance. It needs white named.
       "scene": "Cloud Ten",
       "media": "white.mp4",
-      "layers": { "flash": "off", "uv": "off" },
-      "controls": { "auto_height": 0, "manual_height": 0.25, "speed": 0.25 },
+      "layers": { "flash": "off", "uv": "rainbow" },
+      "controls": { "auto_height": 0, "manual_height": 0, "speed": 0.25 },
       "modes": {
         "2": { "controls": { "manual_height": 0.50 } },
         "3": { "controls": { "manual_height": 0.85 } }

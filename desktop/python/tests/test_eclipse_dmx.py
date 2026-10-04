@@ -3230,13 +3230,16 @@ class TheShowCues(unittest.TestCase):
         self.assertEqual(cues["geode"].layers["flash"], "off")
         self.assertEqual(cues["tunnel"].layers["flash"], "off")
         self.assertEqual(cues["rain"].layers["uv"], "rainbow")
-        self.assertEqual(cues["blown"].layers["uv"], "kick")
-        # the punk's drop is the look's own, toward navy the way the
-        # scene's smoke goes dark on the beat - a white flash over it would
-        # white the beat out; the scaffold's pattern comes and goes on the
-        # beat by itself, so no white flashes over it either
-        self.assertEqual(cues["punk"].layers, {"flash": "off", "uv": "kick"})
+        self.assertEqual(cues["blown"].layers, {"flash": "off", "uv": "off"})
+        # the punk's colour lean is the look's own - a white flash over it
+        # would white the beat out; the scaffold's struts move on the beat
+        # clock by themselves, so no white flashes over them either. The UV
+        # wheels under every scene cue but the fire, the blown and the
+        # scaffold
+        self.assertEqual(cues["punk"].layers, {"flash": "off", "uv": "rainbow"})
         self.assertEqual(cues["scaffold"].layers, {"flash": "off", "uv": "off"})
+        for name in ("glitch", "tunnel", "punk", "reaction", "canyon", "churn", "nova", "clouds"):
+            self.assertEqual(cues[name].layers["uv"], "rainbow", name)
         self.assertEqual(cues["rain"].media, "black.mp4")
         self.assertEqual(cues["rain"].modes[2].media, "alien-message.mp4")
         self.assertEqual(cues["reaction"].scene, "Reaction-Confusion")
@@ -3258,12 +3261,12 @@ class TheShowCues(unittest.TestCase):
         """The order the actions run in: the machine, the state, the layers,
         then the scene and media - so a visualiser that is not there costs
         the rig nothing, and a knob after a state lands on the new look."""
-        keys = [entry["action"] for entry in cue_actions(self.config, "blown")]
+        keys = [entry["action"] for entry in cue_actions(self.config, "rain")]
         self.assertEqual(keys, ["pattern", "state", "layer", "layer", "syn_scene", "syn_media"])
-        params = [entry["params"] for entry in cue_actions(self.config, "blown")]
+        params = [entry["params"] for entry in cue_actions(self.config, "rain")]
         self.assertEqual(params[0], {"name": "mythos26"})
-        self.assertEqual(params[1], {"name": "blown"})
-        self.assertEqual(params[3], {"layer": "uv", "name": "kick"})
+        self.assertEqual(params[1], {"name": "rain"})
+        self.assertEqual(params[3], {"layer": "uv", "name": "rainbow"})
 
     def test_a_cue_with_no_media_sends_none(self):
         keys = [entry["action"] for entry in cue_actions(self.config, "neuron")]
@@ -3381,14 +3384,14 @@ class TheShowCues(unittest.TestCase):
         self.assertEqual(clouds.mode_ramp, 2.0)
         # the look's knob is `height`; the scene's is `manual_height`, its
         # own name for the same thing, folded the way the app addresses it
-        for mode, value in ((1, 0.25), (2, 0.50), (3, 0.85)):
+        for mode, value in ((1, 0.0), (2, 0.50), (3, 0.85)):
             entries = cue_mode_actions(self.config, "clouds", mode)
             self.assertEqual([e["action"] for e in entries], ["param", "syn_control"], mode)
             self.assertEqual(entries[1]["params"], {"address": "/controls/scene/manualheight",
                                                     "low": value, "high": value, "ramp": 2.0}, mode)
         up = [e["params"] for e in cue_actions(self.config, "clouds")
               if e["action"] == "syn_control"]
-        self.assertIn({"address": "/controls/scene/manualheight", "low": 0.25, "high": 0.25}, up)
+        self.assertIn({"address": "/controls/scene/manualheight", "low": 0.0, "high": 0.0}, up)
         self.assertFalse([p for p in up if "ramp" in p])
 
     def test_a_mode_that_resends_the_scene_does_not_ramp(self):
@@ -3764,13 +3767,18 @@ class TheLayerAction(unittest.TestCase):
         hand is not the cue that is up, and the pad says so."""
         config = Config.load(CUES)
         pad = midi_map.Mapping(kind="note", number=11, actions=[
-            midi_map.Action.from_dict(entry) for entry in cue_actions(config, "blown")
+            midi_map.Action.from_dict(entry) for entry in cue_actions(config, "rain")
             if entry["action"] not in ("syn_scene", "syn_media")])
-        rig = self._rig(flash=_FakeLayer("off"), uv=_FakeLayer("kick"))
-        rig.current_state = "blown"
+        rig = self._rig(flash=_FakeLayer("off"), uv=_FakeLayer("rainbow"))
+        rig.current_state = "rain"
         self.assertIs(pad.is_live(midi_map.ActionContext(show=rig)), True)
         rig.layers["uv"].current_state = "off"
         self.assertIs(pad.is_live(midi_map.ActionContext(show=rig)), False)
+
+
+def _hue(rgb):
+    import colorsys
+    return colorsys.rgb_to_hsv(*(c / 255.0 for c in rgb))[0]
 
 
 class TheShowLooks(ShowTest):
@@ -3946,24 +3954,60 @@ class TheShowLooks(ShowTest):
         self.assertGreater(max(before), 0, "holds a colour between beats")
 
         # one edge, one colour: the same beat held high for several frames
-        # must deal once, and a second beat after it has dropped deals again
+        # must deal once, and a second beat after it has dropped deals again.
+        # Mixxx's meter up throughout: the cue only deals with music playing.
         for _ in range(4):
+            show.command("audio level_average 0.5", expect_reply=False)
             show.command("audio beat 1.0", expect_reply=False)
             time.sleep(0.04)
         time.sleep(0.5)
         first = frames[-1][self.SAMPLE]
+        show.command("audio level_average 0.5", expect_reply=False)
         show.command("audio beat 0.0", expect_reply=False)
         time.sleep(0.3)
+        show.command("audio level_average 0.5", expect_reply=False)
         show.command("audio beat 1.0", expect_reply=False)
         time.sleep(0.5)
         second = frames[-1][self.SAMPLE]
 
-        def hue(rgb):
-            import colorsys
-            return colorsys.rgb_to_hsv(*(c / 255.0 for c in rgb))[0]
+        self.assertNotAlmostEqual(_hue(before), _hue(first), delta=0.05)
+        self.assertNotAlmostEqual(_hue(first), _hue(second), delta=0.05)
 
-        self.assertNotAlmostEqual(hue(before), hue(first), delta=0.05)
-        self.assertNotAlmostEqual(hue(first), hue(second), delta=0.05)
+    def test_a_bare_state_takes_its_cues_layers(self):
+        """The UV a cue wants is the executable's to apply, on any change of
+        state - not only when the desk fires the whole cue. A `state` alone,
+        the way a desk line, an OSC binding or the all-states page sends
+        it, still leaves the UV where the cue table says."""
+        frames = []
+        show = self._show("neuron", on_frame=frames.append)
+        uv = show.layers["uv"]
+        show.command("layer uv state on 0")
+        self.settle_until(lambda: uv.current_state == "on", message="the UV on by hand")
+
+        show.set_state("geode", seconds=0)
+        self.settle_until(lambda: uv.current_state == "off", message="geode's UV off")
+        show.set_state("rain", seconds=0)
+        self.settle_until(lambda: uv.current_state == "rainbow", message="rain's UV on the wheel")
+        show.set_state("scaffold", seconds=0)
+        self.settle_until(lambda: uv.current_state == "off", message="scaffold's UV off")
+
+        pars = [d for d in show.devices if d.name == "pars"][0]
+        time.sleep(1.5)     # the UV layer's own one-second fade
+        self.assertEqual(max(frames[-1][pars.first + pars.count - 1]), 0, "the UV par is dark")
+
+    def test_glitch_holds_still_to_silence(self):
+        """Synesthesia's detector beats on with nothing playing. With no
+        level on the bus the glitch must not re-deal on it."""
+        frames = []
+        show = self._show("glitch", on_frame=frames.append)
+        time.sleep(0.6)
+        before = frames[-1][self.SAMPLE]
+        for _ in range(4):
+            show.command("audio beat 1.0", expect_reply=False)
+            time.sleep(0.1)
+            show.command("audio beat 0.0", expect_reply=False)
+            time.sleep(0.4)
+        self.assertAlmostEqual(_hue(before), _hue(frames[-1][self.SAMPLE]), delta=0.01)
 
     def test_canyon_offers_its_beat_envelope(self):
         show = self.running_show(CUES, midi="")
@@ -5292,9 +5336,9 @@ class ViewerOnTheCues(GuiTest):
 
     def test_a_cue_button_places_the_layers(self):
         self.layers()
-        self.app._run_button(("state", "blown"))
-        self.settle_until(lambda: self.app.show.layers["uv"].current_state == "kick",
-                          message="the UV on the kick, as blown's cue says")
+        self.app._run_button(("state", "rain"))
+        self.settle_until(lambda: self.app.show.layers["uv"].current_state == "rainbow",
+                          message="the UV on the wheel, as rain's cue says")
         self.assertEqual(self.app.show.layers["flash"].current_state, "off")
 
         self.app.show.layers["flash"].set_state("flash")
@@ -5316,17 +5360,33 @@ class ViewerOnTheCues(GuiTest):
         self.assertEqual(self.app._syn_state.sent_media, "361331_medium.mp4")
 
     def test_a_state_without_a_cue_touches_nothing_else(self):
-        self.layers()
-        self.app._run_button(("state", "blown"))
-        self.settle_until(lambda: self.app.show.layers["uv"].current_state == "kick",
-                          message="the UV on the kick")
         # every state of the show has a cue now; take the house lights' away
-        # so this is a state the table does not name
-        del self.app.config.cues["white"]
+        # so this is a state the table does not name - from the file, since
+        # the executable reads the table's layers for itself
+        from eclipse_dmx.viewer import ViewerApp
+        self.app._quit()
+        text = CUES.read_text(encoding="utf-8")
+        start = text.index('    "white": {')
+        depth, at = 0, text.index("{", start)
+        while True:
+            depth += {"{": 1, "}": -1}.get(text[at], 0)
+            at += 1
+            if depth == 0:
+                break
+        trimmed = CUES.with_name("mythos-show.no-white.test.json")
+        trimmed.write_text(text[:start] + text[at:].lstrip(",\n") , encoding="utf-8")
+        self.addCleanup(trimmed.unlink)
+        self.app = ViewerApp(trimmed, pattern="mythos26", midi="", bpm=120.0)
+        self.assertNotIn("white", self.app.config.cues)
+
+        self.layers()
+        self.app._run_button(("state", "rain"))
+        self.settle_until(lambda: self.app.show.layers["uv"].current_state == "rainbow",
+                          message="the UV on the wheel")
         self.app._run_button(("state", "white"))
         self.settle_until(lambda: self.app.show.current_state == "white",
                           message="the house lights up")
-        self.assertEqual(self.app.show.layers["uv"].current_state, "kick",
+        self.assertEqual(self.app.show.layers["uv"].current_state, "rainbow",
                          "a state with no cue leaves the layers where they were")
 
 

@@ -2745,6 +2745,43 @@ namespace
         emitParamsFor(show.pattern.get(), "");
     }
 
+    /// Puts the layers where the cue table says `state` wants them - see
+    /// Config::cueLayers. Only for the pattern the table is written for (the
+    /// same state name on another machine is a coincidence, not a cue), and
+    /// only a layer not already there: a second `layer uv state off` from
+    /// the desk firing the same cue must not restart a fade. Announced the
+    /// way the `layer` command announces, so the desk's copy follows.
+    void applyCueLayers(ShowState& show, const std::string& state)
+    {
+        if (!show.pattern || show.pattern->getName() != show.config.cuePattern)
+        {
+            return;
+        }
+        const Config::CueLayers* wanted = show.config.cueLayersFor(state);
+        if (wanted == nullptr)
+        {
+            return;
+        }
+        for (const Config::CueLayer& entry : wanted->layers)
+        {
+            ShowState::Layer* layer = findLayer(show, entry.layer);
+            StateMachinePattern* machine = (layer && layer->pattern) ? layer->pattern->asStateMachine() : nullptr;
+            if (machine == nullptr || machine->currentStateName() == entry.state)
+            {
+                continue;
+            }
+            std::string error;
+            if (!machine->setState(entry.state, error))
+            {
+                emit("WARN cue " + state + ": layer " + entry.layer + ": " + error);
+                continue;
+            }
+            const std::string prefix = "LAYER " + layer->name + " ";
+            emit(prefix + "STATE " + machine->currentStateName());
+            emitParamsFor(layer->pattern.get(), prefix);
+        }
+    }
+
     /// `MOD intensity bass 0 1 0.1 ok`, one per modulation.
     ///
     /// The trailing word is whether the knob it names exists on the look that
@@ -3632,6 +3669,7 @@ namespace
             emit("OK state " + words[1]);
             emit("STATE " + machine->currentStateName());
             emitParams(show);
+            applyCueLayers(show, machine->currentStateName());
             return;
         }
 

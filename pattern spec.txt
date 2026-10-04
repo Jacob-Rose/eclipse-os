@@ -68,17 +68,17 @@ pattern - pink base throughout on presence, min 0.65 (was 0.3 and too dark until
 palette - pink (315 / 0.95 / 1.00) riding the mids, floor 0.65; the kick pops it to full pink then green (120 / 1.00 / 1.00) afterglow, decay 0.45
 mode 2 - brighter base (floor 0.85)
 mode 3 - the old cue, dark until the pop (floor 0.25)
-uv - on kick
+uv - off
 synesthesia - Filter Blown v2
 media - 275593_medium.mp4
 
 8. punk
 pattern - punk purple / honey orange gradient, reactive, pretty bright (match shader aesthetic). the drop goes dark, not white: the scene's smoke inverts lightness on the beat.
 palette - punk purple (280 / 0.95 / 1.00) into honey orange (32 / 0.90 / 1.00), scrolling slowly (0.12 cycles a second - faster and the scroll is a second pulse off the beat), dropping toward navy (228 / 1.00 / 0.22) as far as mixxx's vu average says (note 68), slewed 0.05s - the drop blends on the meter, not on the bpm
-additional layer - none. the flash layer is off: white added over the drop whited it out (and, blended in hsv, came out cyan). uv on kick.
+additional layer - none. the flash layer is off: white added over the drop whited it out (and, blended in hsv, came out cyan). uv off.
 mode 2 - the beat strobe instead, half time (the drop on the beat, back over 0.22s)
 mode 3 - the beat strobe, double time
-uv - on kick
+uv - off
 synesthesia - Milk, Honey, Smoke, Bile (with its own beat strobe "smoke" on)
 
 9. reaction
@@ -93,7 +93,7 @@ media - 87841-602894456.mp4
 10. canyon
 pattern - cycling wave gradients moving top down with canyon orange browns greens and blues as we fly through the area. gradients and blending seamless: the bands eased into each other (a straight blend had a corner at every colour, six lines down the obelisk), and half the loop on the rig at once (waves 0.5 - at 1 the six bands were seven rows each and under two pars, stripes).
 palette - canyon orange (22 / 0.95 / 1.00), rust (12 / 0.90 / 0.55), brown (30 / 0.80 / 0.35), floor green (100 / 0.75 / 0.65), sky (205 / 0.80 / 0.90), deep blue (228 / 0.90 / 0.50), looping, blended round the short side of the hue wheel (in rgb the bands met in grey)
-param - on bpm hit the colours turn toward a rainbow and back (attack 0.12, decay 0.45, held over a beat that lands mid-fall). the bands keep their own brightness, lifted 0.35 of the way to full - a colour pulse, not a light pulse; the cross-fade to a full-bright wheel was a strobe.
+param - on bpm hit the colours turn toward a rainbow and back (attack 0.12, decay 0.45, held over a beat that lands mid-fall): each band's hue swings up to a quarter wheel, one way or the other by height, so the bands fan round the wheel. the bands keep their own brightness, lifted 0.35 of the way to full - a colour pulse, not a light pulse; the cross-fade to a full-bright wheel was a strobe. the pars get 0.4 of the hit (truss_rainbow): a half-wheel swing on a par lamp every beat was a colour strobe, and blending toward a wheel hue the short way flipped sides mid-pulse wherever that hue sat opposite a band.
 mode 2 - slow fly (speed 0.05, the whole loop on the rig), the rainbow once a bar
 mode 3 - fast (speed 0.30), the rainbow in double time
 synesthesia - Vibe Thresholds

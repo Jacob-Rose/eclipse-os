@@ -460,6 +460,33 @@ namespace edmx
         std::vector<Device> devices;
         std::vector<LayerConfig> layers;
 
+        /// What each state wants of the layers: state -> (layer -> layer
+        /// state), off the cue table's `layers` (`cues.<state>.layers`).
+        /// Applied here, on every change of the show's state whoever asked
+        /// for it, so the UV a cue wants does not depend on the cue having
+        /// been fired from a pad or a button - a `state` typed at the desk,
+        /// an OSC binding or the all-states page gets it too. The desk still
+        /// sends the same layer lines when it fires a whole cue; the second
+        /// one finds the layer already there and changes nothing.
+        struct CueLayer
+        {
+            std::string layer;
+            std::string state;
+        };
+        struct CueLayers
+        {
+            std::string state;
+            std::vector<CueLayer> layers;
+        };
+        std::vector<CueLayers> cueLayers;
+        /// The machine the cue table is written for: the config's opening
+        /// pattern, kept apart from `pattern.name`, which follows the
+        /// `pattern` command.
+        std::string cuePattern;
+
+        /// The layer states `state` asks for, or null for a state with no cue.
+        const CueLayers* cueLayersFor(const std::string& state) const;
+
         /// Knobs on the show's own look driven by the bus. The layers carry
         /// their own; these are the show's.
         std::vector<ModConfig> mods;

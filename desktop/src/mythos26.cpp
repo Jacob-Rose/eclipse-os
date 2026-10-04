@@ -190,6 +190,15 @@ bool edmx::trussRowCoord(const eio::HSVStripNode* node, float row, ecore::Coordi
     return true;
 }
 
+namespace
+{
+    bool isTruss(const eio::HSVStripNode* node)
+    {
+        const eio::HSVStripNode_Space* spaced = eio::spaceOf(node);
+        return spaced != nullptr && spaced->space == eio::NodeSpace::Truss;
+    }
+}
+
 // ============================================================================
 // beat_pulse
 // ============================================================================
@@ -534,7 +543,12 @@ void Pattern_Mythos_BusWash::tick(float deltaTime)
 
     // the wash: the channel, slewed. A channel nobody is filling reads zero,
     // which leaves the wash at its floor - lit, which is the point of one.
-    const float target = std::clamp(bus->get(channel, now) * gain, 0.0f, 1.0f);
+    float reading = bus->get(channel, now);
+    for (AudioChannel also : alsoChannels)
+    {
+        reading = std::max(reading, bus->get(also, now));
+    }
+    const float target = std::clamp(reading * gain, 0.0f, 1.0f);
     if (slew <= 0.0f || deltaTime <= 0.0f)
     {
         level = target;
@@ -566,7 +580,8 @@ void Pattern_Mythos_BusWash::render(eio::HSVStripNode* node, ecore::HSV& inOutCo
     const float amount = std::clamp(intensity, 0.0f, 1.0f);
     const float floorValue = std::clamp(floorLevel, 0.0f, 1.0f);
     float wash = floorValue + (1.0f - floorValue) * level * amount;
-    const float kick = std::clamp(hitLevel * hit * amount, 0.0f, 1.0f);
+    const float reach = isTruss(node) ? std::clamp(trussHit, 0.0f, 1.0f) : 1.0f;
+    const float kick = std::clamp(hitLevel * hit * amount * reach, 0.0f, 1.0f);
 
     // the grain: a fine field drifting over the stage, cutting into the wash
     // where it is low - so the flat blue of the geode's second mode has
@@ -609,6 +624,7 @@ void Pattern_Mythos_BusWash::reflect(ecore::PropertyBag& bag)
     bag.add("hit_decay", hitDecay, 0.02f, 1.0f);
     bag.add("hit_color", hitColor);
     bag.add("afterglow", afterglow, 0.0f, 1.0f);
+    bag.add("truss_hit", trussHit, 0.0f, 1.0f);
 }
 
 // ============================================================================
@@ -619,6 +635,7 @@ void Pattern_Mythos_KickColor::init()
 {
     bus = &sharedAudioLevel();
     wasAbove = false;
+    sinceKick = 1000.0f;
     kicks = 0;
     hue = 0.0f;
     flash = 0.0f;
@@ -627,6 +644,7 @@ void Pattern_Mythos_KickColor::init()
 void Pattern_Mythos_KickColor::onKick()
 {
     ++kicks;
+    sinceKick = 0.0f;
     // the golden angle: every step lands far from the last few, and the
     // sequence never closes into a cycle short enough to notice
     hue = std::fmod(hue + 137.508f, 360.0f);
@@ -641,9 +659,27 @@ void Pattern_Mythos_KickColor::tick(float deltaTime)
         bus = &sharedAudioLevel();
     }
 
-    // one rising edge, one colour
-    const bool above = bus->get(channel, nowSeconds()) >= threshold;
-    if (above && !wasAbove)
+    // one rising edge, one colour - none inside the holdoff, so a detector
+    // firing twice on one busy beat re-deals the rig once, and none while
+    // the gate says nothing is playing
+    const double now = nowSeconds();
+    sinceKick += std::max(deltaTime, 0.0f);
+
+    float gap = holdoff;
+    const float bpm = sharedBeatClock().getBpm();
+    if (beatHoldoff > 0.0f && bpm > 0.0f)
+    {
+        gap = std::max(gap, beatHoldoff * 60.0f / bpm);
+    }
+
+    bool playing = gateChannels.empty();
+    for (AudioChannel gated : gateChannels)
+    {
+        playing = playing || bus->get(gated, now) >= gate;
+    }
+
+    const bool above = bus->get(channel, now) >= threshold;
+    if (above && !wasAbove && sinceKick >= gap && playing)
     {
         onKick();
     }
@@ -681,6 +717,9 @@ void Pattern_Mythos_KickColor::reflect(ecore::PropertyBag& bag)
 {
     Pattern_MythosLook::reflect(bag);
     bag.add("threshold", threshold, 0.05f, 1.0f);
+    bag.add("holdoff", holdoff, 0.0f, 2.0f);
+    bag.add("beat_holdoff", beatHoldoff, 0.0f, 4.0f);
+    bag.add("gate", gate, 0.0f, 1.0f);
     bag.add("floor", floorLevel, 0.0f, 1.0f);
     bag.add("decay", decay, 0.02f, 2.0f);
     bag.add("saturation", saturation, 0.0f, 1.0f);
@@ -769,23 +808,31 @@ void Pattern_Mythos_CanyonWave::render(eio::HSVStripNode* node, ecore::HSV& inOu
     // subtracting time takes each band toward the floor
     const ecore::HSV rock = kCanyon.at(up * waves - timeActive * speed);
 
-    // the rainbow: the wheel over the same height, drifting slowly the other
-    // way so two hits in a row are not the same picture
-    const float wheel = frac(up + timeActive * 0.05f) * 360.0f;
+    // The hit turns the canyon's colours toward a rainbow; it does not
+    // replace them. Each band's hue swings by up to `rainbow_turn` of the
+    // wheel, one way or the other by height - a sine over the stage,
+    // drifting slowly so two hits in a row are not the same picture - so
+    // the bands fan out round the wheel. This was a blend toward a wheel
+    // hue the short way round, and where that hue sat opposite a band the
+    // short way flipped sides from one frame to the next: a half-wheel
+    // jump, mid-pulse, on whatever par was there. The turn has no
+    // opposite to flip at.
+    //
+    // The bands keep their own levels - the rust stays dim and the sky
+    // bright - lifted by `rainbow_lift` so the dark ones are seen to turn.
+    // The truss gets `truss_rainbow` of all of it: a par is one lamp
+    // lighting the room, and a swing that reads as a colour moving on the
+    // obelisk is a colour strobe on the pars.
+    const float reach = isTruss(node) ? std::clamp(trussRainbow, 0.0f, 1.0f) : 1.0f;
+    const float amount = rainbow * reach;
+    const float swing = std::sin((up + timeActive * 0.05f) * 2.0f * 3.14159265f);
+    const ecore::HSV turned = turnHue(rock, amount * rainbowTurn * swing);
 
-    // The hit turns the canyon's colours toward the wheel's; it does not
-    // replace them. The bands keep their own levels - the rust stays dim
-    // under the rainbow and the sky stays bright - lifted by `rainbow_lift`
-    // so the dark ones are seen to turn. This was a cross-fade to the wheel
-    // at full, which on every beat took the whole rig to full white-bright
-    // saturated colour and back: a strobe, and a blown-out one.
     const float lift = std::clamp(rainbowLift, 0.0f, 1.0f);
     const float value = rock.getValFloat();
-    const float lifted = value + (1.0f - value) * lift;
-    ecore::HSV out(blendHue(rock.getHueFloat(), wheel, rainbow),
-                   lerp(rock.getSatFloat(), 1.0f, rainbow),
-                   lerp(value, lifted, rainbow));
-    out.setBrightnessAlpha(lerp(value, lifted, rainbow));
+    const float level = lerp(value, value + (1.0f - value) * lift, amount);
+    ecore::HSV out(turned.getHueFloat(), lerp(rock.getSatFloat(), 1.0f, amount), level);
+    out.setBrightnessAlpha(level);
     inOutColor = out;
 }
 
@@ -798,6 +845,8 @@ void Pattern_Mythos_CanyonWave::reflect(ecore::PropertyBag& bag)
     bag.add("decay", decaySeconds, 0.01f, 3.0f, [this] { setEnvelope(attackSeconds, decaySeconds); });
     bag.add("rate", pulseRate, kQuarterTime, kDoubleTime, [this] { setPulseRate(pulseRate); });
     bag.add("rainbow_lift", rainbowLift, 0.0f, 1.0f);
+    bag.add("rainbow_turn", rainbowTurn, 0.0f, 0.5f);
+    bag.add("truss_rainbow", trussRainbow, 0.0f, 1.0f);
 }
 
 void Pattern_Mythos_CanyonWave::reflectCurves(eanim::CurveBag& bag)
@@ -891,7 +940,7 @@ void Pattern_Mythos_GradientStrobe::render(eio::HSVStripNode* node, ecore::HSV& 
     // through magenta, and down into the navy through violet, not
     // through the grey an RGB mix of either pair passes
     const ecore::HSV gradient = blendHsv(colorA, colorB, mix);
-    inOutColor = blendHsv(gradient, strobeColor, strobe);
+    inOutColor = blendHsv(gradient, strobeColor, strobe * std::clamp(depth, 0.0f, 1.0f));
 }
 
 void Pattern_Mythos_GradientStrobe::reflect(ecore::PropertyBag& bag)
@@ -908,6 +957,7 @@ void Pattern_Mythos_GradientStrobe::reflect(ecore::PropertyBag& bag)
     bag.add("color_a", colorA);
     bag.add("color_b", colorB);
     bag.add("strobe_color", strobeColor);
+    bag.add("depth", depth, 0.0f, 1.0f);
 }
 
 void Pattern_Mythos_GradientStrobe::reflectCurves(eanim::CurveBag& bag)
@@ -937,7 +987,27 @@ void Pattern_Mythos_Fire::render(eio::HSVStripNode* node, ecore::HSV& inOutColor
     Coordinate at;
     if (trussRowCoord(node, trussRow, at))
     {
-        renderAt(at, inOutColor);
+        if (trussBlur <= 0.0f)
+        {
+            renderAt(at, inOutColor);
+            return;
+        }
+        // a 3x3 patch from the row up, averaged in RGB: the colour of that
+        // stretch of fire rather than whichever flame is passing the point
+        const float step = trussBlur * 0.5f;
+        ecore::HSV mean;
+        int taken = 0;
+        for (int dy = 0; dy < 3; ++dy)
+        {
+            for (int dx = -1; dx <= 1; ++dx)
+            {
+                ecore::HSV here;
+                renderAt(Coordinate(at.x + dx * step, at.y + dy * step), here);
+                ++taken;
+                mean = (taken == 1) ? here : blendRgb(mean, here, 1.0f / static_cast<float>(taken));
+            }
+        }
+        inOutColor = mean;
         return;
     }
     Pattern_Generic_Fire2012::render(node, inOutColor);
@@ -951,6 +1021,7 @@ void Pattern_Mythos_Fire::reflect(ecore::PropertyBag& bag)
     reflectMode(bag);
     bag.add("intensity", intensity, 0.0f, 1.0f, [this] { applyIntensity(); });
     bag.add("truss_row", trussRow, scanner::kStageBottom, scanner::kStageTop);
+    bag.add("truss_blur", trussBlur, 0.0f, 4.0f);
     Pattern_Generic_Fire2012::reflect(bag);
 }
 
@@ -1403,14 +1474,13 @@ void Pattern_Mythos_Scaffold::reset()
     Pattern_MythosLook::reset();
     envelope.reset();
     pulse = 0.0f;
+    travel = 0.0;
 }
 
 void Pattern_Mythos_Scaffold::tick(float deltaTime)
 {
     PatternScanner::tick(deltaTime);
 
-    // the same shared trigger beat_pulse fires off, so the pattern comes
-    // out on the same frame as anything else on the rate
     const BeatTrigger& trigger = triggers->forRate(pulseRate);
     if (trigger.fired)
     {
@@ -1419,6 +1489,8 @@ void Pattern_Mythos_Scaffold::tick(float deltaTime)
     envelope.tick(deltaTime);
 
     pulse = std::clamp(envelope.getValue(), 0.0f, 1.0f) * std::clamp(intensity, 0.0f, 1.0f);
+
+    travel = sharedBeatClock().beatPosition(nowSeconds()) * static_cast<double>(strutRate);
 }
 
 void Pattern_Mythos_Scaffold::render(eio::HSVStripNode* node, ecore::HSV& inOutColor) const
@@ -1432,37 +1504,48 @@ void Pattern_Mythos_Scaffold::render(eio::HSVStripNode* node, ecore::HSV& inOutC
 
     const Coordinate at = nodeCoord(node);
 
-    // the glint: a slow fine field, lit only where it peaks - and only as
-    // far out as the beat has it: the share of the field that glints is
-    // the pulse's share of `glint_amount`
-    const float tg = timeActive * 0.12f;
-    const float g = scanner::valueNoise(at.x * 0.9f + tg * 1.1f + 11.0f, at.y * 0.55f - tg * 0.7f);
-    const float glintShare = std::clamp(glintAmount, 0.0f, 1.0f) * pulse;
-    const float cold = glintShare > 0.0f ? smoothstep(1.0f - glintShare, 1.0f, g) * pulse : 0.0f;
+    // the fog: the ground, breathing a little in a slow field so the dark
+    // between struts is a space and not a flat colour
+    const float tf = timeActive * 0.15f;
+    const float fog = scanner::valueNoise(at.x * 0.4f + tf + 11.0f, at.y * 0.25f - tf * 0.6f);
+    const float groundValue = ground.getValFloat() * (0.7f + 0.6f * fog);
 
-    // the ember: a second field, opened by the beat - the threshold the
-    // patch has to clear falls as the pulse rises, and climbs back over
-    // the fall so the patches close from their edges in
-    const float te = timeActive * 0.35f;
-    const float e = scanner::valueNoise(at.x * 0.5f - te * 0.9f + 53.0f, at.y * 0.3f + te * 1.4f);
-    const float open = pulse * std::clamp(emberSpread, 0.0f, 1.0f);
-    const float hot = smoothstep(1.0f - open, 1.0f - open + 0.25f, e) * pulse;
+    // the struts: bands across the stage, `struts` of them on its height,
+    // sweeping down as the beat clock runs. `place` counts struts from the
+    // floor plus the travel, so its integer part names the strut a node is
+    // in and every other one is ember.
+    const double place = static_cast<double>(stageAlpha(node) * std::max(struts, 0.25f)) + travel;
+    const double which = std::floor(place);
+    const float across = static_cast<float>(place - which);
+    const float half = std::clamp(strutWidth, 0.02f, 1.0f) * 0.5f;
+    const float fromCentre = std::fabs(across - 0.5f);
+    // A run is a pixel and takes a crisp line. A par is a lamp lighting the
+    // room, and a line crossing it in a tenth of a second is a blink - so
+    // the pars swell and fade over the whole gap, one after another up the
+    // truss, which is the line passing them rather than flashing them.
+    const float band = isTruss(node)
+        ? std::pow(0.5f + 0.5f * std::cos(fromCentre * 2.0f * 3.14159265f), 2.0f)
+        : 1.0f - smoothstep(half * 0.5f, half, fromCentre);
 
-    // built up from the ground: the glint on it, the ember over that
-    HSV out = blendRgb(ground, glint, cold);
-    float value = lerp(ground.getValFloat(), glint.getValFloat(), cold);
-    out = blendRgb(out, ember, hot);
-    value = lerp(value, ember.getValFloat(), hot);
+    const bool isEmber = (static_cast<long long>(which) & 1LL) != 0;
+    const HSV& strut = isEmber ? ember : glint;
 
-    inOutColor = out;
-    inOutColor.setBrightnessAlpha(value);
+    const float amount = std::clamp(intensity, 0.0f, 1.0f);
+    const float lifted = 1.0f - std::clamp(lift, 0.0f, 1.0f) * (1.0f - pulse);
+    const float strutValue = strut.getValFloat() * lifted * amount;
+
+    const float mix = band * amount;
+    inOutColor = blendRgb(ground, strut, mix);
+    inOutColor.setBrightnessAlpha(lerp(groundValue, std::max(strutValue, groundValue), band));
 }
 
 void Pattern_Mythos_Scaffold::reflect(ecore::PropertyBag& bag)
 {
     Pattern_MythosLook::reflect(bag);
-    bag.add("glint_amount", glintAmount, 0.0f, 1.0f);
-    bag.add("ember_spread", emberSpread, 0.0f, 1.0f);
+    bag.add("strut_rate", strutRate, 0.0f, 4.0f);
+    bag.add("struts", struts, 0.5f, 8.0f);
+    bag.add("strut_width", strutWidth, 0.05f, 1.0f);
+    bag.add("lift", lift, 0.0f, 1.0f);
     bag.add("attack", attackSeconds, 0.0f, 1.0f, [this] { setEnvelope(attackSeconds, decaySeconds); });
     bag.add("decay", decaySeconds, 0.01f, 3.0f, [this] { setEnvelope(attackSeconds, decaySeconds); });
     bag.add("rate", pulseRate, kQuarterTime, kDoubleTime, [this] { setPulseRate(pulseRate); });
@@ -1709,10 +1792,17 @@ std::unique_ptr<StateMachinePattern> edmx::makeUvStateMachine()
     // what made it look out of step with the truss. It waits, and lands with
     // everything else on the `beat` trigger.
     //
-    // `kick` and `rainbow` are the show's asks: the blacklight on every kick
-    // for filter blown, and breathing through a hue wheel - which on three
-    // banks of one colour is a third to two thirds and never off - under the
-    // rain. Both are looks the show has anyway, pointed at one light.
+    // `kick` and `rainbow` are the show's asks: the blacklight on every kick,
+    // a pad away under any cue, and breathing through a hue wheel -
+    // which on three banks of one colour is a third to two thirds and never
+    // off - under the rain. Both are looks the show has anyway, pointed at
+    // one light.
+    //
+    // The kick is a glow, not a strobe: it rests at a low level, lands at
+    // most of full on the kick and falls away over a third of a second. It
+    // was the bass hits raw - black to full and back on every transient -
+    // and on a par beside the truss that was the flashing blown and the
+    // punk were both too much of.
     std::vector<StateDef> states = {
         levelLook("off", 0.0f),
         //                                     attack decay  rate  entry hit
@@ -1721,8 +1811,11 @@ std::unique_ptr<StateMachinePattern> edmx::makeUvStateMachine()
         showLook<Pattern_Mythos_BusWash>("kick", [](Pattern_Mythos_BusWash& look) {
             look.color = ecore::HSV(0.0f, 0.0f, 1.0f);
             look.channel = AudioChannel::BassHits;
-            look.floorLevel = 0.0f;
-            look.slew = 0.0f;
+            look.gain = 0.0f;
+            look.floorLevel = 0.15f;
+            look.hitColor = ecore::HSV(0.0f, 0.0f, 1.0f);
+            look.hit = 0.75f;
+            look.hitDecay = 0.35f;
         }),
         look<Pattern_Mythos_HueCycle>("rainbow"),
     };
@@ -1807,16 +1900,25 @@ std::unique_ptr<StateMachinePattern> edmx::makeMythos26StateMachine()
             [](NoiseWash& look) { look.speed = 0.35f; look.scale = 1.6f; },
             [](NoiseWash& look) { look.speed = 2.5f;  look.scale = 0.7f; },
         }),
-        // 2. red, riding Mixxx's instant VU - the meter that peaks on
-        //    every kick, the cable's own bass - never below a fifth, and no
-        //    flash over it: the meter is the beat. The geode shifts to
-        //    blue, so 2 is blue: a grained blue field on the same meter
-        //    with a paler blue landing on the kick. 3 keeps the red and
-        //    lands blue on the kick instead.
+        // 2. red, riding whichever level is there - Mixxx's instant VU
+        //    (the meter that peaks on every kick, off in the mapping until
+        //    someone turns it on), Mixxx's average, or Synesthesia's bass -
+        //    and swelling to a hotter red on Synesthesia's bass hits. On
+        //    the instant alone it sat at its floor whenever the cable was
+        //    not sending it, which was most nights. Never below a fifth,
+        //    and no white flash over it: the swell is the beat. The geode
+        //    shifts to blue, so 2 is blue: a grained blue field on the same
+        //    levels with a paler blue landing on the kick. 3 keeps the red
+        //    and lands blue on the kick instead.
         showLook<BusWash>("geode", [](BusWash& look) {
             look.color = HSV(0.0f, 1.0f, 1.0f);
             look.channel = AudioChannel::LevelInstant;
+            look.alsoChannels = {AudioChannel::LevelAverage, AudioChannel::Bass};
             look.floorLevel = 0.2f;
+            look.slew = 0.1f;
+            look.hitColor = HSV(14.0f, 1.0f, 1.0f);
+            look.hit = 0.8f;
+            look.hitDecay = 0.3f;
         }, {
             [](BusWash& look) {
                 look.color = HSV(228.0f, 1.0f, 1.0f);
@@ -1846,19 +1948,42 @@ std::unique_ptr<StateMachinePattern> edmx::makeMythos26StateMachine()
             [](Rain& look) { look.targetHueSpread = 0.0f; look.targetWhite = 1.0f;
                              look.dropCount = 80.0f; look.fallSpeed = 18.0f; },
         }),
-        // 4. fire. 2 is embers - a few risers, dying young; 3 is the whole
-        //    bed alight and climbing fast.
-        showLook<Fire>("fire", {}, {
+        // 4. fire. The pars read the obelisk's bottom run - the ember bed
+        //    and the flames as they are born, not the fifth run where they
+        //    pass by whole - averaged over a patch, so each par is the
+        //    colour of its stretch of fire moving rather than a flicker.
+        //    2 is embers - a few risers, dying young; 3 is the whole bed
+        //    alight and climbing fast.
+        showLook<Fire>("fire", [](Fire& look) {
+            look.trussRow = scanner::kStageBottom;
+            look.trussBlur = 1.5f;
+        }, {
             [](Fire& look) { look.sparking = 0.15f; look.cooling = 60.0f; },
             [](Fire& look) { look.sparking = 0.85f; look.cooling = 20.0f; look.riseSpeed = 18.0f; },
         }),
         // 5. a new colour on every beat. The Glitch scene re-deals its
         //    background on syn_OnBeat, which the audio bus carries as `beat`
         //    - so the rig re-deals on the same signal, not a bass hit near
-        //    it. 2 is one colour across the rig; 3 darker between hits and
-        //    torn further apart on each.
+        //    it, and on the same line: the scene's is 0.9, and the rig's
+        //    0.45 caught the detector's half-beats the scene ignores. 0.8
+        //    rather than 0.9 because the bus samples the spike at 30Hz and
+        //    can land after its peak. No faster than three quarters of a
+        //    beat at the clock's tempo, for the double-fires, and only with
+        //    music playing - Mixxx's meters or Synesthesia's presence up -
+        //    because the detector carries on beating to silence. A high
+        //    floor, so a re-deal is the colour changing more than the rig
+        //    flashing. 2 is one colour across the rig; 3 darker between
+        //    hits and torn further apart on each.
         showLook<KickColor>("glitch", [](KickColor& look) {
             look.channel = AudioChannel::Beat;
+            look.threshold = 0.8f;
+            look.holdoff = 0.3f;
+            look.beatHoldoff = 0.75f;
+            look.gateChannels = {AudioChannel::LevelAverage, AudioChannel::LevelInstant,
+                                 AudioChannel::Presence};
+            look.gate = 0.1f;
+            look.floorLevel = 0.75f;
+            look.decay = 0.45f;
         }, {
             [](KickColor& look) { look.scatter = 0.0f; },
             [](KickColor& look) { look.floorLevel = 0.2f; look.scatter = 0.3f; look.decay = 0.2f; },
@@ -1883,29 +2008,40 @@ std::unique_ptr<StateMachinePattern> edmx::makeMythos26StateMachine()
         }),
         // 7. pink riding the mids, never below 0.65 - a pink base all the
         //    way through, rather than dark until it pops - and the kick a
-        //    pop of pink to full with a green afterglow, which is the order
-        //    Filter Blown v2's palette runs in: black through magenta (hue
-        //    321) to green (hue 119) at full motion. 2 lifts the base; 3 is
+        //    pop of pink with a green afterglow, which is the order Filter
+        //    Blown v2's palette runs in: black through magenta (hue 321) to
+        //    green (hue 119) at full motion. The kick at a little over half,
+        //    falling slower, and a third of that on the pars - at full it
+        //    was a strobe, and on the truss worst. 2 lifts the base; 3 is
         //    the old cue, dark until the pop.
         showLook<BusWash>("blown", [](BusWash& look) {
             look.color = HSV(321.0f, 0.95f, 1.0f);
             look.channel = AudioChannel::MidPresence;
             look.floorLevel = 0.65f;
+            look.slew = 0.3f;
             look.hitColor = HSV(119.0f, 1.0f, 1.0f);
-            look.hit = 1.0f;
-            look.hitDecay = 0.45f;
+            look.hit = 0.6f;
+            look.hitDecay = 0.6f;
             look.afterglow = 1.0f;
+            look.trussHit = 0.35f;
         }, {
             [](BusWash& look) { look.floorLevel = 0.85f; },
             [](BusWash& look) { look.floorLevel = 0.25f; },
         }),
-        // 8. punk purple into honey orange, dropping toward navy as far as
-        //    Mixxx's average VU says - the drop is the look's own and goes
-        //    dark, the way the scene's `smoke` does, and it rides the meter
-        //    rather than the grid; the flash layer stays off so nothing
-        //    whites over it. The UV on the kick is the cue table's half. 2
-        //    and 3 are the beat strobe instead, in half time and in double.
-        showLook<Strobe>("punk", {}, {
+        // 8. punk purple into honey orange, leaning toward a deep blue as
+        //    far as Mixxx's average VU says. It used to drop to a navy at a
+        //    fifth of full and back on the meter's every wobble, which was
+        //    the rig flashing hard all the way through; now the blue is
+        //    nearly as bright as the gradient, the lean stops a little
+        //    short of it and is slewed, so the rig holds its level and the
+        //    track moves its colour. The flash layer and the UV stay off;
+        //    the UV's pad is there. 2 and 3 are the beat instead
+        //    of the meter, in half time and in double, the same colour lean.
+        showLook<Strobe>("punk", [](Strobe& look) {
+            look.strobeColor = HSV(228.0f, 1.0f, 0.8f);
+            look.depth = 0.6f;
+            look.slew = 0.3f;
+        }, {
             [](Strobe& look) { look.follow = 0.0f; look.setPulseRate(edmx::kHalfTime); },
             [](Strobe& look) { look.follow = 0.0f; look.setPulseRate(edmx::kDoubleTime); },
         }),
@@ -1928,26 +2064,24 @@ std::unique_ptr<StateMachinePattern> edmx::makeMythos26StateMachine()
             [](Canyon& look) { look.speed = 0.05f; look.waves = 1.0f; look.setPulseRate(edmx::kQuarterTime); },
             [](Canyon& look) { look.speed = 0.30f; look.setPulseRate(edmx::kDoubleTime); },
         }),
-        // 11. mostly dark: a cyan glint where a slow field peaks on a
-        //     near-black ground, and red-orange in patches - both out on
-        //     the beat and hidden again before the next, so the pattern
-        //     comes and goes with the grid rather than a white flashing
-        //     over it (the flash layer is off; the cue table's half). 2 is
-        //     the scaffold lit - more glint, the ground up, the pattern
-        //     lingering; 3 is hard - the ground gone, the ember wide open,
-        //     less glint, and the pattern in double time.
+        // 11. the scaffold flying past: cyan and red-orange struts
+        //     sweeping down the stage, one past any point per beat on the
+        //     beat clock, over a dim blue fog that stays lit, the struts a
+        //     little brighter on the beat. It was the whole pattern popping
+        //     out of black on every hit, which was a flash. 2 is the
+        //     scaffold lit - the fog up, wider struts, a slower sweep; 3 is
+        //     hard - the fog gone, more struts and twice the speed.
         showLook<Scaffold>("scaffold", {}, {
             [](Scaffold& look) {
-                look.glintAmount = 0.5f;
-                look.ground = HSV(200.0f, 0.90f, 0.14f);
-                look.setEnvelope(0.06f, 0.60f);
+                look.ground = HSV(205.0f, 0.90f, 0.22f);
+                look.strutWidth = 0.45f;
+                look.strutRate = 0.5f;
             },
             [](Scaffold& look) {
-                look.ground = HSV(200.0f, 0.90f, 0.0f);
-                look.glintAmount = 0.15f;
-                look.emberSpread = 1.0f;
-                look.setEnvelope(0.03f, 0.18f);
-                look.setPulseRate(edmx::kDoubleTime);
+                look.ground = HSV(205.0f, 0.90f, 0.0f);
+                look.struts = 5.0f;
+                look.strutRate = 2.0f;
+                look.lift = 0.45f;
             },
         }),
         // 12. the churn: Eclipse Churn is Churning painted in two rig
