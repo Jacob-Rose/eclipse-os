@@ -3208,7 +3208,8 @@ class TheShowCues(unittest.TestCase):
     def test_the_show_config_validates_and_opens_on_the_show(self):
         self.assertEqual(self.config.validate(strict_overlap=False), [])
         self.assertEqual(self.config.pattern.name, "mythos26")
-        self.assertEqual(self.config.pattern.state, MYTHOS26_STATES[0])
+        # dark until the first cue is pressed
+        self.assertEqual(self.config.pattern.state, "blackout")
 
     def test_every_cue_names_a_state_of_the_show(self):
         for state in self.config.cues:

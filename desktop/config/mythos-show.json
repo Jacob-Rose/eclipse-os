@@ -25,7 +25,9 @@
   // on the frame's diagonal.
   "pattern": {
     "name": "mythos26",
-    "state": "neuron"
+    // Opens dark: the set starts on the blackout and the first cue is a
+    // press, not whatever was up the moment the launcher came round.
+    "state": "blackout"
   },
 
   // Tempo in, from Mixxx - the fallback source. See config/mythos26.json for
