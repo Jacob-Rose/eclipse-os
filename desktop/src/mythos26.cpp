@@ -2275,9 +2275,9 @@ std::unique_ptr<StateMachinePattern> edmx::makeMythos26StateMachine()
         //     more often than the purple between them: the scene's paint
         //     is hard-edged and the rig was mostly the mix. The level
         //     speeds the field up as it pushes the scene's paint, and the
-        //     bass hits swell it toward full and let it fall - on the pars
-        //     a third of that, and their contrast down, so a lamp drifts
-        //     between the colours instead of flipping and pumping. Four
+        //     bass hits punch it toward full and let it fall - on the pars
+        //     most of that, and their contrast eased, so a lamp leans
+        //     between the colours rather than flipping on every pass. Four
         //     modes, a pad each: three palettes and a rainbow. 1 is the
         //     scene's own pair, red and blue; 2 magenta and cyan; 3 orange
         //     and violet; 4 the red-and-blue pair turned through the wheel,
@@ -2294,10 +2294,9 @@ std::unique_ptr<StateMachinePattern> edmx::makeMythos26StateMachine()
             look.contrast = 0.7f;
             look.push = 1.5f;
             look.kick = 0.45f;
-            look.kickAttack = 0.05f;
-            look.kickDecay = 0.4f;
-            look.trussKick = 0.35f;
-            look.trussContrast = 0.3f;
+            look.kickAttack = 0.02f;
+            look.trussKick = 0.7f;
+            look.trussContrast = 0.5f;
         }, {
             [](NoiseWash& look) { look.colorA = HSV(300.0f, 0.90f, 1.00f); look.colorB = HSV(185.0f, 0.95f, 0.90f); },
             [](NoiseWash& look) { look.colorA = HSV(28.0f, 0.95f, 1.00f);  look.colorB = HSV(268.0f, 0.90f, 0.80f); },
