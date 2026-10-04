@@ -4274,13 +4274,16 @@ class BeatLooks(ShowTest):
         show.set_param("decay", 0.12)
         show.set_param("attack", 0.02)
         time.sleep(1.4)                 # somewhere mid-bar, hit or not
-        stamped.clear()
-        show.command("midi align")
+        # The frames are kept rather than cleared, and the clock read before
+        # the command: the hit lands as the align does, so it is often the
+        # very next frame - and cleared, it was the first in the list, with
+        # nothing before it to be an edge against.
         aligned = time.monotonic()
+        show.command("midi align")
         time.sleep(0.6)                 # well inside the two-second bar
 
         edges = [now for index, (now, lit) in enumerate(stamped)
-                 if lit and index > 0 and not stamped[index - 1][1]]
+                 if lit and index > 0 and not stamped[index - 1][1] and now >= aligned]
         self.assertTrue(edges, "aligning the one should hit on it")
         self.assertLess(edges[0] - aligned, 0.3,
                         "the hit should land on the align, not on the old grid")
