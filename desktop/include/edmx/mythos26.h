@@ -504,6 +504,17 @@ namespace edmx
         /// `kick_decay` - the punch the scene's paint takes on a kick.
         float kick{0.0f};
         float kickDecay{0.3f};
+        /// Seconds for the kick to rise. Up at once was a flash on every
+        /// kick; a few frames makes it a swell that still lands on the beat.
+        float kickAttack{0.0f};
+
+        /// The pars' share of the kick, and their contrast: a par is one
+        /// lamp lighting the room, so a punch that reads as a pulse on the
+        /// obelisk is a strobe on the truss, and a lamp flipping hard
+        /// between the two colours as the field races past is another.
+        /// Contrast below 0 is the rig's own.
+        float trussKick{1.0f};
+        float trussContrast{-1.0f};
 
         void init();
 

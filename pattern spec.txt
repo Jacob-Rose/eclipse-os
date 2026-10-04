@@ -115,7 +115,8 @@ media - none
 
 12. e-churn
 pattern - the noise field in the churn's two colours, busier than neuron (speed 1.6, scale 0.8), pushed by the level like the paint is (follow 0.6, floor 0.35). contrast 0.7: the mix curved toward whichever colour a patch leans, so it is red or blue far more often than the purple between - still a blend, in a narrower band.
-music - the level speeds the field up the way it pushes the scene's paint (push 1.5: a full level runs it two and a half times as fast), and the bass hits punch it toward full (kick 0.45), falling over 0.3s.
+music - the level speeds the field up the way it pushes the scene's paint (push 1.5: a full level runs it two and a half times as fast), and the bass hits swell it toward full (kick 0.45, up over 0.05s, falling over 0.4s).
+pars - gentler than the rig: a third of the kick (truss_kick 0.35) and the contrast down to 0.3, so a lamp drifts between the colours instead of flipping and pumping as the field races past.
 three colour palette buttons and one that cycles rainbow colors, matched across synesthesia and eclipse-os: colour A is the probe, colour B is sent to the scene per palette.
 mode 1 - red (0 / 0.95 / 1.00) and blue (237 / 0.95 / 0.85) - the scene's own pair. scene rig_color_2 = rgb 0.05 0.10 1.00
 mode 2 - magenta (300 / 0.90 / 1.00) and cyan (185 / 0.95 / 0.90). scene rig_color_2 = rgb 0.05 0.85 0.90

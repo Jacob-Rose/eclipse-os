@@ -4035,6 +4035,48 @@ class TheShowLooks(ShowTest):
         time.sleep(1.2)
         self.assertLess(max(frames[-1][self.SAMPLE]), peak - 30, "and it falls back")
 
+    def test_churn_is_gentler_on_the_pars(self):
+        """A punch that is a pulse on the obelisk is a strobe on a par: the
+        pars take a share of the kick."""
+        frames = []
+        show = self._show("churn", on_frame=frames.append)
+        pars = show.devices[2]
+        par = pars.first + 4
+        time.sleep(0.8)
+        rest = (max(frames[-1][self.SAMPLE]), max(frames[-1][par]))
+
+        mark = len(frames)
+        for _ in range(3):
+            show.command("audio bass_hits 1.0", expect_reply=False)
+            time.sleep(0.04)
+        show.command("audio bass_hits 0.0", expect_reply=False)
+        time.sleep(0.2)
+        rig = max(max(f[self.SAMPLE]) for f in frames[mark:]) - rest[0]
+        lamp = max(max(f[par]) for f in frames[mark:]) - rest[1]
+        self.assertGreater(rig, 40, "the rig takes the kick")
+        self.assertLess(lamp, rig * 0.75, "a par takes less of it than the rig")
+
+    def test_churn_is_gentler_on_the_pars(self):
+        """A punch that is a pulse on the obelisk is a strobe on a par: the
+        pars take a share of the kick."""
+        frames = []
+        show = self._show("churn", on_frame=frames.append)
+        pars = show.devices[2]
+        par = pars.first + 4
+        time.sleep(0.8)
+        rest = (max(frames[-1][self.SAMPLE]), max(frames[-1][par]))
+
+        mark = len(frames)
+        for _ in range(3):
+            show.command("audio bass_hits 1.0", expect_reply=False)
+            time.sleep(0.04)
+        show.command("audio bass_hits 0.0", expect_reply=False)
+        time.sleep(0.2)
+        rig = max(max(f[self.SAMPLE]) for f in frames[mark:]) - rest[0]
+        lamp = max(max(f[par]) for f in frames[mark:]) - rest[1]
+        self.assertGreater(rig, 40, "the rig takes the kick")
+        self.assertLess(lamp, rig * 0.75, "a par takes less of it than the rig")
+
     def test_glitch_pars_jump_on_the_deal(self):
         """At the rig's floor a par moved a quarter of its range on the
         beat. The pars sit lower, and a deal takes them to full."""

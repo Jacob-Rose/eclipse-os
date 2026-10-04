@@ -465,13 +465,14 @@ void Pattern_Mythos_NoiseWash::tick(float deltaTime)
     if (kick > 0.0f)
     {
         const float hitNow = std::clamp(bus->get(AudioChannel::BassHits, now), 0.0f, 1.0f);
-        if (hitNow >= kickLevel || kickDecay <= 0.0f || deltaTime <= 0.0f)
+        const float seconds = (hitNow >= kickLevel) ? kickAttack : kickDecay;
+        if (seconds <= 0.0f || deltaTime <= 0.0f)
         {
             kickLevel = hitNow;
         }
         else
         {
-            kickLevel += (hitNow - kickLevel) * (1.0f - std::exp(-deltaTime / kickDecay));
+            kickLevel += (hitNow - kickLevel) * (1.0f - std::exp(-deltaTime / seconds));
         }
     }
 }
@@ -509,7 +510,8 @@ void Pattern_Mythos_NoiseWash::render(eio::HSVStripNode* node, ecore::HSV& inOut
     // contrast: the mix pushed toward whichever side it leans, by a power
     // under one on its distance from the middle - a curve, not a step, so
     // the two colours still meet, in a narrower band the harder it is set
-    const float pick = std::clamp(contrast, 0.0f, 1.0f);
+    const bool truss = isTruss(node);
+    const float pick = std::clamp((truss && trussContrast >= 0.0f) ? trussContrast : contrast, 0.0f, 1.0f);
     if (pick > 0.0f)
     {
         const float x = mix * 2.0f - 1.0f;
@@ -528,7 +530,8 @@ void Pattern_Mythos_NoiseWash::render(eio::HSVStripNode* node, ecore::HSV& inOut
     const float ride = 1.0f - std::clamp(follow, 0.0f, 1.0f) * (1.0f - level);
     inOutColor = blendRgb(a, b, mix);
     const float value = floorValue + (1.0f - floorValue) * inOutColor.getValFloat() * ride;
-    const float punch = std::clamp(kick * kickLevel * depth, 0.0f, 1.0f);
+    const float reach = truss ? std::clamp(trussKick, 0.0f, 1.0f) : 1.0f;
+    const float punch = std::clamp(kick * kickLevel * depth * reach, 0.0f, 1.0f);
     inOutColor.setBrightnessAlpha(value + (1.0f - value) * punch);
 }
 
@@ -548,6 +551,9 @@ void Pattern_Mythos_NoiseWash::reflect(ecore::PropertyBag& bag)
     bag.add("push", push, 0.0f, 3.0f);
     bag.add("kick", kick, 0.0f, 1.0f);
     bag.add("kick_decay", kickDecay, 0.05f, 1.0f);
+    bag.add("kick_attack", kickAttack, 0.0f, 0.3f);
+    bag.add("truss_kick", trussKick, 0.0f, 1.0f);
+    bag.add("truss_contrast", trussContrast, -1.0f, 1.0f);
 }
 
 // ============================================================================
@@ -2269,7 +2275,9 @@ std::unique_ptr<StateMachinePattern> edmx::makeMythos26StateMachine()
         //     more often than the purple between them: the scene's paint
         //     is hard-edged and the rig was mostly the mix. The level
         //     speeds the field up as it pushes the scene's paint, and the
-        //     bass hits punch it toward full and let it fall. Four
+        //     bass hits swell it toward full and let it fall - on the pars
+        //     a third of that, and their contrast down, so a lamp drifts
+        //     between the colours instead of flipping and pumping. Four
         //     modes, a pad each: three palettes and a rainbow. 1 is the
         //     scene's own pair, red and blue; 2 magenta and cyan; 3 orange
         //     and violet; 4 the red-and-blue pair turned through the wheel,
@@ -2286,6 +2294,10 @@ std::unique_ptr<StateMachinePattern> edmx::makeMythos26StateMachine()
             look.contrast = 0.7f;
             look.push = 1.5f;
             look.kick = 0.45f;
+            look.kickAttack = 0.05f;
+            look.kickDecay = 0.4f;
+            look.trussKick = 0.35f;
+            look.trussContrast = 0.3f;
         }, {
             [](NoiseWash& look) { look.colorA = HSV(300.0f, 0.90f, 1.00f); look.colorB = HSV(185.0f, 0.95f, 0.90f); },
             [](NoiseWash& look) { look.colorA = HSV(28.0f, 0.95f, 1.00f);  look.colorB = HSV(268.0f, 0.90f, 0.80f); },
