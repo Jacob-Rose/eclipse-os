@@ -1279,6 +1279,18 @@ void Pattern_Mythos_Nova::init()
     bus = &sharedAudioLevel();
     level = 0.0f;
     hueOffset = 0.0f;
+    triggers = &sharedTriggerRack();
+    fieldTime = 0.0f;
+    pushLevel = 0.0f;
+    sinceRing = 1000.0f;
+}
+
+void Pattern_Mythos_Nova::reset()
+{
+    Pattern_MythosLook::reset();
+    fieldTime = 0.0f;
+    pushLevel = 0.0f;
+    sinceRing = 1000.0f;
 }
 
 ecore::HSV Pattern_Mythos_Nova::turned(const ecore::HSV& color) const
@@ -1306,6 +1318,28 @@ void Pattern_Mythos_Nova::tick(float deltaTime)
     {
         level += (target - level) * (1.0f - std::exp(-deltaTime / slew));
     }
+
+    const double now = nowSeconds();
+    const float pushTarget = std::clamp(bus->get(pushChannel, now), 0.0f, 1.0f);
+    pushLevel = (pushSlew <= 0.0f || deltaTime <= 0.0f)
+        ? pushTarget
+        : pushLevel + (pushTarget - pushLevel) * (1.0f - std::exp(-deltaTime / pushSlew));
+    fieldTime += std::max(deltaTime, 0.0f) * (1.0f + std::max(push, 0.0f) * pushLevel);
+
+    // the ring leaves the middle on the beat, on the shared trigger so it
+    // lands with everything else on the grid
+    if (triggers == nullptr)
+    {
+        triggers = &sharedTriggerRack();
+    }
+    sinceRing += std::max(deltaTime, 0.0f);
+    const BeatTrigger& beat = triggers->forRate(edmx::kOnBeat);
+    if (beat.fired)
+    {
+        sinceRing = beat.sinceHit;
+        const float bpm = sharedBeatClock().getBpm();
+        ringSeconds = bpm > 0.0f ? 60.0f / bpm : 0.5f;
+    }
 }
 
 void Pattern_Mythos_Nova::render(eio::HSVStripNode* node, ecore::HSV& inOutColor) const
@@ -1323,7 +1357,7 @@ void Pattern_Mythos_Nova::render(eio::HSVStripNode* node, ecore::HSV& inOutColor
     }
 
     const Coordinate at = nodeCoord(node);
-    const float t = timeActive * 0.06f * speed;
+    const float t = fieldTime * 0.06f * speed;
     const float s = scale;
 
     // the galaxies: one large, slow field, lit only where it peaks, so the
@@ -1345,7 +1379,19 @@ void Pattern_Mythos_Nova::render(eio::HSVStripNode* node, ecore::HSV& inOutColor
     ecore::HSV out = blendRgb(ground, between, washes);
     out = blendRgb(out, stars, galaxies);
     inOutColor = out;
-    inOutColor.setBrightnessAlpha(out.getValFloat() * (0.85f + 0.15f * swell));
+    float value = out.getValFloat() * (0.85f + 0.15f * swell);
+
+    // the beat ring: out from the middle to both ends over the beat, a
+    // soft band lifting what it crosses and fading as it reaches the ends
+    if (pulse > 0.0f && sinceRing < ringSeconds)
+    {
+        const float reach = sinceRing / std::max(ringSeconds, 0.05f);
+        const float from = std::fabs(stageAlpha(node) - 0.5f) * 2.0f;
+        const float off = (from - reach) / std::max(ring, 0.02f);
+        const float band = std::exp(-off * off) * (1.0f - 0.6f * reach);
+        value += (1.0f - value) * std::clamp(pulse * band * depth, 0.0f, 1.0f);
+    }
+    inOutColor.setBrightnessAlpha(value);
 }
 
 void Pattern_Mythos_Nova::reflect(ecore::PropertyBag& bag)
@@ -1361,6 +1407,10 @@ void Pattern_Mythos_Nova::reflect(ecore::PropertyBag& bag)
     bag.add("galaxy", galaxy);
     bag.add("wash", wash);
     bag.add("hue_cycle", hueCycle, 0.0f, 1.0f);
+    bag.add("push", push, 0.0f, 3.0f);
+    bag.add("push_slew", pushSlew, 0.0f, 1.0f);
+    bag.add("pulse", pulse, 0.0f, 1.0f);
+    bag.add("ring", ring, 0.02f, 0.5f);
 }
 
 // ============================================================================
@@ -1430,6 +1480,17 @@ void Pattern_Mythos_CloudFlight::tick(float deltaTime)
 
 void Pattern_Mythos_CloudFlight::render(eio::HSVStripNode* node, ecore::HSV& inOutColor) const
 {
+    if (trussLow >= 0.0f && isTruss(node))
+    {
+        // the whole truss one light: the sky toward yellow the higher the
+        // flight, dim in the deck and bright above it
+        const float h = std::clamp(heightNow, 0.0f, 1.0f);
+        inOutColor = blendRgb(skyLow, skyHigh, h * 0.6f);
+        inOutColor.setBrightnessAlpha(lerp(std::clamp(trussLow, 0.0f, 1.0f),
+                                           std::clamp(trussHigh, 0.0f, 1.0f), h));
+        return;
+    }
+
     const float up = stageAlpha(node);
     const Coordinate at = nodeCoord(node);
 
@@ -1488,6 +1549,8 @@ void Pattern_Mythos_CloudFlight::reflect(ecore::PropertyBag& bag)
     bag.add("sky_high", skyHigh);
     bag.add("sky_low", skyLow);
     bag.add("cloud", cloud);
+    bag.add("truss_low", trussLow, -1.0f, 1.0f);
+    bag.add("truss_high", trussHigh, 0.0f, 1.0f);
 }
 
 // ============================================================================
@@ -2315,7 +2378,12 @@ std::unique_ptr<StateMachinePattern> edmx::makeMythos26StateMachine()
         //     palette's yellow, and the three turn through the wheel with the
         //     wash staying opposite the galaxies the way the scene's does.
         //     The probe sends the galaxy colour; the cue table sends the wash.
-        showLook<Nova>("nova", {}, {
+        //     Like the scene, the field turns faster on the bass and a ring
+        //     runs out from the middle of the stage on every beat.
+        showLook<Nova>("nova", [](Nova& look) {
+            look.push = 2.0f;
+            look.pulse = 0.75f;
+        }, {
             [](Nova& look) {
                 look.galaxy = HSV(37.0f, 0.80f, 1.00f);
                 look.wash = HSV(207.0f, 0.55f, 1.00f);
@@ -2337,8 +2405,13 @@ std::unique_ptr<StateMachinePattern> edmx::makeMythos26StateMachine()
         //     fallen away to a strip. The look glides between them over
         //     its `glide`, and the cue table ramps the scene's own height
         //     with it. `speed` is the cue's two pads, and a mode leaves it
-        //     where they put it.
-        showLook<Clouds>("clouds", {}, {
+        //     where they put it. The pars are one light set by the
+        //     height - dim down in the deck, bright sunset above it - not
+        //     ten lamps with the clouds streaming through them.
+        showLook<Clouds>("clouds", [](Clouds& look) {
+            look.trussLow = 0.25f;
+            look.trussHigh = 1.0f;
+        }, {
             [](Clouds& look) { look.height = 0.50f; },
             [](Clouds& look) { look.height = 0.85f; },
         }),

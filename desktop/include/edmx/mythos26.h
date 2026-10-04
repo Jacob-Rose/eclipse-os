@@ -1034,8 +1034,25 @@ namespace edmx
         float gain{1.0f};
         float slew{0.2f};
 
+        /// The scene turns on syn_BassTime, which runs faster the more bass
+        /// there is; this is the field's clock doing the same, `push` being
+        /// how much faster a full bass level runs it. Slewed over
+        /// `push_slew`, so the rig speeds up and eases off rather than
+        /// lurching with every kick.
+        AudioChannel pushChannel{AudioChannel::Bass};
+        float push{0.0f};
+        float pushSlew{0.3f};
+
+        /// The scene's beat rings: on every beat a band of light leaves the
+        /// middle of the stage and runs out to both ends over the beat,
+        /// lifting what it passes by `pulse` and fading as it goes. `ring`
+        /// is the band's width, a share of the stage.
+        float pulse{0.0f};
+        float ring{0.12f};
+
         void init();
 
+        virtual void reset() override;
         virtual void tick(float deltaTime) override;
         virtual void render(eio::HSVStripNode* node, ecore::HSV& inOutColor) const override;
         virtual void reflect(ecore::PropertyBag& bag) override;
@@ -1049,6 +1066,13 @@ namespace edmx
         AudioLevel* bus{nullptr};
         float level{0.0f};
         float hueOffset{0.0f};
+        TriggerRack* triggers{nullptr};
+        float fieldTime{0.0f};
+        float pushLevel{0.0f};
+        /// Seconds since the last beat, and that beat's length: where the
+        /// ring is.
+        float sinceRing{1000.0f};
+        float ringSeconds{0.5f};
     };
 
 
@@ -1095,6 +1119,15 @@ namespace edmx
         float glow{0.45f};
         /// How much cloud, 0..1: the tops on the deck and the wisps in the sky.
         float clouds{0.6f};
+
+        /// The pars as one light, set by the flight's height rather than
+        /// each reading its own stretch of the stage: the sky's colour at
+        /// that height, at `truss_low` down in the deck up to `truss_high`
+        /// above it, gliding with the height. A par is a lamp lighting the
+        /// room, and ten of them each with the deck streaming past was the
+        /// truss strobing gently all through the cue. Below 0 is off.
+        float trussLow{-1.0f};
+        float trussHigh{1.0f};
 
         void init();
 

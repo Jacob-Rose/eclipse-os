@@ -134,6 +134,7 @@ mode 1 - by hand: cyan galaxies (182 / 0.90 / 1.00), yellow wash (48 / 0.90 / 1.
 mode 2 - nova's regime 1: orange galaxies (37 / 0.80 / 1.00), sky blue wash (207 / 0.55 / 1.00), deep blue ground (240 / 0.75 / 0.30). scene rig_color_2 = rgb 0.45 0.75 1.00, base_amount 1.0
 mode 3 - nova's regime 2: violet galaxies (263 / 0.90 / 1.00), azure wash (216 / 0.75 / 1.00), near-black ground (250 / 0.80 / 0.08), less wash. scene rig_color_2 = rgb 0.25 0.55 1.00, base_amount 0
 mode 4 - rainbow: the hand palette turned through the wheel (0.06 wheels a second); the scene derives its own second colour again (auto_second on)
+music - as the scene does: the field turns faster on the bass (push 2, slewed 0.3s, like syn_BassTime), and on every beat a ring of light leaves the middle of the stage and runs out to both ends over the beat (pulse 0.75, width 0.12), lifting what it passes.
 scene controls - color_by_hand 0, auto_second 0
 uv - off
 synesthesia - Eclipse Nova
@@ -143,6 +144,7 @@ media - none
 pattern - flying through sky, yellow and pink sunset sky with dark shadow clouds underneath, and more cloud: wisps of it in the sky too. sky is a gradient down the stage, yellow overhead (48 / 0.85 / 1.00) into pink at the horizon (330 / 0.70 / 1.00); below the horizon the cloud deck (270 / 0.60 / 0.16) with its own noise streaming past, the tops catching the pink (glow 0.45); a `clouds` knob (0.6) lights more of the tops and streams pale wisps through the sky above the horizon.
 param - flight height is the modes (below); the look lerps to it over 2s instead of snapping, and the scene's manual_height is ramped over the same 2s (mode_ramp), with its auto height turned off for good.
 param - flight speed with two buttons (slower 0.08 / faster 0.70), lerped the same way, the scene's speed ramped with it. a mode leaves the speed where the pads put it.
+pars - one light, not the clouds streaming through them: the sky's colour at the flight's height (pink toward yellow the higher it is), brightness 0.25 down in the deck up to 1.0 above it, gliding with the height.
 mode 1 - low: height 0.25, the deck over three quarters of the rig. the cue opens here.
 mode 2 - cruising: height 0.5
 mode 3 - high: height 0.85, the deck fallen away to a strip

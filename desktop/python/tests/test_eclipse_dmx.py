@@ -4077,6 +4077,34 @@ class TheShowLooks(ShowTest):
         self.assertGreater(rig, 40, "the rig takes the kick")
         self.assertLess(lamp, rig * 0.75, "a par takes less of it than the rig")
 
+    def test_nova_rings_out_on_the_beat(self):
+        """The scene sends a ring out from the middle on every beat; so
+        does the rig - a par is lifted as one passes it and falls back."""
+        frames = []
+        show = self._show("nova", on_frame=frames.append)
+        pars = show.devices[2]
+        par = pars.first + 7
+        time.sleep(0.6)
+        mark = len(frames)
+        time.sleep(1.5)
+        seen = [max(f[par]) for f in frames[mark:]]
+        self.assertGreater(max(seen) - min(seen), 40, "a ring should pass over the par")
+
+    def test_clouds_pars_are_one_light_set_by_the_height(self):
+        """Every par the same, dim down in the deck and brighter above it."""
+        frames = []
+        show = self._show("clouds", on_frame=frames.append)
+        pars = show.devices[2]
+        time.sleep(0.6)
+        low = frames[-1][pars.first:pars.first + 10]
+        self.assertEqual(len(set(map(tuple, low))), 1, "the pars should be one light")
+
+        show.set_param("mode", 3)
+        time.sleep(3.0)                 # the two-second glide up
+        high = frames[-1][pars.first:pars.first + 10]
+        self.assertEqual(len(set(map(tuple, high))), 1, "still one light up high")
+        self.assertGreater(max(high[0]), max(low[0]) + 60, "brighter above the deck")
+
     def test_glitch_pars_jump_on_the_deal(self):
         """At the rig's floor a par moved a quarter of its range on the
         beat. The pars sit lower, and a deal takes them to full."""
