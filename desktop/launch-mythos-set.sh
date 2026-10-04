@@ -406,6 +406,22 @@ if [ -n "$REMOTE" ] && [ "$live" = 1 ]; then
         done
         exit 4
     ')" || tower=$?
+    # From a terminal, the password can be typed here instead of the rig
+    # staying dark; the poll is re-run so a game it doesn't reach still warns.
+    if [ "$tower" = 3 ] && [ -t 0 ]; then
+        echo "tower: afterglow is running on $REMOTE and sudo there wants a password."
+        if ssh -t "$REMOTE" sudo systemctl stop afterglow; then
+            tower=0
+            stopped=stopped
+            ssh -o BatchMode=yes -o ConnectTimeout=5 "$REMOTE" '
+                for i in $(seq 20); do
+                    pgrep -f "[m]ain-py.game" >/dev/null || exit 0
+                    sleep 0.5
+                done
+                exit 4
+            ' || tower=$?
+        fi
+    fi
     case "$tower" in
         0)  if [ -n "$stopped" ]; then
                 echo "tower: stopped afterglow's game on $REMOTE; it comes back on the pi's next boot"
