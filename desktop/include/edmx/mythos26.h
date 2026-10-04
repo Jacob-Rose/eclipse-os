@@ -1128,6 +1128,13 @@ namespace edmx
         /// truss strobing gently all through the cue. Below 0 is off.
         float trussLow{-1.0f};
         float trussHigh{1.0f};
+        /// The clouds passing over that light, 0..1: how far the deck's own
+        /// streaming field dims a par where it is thin and lights it pale
+        /// where it peaks. The height sets the level; this moves on it.
+        float trussClouds{0.0f};
+        /// A sunset along the truss, par to par: how much of the pink to
+        /// yellow it spans, end to end. 0 is the one colour on every par.
+        float trussSpread{0.0f};
 
         void init();
 

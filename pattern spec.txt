@@ -144,7 +144,7 @@ media - none
 pattern - flying through sky, yellow and pink sunset sky with dark shadow clouds underneath, and more cloud: wisps of it in the sky too. sky is a gradient down the stage, yellow overhead (48 / 0.85 / 1.00) into pink at the horizon (330 / 0.70 / 1.00); below the horizon the cloud deck (270 / 0.60 / 0.16) with its own noise streaming past, the tops catching the pink (glow 0.45); a `clouds` knob (0.6) lights more of the tops and streams pale wisps through the sky above the horizon.
 param - flight height is the modes (below); the look lerps to it over 2s instead of snapping, and the scene's manual_height is ramped over the same 2s (mode_ramp), with its auto height turned off for good.
 param - flight speed with two buttons (slower 0.08 / faster 0.70), lerped the same way, the scene's speed ramped with it. a mode leaves the speed where the pads put it.
-pars - one light, not the clouds streaming through them: the sky's colour at the flight's height (pink toward yellow the higher it is), brightness 0.25 down in the deck up to 1.0 above it, gliding with the height.
+pars - the height sets their level, not the stretch of stage each one reads: the sky's colour at the flight's height (pink toward yellow the higher it is), brightness 0.25 down in the deck up to 1.0 above it, gliding with the height. the deck's clouds still pass over that light (truss_clouds 0.6): thin cloud shades a par, a peak turns it pale. and a sunset along the line of pars, pink at one end to yellow at the other (truss_spread 0.6), warming toward yellow as the flight climbs.
 mode 1 - low: height 0.25, the deck over three quarters of the rig. the cue opens here.
 mode 2 - cruising: height 0.5
 mode 3 - high: height 0.85, the deck fallen away to a strip

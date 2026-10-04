@@ -1485,9 +1485,36 @@ void Pattern_Mythos_CloudFlight::render(eio::HSVStripNode* node, ecore::HSV& inO
         // the whole truss one light: the sky toward yellow the higher the
         // flight, dim in the deck and bright above it
         const float h = std::clamp(heightNow, 0.0f, 1.0f);
-        inOutColor = blendRgb(skyLow, skyHigh, h * 0.6f);
-        inOutColor.setBrightnessAlpha(lerp(std::clamp(trussLow, 0.0f, 1.0f),
-                                           std::clamp(trussHigh, 0.0f, 1.0f), h));
+        const float level = lerp(std::clamp(trussLow, 0.0f, 1.0f),
+                                 std::clamp(trussHigh, 0.0f, 1.0f), h);
+        // a sunset along the line of them, the whole of it warming toward
+        // the yellow as the flight climbs
+        const eio::HSVStripNode_Space* spaced = eio::spaceOf(node);
+        const float along = (spaced != nullptr) ? spaced->u - 0.5f : 0.0f;
+        const float warm = std::clamp(h * 0.6f + along * std::clamp(trussSpread, 0.0f, 1.0f)
+                                      + 0.5f * std::clamp(trussSpread, 0.0f, 1.0f) * (1.0f - h), 0.0f, 1.0f);
+        ecore::HSV light = blendRgb(skyLow, skyHigh, warm);
+
+        // and the clouds going over it: the deck's field at the par,
+        // streaming as the deck does - thin cloud a shadow, a peak pale
+        const float passing = std::clamp(trussClouds, 0.0f, 1.0f) * std::clamp(intensity, 0.0f, 1.0f);
+        float shade = 1.0f;
+        if (passing > 0.0f)
+        {
+            const Coordinate at = nodeCoord(node);
+            const float n = 0.6f * scanner::valueNoiseLoop(at.x * 0.35f + 11.0f,
+                                                           at.y * 0.18f + travelled * kDeckLoopCoarse,
+                                                           kDeckLoopCoarse)
+                          + 0.4f * scanner::valueNoiseLoop(at.x * 0.80f - 7.0f,
+                                                           at.y * 0.45f + travelled * kDeckLoopFine,
+                                                           kDeckLoopFine);
+            shade = 1.0f - passing * std::clamp((0.55f - n) / 0.35f, 0.0f, 1.0f);
+            ecore::HSV pale(skyLow.getHueFloat(), skyLow.getSatFloat() * 0.35f, 1.0f);
+            pale.setBrightnessAlpha(1.0f);
+            light = blendRgb(light, pale, passing * 0.6f * std::clamp((n - 0.6f) / 0.25f, 0.0f, 1.0f));
+        }
+        inOutColor = light;
+        inOutColor.setBrightnessAlpha(level * shade);
         return;
     }
 
@@ -1551,6 +1578,8 @@ void Pattern_Mythos_CloudFlight::reflect(ecore::PropertyBag& bag)
     bag.add("cloud", cloud);
     bag.add("truss_low", trussLow, -1.0f, 1.0f);
     bag.add("truss_high", trussHigh, 0.0f, 1.0f);
+    bag.add("truss_clouds", trussClouds, 0.0f, 1.0f);
+    bag.add("truss_spread", trussSpread, 0.0f, 1.0f);
 }
 
 // ============================================================================
@@ -2406,11 +2435,15 @@ std::unique_ptr<StateMachinePattern> edmx::makeMythos26StateMachine()
         //     its `glide`, and the cue table ramps the scene's own height
         //     with it. `speed` is the cue's two pads, and a mode leaves it
         //     where they put it. The pars are one light set by the
-        //     height - dim down in the deck, bright sunset above it - not
-        //     ten lamps with the clouds streaming through them.
+        //     height - dim down in the deck, bright sunset above it - with
+        //     the deck's clouds passing over that light, shading and paling
+        //     it, and a sunset running pink to yellow along the line of
+        //     them - rather than ten lamps each reading its own sky.
         showLook<Clouds>("clouds", [](Clouds& look) {
             look.trussLow = 0.25f;
             look.trussHigh = 1.0f;
+            look.trussClouds = 0.6f;
+            look.trussSpread = 0.6f;
         }, {
             [](Clouds& look) { look.height = 0.50f; },
             [](Clouds& look) { look.height = 0.85f; },

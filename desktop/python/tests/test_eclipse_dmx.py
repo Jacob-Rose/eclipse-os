@@ -4091,19 +4091,24 @@ class TheShowLooks(ShowTest):
         self.assertGreater(max(seen) - min(seen), 40, "a ring should pass over the par")
 
     def test_clouds_pars_are_one_light_set_by_the_height(self):
-        """Every par the same, dim down in the deck and brighter above it."""
+        """The pars' level is the height's - dim down in the deck, brighter
+        above it - with the clouds passing over it."""
         frames = []
         show = self._show("clouds", on_frame=frames.append)
         pars = show.devices[2]
         time.sleep(0.6)
-        low = frames[-1][pars.first:pars.first + 10]
-        self.assertEqual(len(set(map(tuple, low))), 1, "the pars should be one light")
+        low = max(max(p) for p in frames[-1][pars.first:pars.first + 10])
 
         show.set_param("mode", 3)
         time.sleep(3.0)                 # the two-second glide up
-        high = frames[-1][pars.first:pars.first + 10]
-        self.assertEqual(len(set(map(tuple, high))), 1, "still one light up high")
-        self.assertGreater(max(high[0]), max(low[0]) + 60, "brighter above the deck")
+        high = max(max(p) for p in frames[-1][pars.first:pars.first + 10])
+        self.assertGreater(high, low + 60, "brighter above the deck")
+
+        # the clouds still pass: a par does not hold one value
+        mark = len(frames)
+        time.sleep(2.0)
+        seen = [max(f[pars.first + 3]) for f in frames[mark:]]
+        self.assertGreater(max(seen) - min(seen), 10, "clouds should pass over the pars")
 
     def test_glitch_pars_jump_on_the_deal(self):
         """At the rig's floor a par moved a quarter of its range on the
