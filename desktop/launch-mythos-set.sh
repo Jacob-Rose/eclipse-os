@@ -381,6 +381,51 @@ if [ -n "$REMOTE" ]; then
     fi
 fi
 
+# The scanner-pi is also afterglow's tower, and its game runs as a service
+# from boot: it owns the ring and the obelisk's port, and the bridge refuses
+# to start beside it - which looks like a dark sculpture, not an error. So a
+# live set stops it first. `systemctl stop` returns once the game has ended
+# its states and sent its eclipse-dmx `quit` (afterglow's install-service.sh:
+# KillMode=mixed), and the poll after it is for a game started by hand with
+# launch.sh, which no service stop reaches. [m] keeps the pattern from
+# matching the remote shell carrying it. A bench set opens no port and can
+# run beside the game, so it leaves it alone.
+#
+# Root without a prompt, like the bridge's: on the pi, in
+# `sudo visudo -f /etc/sudoers.d/afterglow-service`,
+#
+#   jakee ALL=(root) NOPASSWD: /usr/bin/systemctl stop afterglow, /usr/bin/systemctl start afterglow
+#
+# The game comes back on the pi's next boot, or `sudo systemctl start afterglow`.
+if [ -n "$REMOTE" ] && [ "$live" = 1 ]; then
+    tower=0
+    stopped="$(ssh -o BatchMode=yes -o ConnectTimeout=5 "$REMOTE" '
+        if systemctl is-active --quiet afterglow; then
+            sudo -n systemctl stop afterglow || exit 3
+            echo stopped
+        fi
+        for i in $(seq 20); do
+            pgrep -f "[m]ain-py.game" >/dev/null || exit 0
+            sleep 0.5
+        done
+        exit 4
+    ')" || tower=$?
+    case "$tower" in
+        0)  if [ -n "$stopped" ]; then
+                echo "tower: stopped afterglow's game on $REMOTE; it comes back on the pi's next boot"
+            else
+                echo "tower: afterglow's game is not running on $REMOTE"
+            fi ;;
+        3)  echo "warning: afterglow is running on $REMOTE and sudo wants a password to stop it." >&2
+            echo "         The rig there will stay dark. Once, on the pi (see this script):" >&2
+            echo "           sudo visudo -f /etc/sudoers.d/afterglow-service" >&2
+            echo "         or by hand now: ssh -t $REMOTE sudo systemctl stop afterglow" >&2 ;;
+        4)  echo "warning: afterglow's game is still running on $REMOTE, outside the service" >&2
+            echo "         (a launch.sh by hand?). Stop it there; the rig will stay dark until then." >&2 ;;
+        *)  echo "warning: could not ask $REMOTE about afterglow's game (ssh exit $tower)." >&2 ;;
+    esac
+fi
+
 if [ -n "$CLIENT" ]; then
     echo "client: $CLIENT - the show runs here, its wires are painted there"
     echo "        pads, lamps and the beat stay on this machine"
