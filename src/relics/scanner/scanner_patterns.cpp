@@ -440,7 +440,7 @@ void Pattern_Scanner_SinePulse::render(HSVStripNode* inNode, HSV& inOutColor) co
 void Pattern_Scanner_SinePulse::reflect(ecore::PropertyBag& bag)
 {
     // The breath's independent handles - the states that share this class
-    // (record_arm, record_saved, void, cleanse_done) differ only in these
+    // (cleanse_arm, record_saved, void, cleanse_done) differ only in these
     // numbers and the colour, so the knobs *are* the state's identity,
     // worth curves each. The shadow fade is the tower's alone.
     bag.add("rate", rate, 0.5f, 12.0f);
@@ -555,8 +555,11 @@ void Pattern_Scanner_RecordCountdown::render(HSVStripNode* inNode, HSV& inOutCol
         // at 1.0 would leave it at a fraction
         const float total = secondsPerCount * static_cast<float>(totalCounts);
         const float fill = clamp01(timeActive / std::max(total, 0.01f)) * (1.0f + edgeWidth);
-        const float lit = clamp01((fill - ringAlpha(inNode)) / std::max(edgeWidth, 1e-3f));
-        inOutColor = HSV(0.0f, 0.0f, std::max(floorLevel, lit));
+        const float alpha = ringAlpha(inNode);
+        const float lit = clamp01((fill - alpha) / std::max(edgeWidth, 1e-3f));
+        // a rainbow once round the ring, by where the pixel sits: the hue
+        // comes back to where it started at the top, so the wrap is seamless
+        inOutColor = HSV(alpha * 360.0f, 1.0f, std::max(floorLevel, lit));
         return;
     }
 

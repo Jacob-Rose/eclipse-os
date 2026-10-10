@@ -6110,10 +6110,10 @@ class ScannerKnobs(ShowTest):
         show = self._show()
 
         # the breath, and how much of the tower it gives to the shadow
-        self.cue(show, "record_arm", ["rate", "floor", "gain", "shadow"])
+        self.cue(show, "cleanse_arm", ["rate", "floor", "gain", "shadow"])
 
         # the fire's own knobs, plus the douse the game cues
-        self.cue(show, "cleanse_arm",
+        self.cue(show, "record_arm",
                  ["cooling", "sparking", "spread", "rise", "emitter", "douse"])
 
         self.cue(show, "record_active", ["orbit_rate", "tail"])
@@ -6160,10 +6160,10 @@ class ScannerKnobs(ShowTest):
         self.settle_until(lambda: frames[-1][34][0] > 200, timeout=6.0,
                           message="the ring to fill")
 
-        self.cue(show, "cleanse_arm",
+        self.cue(show, "record_arm",
                  ["cooling", "sparking", "spread", "rise", "emitter", "douse"])
         self.settle(1.0)             # let the fire catch before dousing it
-        show.trigger("scanner.cleanse.douse")
+        show.trigger("scanner.arm.douse")
 
         # Nothing new ignites after the douse, so this is the longest flame
         # already alight burning out - real time, and no event to wait on.

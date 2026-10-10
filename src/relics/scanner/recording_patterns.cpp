@@ -12,7 +12,7 @@
 
 using namespace scanner;
 
-void Pattern_Scanner_CleanseFire::reset()
+void Pattern_Scanner_ArmFire::reset()
 {
     Pattern_Generic_Fire2012::reset();
     doused = false;
@@ -20,7 +20,7 @@ void Pattern_Scanner_CleanseFire::reset()
     emitter = 1.0f;
 }
 
-bool Pattern_Scanner_CleanseFire::onTrigger(const GameplayTag& tag)
+bool Pattern_Scanner_ArmFire::onTrigger(const GameplayTag& tag)
 {
     if (tag != scanner_tags::Douse)
     {
@@ -32,7 +32,7 @@ bool Pattern_Scanner_CleanseFire::onTrigger(const GameplayTag& tag)
     return true;
 }
 
-void Pattern_Scanner_CleanseFire::tick(float deltaTime)
+void Pattern_Scanner_ArmFire::tick(float deltaTime)
 {
     // the emitter runs down over the douse and stays down: the flames
     // already in the air burn out on their own clocks, so the fire dies
@@ -46,7 +46,7 @@ void Pattern_Scanner_CleanseFire::tick(float deltaTime)
     Pattern_Generic_Fire2012::tick(deltaTime);
 }
 
-void Pattern_Scanner_CleanseFire::render(HSVStripNode* inNode, HSV& inOutColor) const
+void Pattern_Scanner_ArmFire::render(HSVStripNode* inNode, HSV& inOutColor) const
 {
     HSV fire;
     Pattern_Generic_Fire2012::render(inNode, fire);
@@ -67,7 +67,7 @@ void Pattern_Scanner_CleanseFire::render(HSVStripNode* inNode, HSV& inOutColor) 
     inOutColor = fire;
 }
 
-void Pattern_Scanner_CleanseFire::reflect(ecore::PropertyBag& bag)
+void Pattern_Scanner_ArmFire::reflect(ecore::PropertyBag& bag)
 {
     Pattern_Generic_Fire2012::reflect(bag);
     bag.add("douse", douseSeconds, 0.05f, 2.0f);

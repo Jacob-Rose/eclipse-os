@@ -29,7 +29,7 @@
 
 // The generic looks - free-standing stage patterns, grouped as a machine.
 #include "relics/scanner/generic_patterns.h"
-// the recording flow's looks built on a generic one: cleanse_arm's fire
+// the recording flow's looks built on a generic one: record_arm's fire
 #include "relics/scanner/recording_patterns.h"
 
 // The obelisk's own looks, for their machine and a borrowed generic cue.
@@ -607,10 +607,9 @@ std::unique_ptr<StateMachinePattern> edmx::makeScannerStateMachine()
 
         // The recording flow and the void stone - the last looks the game
         // rendered in python, so every state the scanner has is now here.
-        // waiting for the rock: the amber breath, whole at the foot of the
-        // tower and fading out to the sculpture's own picture at the tip
-        scannerLookWith<Pattern_Scanner_SinePulse>("record_arm",
-            HSV(45.0f, 1.0f, 1.0f), 4.0f, 0.15f, 0.5f, 1.0f),           // CRGB(1.0, 0.75, 0.0)
+        // waiting for the rock: the fire burns over the tower's own picture,
+        // doused on the game's cue as the rock lands (scanner.arm.douse)
+        scannerLook<Pattern_Scanner_ArmFire>("record_arm"),
         scannerLook<Pattern_Scanner_RecordCountdown>("record_countdown"),
         scannerLook<Pattern_Scanner_RecordComet>("record_active"),
         scannerLookWith<Pattern_Scanner_SinePulse>("record_saved",
@@ -626,11 +625,12 @@ std::unique_ptr<StateMachinePattern> edmx::makeScannerStateMachine()
         scannerLookWith<Pattern_Scanner_SinePulse>("void",
             HSV(282.0f, 1.0f, 0.5f), 2.0f, 0.0f, 0.6f),                 // CRGB(0.35, 0.0, 0.5)
 
-        // The cleanse: a rock shown to an armed cleanse loses its take. The
-        // fire burns over the tower's own picture while it waits, doused on
-        // the game's cue as the rock lands (scanner.cleanse.douse); done is
-        // a cool breath, the rock void again.
-        scannerLook<Pattern_Scanner_CleanseFire>("cleanse_arm"),
+        // The cleanse: a rock shown to an armed cleanse loses its take. While
+        // it waits, a pale orange breath, whole at the foot of the tower and
+        // fading out to the sculpture's own picture at the tip; done is a
+        // cool breath, the rock void again.
+        scannerLookWith<Pattern_Scanner_SinePulse>("cleanse_arm",
+            HSV(30.0f, 0.55f, 1.0f), 4.0f, 0.15f, 0.5f, 1.0f),          // CRGB(1.0, 0.73, 0.45)
         scannerLookWith<Pattern_Scanner_SinePulse>("cleanse_done",
             HSV(200.0f, 0.6f, 1.0f), 6.0f, 0.4f, 0.6f),
     };

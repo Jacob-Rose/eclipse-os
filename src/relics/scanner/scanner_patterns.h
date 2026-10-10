@@ -438,7 +438,7 @@ namespace scanner
     * The shape the recording-flow states share, differing only in their
     * numbers: brightness runs floorLevel..floorLevel+gain as the sine
     * swings, at rate radians per second.
-    *   record_arm    amber, quick and shallow, waiting for the rock
+    *   cleanse_arm   pale orange, quick and shallow, waiting for the rock
     *   record_saved  green, faster and brighter, the take is on disk
     *   void          purple from black, the empty stone's slow breath
     *   cleanse_done  a cool breath, the rock void again
@@ -446,7 +446,7 @@ namespace scanner
     * Over an underlay (the obelisk's own look, shadowed on the desk; see
     * eanim::Underlay) the pulse can give the tower back by height:
     * shadowFade 1 is the pulse whole at the foot fading out to the
-    * sculpture's own picture at the tip, which is record_arm's setting. 0
+    * sculpture's own picture at the tip, which is cleanse_arm's setting. 0
     * paints the whole tower, and is what the others do.
     */
     class Pattern_Scanner_SinePulse : public PatternScanner
@@ -502,8 +502,9 @@ namespace scanner
     * and each count flashes the tower white over the sculpture's own
     * picture, before the tape rolls.
     *
-    * The ring is the clock a visitor can read: white from the top pixel
-    * round the way the pixels run, full at the end of the last count, which
+    * The ring is the clock a visitor can read: a rainbow once round the
+    * ring, red at the top pixel and back to red beside it, filling from
+    * the top round the way the pixels run, full at the end of the last count, which
     * is when the take starts. A soft leading edge grows it rather than
     * stepping it a pixel at a time.
     *
