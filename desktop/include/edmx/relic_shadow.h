@@ -88,6 +88,20 @@ namespace edmx
         /// than none.
         bool applySim(const std::string& text, std::string& outError);
 
+        /// The relic has been cued into another look (`base` on the desk):
+        /// blend the copy here into it over `seconds`, the way the relic's
+        /// own state machine would, `blend` naming the shape (empty keeps
+        /// the machine's). The look is new, so its clocks start at zero, as
+        /// they do on the relic; the next `sim` puts them exactly in step.
+        /// Until the blend lands, a `sim` still naming the outgoing look is
+        /// an answer sent before the relic switched, and is ignored rather
+        /// than cutting back to it. With nothing live yet there is nothing
+        /// to blend from, and the look simply starts.
+        bool blendTo(const std::string& name, float seconds, const std::string& blend, std::string& outError);
+
+        /// True while a blendTo is still running.
+        bool isBlending() const;
+
         /// Advances the look. Nothing before the first applySim.
         void tick(float deltaTime);
 
@@ -123,6 +137,8 @@ namespace edmx
         std::shared_ptr<State_GenericHSV> state;
         std::shared_ptr<eanim::GeneratorHSV> look;
         std::string lookName;
+        /// the look a running blendTo is leaving; empty otherwise
+        std::string outgoingName;
         std::chrono::steady_clock::time_point syncedAt;
     };
 }

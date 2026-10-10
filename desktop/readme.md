@@ -2842,6 +2842,28 @@ Parity — the shadow drawing the same pixel as the relic, given the same
 answer — is checked by `--link-selftest` against the real `ObeliskCore`, pixel
 for pixel.
 
+### changing the look underneath: `base`
+
+```
+base prism 4         # the relic's own look -> prism, blended over 4 seconds
+```
+
+The look under the desk's is the relic's, so changing it is a cue to the
+relic *and* to its shadow at once. `base <look> [seconds] [blend]` sends the
+relic `state <look> <seconds> [blend]` and then `sim`, and blends the shadow's
+copy into the same look over the same seconds (`RelicShadow::blendTo`, the
+relic's own state machine doing it on the desk). Every look that composes over
+the tower — the idle pulse, the arm's fire, a look left to the underlay —
+composes over that blend, because it is just what the underlay now draws.
+
+Under a takeover the relic is not drawing, so a `state` naming one of its
+ambient looks lands at once rather than queueing a blend it would only play
+at the handback; its clock then runs from there like any look's, and the
+shadow's copy, resynced from the next `sim`, is in step with it. An answer to
+a `sim` asked before the cue still names the old look; mid-blend the shadow
+ignores it rather than cutting back. Released, the relic blends itself, as
+`state` always has. The afterglow game sends `base prism` for its golden key.
+
 ### the wire
 
 One format, `src/lib/elink/`, compiled into both ends — the desk builds frames

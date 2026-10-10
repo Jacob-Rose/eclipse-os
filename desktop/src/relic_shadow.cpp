@@ -5,6 +5,8 @@
 
 #include "edmx/relic_shadow.h"
 
+#include <algorithm>
+
 #include "lib/ecore/property.h"
 #include "lib/esm/state.h"
 #include "lib/esm/state_generic.h"
@@ -37,6 +39,7 @@ void RelicShadow::clear()
     look.reset();
     io.reset();
     lookName.clear();
+    outgoingName.clear();
 }
 
 bool RelicShadow::spawn(const std::string& name, std::string& outError)
@@ -111,6 +114,13 @@ bool RelicShadow::applySim(const std::string& text, std::string& outError)
         return false;
     }
 
+    if (isBlending() && name == outgoingName)
+    {
+        // Sent before the relic took the cue: it is mid-blend here toward
+        // the look it has already switched to, and its next answer says so.
+        return true;
+    }
+
     if (!isLive() || name != lookName)
     {
         if (!spawn(name, outError))
@@ -128,6 +138,62 @@ bool RelicShadow::applySim(const std::string& text, std::string& outError)
     // picture rather than whatever the strip held.
     tick(0.0f);
     return true;
+}
+
+bool RelicShadow::blendTo(const std::string& name, float seconds, const std::string& blend, std::string& outError)
+{
+    if (!isLive())
+    {
+        if (!spawn(name, outError))
+        {
+            return false;
+        }
+        syncedAt = std::chrono::steady_clock::now();
+        tick(0.0f);
+        return true;
+    }
+    if (name == lookName)
+    {
+        return true;
+    }
+
+    std::shared_ptr<eanim::GeneratorHSV> made = profile->makeLook(name);
+    if (!made)
+    {
+        // Unlike a bad `sim`, this leaves the running look alone: the
+        // shadow is still right about what the relic shows, it just cannot
+        // follow it into a look it does not know.
+        outError = "the " + profile->relic + " profile has no look called '" + name + "'";
+        return false;
+    }
+
+    // Into the same machine, on the same nodes, so the machine's own blend
+    // mixes the two - the relic's state machine doing it here, as it would
+    // there. The machine keeps the state it leaves; a base change is a rare
+    // thing (a key, a cue) and the handful that pile up cost nothing.
+    std::shared_ptr<State_GenericHSV> incoming = std::make_shared<State_GenericHSV>(name.c_str(), io.get());
+    incoming->setGenerator(made);
+    incoming->init();
+    manager->addState(incoming);
+
+    if (!blend.empty() && !machine->setBlend(blend.c_str()))
+    {
+        outError = "unknown blend " + blend;
+        return false;
+    }
+    machine->transitionTime = std::max(seconds, 0.0f);
+
+    outgoingName = lookName;
+    state = incoming;
+    look = made;
+    lookName = name;
+    machine->setNextState(incoming);
+    return true;
+}
+
+bool RelicShadow::isBlending() const
+{
+    return machine != nullptr && machine->getNextState() != nullptr;
 }
 
 void RelicShadow::tick(float deltaTime)

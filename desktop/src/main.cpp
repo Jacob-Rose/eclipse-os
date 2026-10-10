@@ -869,6 +869,92 @@ namespace
             check("shadow: and is cleared", shadow.isLive() ? 1 : 0, 0);
         }
 
+        // ---- a base change: the relic cued into prism, the shadow after it --
+        //
+        // What `base prism 1` does: the relic gets `state prism 1` and blends
+        // itself, the shadow blends its copy over the same second. An answer
+        // to a `sim` asked before the cue still names blobs, and must not cut
+        // the copy back mid-blend; once both have landed, the relic's answer
+        // puts the copy in step pixel for pixel, as for any look.
+        {
+            obelisk::ObeliskCore core;
+            LoopbackTransport wire;
+            core.getLink().setTransport(&wire);
+            core.runTick();
+            core.runTick();
+
+            const eio::HSVStrip* strip = nullptr;
+            if (core.getIO())
+            {
+                auto found = core.getIO()->strips.find(0);
+                if (found != core.getIO()->strips.end())
+                {
+                    strip = found->second.get();
+                }
+            }
+
+            auto askSim = [&]() {
+                wire.said.clear();
+                core.handleCommand("sim");
+                for (const std::string& said : wire.said)
+                {
+                    if (said.rfind("EOSLINK sim ", 0) == 0)
+                    {
+                        return said.substr(std::string("EOSLINK sim ").size());
+                    }
+                }
+                return std::string();
+            };
+
+            RelicShadow shadow;
+            shadow.setProfile(findShadowProfile("obelisk"));
+            std::string error;
+            const std::string before = askSim();
+            check("base: synced to blobs first", shadow.applySim(before, error) ? 1 : 0, 1);
+
+            core.handleCommand("state prism 1.0");
+            check("base: the shadow takes the blend", shadow.blendTo("prism", 1.0f, "", error) ? 1 : 0, 1);
+            check("base: it is blending", shadow.isBlending() ? 1 : 0, 1);
+            check("base: toward prism", shadow.getLookName() == "prism" ? 1 : 0, 1);
+
+            check("base: a stale blobs answer is taken", shadow.applySim(before, error) ? 1 : 0, 1);
+            check("base: and does not cut back", shadow.getLookName() == "prism" ? 1 : 0, 1);
+            check("base: the blend runs on", shadow.isBlending() ? 1 : 0, 1);
+
+            for (int frame = 0; frame < 30; ++frame)
+            {
+                core.tick(0.05f);
+                shadow.tick(0.05f);
+            }
+            check("base: the relic landed on prism", core.activeLookName() == "prism" ? 1 : 0, 1);
+            check("base: so did the shadow", shadow.isBlending() ? 1 : 0, 0);
+
+            const std::string after = askSim();
+            check("base: the relic answers prism", after.rfind("prism ", 0) == 0 ? 1 : 0, 1);
+            check("base: with the spin's clock", after.find(" spin.time=") != std::string::npos ? 1 : 0, 1);
+            check("base: the shadow re-syncs", shadow.applySim(after, error) ? 1 : 0, 1);
+
+            if (strip)
+            {
+                int different = 0;
+                const std::vector<ecore::HSV>& theirs = const_cast<eio::HSVStrip*>(strip)->getStripHSV();
+                for (uint16_t i = 0; i < shadow.pixelCount() && i < theirs.size(); ++i)
+                {
+                    const ecore::HSV mine = shadow.colorAt(i);
+                    if (mine.getHueAs16() != theirs[i].getHueAs16()
+                        || mine.getSatAs8() != theirs[i].getSatAs8()
+                        || mine.getValAs8() != theirs[i].getValAs8())
+                    {
+                        ++different;
+                    }
+                }
+                check("base: every pixel matches the relic", different, 0);
+            }
+
+            check("base: an unknown look is refused", shadow.blendTo("nowhere", 1.0f, "", error) ? 1 : 0, 0);
+            check("base: and the running look is kept", shadow.getLookName() == "prism" ? 1 : 0, 1);
+        }
+
         // ---- a look that leaves the tower to the underlay ------------------
         //
         // A dark solid with leaveObeliskToUnderlay set, on the obelisk's own
@@ -3596,6 +3682,68 @@ namespace
             emit("OK pattern " + next.name);
             emitStates(show);
             emitParams(show);
+            return;
+        }
+
+        // `base <look> [seconds] [blend]`: change the relic's own look - the
+        // picture under the scanner's - and keep the shadow of it in step.
+        // The relic gets the `state` line (it blends itself when it is
+        // drawing, and switches at once under a takeover, where it is not);
+        // the shadow blends its copy over the same seconds, so every look
+        // composing over the tower composes over the blend. Then `sim`, so
+        // the copy's clocks are the relic's as soon as it answers.
+        if (command == "base")
+        {
+            if (words.size() < 2)
+            {
+                emit("ERR base needs a look");
+                return;
+            }
+            const std::vector<RelicUsbOutput*> relics = relicLinks(show);
+            if (relics.empty())
+            {
+                emit("ERR base needs a device with a relic_usb output; this show has "
+                   + describeOutputs(show));
+                return;
+            }
+
+            const std::string& look = words[1];
+            float seconds = 1.0f;
+            std::string blend;
+            for (size_t i = 2; i < words.size(); ++i)
+            {
+                char* end = nullptr;
+                const float requested = std::strtof(words[i].c_str(), &end);
+                if (end != nullptr && *end == '\0')
+                {
+                    seconds = std::max(requested, 0.0f);
+                }
+                else
+                {
+                    blend = words[i];
+                }
+            }
+
+            std::string cue = "state " + look + " " + std::to_string(seconds);
+            if (!blend.empty())
+            {
+                cue += " " + blend;
+            }
+            std::string error;
+            for (RelicUsbOutput* relic : relics)
+            {
+                if (!relic->sendCommand(cue, error) || !relic->sendCommand("sim", error))
+                {
+                    emit("ERR link " + error);
+                    return;
+                }
+            }
+
+            if (show.shadow.getProfile() != nullptr && !show.shadow.blendTo(look, seconds, blend, error))
+            {
+                emit("WARN shadow: " + error);
+            }
+            emit("OK base " + look);
             return;
         }
 

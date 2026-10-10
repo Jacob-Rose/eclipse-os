@@ -118,10 +118,17 @@ ObeliskCore::ObeliskCore() : RelicCore()
     blobsPatternState->setGenerator(std::make_shared<Pattern_Obelisk_Blobs>());
     blobsPatternState->init();
 
+    // the golden key's look: the field gone rainbow, swept round the tower.
+    // The scanner cues it with `state prism <seconds>` and it stays
+    prismPatternState = std::make_shared<State_GenericHSV>("prismState", coreIO.get());
+    prismPatternState->setGenerator(std::make_shared<Pattern_Obelisk_Prism>());
+    prismPatternState->init();
+
     mainPatternId = stateManager->addState(mainPatternState);
     theaterPatternId = stateManager->addState(theaterPatternState);
     testPatternId = stateManager->addState(testPatternState);
     blobsPatternId = stateManager->addState(blobsPatternState);
+    prismPatternId = stateManager->addState(prismPatternState);
 
     // The scanner's looks, one state per afterglow state tag. The variants the
     // python picks with save-file flags (emergency lock, broken device, newly
@@ -142,6 +149,7 @@ ObeliskCore::ObeliskCore() : RelicCore()
     looksByName["theater"] = theaterPatternState;
     looksByName["mono"]    = testPatternState;
     looksByName["blobs"]   = blobsPatternState;
+    looksByName["prism"]   = prismPatternState;
 
     using namespace scanner;
 
@@ -182,6 +190,10 @@ ObeliskCore::ObeliskCore() : RelicCore()
     // the cleanse: a pale orange breath, fading into the tower's own picture
     // by height; done is a cool breath
     addScannerState("cleanse_arm",                     make_shared<Pattern_Scanner_SinePulse>(HSV(30.0f, 0.55f, 1.0f), 4.0f, 0.15f, 0.5f, 1.0f));   // CRGB(1.0, 0.73, 0.45)
+    // the golden key: a gold breath on the ring while the tower blends into
+    // prism (the desk leaves its tower to the shadow; here, where there is
+    // no shadow, the breath is the whole of it)
+    addScannerState("golden",                          make_shared<Pattern_Scanner_SinePulse>(HSV(45.0f, 0.85f, 1.0f), 3.0f, 0.35f, 0.65f));
     addScannerState("cleanse_done",                    make_shared<Pattern_Scanner_SinePulse>(HSV(200.0f, 0.6f, 1.0f), 6.0f, 0.4f, 0.6f));
 
     // Start State Machine, on the blobs
@@ -342,6 +354,7 @@ bool obelisk::ObeliskCore::handleCommand(string msg)
         else if (wanted == "theater")                  target = theaterPatternState;
         else if (wanted == "mono" || wanted == "test") target = testPatternState;
         else if (wanted == "blobs")                    target = blobsPatternState;
+        else if (wanted == "prism")                    target = prismPatternState;
         else
         {
             auto it = scannerStates.find(wanted);
@@ -353,9 +366,24 @@ bool obelisk::ObeliskCore::handleCommand(string msg)
 
         if (target)
         {
+            const bool ambient = scannerStates.find(wanted) == scannerStates.end();
+            if (ambient && getLink().ownsPixels())
+            {
+                // The desk is drawing, and blending its own copy of us (its
+                // shadow) into this look. Nothing here is on the strip to
+                // blend, and a transition left pending would not run until
+                // the handback and then play the change a second time - so
+                // the look lands now, its clock runs on under the takeover
+                // (tickWhileLinked), and the handback is to the picture the
+                // desk's copy was showing.
+                if (target != stateMachine->getActiveState())
+                {
+                    stateMachine->setActiveState(target);
+                }
+            }
             // The scanner resends its current state on reconnects; arriving
             // where we already are is success, not an error log.
-            if (target != stateMachine->getActiveState() && target != stateMachine->getNextState())
+            else if (target != stateMachine->getActiveState() && target != stateMachine->getNextState())
             {
                 stateMachine->setNextState(target);
             }
@@ -422,7 +450,7 @@ bool obelisk::ObeliskCore::handleCommand(string msg)
 
     if (msg == "states")
     {
-        string reply = "EOSLINK states blobs seasons theater mono";
+        string reply = "EOSLINK states blobs prism seasons theater mono";
         for (const auto& entry : scannerStates)
         {
             reply += " " + entry.first;
