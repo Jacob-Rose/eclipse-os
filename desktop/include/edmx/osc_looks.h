@@ -25,8 +25,9 @@
 /// nothing - the Pi renders the ring and the obelisk both, and streams the
 /// obelisk its picture.
 ///
-/// What they read, all of it filled by the OSC map (data/osc-map.json in
-/// afterglow) and none of it named for any one sending app:
+/// What they read, all of it filled by the OSC map (config/oscmaps/
+/// afterglow.json, which the game and config/afterglow_osc.json both open)
+/// and none of it named for any one sending app:
 ///
 ///   bus   level_instant   peaks on every kick - the flash
 ///         level_average   the level against a short window - the body

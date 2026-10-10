@@ -1,0 +1,59 @@
+{
+  // afterglow's OSC mode at a desk: the tower's stage - the ring, the obelisk
+  // and the pars - opening on the first OSC look, with another host's OSC
+  // driving it exactly as it does on the scanner-pi.
+  //
+  //   ./launch-osc.sh                 the viewer, nothing on a wire
+  //   ./launch-osc.sh --live          and onto whatever is plugged in here
+  //
+  // The cue list is the scanner machine's, so osc_wash, osc_pulse and
+  // osc_meter are three of its buttons - clicking between them is the golden
+  // key stepping looks on the tower. The other cues are there too; on the
+  // tower only the game reaches them.
+  //
+  // The OSC comes in on 7000, through the same map the game opens
+  // (oscmaps/afterglow.json): the host's two colours onto the looks' knobs,
+  // its tempo, beat and levels onto the audio bus. Point the test host at
+  // this machine:
+  //
+  //   python3 ~/Documents/osc-host/osc_host.py --host 127.0.0.1 --port 7000
+  //
+  // "synesthesia" is the audio source that means "the numbers arrive over
+  // OSC" - the map decides whose OSC it is. With "bpm" the host's beat and
+  // tempo also run the desk's own clock, so the viewer's beat follows it.
+  //
+  // The devices are config/scanner_stage.json's, without its UV layer: in
+  // the game the UV par is painted by the look like the rest of the truss,
+  // and this is the game's picture. An obelisk or a truss not plugged in
+  // here comes up OFFLINE and is still drawn.
+
+  "master": {
+    "brightness": 1.0,
+    "gamma": 2.2
+  },
+
+  "pattern": {
+    "name": "scanner",
+    "state": "osc_wash"
+  },
+
+  "audio": {
+    "source": "synesthesia",
+    "port": 7000,
+    "bpm": true,
+    "map": "oscmaps/afterglow.json"
+  },
+
+  "devices": [
+    { "device": "scanner_ring", "offset": [0, 0], "view_scale": [0.9, 1.0] },
+    { "device": "obelisk",      "offset": [0, 0], "view_scale": [0.5, 1.1] },
+    {
+      // where the game puts the truss - scanner_stage.json says why
+      "device": "uking_par36_x10",
+      "name": "pars",
+      "offset": [2.5, 16],
+      "fit": [2, 0],
+      "view_scale": [1.7, 0.45]
+    }
+  ]
+}

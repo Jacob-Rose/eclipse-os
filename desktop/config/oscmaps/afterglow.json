@@ -1,0 +1,243 @@
+{
+  "version": 1,
+  "bindings": [
+    {
+      "label": "primary hue -> hue_a",
+      "trigger": {
+        "pattern": "*/color/primary/hue",
+        "exclude": [],
+        "argument": 0
+      },
+      "mode": "value",
+      "range": {
+        "low": 0.0,
+        "high": 360.0,
+        "threshold": 0.5
+      },
+      "limit": {
+        "interval": 0.03333333333333333,
+        "change": 0.002,
+        "keepalive": 0.2
+      },
+      "action": "param",
+      "params": {
+        "name": "hue_a",
+        "low": 0.0,
+        "high": 360.0,
+        "layer": ""
+      },
+      "enabled": true
+    },
+    {
+      "label": "primary sat -> sat_a",
+      "trigger": {
+        "pattern": "*/color/primary/sat",
+        "exclude": [],
+        "argument": 0
+      },
+      "mode": "value",
+      "range": {
+        "low": 0.0,
+        "high": 1.0,
+        "threshold": 0.5
+      },
+      "limit": {
+        "interval": 0.03333333333333333,
+        "change": 0.01,
+        "keepalive": 0.2
+      },
+      "action": "param",
+      "params": {
+        "name": "sat_a",
+        "low": 0.0,
+        "high": 1.0,
+        "layer": ""
+      },
+      "enabled": true
+    },
+    {
+      "label": "secondary hue -> hue_b",
+      "trigger": {
+        "pattern": "*/color/secondary/hue",
+        "exclude": [],
+        "argument": 0
+      },
+      "mode": "value",
+      "range": {
+        "low": 0.0,
+        "high": 360.0,
+        "threshold": 0.5
+      },
+      "limit": {
+        "interval": 0.03333333333333333,
+        "change": 0.002,
+        "keepalive": 0.2
+      },
+      "action": "param",
+      "params": {
+        "name": "hue_b",
+        "low": 0.0,
+        "high": 360.0,
+        "layer": ""
+      },
+      "enabled": true
+    },
+    {
+      "label": "secondary sat -> sat_b",
+      "trigger": {
+        "pattern": "*/color/secondary/sat",
+        "exclude": [],
+        "argument": 0
+      },
+      "mode": "value",
+      "range": {
+        "low": 0.0,
+        "high": 1.0,
+        "threshold": 0.5
+      },
+      "limit": {
+        "interval": 0.03333333333333333,
+        "change": 0.01,
+        "keepalive": 0.2
+      },
+      "action": "param",
+      "params": {
+        "name": "sat_b",
+        "low": 0.0,
+        "high": 1.0,
+        "layer": ""
+      },
+      "enabled": true
+    },
+    {
+      "label": "bpm -> bpm",
+      "trigger": {
+        "pattern": "*/bpm",
+        "exclude": [],
+        "argument": 0
+      },
+      "mode": "value",
+      "range": {
+        "low": 50.0,
+        "high": 220.0,
+        "threshold": 0.5
+      },
+      "limit": {
+        "interval": 0.03333333333333333,
+        "change": 0.002,
+        "keepalive": 0.2
+      },
+      "action": "audio",
+      "params": {
+        "channel": "bpm",
+        "low": 0.0,
+        "high": 1.0
+      },
+      "enabled": true
+    },
+    {
+      "label": "beat -> beat",
+      "trigger": {
+        "pattern": "*/beat",
+        "exclude": [],
+        "argument": 0
+      },
+      "mode": "value",
+      "range": {
+        "low": 0.0,
+        "high": 1.0,
+        "threshold": 0.5
+      },
+      "limit": {
+        "interval": 0.03333333333333333,
+        "change": 0.01,
+        "keepalive": 0.2
+      },
+      "action": "audio",
+      "params": {
+        "channel": "beat",
+        "low": 0.0,
+        "high": 1.0
+      },
+      "enabled": true
+    },
+    {
+      "label": "level instant -> level_instant",
+      "trigger": {
+        "pattern": "*/level/instant",
+        "exclude": [],
+        "argument": 0
+      },
+      "mode": "value",
+      "range": {
+        "low": 0.0,
+        "high": 1.0,
+        "threshold": 0.5
+      },
+      "limit": {
+        "interval": 0.03333333333333333,
+        "change": 0.01,
+        "keepalive": 0.2
+      },
+      "action": "audio",
+      "params": {
+        "channel": "level_instant",
+        "low": 0.0,
+        "high": 1.0
+      },
+      "enabled": true
+    },
+    {
+      "label": "level average -> level_average",
+      "trigger": {
+        "pattern": "*/level/average",
+        "exclude": [],
+        "argument": 0
+      },
+      "mode": "value",
+      "range": {
+        "low": 0.0,
+        "high": 1.0,
+        "threshold": 0.5
+      },
+      "limit": {
+        "interval": 0.03333333333333333,
+        "change": 0.01,
+        "keepalive": 0.2
+      },
+      "action": "audio",
+      "params": {
+        "channel": "level_average",
+        "low": 0.0,
+        "high": 1.0
+      },
+      "enabled": true
+    },
+    {
+      "label": "level meter -> level_meter",
+      "trigger": {
+        "pattern": "*/level/meter",
+        "exclude": [],
+        "argument": 0
+      },
+      "mode": "value",
+      "range": {
+        "low": 0.0,
+        "high": 1.0,
+        "threshold": 0.5
+      },
+      "limit": {
+        "interval": 0.03333333333333333,
+        "change": 0.01,
+        "keepalive": 0.2
+      },
+      "action": "audio",
+      "params": {
+        "channel": "level_meter",
+        "low": 0.0,
+        "high": 1.0
+      },
+      "enabled": true
+    }
+  ]
+}
