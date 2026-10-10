@@ -6151,6 +6151,14 @@ class ScannerKnobs(ShowTest):
         self.settle_until(lambda: frames and frames[-1][0][0] > 200 and frames[-1][0][2] < 40,
                           timeout=6.0, message="the pulse in the same red")
 
+    def test_dim_takes_one_device_by_name(self):
+        """afterglow keeps the pars dark outside its OSC mode with this."""
+        show = self.running_show(STAGE, midi="")
+        self.assertIn("OK dim pars 0", show.command("dim pars 0"))
+        with self.assertRaises(ShowError):
+            show.command("dim nowhere 1")
+        self.assertTrue(show.is_running)
+
     def test_a_scanner_knob_reaches_the_render(self):
         """floor 1, gain 0 flattens record_saved's breath to a steady green."""
         frames = []

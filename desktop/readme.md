@@ -2436,7 +2436,7 @@ stdout. Logs go to stderr, so the two are separable when it is being piped.
 pattern <name>            speed <float>          width <float>
 brightness <float>        master <float>         color <#rrggbb | h s v>
 palette <name|#a,#b,...>  blackout <on|off>      status
-quit
+dim <device> <float>      quit
 
 state <name> [s] [blend]  states                 input <a|b> <on|off>
 blend [name]              params                 params dump
@@ -2456,6 +2456,10 @@ layer <name> params [dump]
 layer <name> param <k> <v>    layer <name> curve <k> <t:v...>
 layer <name> trigger <tag>
 ```
+
+`dim` is one device's dimmer on the wire, on top of its config brightness -
+for a show that brings a device in and out (afterglow's pars, dark until its
+OSC mode). The frame stream still carries the look.
 
 `state`, `blend` and `input` need a state machine pattern; the rest work on
 anything. A `state` cue can carry how long its fade is and how it looks -

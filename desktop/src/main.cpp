@@ -2123,6 +2123,13 @@ namespace
         float fps{40.0f};
         double nextSendAt{0.0};
 
+        /// The device's dimmer at runtime, `dim <device> <0..1>`, on top of
+        /// the config's brightness. A room's trim belongs in the config; this
+        /// is for a show that brings one device in and out - afterglow keeps
+        /// the pars dark until its OSC mode, and fades them up for it. Only
+        /// the wire: the frame stream and the viewer still show the look.
+        float level{1.0f};
+
         /// Why this device has no wire, or empty when it has one.
         ///
         /// A rig that is not plugged in must not stop the show. Half of what
@@ -4573,6 +4580,40 @@ namespace
             return;
         }
 
+        if (command == "dim")
+        {
+            if (words.size() < 3)
+            {
+                emit("ERR dim needs a device and a level 0..1");
+                return;
+            }
+
+            float value = 0.0f;
+            if (!parseFloatArg(words[2], value))
+            {
+                emit("ERR dim " + words[1] + ": '" + words[2] + "' is not a number");
+                return;
+            }
+
+            for (DeviceRuntime& device : show.devices)
+            {
+                if (device.name() == words[1])
+                {
+                    device.level = std::clamp(value, 0.0f, 1.0f);
+                    emit("OK dim " + words[1] + " " + words[2]);
+                    return;
+                }
+            }
+
+            std::string known;
+            for (const DeviceRuntime& device : show.devices)
+            {
+                known += (known.empty() ? "" : ", ") + device.name();
+            }
+            emit("ERR dim: no device '" + words[1] + "' (have: " + known + ")");
+            return;
+        }
+
         if (command == "color" || command == "colour")
         {
             // either three numbers (h s v) or a single hex string
@@ -5588,7 +5629,7 @@ int main(int argc, char** argv)
 
             device.universe.clear();
             device.config->fixtures.render(device.strip->getStripHSV(),
-                                           master * device.config->brightness,
+                                           master * device.config->brightness * device.level,
                                            device.config->gamma > 0.0f ? device.config->gamma : show.config.master.gamma,
                                            device.universe);
 
