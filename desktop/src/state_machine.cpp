@@ -38,6 +38,7 @@
 // Written here rather than borrowed from a relic: the static looks, which are
 // stage looks like the rest of the generic list and sit in it.
 #include "edmx/mythos26.h"
+#include "edmx/osc_looks.h"
 
 using namespace edmx;
 
@@ -639,6 +640,13 @@ std::unique_ptr<StateMachinePattern> edmx::makeScannerStateMachine()
             HSV(45.0f, 0.85f, 1.0f), 3.0f, 0.35f, 0.65f)),
         scannerLookWith<Pattern_Scanner_SinePulse>("cleanse_done",
             HSV(200.0f, 0.6f, 1.0f), 6.0f, 0.4f, 0.6f),
+
+        // The OSC mode: another host drives the rig, and a rock steps
+        // through these. Desk-only - they read the audio bus - so the
+        // obelisk's own table does not carry them; see osc_looks.h.
+        scannerLook<edmx::Pattern_Osc_Wash>("osc_wash"),
+        scannerLook<edmx::Pattern_Osc_Pulse>("osc_pulse"),
+        scannerLook<edmx::Pattern_Osc_Meter>("osc_meter"),
     };
 
     // The looks read the strip index, not coordinates, so the frame is the

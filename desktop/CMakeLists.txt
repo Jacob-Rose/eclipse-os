@@ -188,6 +188,7 @@ add_library(edmx STATIC
     src/midi_output.cpp
     src/audio_meter.cpp
     src/mythos26.cpp
+    src/osc_looks.cpp
     src/pattern.cpp
     src/serial_port.cpp
     src/state_machine.cpp

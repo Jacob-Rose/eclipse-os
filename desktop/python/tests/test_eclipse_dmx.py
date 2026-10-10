@@ -6119,6 +6119,38 @@ class ScannerKnobs(ShowTest):
         self.cue(show, "record_active", ["orbit_rate", "tail"])
         self.cue(show, "record_countdown", ["sweep", "edge", "floor"])
 
+    OSC_KNOBS = ["hue_a", "sat_a", "hue_b", "sat_b", "gain", "floor", "slew"]
+
+    def test_the_osc_looks_offer_the_hosts_colours(self):
+        show = self._show()
+        self.cue(show, "osc_wash", self.OSC_KNOBS + ["flash"])
+        self.cue(show, "osc_pulse", self.OSC_KNOBS + ["ring", "bed"])
+        self.cue(show, "osc_meter", self.OSC_KNOBS + ["fall"])
+
+    def test_the_osc_colours_carry_from_one_look_to_the_next(self):
+        """The host's colours are one pair for every OSC look, so the golden
+        key stepping looks does not drop them until the host restates them."""
+        frames = []
+        show = self._show(on_frame=frames.append)
+        self.cue(show, "osc_wash", self.OSC_KNOBS + ["flash"])
+        for name, value in (("hue_a", 0.0), ("sat_a", 1.0), ("hue_b", 0.0), ("sat_b", 1.0)):
+            show.set_param(name, value)
+
+        # the bus goes stale in a third of a second, so the level is restated
+        # the way a host would while the wash is watched
+        def lit_red():
+            show.command("audio level_average 1.0", expect_reply=False)
+            pixel = frames[-1][0] if frames else (0, 0, 0)
+            return pixel[0] > 200 and pixel[1] < 40 and pixel[2] < 40
+        self.settle_until(lit_red, timeout=6.0, message="the wash in the host's red")
+
+        # the next look, colours never sent again: still red, once its floor
+        # is up far enough to see
+        self.cue(show, "osc_pulse", self.OSC_KNOBS + ["ring", "bed"])
+        show.set_param("floor", 1.0)
+        self.settle_until(lambda: frames and frames[-1][0][0] > 200 and frames[-1][0][2] < 40,
+                          timeout=6.0, message="the pulse in the same red")
+
     def test_a_scanner_knob_reaches_the_render(self):
         """floor 1, gain 0 flattens record_saved's breath to a steady green."""
         frames = []
