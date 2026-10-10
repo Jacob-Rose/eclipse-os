@@ -112,11 +112,11 @@ public:
 * The golden key's look: the blobs field gone rainbow, with a sweep that
 * spins round the tower.
 *
-* The base is a rainbow round the tower - `hue_around` wheels of hue across
-* the four sides, seamless where the last side meets the first - with the
-* blobs' noise field moving through it as more hue (`hue_spread` of the
-* wheel), and the whole wheel drifting round once every `hue_cycle`
-* seconds: never two colours but all of them, moving.
+* The base is the blobs' look with the rainbow for its gradient: the same
+* Perlin field, drifting the same way, but where blobs blends two colours
+* across it this runs it through `hue_spread` of the colour wheel - the
+* field stretched by `contrast` so its bunched-up middle reaches the whole
+* span - and the whole wheel drifts round once every `hue_cycle` seconds.
 *
 * Over it, `arms` bright sweeps go round the four sides by column, each
 * trailing a tail `tail` of a turn long. Their speed is an LFO: they
@@ -134,8 +134,8 @@ public:
     PerlinNoiseGenerator2D noise;
 
     float scale = 0.05f;         // noise frequency: smaller is bigger blobs
-    float hueAround = 1.0f;      // wheels of hue once round the tower: 1 is a rainbow round the sides
-    float hueSpread = 0.35f;     // how much of the wheel the field adds on top, 0..1
+    float hueSpread = 1.0f;      // how much of the wheel the field's gradient spans, 0..1
+    float contrast = 1.6f;       // stretches the field: noise sits near its middle, this spreads it
     float hueCycle = 40.0f;      // seconds for the wheel to drift round once
     float baseLevel = 0.55f;     // the field's brightness under the sweeps
 

@@ -228,9 +228,9 @@ void Pattern_Generic_MatrixRain::renderAt(const Coordinate& at, HSV& inOutColor)
         + static_cast<uint32_t>(glyphCell * 7 + churnStep * 131));
     const float churn = 1.0f - churnHash * flicker;
 
-    // the drop's own hue: the green, pushed round the wheel by a hash of
-    // the drop so the tail and head agree, as far as hue_spread allows
-    const float hue = std::fmod(120.0f + hueSpread * 360.0f * hash01(litSeed * 7u + 3u), 360.0f);
+    // the drop's own hue: baseHue (the green), pushed round the wheel by a
+    // hash of the drop so the tail and head agree, as far as hue_spread allows
+    const float hue = std::fmod(baseHue + hueSpread * 360.0f * hash01(litSeed * 7u + 3u), 360.0f);
 
     // the head is the freshly written glyph: white-hot, never churned, and
     // blending on headness so it fades out smoothly in both axes

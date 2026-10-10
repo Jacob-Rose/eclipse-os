@@ -596,7 +596,8 @@ std::unique_ptr<StateMachinePattern> edmx::makeScannerStateMachine()
         scannerSolid("scan_item_success_secret", HSV(120.0f, 1.0f, 0.392f)),
         scannerSolid("scan_item_failure", HSV(0.0f, 1.0f, 0.471f)),     // rgb(120,0,0)
         scannerLook<Pattern_Scanner_PlaybackMushroom>("audio_playback_mushroom"),
-        scannerLook<Pattern_Scanner_PlaybackGeneric>("audio_playback_generic"),
+        // the secret playback: rain in the old ramp's orange-to-green
+        scannerLook<Pattern_Scanner_SecretRain>("audio_playback_generic"),
         scannerSolid("audio_playback_seed", HSV(120.0f, 1.0f, 0.392f)),
         scannerSolid("audio_playback_seed_bad", HSV(0.0f, 1.0f, 0.392f)), // rgb(100,0,0)
         // the rest after a scan is the ring's dark, like `none`: the tower

@@ -8,7 +8,8 @@
 #include "generic_patterns.h"
 
 ///
-/// The recording flow's looks that are built on a generic one.
+/// The scanner's looks that are built on a generic one - the recording
+/// flow's, and the secret playback's rain.
 ///
 /// scanner_patterns.h holds the looks written for the game; generic_patterns.h
 /// the free-standing stage looks that belong to no state. A game look that
@@ -61,5 +62,23 @@ namespace scanner
     private:
         bool doused{false};
         float sinceDouse{0.0f};
+    };
+
+    /* @brief audio_playback_generic: the secret playback, an easter egg's
+    * rain - the Mythos set's rainbow rain in the playback's own colours.
+    *
+    * The matrix rain, every drop its own hue, but the hues are the old
+    * ramp's: orange through yellow to green (baseHue 30, hue_spread a
+    * quarter of the wheel), falling over the whole stage while the item's
+    * clip plays. Opens already raining - the storm is rolled forward on
+    * entry, as the Mythos rain's is - so the playback does not start on an
+    * empty sky.
+    */
+    class Pattern_Scanner_SecretRain : public Pattern_Generic_MatrixRain
+    {
+    public:
+        Pattern_Scanner_SecretRain();
+
+        virtual void reset() override;
     };
 }

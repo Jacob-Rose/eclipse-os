@@ -72,3 +72,32 @@ void Pattern_Scanner_ArmFire::reflect(ecore::PropertyBag& bag)
     Pattern_Generic_Fire2012::reflect(bag);
     bag.add("douse", douseSeconds, 0.05f, 2.0f);
 }
+
+Pattern_Scanner_SecretRain::Pattern_Scanner_SecretRain()
+    : Pattern_Generic_MatrixRain(48)
+{
+    // the old ramp's colours: orange (30) through yellow to green (120)
+    baseHue = 30.0f;
+    hueSpread = 0.25f;
+    dropCount = 30.0f;
+    flicker = 0.3f;
+}
+
+void Pattern_Scanner_SecretRain::reset()
+{
+    Pattern_Generic_MatrixRain::reset();
+
+    // Roll the storm forward until the first drops have crossed the stage,
+    // as the Mythos rain does: spawned up to tail + 20 above the top and
+    // falling at 0.6..1.4 of fall_speed. Small steps, so the particles
+    // integrate the path they would have under real frames.
+    const float span = tailLength + 20.0f + (kStageTop - kStageBottom);
+    const float seconds = span / std::max(0.6f * fallSpeed, 0.1f);
+    const float step = 1.0f / 30.0f;
+    for (float rolled = 0.0f; rolled < seconds; rolled += step)
+    {
+        Pattern_Generic_MatrixRain::tick(step);
+    }
+    // the clock is the cue's: the churn hashes off it
+    timeActive = 0.0f;
+}

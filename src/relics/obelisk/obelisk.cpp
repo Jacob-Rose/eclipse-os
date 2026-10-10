@@ -169,7 +169,7 @@ ObeliskCore::ObeliskCore() : RelicCore()
     addScannerState("scan_item_success_secret",        make_shared<Pattern_Scanner_Solid>(HSV(120.0f, 1.0f, 0.392f)));
     addScannerState("scan_item_failure",               make_shared<Pattern_Scanner_Solid>(HSV(0.0f, 1.0f, 0.471f)));   // rgb(120,0,0)
     addScannerState("audio_playback_mushroom",         make_shared<Pattern_Scanner_PlaybackMushroom>());
-    addScannerState("audio_playback_generic",          make_shared<Pattern_Scanner_PlaybackGeneric>());
+    addScannerState("audio_playback_generic",          make_shared<Pattern_Scanner_SecretRain>());
     addScannerState("audio_playback_seed",             make_shared<Pattern_Scanner_Solid>(HSV(120.0f, 1.0f, 0.392f)));
     addScannerState("audio_playback_seed_bad",         make_shared<Pattern_Scanner_Solid>(HSV(0.0f, 1.0f, 0.392f)));   // rgb(100,0,0)
     addScannerState("audio_playback_rest",             make_shared<Pattern_Scanner_Solid>(HSV(0.0f, 0.0f, 0.0f)));

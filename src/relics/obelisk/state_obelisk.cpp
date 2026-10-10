@@ -247,10 +247,10 @@ void Pattern_Obelisk_Prism::render(HSVStripNode* inNode, HSV& inOutColor) const
     const float height = y / static_cast<float>(WALL_SIDE_LENGTH - 1);
     const float around = x / 8.0f + twist * height;
 
-    // the rainbow round the sides, the field's hue moving through it, the
-    // whole wheel drifting. A whole number of wheels round wraps clean.
-    const float field = 0.5f + 0.5f * noise.evaluate(x, y);
-    float hue = (hueTime + (x / 8.0f) * hueAround + field * hueSpread) * 360.0f;
+    // the blobs' field, as a gradient through the rainbow rather than
+    // between two colours, the whole wheel drifting
+    const float field = std::clamp(0.5f + 0.5f * contrast * noise.evaluate(x, y), 0.0f, 1.0f);
+    float hue = (hueTime + field * hueSpread) * 360.0f;
     hue -= 360.0f * std::floor(hue / 360.0f);
 
     // the nearest sweep ahead of this column: how far behind its head we
@@ -277,8 +277,8 @@ void Pattern_Obelisk_Prism::reflect(ecore::PropertyBag& bag)
 {
     bag.add("speed", noise.timeScale, 0.0f, 2.0f);
     bag.add("scale", scale, 0.01f, 0.3f, [this] { noise.noise.SetFrequency(scale); });
-    bag.add("hue_around", hueAround, 0.0f, 3.0f);
     bag.add("hue_spread", hueSpread, 0.0f, 1.0f);
+    bag.add("contrast", contrast, 0.5f, 4.0f);
     bag.add("hue_cycle", hueCycle, 2.0f, 120.0f);
     bag.add("base", baseLevel, 0.0f, 1.0f);
     bag.add("loop_seconds", loopSeconds, 2.0f, 60.0f, [this] { updateHead(); });
