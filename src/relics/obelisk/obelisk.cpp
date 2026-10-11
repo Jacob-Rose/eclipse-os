@@ -118,8 +118,13 @@ ObeliskCore::ObeliskCore() : RelicCore()
     blobsPatternState->setGenerator(std::make_shared<Pattern_Obelisk_Blobs>());
     blobsPatternState->init();
 
-    // the golden key's look: the field gone rainbow, swept round the tower.
-    // The scanner cues it with `state prism <seconds>` and it stays
+    // the golden key's looks: its first scan takes the field rainbow, its
+    // second sweeps it round the tower. The scanner cues each with
+    // `state <look> <seconds>` and the last one stays
+    rainbowPatternState = std::make_shared<State_GenericHSV>("rainbowState", coreIO.get());
+    rainbowPatternState->setGenerator(std::make_shared<Pattern_Obelisk_RainbowBlobs>());
+    rainbowPatternState->init();
+
     prismPatternState = std::make_shared<State_GenericHSV>("prismState", coreIO.get());
     prismPatternState->setGenerator(std::make_shared<Pattern_Obelisk_Prism>());
     prismPatternState->init();
@@ -128,6 +133,7 @@ ObeliskCore::ObeliskCore() : RelicCore()
     theaterPatternId = stateManager->addState(theaterPatternState);
     testPatternId = stateManager->addState(testPatternState);
     blobsPatternId = stateManager->addState(blobsPatternState);
+    rainbowPatternId = stateManager->addState(rainbowPatternState);
     prismPatternId = stateManager->addState(prismPatternState);
 
     // The scanner's looks, one state per afterglow state tag. The variants the
@@ -149,6 +155,7 @@ ObeliskCore::ObeliskCore() : RelicCore()
     looksByName["theater"] = theaterPatternState;
     looksByName["mono"]    = testPatternState;
     looksByName["blobs"]   = blobsPatternState;
+    looksByName["rainbow_blobs"] = rainbowPatternState;
     looksByName["prism"]   = prismPatternState;
 
     using namespace scanner;
@@ -354,6 +361,7 @@ bool obelisk::ObeliskCore::handleCommand(string msg)
         else if (wanted == "theater")                  target = theaterPatternState;
         else if (wanted == "mono" || wanted == "test") target = testPatternState;
         else if (wanted == "blobs")                    target = blobsPatternState;
+        else if (wanted == "rainbow_blobs")            target = rainbowPatternState;
         else if (wanted == "prism")                    target = prismPatternState;
         else
         {
@@ -450,7 +458,7 @@ bool obelisk::ObeliskCore::handleCommand(string msg)
 
     if (msg == "states")
     {
-        string reply = "EOSLINK states blobs prism seasons theater mono";
+        string reply = "EOSLINK states blobs rainbow_blobs prism seasons theater mono";
         for (const auto& entry : scannerStates)
         {
             reply += " " + entry.first;

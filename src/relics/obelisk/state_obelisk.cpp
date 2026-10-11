@@ -267,6 +267,10 @@ void Pattern_Obelisk_Prism::render(HSVStripNode* inNode, HSV& inOutColor) const
     sweep *= sweep;
     const float ahead = 1.0f / armCount - behind;
     sweep = std::max(sweep, std::max(0.0f, 1.0f - ahead / 0.04f));
+    if (!sweeps)
+    {
+        sweep = 0.0f;
+    }
 
     // the sweep brightens the field and washes it toward white at the head
     const float level = baseLevel + (1.0f - baseLevel) * sweep;

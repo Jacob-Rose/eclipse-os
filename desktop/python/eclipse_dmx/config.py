@@ -191,6 +191,7 @@ GENERIC_STATES = (
 OBELISK_STATES = (
     "seasons",
     "blobs",
+    "rainbow_blobs",
     "prism",
     "mono",
 )

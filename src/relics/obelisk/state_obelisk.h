@@ -145,6 +145,7 @@ public:
     float arms = 2.0f;           // sweeps, evenly round the tower (rounded)
     float tail = 0.3f;           // a sweep's tail, as a fraction of a turn
     float twist = 0.0f;          // turns of lag from foot to tip: a spiral
+    bool sweeps = true;          // off, the field alone - rainbow_blobs
 
     virtual void tick(float deltaTime) override;
     virtual void render(HSVStripNode* inNode, HSV& inOutColor) const override;
@@ -161,6 +162,21 @@ private:
     float headTurn{0.0f};
 
     void updateHead();
+};
+
+/*
+* The golden key's first step: prism's rainbow field without the sweeps -
+* the blobs gone rainbow, at the blobs' full brightness. The key's second
+* scan brings the spin (prism), and that is where it stays.
+*/
+class Pattern_Obelisk_RainbowBlobs : public Pattern_Obelisk_Prism
+{
+public:
+    Pattern_Obelisk_RainbowBlobs()
+    {
+        sweeps = false;
+        baseLevel = 1.0f;
+    }
 };
 
 class Pattern_Obelisk_Theater : public GeneratorHSV

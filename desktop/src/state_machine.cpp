@@ -635,7 +635,8 @@ std::unique_ptr<StateMachinePattern> edmx::makeScannerStateMachine()
             HSV(30.0f, 0.55f, 1.0f), 4.0f, 0.15f, 0.5f, 1.0f),          // CRGB(1.0, 0.73, 0.45)
         // The golden key: a gold breath on the ring, and the tower left to
         // the shadow, so what shows there is the sculpture's own look
-        // blending into prism (`base prism`, sent with it) under the scan.
+        // blending into the key's next one (`base rainbow_blobs`, then
+        // `base prism`, sent with it) under the scan.
         overUnderlay(scannerLookWith<Pattern_Scanner_SinePulse>("golden",
             HSV(45.0f, 0.85f, 1.0f), 3.0f, 0.35f, 0.65f)),
         scannerLookWith<Pattern_Scanner_SinePulse>("cleanse_done",
@@ -704,6 +705,7 @@ std::shared_ptr<eanim::GeneratorHSV> edmx::makeObeliskLook(const std::string& na
     if (name == "theater")                   return std::make_shared<Pattern_Obelisk_Theater>();
     if (name == "mono" || name == "test")    return std::make_shared<Pattern_Obelisk_Monocolor>();
     if (name == "blobs")                     return std::make_shared<Pattern_Obelisk_Blobs>();
+    if (name == "rainbow_blobs")             return std::make_shared<Pattern_Obelisk_RainbowBlobs>();
     if (name == "prism")                     return std::make_shared<Pattern_Obelisk_Prism>();
     return nullptr;
 }
@@ -717,7 +719,9 @@ std::unique_ptr<StateMachinePattern> edmx::makeObeliskStateMachine()
         plainLook<Pattern_Obelisk_FourSeasons>("seasons"),
         // the seasons field generalised: one field, two pickable colours
         plainLook<Pattern_Obelisk_Blobs>("blobs"),
-        // the golden key's: the field gone rainbow, swept round the tower
+        // the golden key's, in its order: the field gone rainbow, then
+        // swept round the tower
+        plainLook<Pattern_Obelisk_RainbowBlobs>("rainbow_blobs"),
         plainLook<Pattern_Obelisk_Prism>("prism"),
         plainLook<Pattern_Obelisk_Monocolor>("mono"),
     };
