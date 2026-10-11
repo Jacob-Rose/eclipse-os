@@ -6119,37 +6119,80 @@ class ScannerKnobs(ShowTest):
         self.cue(show, "record_active", ["orbit_rate", "tail"])
         self.cue(show, "record_countdown", ["sweep", "edge", "floor"])
 
-    OSC_KNOBS = ["hue_a", "sat_a", "hue_b", "sat_b", "gain", "floor", "slew"]
+    OSC_KNOBS = ["hue_a", "sat_a", "hue_b", "sat_b", "bright_a", "bright_b",
+                 "amount_a", "amount_b", "tick", "cut", "gain", "floor", "slew",
+                 "follow", "cut_lift", "cut_seconds"]
+    OSC_WASH = OSC_KNOBS + ["flash", "glitter"]
+    OSC_PULSE = OSC_KNOBS + ["ring", "bed", "flick"]
 
-    def test_the_osc_looks_offer_the_hosts_colours(self):
+    def test_the_osc_looks_offer_the_hosts_knobs(self):
         show = self._show()
-        self.cue(show, "osc_wash", self.OSC_KNOBS + ["flash"])
-        self.cue(show, "osc_pulse", self.OSC_KNOBS + ["ring", "bed"])
-        self.cue(show, "osc_meter", self.OSC_KNOBS + ["fall"])
+        self.cue(show, "osc_wash", self.OSC_WASH)
+        self.cue(show, "osc_pulse", self.OSC_PULSE)
+        self.cue(show, "osc_meter", self.OSC_KNOBS + ["fall", "punch"])
 
     def test_the_osc_colours_carry_from_one_look_to_the_next(self):
         """The host's colours are one pair for every OSC look, so the golden
         key stepping looks does not drop them until the host restates them."""
         frames = []
         show = self._show(on_frame=frames.append)
-        self.cue(show, "osc_wash", self.OSC_KNOBS + ["flash"])
+        self.cue(show, "osc_wash", self.OSC_WASH)
         for name, value in (("hue_a", 0.0), ("sat_a", 1.0), ("hue_b", 0.0), ("sat_b", 1.0)):
             show.set_param(name, value)
 
         # the bus goes stale in a third of a second, so the level is restated
         # the way a host would while the wash is watched
         def lit_red():
-            show.command("audio level_average 1.0", expect_reply=False)
+            show.command("audio level 1.0", expect_reply=False)
             pixel = frames[-1][0] if frames else (0, 0, 0)
             return pixel[0] > 200 and pixel[1] < 40 and pixel[2] < 40
         self.settle_until(lit_red, timeout=6.0, message="the wash in the host's red")
 
         # the next look, colours never sent again: still red, once its floor
         # is up far enough to see
-        self.cue(show, "osc_pulse", self.OSC_KNOBS + ["ring", "bed"])
+        self.cue(show, "osc_pulse", self.OSC_PULSE)
         show.set_param("floor", 1.0)
         self.settle_until(lambda: frames and frames[-1][0][0] > 200 and frames[-1][0][2] < 40,
                           timeout=6.0, message="the pulse in the same red")
+
+    def _steady_wash(self, show, frames):
+        """The wash held flat: no level, no glitter, a floor to see by."""
+        self.cue(show, "osc_wash", self.OSC_WASH)
+        for name, value in (("sat_a", 0.0), ("sat_b", 0.0), ("floor", 0.8),
+                            ("glitter", 0.0), ("bright_a", 1.0), ("bright_b", 1.0)):
+            show.set_param(name, value)
+        # through the output's gamma, a floor of 0.8 sits near 150 of 255
+        self.settle_until(lambda: frames and frames[-1][0][0] > 100, timeout=6.0,
+                          message="the wash up at its floor")
+        self.settle(0.5)
+        return frames[-1][0][0]
+
+    def test_the_hosts_screen_going_dark_takes_the_osc_looks_down(self):
+        """A break on the host's screen (both colours' brightness at 0) dims
+        the rig by `follow`, and its light coming back brings the rig back."""
+        frames = []
+        show = self._show(on_frame=frames.append)
+        lit = self._steady_wash(show, frames)
+        show.set_param("bright_a", 0.0)
+        show.set_param("bright_b", 0.0)
+        self.settle_until(lambda: frames[-1][0][0] < lit * 0.6, timeout=4.0,
+                          message="the wash dimmed with the host's screen")
+        show.set_param("bright_a", 1.0)
+        self.settle_until(lambda: frames[-1][0][0] >= lit - 2, timeout=4.0,
+                          message="the wash back up with the screen")
+
+    def test_a_new_video_on_the_host_lifts_the_osc_look_once(self):
+        """`cut` (the host's video/start) lifts the stage and fades back, and
+        the look takes the knob back to 0 so the next cut lifts it again."""
+        frames = []
+        show = self._show(on_frame=frames.append)
+        lit = self._steady_wash(show, frames)
+        for _ in range(2):
+            show.set_param("cut", 1.0)
+            self.settle_until(lambda: frames[-1][0][0] > lit + 40, timeout=2.0,
+                              message="the cut's lift")
+            self.settle_until(lambda: frames[-1][0][0] <= lit + 2, timeout=3.0,
+                              message="the lift fading back")
 
     def test_dim_takes_one_device_by_name(self):
         """afterglow keeps the pars dark outside its OSC mode with this."""

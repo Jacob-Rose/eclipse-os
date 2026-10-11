@@ -12,9 +12,12 @@
   // tower only the game reaches them.
   //
   // The OSC comes in on 7000, through the same map the game opens
-  // (oscmaps/afterglow.json): the host's two colours onto the looks' knobs,
-  // its tempo, beat and levels onto the audio bus. Point the test host at
-  // this machine:
+  // (oscmaps/afterglow.json), written for sync swim: its colours, their
+  // brightness and share of its screen, its beat count and new videos onto
+  // the looks' knobs; its tempo, beat and mic bands onto the audio bus.
+  // launch-osc.sh opens the port (`view` does not read the block below).
+  // Point sync swim's OSC window at this machine's address and port 7000,
+  // or the test host, which sends the same addresses:
   //
   //   python3 ~/Documents/osc-host/osc_host.py --host 127.0.0.1 --port 7000
   //
