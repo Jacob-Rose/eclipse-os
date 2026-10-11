@@ -599,6 +599,10 @@ std::unique_ptr<StateMachinePattern> edmx::makeScannerStateMachine()
         scannerLook<Pattern_Scanner_PlaybackMushroom>("audio_playback_mushroom"),
         // the secret playback: rain in the old ramp's orange-to-green
         scannerLook<Pattern_Scanner_SecretRain>("audio_playback_generic"),
+        // the secret items with a look of their own, scan through playback
+        // with no YES between - afterglow's item data names them (`look`)
+        scannerLook<Pattern_Scanner_SecretAlien>("secret_alien"),
+        scannerLook<Pattern_Scanner_SecretForest>("secret_frog"),
         scannerSolid("audio_playback_seed", HSV(120.0f, 1.0f, 0.392f)),
         scannerSolid("audio_playback_seed_bad", HSV(0.0f, 1.0f, 0.392f)), // rgb(100,0,0)
         // the rest after a scan is the ring's dark, like `none`: the tower

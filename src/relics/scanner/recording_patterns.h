@@ -81,4 +81,57 @@ namespace scanner
 
         virtual void reset() override;
     };
+
+    /* @brief secret_alien: the alien rock's message - a saucer over the
+    * tower with its tractor beam down it.
+    *
+    * The ring is the saucer: `lights` running lights orbiting it, green and
+    * magenta by turns, over a dim teal hull. The rest of the stage is the
+    * beam: bands of pale green falling from the tip to the foot at
+    * `fall_rate` bands a second, `bands` of them up the height, over a faint
+    * glow - and the whole beam stutters now and then, as a transmission
+    * from that far off would. From the scan straight through the message,
+    * no YES between: afterglow's item data names it (`look`).
+    */
+    class Pattern_Scanner_SecretAlien : public PatternScanner
+    {
+    public:
+        HSV beamColor = HSV(110.0f, 0.55f, 1.0f);
+        HSV hullColor = HSV(175.0f, 0.9f, 0.18f);
+        HSV lightA = HSV(100.0f, 1.0f, 1.0f);
+        HSV lightB = HSV(300.0f, 0.9f, 1.0f);
+        float lights = 6.0f;
+        float orbitRate = 0.45f;     // turns a second
+        float bands = 4.0f;          // up the stage's height
+        float fallRate = 0.8f;       // bands a second, tip to foot
+        float glow = 0.3f;           // the beam between its bands
+        float stutter = 0.35f;       // how deep the transmission drops out
+
+        virtual void render(HSVStripNode* inNode, HSV& inOutColor) const override;
+        virtual void reflect(ecore::PropertyBag& bag) override;
+    };
+
+    /* @brief secret_frog: the frog's voice - a fantasy forest at night.
+    *
+    * A canopy of deep greens drifting slowly over the stage, moss into
+    * pine, with fireflies: each pixel its own, winking warm yellow-green on
+    * its own slow clock so a few are always lit and none together. A light
+    * shaft wanders across now and then, lifting the canopy where it falls.
+    * From the scan straight through the voice, no YES between: afterglow's
+    * item data names it (`look`).
+    */
+    class Pattern_Scanner_SecretForest : public PatternScanner
+    {
+    public:
+        HSV mossColor = HSV(95.0f, 0.85f, 0.45f);
+        HSV pineColor = HSV(145.0f, 0.95f, 0.16f);
+        HSV fireflyColor = HSV(70.0f, 0.85f, 1.0f);
+        float drift = 0.25f;         // how fast the canopy moves
+        float fireflyRate = 0.6f;    // winks a second, each firefly
+        float fireflies = 14.0f;     // sharpness: higher is fewer, briefer
+        float shaft = 0.35f;         // how much a light shaft lifts the canopy
+
+        virtual void render(HSVStripNode* inNode, HSV& inOutColor) const override;
+        virtual void reflect(ecore::PropertyBag& bag) override;
+    };
 }
