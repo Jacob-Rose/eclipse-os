@@ -45,6 +45,11 @@ namespace edmx
         float fps{40.0f};               ///< DMX refresh rate; 40 is the spec's max
         int consoleChannels{12};        ///< how many channels the console output prints
 
+        /// The shortest frame a DMX widget sends, in channels; 0 sends up to
+        /// the highest one the fixtures use. Some cheap fixtures drop short
+        /// frames that DMX allows - QLC+ always sends all 512.
+        int frameChannels{0};
+
         /// relic_usb only: "streaming" (the default) takes the relic's pixels
         /// on the first frame; "released" opens the cable but leaves the
         /// sculpture on its own looks until a `link take`. For a show that

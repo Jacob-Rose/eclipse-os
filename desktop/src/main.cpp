@@ -5283,7 +5283,8 @@ int main(int argc, char** argv)
 
         if (device.output)
         {
-            device.output->setUniverseLength(config.fixtures.highestChannel());
+            device.output->setUniverseLength(std::max(config.fixtures.highestChannel(),
+                                                      config.output.frameChannels));
             if (RelicUsbOutput* relic = device.output->asRelicLink())
             {
                 relic->setStartReleased(config.output.start == "released");

@@ -384,6 +384,10 @@ class DeviceConfig:
     fps: float = 40.0
     console_channels: int = 12
 
+    #: The shortest frame a DMX widget sends; 0 is up to the highest channel
+    #: in use. See OutputConfig::frameChannels in config.h.
+    frame_channels: int = 0
+
     def validate(self) -> None:
         if self.type not in DEVICE_TYPES:
             raise ConfigError(f"device.type '{self.type}' is not one of {DEVICE_TYPES}")
@@ -399,6 +403,7 @@ class DeviceConfig:
             "baud": self.baud,
             "fps": self.fps,
             "console_channels": self.console_channels,
+            **({"frame_channels": self.frame_channels} if self.frame_channels else {}),
         }
 
 
@@ -1659,6 +1664,7 @@ class Config:
             baud=int(block.get("baud", device.output.baud)),
             fps=float(block.get("fps", device.output.fps)),
             console_channels=int(block.get("console_channels", device.output.console_channels)),
+            frame_channels=int(block.get("frame_channels", device.output.frame_channels)),
         )
 
         # A config's own profiles shadow the built-ins, matching the executable.
@@ -1971,6 +1977,8 @@ class Config:
                         fps=float(override.get("fps", device.output.fps)),
                         console_channels=int(override.get("console_channels",
                                                           device.output.console_channels)),
+                        frame_channels=int(override.get("frame_channels",
+                                                        device.output.frame_channels)),
                     )
                 if isinstance(entry.get("port"), str):
                     device.output.port = entry["port"]

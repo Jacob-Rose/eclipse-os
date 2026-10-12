@@ -313,6 +313,7 @@ namespace
         device.output.baud            = output["baud"].asInt(device.output.baud);
         device.output.fps             = output["fps"].asFloat(device.output.fps);
         device.output.consoleChannels = output["console_channels"].asInt(device.output.consoleChannels);
+        device.output.frameChannels = output["frame_channels"].asInt(device.output.frameChannels);
         device.output.start           = output["start"].asString(device.output.start);
 
         if (device.output.start != "streaming" && device.output.start != "released")
@@ -967,6 +968,7 @@ bool edmx::loadConfig(const std::string& path, Config& outConfig, std::string& o
                 device.output.baud            = output["baud"].asInt(device.output.baud);
                 device.output.fps             = output["fps"].asFloat(device.output.fps);
                 device.output.consoleChannels = output["console_channels"].asInt(device.output.consoleChannels);
+                device.output.frameChannels = output["frame_channels"].asInt(device.output.frameChannels);
                 device.output.start           = output["start"].asString(device.output.start);
 
                 if (device.output.start != "streaming" && device.output.start != "released")

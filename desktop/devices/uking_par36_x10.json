@@ -55,6 +55,12 @@
     // The wire could carry far more - 77 channels at 250k is a frame every
     // 3ms - but faster than the loop renders is the same frame twice.
     "fps": 30,
+
+    // All 512, as QLC+ sends, rather than the 77 in use. At 77 the pars
+    // dropped frames, more of them the faster they came: a beat's flash at
+    // 24fps lit every other beat and at 30 one in four. 512 is 23ms on the
+    // wire, inside the 33ms a frame has at 30.
+    "frame_channels": 512,
     "console_channels": 24
   },
 
