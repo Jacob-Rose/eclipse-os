@@ -529,6 +529,10 @@ class CalibrationApp:
             self.latency_ms = self.show.nudge_device_latency(self.target, milliseconds)
         self._refresh()
 
+    def _target_label(self) -> str:
+        """Whose number this is, for a line that would otherwise not say."""
+        return "whole rig (midi.latency_ms)" if self.target is None else self.target
+
     def next_target(self) -> None:
         """The whole rig, then each device alone, then round again."""
         self.select_target(self.targets[(self.targets.index(self.target) + 1) % len(self.targets)])
@@ -613,7 +617,8 @@ class CalibrationApp:
             self._say("nothing to apply yet: tap a round to the beep and one to the flash")
             return
         self.set_latency(round(suggestion))
-        self._say(f"latency {format_latency_ms(self.latency_ms)}ms - applied, not saved: [s] saves it")
+        self._say(f"{self._target_label()} {format_latency_ms(self.latency_ms)}ms"
+                  " - applied, not saved: [s] saves it")
 
     def save(self) -> None:
         try:
@@ -625,7 +630,7 @@ class CalibrationApp:
             self._say(f"could not write {self.config_path.name}: {error}")
             return
         self.saved_ms = self.latency_ms
-        self._say(f"{self.config_path.name}: {written}")
+        self._say(f"{self.config_path.name}: {self._target_label()} {written}")
         self._refresh()
 
     # -- drawing -------------------------------------------------------------
