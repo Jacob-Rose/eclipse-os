@@ -48,13 +48,13 @@
     "type": "enttec_open",
     "port": "auto",
 
-    // 24, to sit with the obelisk rather than above it. The wire could carry
-    // far more - 77 channels at 250k is a frame every 3ms - but the show loop
-    // renders at the *fastest* device's rate and each device sends when it is
-    // due, so a truss at 40 beside a sculpture at 24 means the sculpture takes
-    // an uneven 3 slots out of every 5. Even spacing is worth more to a look
-    // than frames a par cannot resolve anyway.
-    "fps": 24,
+    // 30: the rate the desk streams at in client mode, and the ring's, so the
+    // show loop already runs at it. At 24 the truss skipped one frame in five
+    // of what arrived, and a beat's flash is only three or four frames long -
+    // the beep test's pars lost part of every flash and some of them whole.
+    // The wire could carry far more - 77 channels at 250k is a frame every
+    // 3ms - but faster than the loop renders is the same frame twice.
+    "fps": 30,
     "console_channels": 24
   },
 

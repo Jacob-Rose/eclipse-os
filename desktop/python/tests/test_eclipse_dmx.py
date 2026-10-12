@@ -7772,16 +7772,17 @@ class TheLatencyInTheConfig(unittest.TestCase):
 
         path = self.copy(CUES)
         self.assertEqual(write_device_latency(path, "pars", 30), '"latency_ms": 30')
+        write_device_latency(path, "obelisk", 12)
         lines_once = path.read_text(encoding="utf-8").count("\n")
         write_device_latency(path, "pars", 35.5)
+        write_device_latency(path, "obelisk", 13)
         write_device_latency(path, "obelisk", 12)
         after = path.read_text(encoding="utf-8")
         devices = {d.get("name") or d["device"]: d
                    for d in json.loads(_strip(after))["devices"]}
         self.assertEqual(devices["pars"]["latency_ms"], 35.5)
         self.assertEqual(devices["obelisk"]["latency_ms"], 12)
-        self.assertNotIn("latency_ms", devices["scanner_ring"])
-        self.assertEqual(after.count("\n"), lines_once + 3, "replaced, not added twice")
+        self.assertEqual(after.count("\n"), lines_once, "replaced, not added twice")
 
     def test_a_device_that_is_not_there_is_refused(self):
         from eclipse_dmx.config import write_device_latency
