@@ -947,6 +947,10 @@ bool edmx::loadConfig(const std::string& path, Config& outConfig, std::string& o
             }
 
             device.brightness = std::clamp(entry["brightness"].asFloat(1.0f), 0.0f, 1.0f);
+            if (entry["latency_ms"].isNumber())
+            {
+                device.latencyMs = entry["latency_ms"].asFloat(0.0f);
+            }
             if (entry["gamma"].isNumber())
             {
                 device.gamma = entry["gamma"].asFloat(device.gamma);

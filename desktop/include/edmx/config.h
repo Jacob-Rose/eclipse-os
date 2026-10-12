@@ -391,6 +391,13 @@ namespace edmx
         /// Per-device trim, on top of the show's master.
         float brightness{1.0f};
 
+        /// How late this device's lamps are, in ms, when it is not the same
+        /// as the rest of the rig - `midi.latency_ms` when unset. A DMX truss,
+        /// a relic on USB and a ring painted on another machine do not answer
+        /// a frame at the same speed, and one number cannot land all three on
+        /// the beat. See applyLatencies() in main.cpp for how it is paid.
+        std::optional<float> latencyMs;
+
         /// This device's gamma, or 0 for the master's. A relic driven in
         /// pixel mode lights what it is sent straight, and lights its *own*
         /// looks through its NeoPixel gamma (2.6) - so a desk that wants its

@@ -7606,6 +7606,46 @@ class TheLatency(ShowTest):
         self.assertEqual(show.nudge_latency(-2), 10.0)
         self.assertEqual(show.get_latency(), 10.0)
 
+    def test_a_device_carries_its_own(self):
+        lines = run_show(["latency 40", "latency pars", "latency pars 25",
+                          "latency pars nudge 5", "latency pars off", "latency nope 3"],
+                         config=CUES)
+        replies = [line for line in lines if line.startswith(("OK latency", "ERR latency"))]
+        self.assertEqual(replies[:5], ["OK latency 40.0", "OK latency pars 40.0",
+                                       "OK latency pars 25.0", "OK latency pars 30.0",
+                                       "OK latency pars 40.0"])
+        self.assertTrue(replies[5].startswith("ERR latency: 'nope' is not a number or a device"), replies[5])
+
+    def test_the_clock_leads_by_the_slowest_device(self):
+        lines = run_show(["latency 10", "latency obelisk 50", "status"], config=CUES)
+        status = [line for line in lines if line.startswith("STATUS")][-1]
+        self.assertIn(" latency=50.0ms", status)
+        self.assertIn("OK latency 10.0", lines)
+
+    def test_a_quicker_device_is_held_back_by_the_difference(self):
+        """The obelisk at 0 beside a show at 200: the pars lead by 200 and
+        the obelisk is held back by all of it, so its flash lands 200ms after
+        theirs - give or take the frame the stream is cut into."""
+        stamped = []
+        show = self.running_show(CUES, pattern="metronome", midi="", bpm=120.0,
+                                 on_frame=lambda frame: stamped.append((time.monotonic(), frame)),
+                                 emit_rate=60.0)
+        par = next(d for d in show.devices if d.name == "pars").first
+        obelisk = next(d for d in show.devices if d.name == "obelisk").first
+        show.set_latency(200)
+        show.set_device_latency("obelisk", 0)
+        time.sleep(0.6)
+        start = time.monotonic()
+        time.sleep(3.0)
+
+        def onsets(slot):
+            seen = [(at, max(frame[slot]) > 0) for at, frame in stamped if at > start]
+            return [at for i, (at, lit) in enumerate(seen) if lit and i > 0 and not seen[i - 1][1]]
+
+        gaps = [(o - p) for p, o in zip(onsets(par), onsets(obelisk))]
+        self.assertGreaterEqual(len(gaps), 3, "the rig did not flash")
+        self.assertAlmostEqual(sum(gaps) / len(gaps), 0.2, delta=0.05)
+
     def _flash_phases(self, latency_ms, seconds=3.0):
         """Where the metronome's flashes land against a beat tapped from here,
         as a phase of the beat in seconds: 0 is on it."""
@@ -7726,6 +7766,31 @@ class TheLatencyInTheConfig(unittest.TestCase):
         with self.assertRaises((ConfigError, ValueError)):
             write_midi_latency(path, 30)
         self.assertEqual(path.read_text(encoding="utf-8"), "{ not json")
+
+    def test_a_device_is_written_into_its_own_entry(self):
+        from eclipse_dmx.config import write_device_latency
+
+        path = self.copy(CUES)
+        self.assertEqual(write_device_latency(path, "pars", 30), '"latency_ms": 30')
+        lines_once = path.read_text(encoding="utf-8").count("\n")
+        write_device_latency(path, "pars", 35.5)
+        write_device_latency(path, "obelisk", 12)
+        after = path.read_text(encoding="utf-8")
+        devices = {d.get("name") or d["device"]: d
+                   for d in json.loads(_strip(after))["devices"]}
+        self.assertEqual(devices["pars"]["latency_ms"], 35.5)
+        self.assertEqual(devices["obelisk"]["latency_ms"], 12)
+        self.assertNotIn("latency_ms", devices["scanner_ring"])
+        self.assertEqual(after.count("\n"), lines_once + 3, "replaced, not added twice")
+
+    def test_a_device_that_is_not_there_is_refused(self):
+        from eclipse_dmx.config import write_device_latency
+
+        path = self.copy(CUES)
+        before = path.read_text(encoding="utf-8")
+        with self.assertRaises(ConfigError):
+            write_device_latency(path, "nope", 30)
+        self.assertEqual(path.read_text(encoding="utf-8"), before)
 
     def test_whole_numbers_are_written_whole(self):
         from eclipse_dmx.config import format_latency_ms

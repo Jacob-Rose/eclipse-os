@@ -42,7 +42,8 @@ import time
 from pathlib import Path
 from typing import Callable, List, Optional, Sequence, Tuple, Union
 
-from .config import ConfigError, LATENCY_LIMIT_MS, format_latency_ms, write_midi_latency
+from .config import (ConfigError, LATENCY_LIMIT_MS, format_latency_ms, write_device_latency,
+                     write_midi_latency)
 from .controller import FrameForwarder, ShowController, ShowError
 
 #: The tempo the test runs at. Anything would do; 120 makes a beat a round
@@ -404,6 +405,15 @@ class CalibrationApp:
         self.latency_ms = self.show.get_latency()
         self.saved_ms: Optional[float] = self.latency_ms
 
+        # -- one device at a time ---------------------------------------------
+        # None is the show's number on the whole rig; a name is that device
+        # alone, the rest held dark, measured and saved as its own. A truss,
+        # a relic and a ring answer at different speeds, and the flash can
+        # only land on the click for all of them if each is asked separately.
+        self.targets: List[Optional[str]] = [None] + [d.name for d in self.show.devices]
+        self.target: Optional[str] = None
+        self.saved_by_target = {None: self.saved_ms}
+
         # -- the grid, and the show put on it ---------------------------------
         # The anchor is read just before the line is written, and the reader
         # thread over there stamps it as it lands: a pipe's worth apart.
@@ -436,7 +446,7 @@ class CalibrationApp:
         where = f"  ->  {self.client_host}" if self.client_host else ""
         self.root.title(f"eclipse-dmx  -  calibrate  -  {self.config_path.name}{where}")
         self.root.configure(bg=PANEL)
-        self.root.geometry("720x420")
+        self.root.geometry("720x460")
         self.root.minsize(560, 360)
         self._colors = {"panel": PANEL, "text": TEXT, "dim": TEXT_DIM,
                         "warn": TEXT_WARN, "button": BUTTON_BG}
@@ -472,7 +482,8 @@ class CalibrationApp:
             font=("Consolas", 9), padx=12, pady=6,
             text=("[up]/[down] 1ms   [shift] 10ms   [space] tap\n"
                   "[b] tap to the beep   [f] tap to the flash   [a] apply what they say\n"
-                  "[s] save to the config   [r] start the rounds over   [q] quit"))
+                  "[d] the whole rig / one device alone   [s] save to the config\n"
+                  "[r] start the rounds over   [q] quit"))
         self.footer.pack(side="bottom", fill="x")
         self.message = tk.Label(self.root, anchor="w", bg=PANEL, fg=TEXT_WARN,
                                 font=("Consolas", 9), padx=12)
@@ -484,6 +495,7 @@ class CalibrationApp:
         self.root.bind("b", lambda e: self.start_round("beep"))
         self.root.bind("f", lambda e: self.start_round("flash"))
         self.root.bind("a", lambda e: self.apply())
+        self.root.bind("d", lambda e: self.next_target())
         self.root.bind("s", lambda e: self.save())
         self.root.bind("r", lambda e: self.reset_rounds())
         self.root.bind("q", lambda e: self._quit())
@@ -503,12 +515,38 @@ class CalibrationApp:
     # -- the latency -------------------------------------------------------
 
     def set_latency(self, milliseconds: float) -> None:
-        """Puts the clock this far ahead, live."""
-        self.latency_ms = self.show.set_latency(milliseconds)
+        """Puts the target this far ahead, live."""
+        if self.target is None:
+            self.latency_ms = self.show.set_latency(milliseconds)
+        else:
+            self.latency_ms = self.show.set_device_latency(self.target, milliseconds)
         self._refresh()
 
     def nudge(self, milliseconds: float) -> None:
-        self.latency_ms = self.show.nudge_latency(milliseconds)
+        if self.target is None:
+            self.latency_ms = self.show.nudge_latency(milliseconds)
+        else:
+            self.latency_ms = self.show.nudge_device_latency(self.target, milliseconds)
+        self._refresh()
+
+    def next_target(self) -> None:
+        """The whole rig, then each device alone, then round again."""
+        self.select_target(self.targets[(self.targets.index(self.target) + 1) % len(self.targets)])
+
+    def select_target(self, target: Optional[str]) -> None:
+        self.saved_by_target[self.target] = self.saved_ms
+        self.target = target
+        for name in self.targets[1:]:
+            self.show.dim(name, 1.0 if target in (None, name) else 0.0)
+        if target is None:
+            self.latency_ms = self.show.get_latency()
+        else:
+            self.latency_ms = self.show.get_device_latency(target)
+        self.saved_ms = self.saved_by_target.setdefault(target, self.latency_ms)
+        # The beep round stands: it is the click and the tapper, and neither
+        # changed. Only the flash is this device's.
+        self._end_round()
+        self.rounds["flash"] = TapRound("flash")
         self._refresh()
 
     # -- tapping -------------------------------------------------------------
@@ -579,7 +617,10 @@ class CalibrationApp:
 
     def save(self) -> None:
         try:
-            written = write_midi_latency(self.config_path, self.latency_ms)
+            if self.target is None:
+                written = write_midi_latency(self.config_path, self.latency_ms)
+            else:
+                written = write_device_latency(self.config_path, self.target, self.latency_ms)
         except (OSError, ValueError, ConfigError) as error:
             self._say(f"could not write {self.config_path.name}: {error}")
             return
@@ -596,9 +637,11 @@ class CalibrationApp:
         self.header.configure(
             text=f"calibrate  {self.config_path.name}{where}   {self.bpm:g} bpm   {click}")
 
-        self.number.configure(text=f"latency  {format_latency_ms(self.latency_ms)} ms")
+        target = self.target or "latency"
+        self.number.configure(text=f"{target}  {format_latency_ms(self.latency_ms)} ms")
+        member = "midi.latency_ms" if self.target is None else f"latency_ms on {self.target}"
         if self.saved_ms is None or abs(self.saved_ms - self.latency_ms) > 0.05:
-            self.number_note.configure(text="not saved  -  [s] writes midi.latency_ms",
+            self.number_note.configure(text=f"not saved  -  [s] writes {member}",
                                        fg=colors["warn"])
         else:
             self.number_note.configure(text="saved in the config", fg=colors["dim"])

@@ -890,6 +890,10 @@ class Device:
 
     brightness: float = 1.0
 
+    #: How late this device's lamps are, in ms, when not the show's
+    #: `midi.latency_ms`. None follows the show. See `write_device_latency`.
+    latency_ms: Optional[float] = None
+
     def display_channel(self, channel: int) -> int:
         """A one-based internal channel, back in this device's own numbering."""
         return channel - 1 if self.addressing == "zero" else channel
@@ -1583,7 +1587,8 @@ class Config:
 
         show["devices"] = [
             {**device.to_dict(), **device.placement.to_dict(),
-             **({"brightness": device.brightness} if device.brightness != 1.0 else {})}
+             **({"brightness": device.brightness} if device.brightness != 1.0 else {}),
+             **({"latency_ms": device.latency_ms} if device.latency_ms is not None else {})}
             for device in self.devices
         ]
         return show
@@ -1951,6 +1956,8 @@ class Config:
                     ]
 
                 device.brightness = float(entry.get("brightness", 1.0))
+                if isinstance(entry.get("latency_ms"), (int, float)):
+                    device.latency_ms = float(entry["latency_ms"])
 
                 # ---- overrides ------------------------------------------
                 # A device file says what a sculpture *is*; where it is plugged
@@ -2268,6 +2275,71 @@ def write_midi_latency(path: Union[str, Path], latency_ms: float) -> str:
 
     check = json.loads(_strip_line_comments(edited)).get("midi", {}).get("latency_ms")
     if check is None or abs(float(check) - round(float(latency_ms), 1)) > 0.05:
+        raise ConfigError(f"editing {target} did not take; nothing written")
+    target.write_text(edited, encoding="utf-8")
+    return written
+
+
+def write_device_latency(path: Union[str, Path], device: str, latency_ms: float) -> str:
+    """Sets ``latency_ms`` on one entry of ``devices`` in the file at `path`.
+
+    The same text edit as `write_midi_latency`, on the entry whose ``name`` -
+    or, with none, whose ``device`` - is `device`: the number replaced where
+    it stands, or a line added at the top of the entry.
+
+    Returns the member as written, e.g. ``"latency_ms": 45``.
+    """
+    target = Path(path)
+    text = target.read_text(encoding="utf-8")
+    if not isinstance(json.loads(_strip_line_comments(text)), dict):
+        raise ConfigError(f"{target} is not a config: expected an object at the top")
+
+    written = f'"latency_ms": {format_latency_ms(latency_ms)}'
+    note = "// this device's own latency, in ms - python -m eclipse_dmx calibrate, [d]"
+
+    root = _skip_gap(text, 0, len(text))
+    body_start, body_end = _object_body(text, root)
+    devices = next((m for m in _members(text, body_start, body_end) if m[0] == "devices"), None)
+    if devices is None:
+        raise ConfigError(f"{target} has no devices list")
+
+    def entry_name(entry: Any) -> Optional[str]:
+        if not isinstance(entry, dict):
+            return None
+        return entry.get("name") or entry.get("device")
+
+    parsed = json.loads(_strip_line_comments(text))["devices"]
+    position = next((i for i, entry in enumerate(parsed) if entry_name(entry) == device), None)
+    if position is None:
+        raise ConfigError(f"{target} has no device '{device}' in its devices list")
+
+    _, _, list_start, _ = devices
+    at = _skip_gap(text, list_start + 1, len(text))
+    for _ in range(position):
+        _, entry_end = _object_body(text, at)
+        at = _skip_gap(text, entry_end + 1, len(text))
+        if text[at] == ",":
+            at = _skip_gap(text, at + 1, len(text))
+    inner_start, inner_end = _object_body(text, at)
+
+    existing = next((m for m in _members(text, inner_start, inner_end)
+                     if m[0] == "latency_ms"), None)
+    if existing is not None:
+        _, _, value_start, value_end = existing
+        if _NUMBER.fullmatch(text[value_start:value_end]) is None:
+            raise ConfigError(f"{device}.latency_ms in {target} is not a number: "
+                              f"{text[value_start:value_end]!r}")
+        edited = text[:value_start] + format_latency_ms(latency_ms) + text[value_end:]
+    else:
+        first = next(iter(_members(text, inner_start, inner_end)), None)
+        indent = _line_indent(text, first[1]) if first else _line_indent(text, at) + "  "
+        line = f"\n{indent}{note}\n{indent}{written}{',' if first else ''}\n"
+        edited = text[:inner_start] + line + text[inner_start:]
+
+    after = json.loads(_strip_line_comments(edited))["devices"][position]
+    check = after.get("latency_ms")
+    if entry_name(after) != device or check is None \
+            or abs(float(check) - round(float(latency_ms), 1)) > 0.05:
         raise ConfigError(f"editing {target} did not take; nothing written")
     target.write_text(edited, encoding="utf-8")
     return written

@@ -2418,6 +2418,31 @@ reference anyone is listening to.
 
 The click is streamed raw to `pw-cat`, `pacat` or `aplay`, whichever opens
 first, so nothing needs installing on a machine that already plays sound.
+
+##### one device at a time
+
+The lamps do not all answer at the same speed - a DMX truss, a relic on USB
+and a ring painted on the pi each have their own road - so one number can
+land some of them on the click and not the rest. `[d]` steps from the whole
+rig to each device alone, the others held dark; the number, the rounds and
+`[s]` are then that device's, and `[s]` writes `latency_ms` into its entry in
+`devices`:
+
+```json
+{ "device": "uking_par36_x10", "name": "pars", "latency_ms": 38 }
+```
+
+A device without one runs at `midi.latency_ms`. The clock can only be read
+early by one amount, so it leads by the slowest device's latency and every
+quicker device is held back by the difference - a delay line blended between
+frames, so the hold-back is in ms rather than whole frames. On the protocol it
+is `latency <device> <ms>`, `latency <device> nudge <ms>`, and
+`latency <device> off` to put it back on the show's.
+
+Measure the whole rig first, then each device on its own: the whole-rig
+number is only what the devices without their own run at. The beep round is
+kept across `[d]` - it measures the click and you, not a lamp - so tap it once
+and only the flash round per device.
 `--no-click` runs the screen without it, for a bench.
 
 ### gamma

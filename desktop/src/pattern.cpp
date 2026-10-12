@@ -244,9 +244,10 @@ namespace
     /// when that onset is seen. White, so a lamp with a colour cast is
     /// still obviously on.
     ///
-    /// `flash` is how long it stays lit, in seconds: long enough to be a
-    /// frame or two on the slowest device a rig runs at, short enough to end
-    /// well before the next beat at any tempo the clock allows. Its own knob
+    /// `flash` is how long it stays lit, in seconds: three frames on the
+    /// slowest device a rig runs at - the pars' 24 - so a frame lost on the
+    /// way does not take the whole flash with it, and still well short of
+    /// the 200ms between beats at the clock's 300bpm ceiling. Its own knob
     /// rather than `width`, which carries across a pattern switch and means
     /// fixtures of tail on the look before this one.
     class MetronomePattern : public Pattern
@@ -274,7 +275,7 @@ namespace
         }
 
     private:
-        float flash{0.08f};
+        float flash{0.12f};
     };
 
 
