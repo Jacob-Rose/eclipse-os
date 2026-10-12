@@ -89,12 +89,18 @@
 
   "devices": [
     {
+      // this device's own latency, in ms - python -m eclipse_dmx calibrate, [d]
+      "latency_ms": 105,
+
       // The ring, in stage coordinates - see config/mythos26.json.
       "device": "scanner_ring",
       "offset": [0, 0],
       "view_scale": [0.9, 1.0]
     },
     {
+      // this device's own latency, in ms - python -m eclipse_dmx calibrate, [d]
+      "latency_ms": 126,
+
       // The pillar, at the origin, in its own coordinates.
       "device": "obelisk",
       "offset": [0, 0],
@@ -102,6 +108,9 @@
       "brightness": 1.0
     },
     {
+      // this device's own latency, in ms - python -m eclipse_dmx calibrate, [d]
+      "latency_ms": 106,
+
       // The truss, standing beside the sculpture and climbing its height.
       //
       // The pars are normalized - 0..1 along the truss - and on the stage's
