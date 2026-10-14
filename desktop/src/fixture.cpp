@@ -376,9 +376,19 @@ void FixtureMap::render(const std::vector<ecore::HSV>& colors,
             universe.setChannel(entry.first, entry.second);
         }
 
+        // Scale in HSV before the conversion: dimming value keeps the hue
+        // intact, where scaling the rgb bytes afterwards would drift it.
+        const float scale = std::clamp(master * fixture.brightness, 0.0f, 1.0f);
+
+        // A fixture dimmed all the way out (its device's `dim 0`, the master
+        // at 0) closes its own dimmer too, not just its colours. With the
+        // dimmer parked open, one byte corrupted on the wire into a colour
+        // channel - noise on an unterminated line, a frame the receiver
+        // slipped - lit that fixture for a frame: the odd flash from a rig
+        // held dark. Closed, it takes two bad bytes in the same fixture.
         if (fixture.dimmerChannel > 0)
         {
-            universe.setChannel(fixture.dimmerChannel, fixture.dimmerValue);
+            universe.setChannel(fixture.dimmerChannel, scale > 0.0f ? fixture.dimmerValue : 0);
         }
 
         ecore::HSV color;
@@ -387,9 +397,6 @@ void FixtureMap::render(const std::vector<ecore::HSV>& colors,
             color = colors[idx];
         }
 
-        // Scale in HSV before the conversion: dimming value keeps the hue
-        // intact, where scaling the rgb bytes afterwards would drift it.
-        const float scale = std::clamp(master * fixture.brightness, 0.0f, 1.0f);
         color.setBrightnessAlpha(color.getValFloat() * scale);
 
         Rgb8 rgb = hsvToRgb8(color);
