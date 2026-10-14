@@ -7627,7 +7627,17 @@ class TheLookPresets(unittest.TestCase):
 
 class TheLatency(ShowTest):
     """The lead on the beat clock: over the protocol, from the config, and
-    what it does to a flash."""
+    what it does to a flash.
+
+    CUES is the real show, and it carries the rig's calibrated latencies
+    per device (the ring's, the obelisk's and the pars'). The tests that
+    run on it put every device back on the show's latency first, so the
+    numbers they check are their own and not whatever the rig last
+    calibrated to."""
+
+    # each device back on the show's latency, ahead of a test's own commands
+    CLEAR_DEVICES = ["latency scanner_ring off", "latency obelisk off",
+                     "latency pars off", "latency synesthesia off"]
 
     def test_set_reported_nudged_and_in_status(self):
         lines = run_show(["latency 45", "latency", "latency nudge -3.5",
@@ -7664,17 +7674,19 @@ class TheLatency(ShowTest):
         self.assertEqual(show.get_latency(), 10.0)
 
     def test_a_device_carries_its_own(self):
-        lines = run_show(["latency 40", "latency pars", "latency pars 25",
-                          "latency pars nudge 5", "latency pars off", "latency nope 3"],
+        lines = run_show(self.CLEAR_DEVICES
+                         + ["latency 40", "latency pars", "latency pars 25",
+                            "latency pars nudge 5", "latency pars off", "latency nope 3"],
                          config=CUES)
         replies = [line for line in lines if line.startswith(("OK latency", "ERR latency"))]
+        replies = replies[len(self.CLEAR_DEVICES):]
         self.assertEqual(replies[:5], ["OK latency 40.0", "OK latency pars 40.0",
                                        "OK latency pars 25.0", "OK latency pars 30.0",
                                        "OK latency pars 40.0"])
         self.assertTrue(replies[5].startswith("ERR latency: 'nope' is not a number or a device"), replies[5])
 
     def test_the_clock_leads_by_the_slowest_device(self):
-        lines = run_show(["latency 10", "latency obelisk 50", "status"], config=CUES)
+        lines = run_show(self.CLEAR_DEVICES + ["latency 10", "latency obelisk 50", "status"], config=CUES)
         status = [line for line in lines if line.startswith("STATUS")][-1]
         self.assertIn(" latency=50.0ms", status)
         self.assertIn("OK latency 10.0", lines)
@@ -7690,6 +7702,7 @@ class TheLatency(ShowTest):
         par = next(d for d in show.devices if d.name == "pars").first
         obelisk = next(d for d in show.devices if d.name == "obelisk").first
         show.set_latency(200)
+        show.set_device_latency("pars", None)
         show.set_device_latency("obelisk", 0)
         time.sleep(0.6)
         start = time.monotonic()
