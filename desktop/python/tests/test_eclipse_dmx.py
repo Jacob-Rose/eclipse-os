@@ -6131,8 +6131,9 @@ class ScannerKnobs(ShowTest):
         self.cue(show, "osc_wash", self.OSC_WASH)
         self.cue(show, "osc_bloom", self.OSC_BLOOM)
         self.cue(show, "osc_meter", self.OSC_KNOBS + ["fall"])
-        self.cue(show, "osc_chase", self.OSC_KNOBS + ["flash", "width", "twist"])
-        self.cue(show, "osc_steps", self.OSC_KNOBS + ["flash", "decay"])
+        self.cue(show, "osc_chase", self.OSC_KNOBS + ["stripes", "turns", "beats_per_stripe",
+                                                     "swell", "attack", "release"])
+        self.cue(show, "osc_steps", self.OSC_KNOBS + ["flash", "attack", "release"])
 
     def test_the_osc_colours_carry_from_one_look_to_the_next(self):
         """The host's colours are one pair for every OSC look, so the golden
@@ -6156,21 +6157,22 @@ class ScannerKnobs(ShowTest):
         self.settle_until(lambda: frames and frames[-1][0][0] > 200 and frames[-1][0][2] < 40,
                           timeout=6.0, message="the bloom in the same red")
 
-    def _play(self, show, seconds, beats):
+    def _play(self, show, seconds, kicks):
         """`seconds` of a loud room, restated the way a host does (the bus
-        goes stale in a third of a second), and with `beats` a steady 120
-        bpm on `beat` - spikes, as sync swim sends them."""
+        goes stale in a third of a second), and with `kicks` a steady kick
+        twice a second on `bass_hits` - jumping to 1 and decaying, as sync
+        swim sends it. The sender's beat clock stays silent: the looks do not
+        wait on it."""
         end = time.monotonic() + seconds
-        next_beat = time.monotonic()
+        last_kick = time.monotonic() - 1.0
         while time.monotonic() < end:
             for channel in ("level", "sub", "bass", "mid", "high"):
                 show.command(f"audio {channel} 1.0", expect_reply=False)
-            if beats:
-                show.command(f"audio bpm {(120.0 - 50.0) / 170.0:.4f}", expect_reply=False)
-                spike = time.monotonic() >= next_beat
-                if spike:
-                    next_beat += 0.5
-                show.command(f"audio beat {1.0 if spike else 0.0}", expect_reply=False)
+            if kicks:
+                if time.monotonic() - last_kick >= 0.5:
+                    last_kick = time.monotonic()
+                decay = max(0.0, 1.0 - (time.monotonic() - last_kick) / 0.2)
+                show.command(f"audio bass_hits {decay:.3f}", expect_reply=False)
             self.settle(0.05)
 
     @staticmethod
@@ -6178,16 +6180,16 @@ class ScannerKnobs(ShowTest):
         return sum(sum(pixel) for pixel in frame) / max(len(frame), 1)
 
     def test_the_osc_looks_hold_back_until_the_beat_kicks_in(self):
-        """A jam's room before anyone finds the beat runs the look at `calm`;
-        a run of steady beats from the sender brings it up to full."""
+        """A jam's room before the drummer comes in runs the look at `calm`;
+        a run of steady kicks brings it up to full."""
         frames = []
         show = self._show(on_frame=frames.append)
         self.cue(show, "osc_wash", self.OSC_WASH)
         for name, value in (("sat_a", 0.0), ("sat_b", 0.0), ("floor", 0.0), ("glitter", 0.0)):
             show.set_param(name, value)
-        self._play(show, 2.0, beats=False)
+        self._play(show, 2.0, kicks=False)
         calm = self._brightness(frames[-1])
-        self._play(show, 4.0, beats=True)
+        self._play(show, 4.0, kicks=True)
         grooved = self._brightness(frames[-1])
         self.assertGreater(calm, 0.0)
         self.assertGreater(grooved, calm * 1.5)

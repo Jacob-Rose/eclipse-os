@@ -50,12 +50,9 @@ void Pattern_Osc_Look::reset()
     PatternScanner::reset();
     // the levels are not reset: they are the sender's, and a look coming up
     // mid-song should come up at the song's level, not climb to it
-    sinceBeat = 1000.0f;
-    beats = 0;
-    // the tick standing in the knob is the last one heard, not a new beat
-    lastTick = host.tick;
-    sinceTick = 1000.0f;
-    downbeat = false;
+    sinceHit = 1000.0f;
+    hits = 0;
+    hitNow = false;
 }
 
 void Pattern_Osc_Look::tick(float deltaTime)
@@ -90,7 +87,8 @@ void Pattern_Osc_Look::tick(float deltaTime)
     timbre = glide(timbre, bands > 0.02f ? high / bands : 0.5f, 0.4f, dt);
 
     // the last tempo heard stands: a stale bpm reads as zero, and zero is
-    // not a tempo, it is a sender that went quiet
+    // not a tempo, it is a sender that went quiet. It sets a speed only -
+    // nothing waits on the sender's beat
     const float bpmLevel = bus->get(AudioChannel::Bpm, now);
     if (bpmLevel > 0.0f)
     {
@@ -99,49 +97,44 @@ void Pattern_Osc_Look::tick(float deltaTime)
 
     // a beat is the rising edge, with hysteresis so a spike that wobbles
     // across the line is one beat and not three
-    sinceBeat += dt;
-    const float period = 60.0f / std::max(bpm, 1.0f);
-    // a beat counts toward the groove when it comes within reach of the last
-    // one; the sender itself gives up on a beat after about two seconds of
-    // none, and so does the streak
-    const float reachSeconds = std::max(2.5f * period, 2.0f);
-    const float beat = bus->get(AudioChannel::Beat, now);
-    if (!beatHigh && beat > 0.5f)
+    // a kick is the rising edge of bass_hits, with hysteresis, and at least
+    // a sixth of a second after the last - a flam is one kick
+    sinceHit += dt;
+    hitNow = false;
+    if (!kickHigh && kick > 0.6f)
     {
-        beatHigh = true;
-        streak = (sinceBeat < reachSeconds) ? streak + 1 : 1;
-        sinceBeat = 0.0f;
-        ++beats;
+        kickHigh = true;
+        if (sinceHit >= 0.16f)
+        {
+            // a kick within a second and a half of the last is the same
+            // groove, and its gap is how long the next one will take
+            if (sinceHit < 1.5f)
+            {
+                ++streak;
+                hitGap = glide(hitGap, std::clamp(sinceHit, 0.2f, 1.5f), 1.0f, 0.5f);
+            }
+            else
+            {
+                streak = 1;
+            }
+            sinceHit = 0.0f;
+            ++hits;
+            hitNow = true;
+        }
     }
-    else if (beatHigh && beat < 0.25f)
+    else if (kickHigh && kick < 0.3f)
     {
-        beatHigh = false;
+        kickHigh = false;
     }
-    if (sinceBeat > reachSeconds)
+    if (sinceHit > 1.5f)
     {
         streak = 0;
     }
 
-    // the beat has kicked in on the third in a row; up quickly once it has,
-    // down slowly, so a fill that drops a beat does not drop the look
+    // the beat has kicked in on the third kick in a row; up quickly once it
+    // has, down slowly, so a fill that drops a kick does not drop the look
     const float grooveTarget = (streak >= 3) ? 1.0f : 0.0f;
     groove = glide(groove, grooveTarget, grooveTarget > groove ? 0.8f : 2.5f, dt);
-
-    // the host's tick says which beat this is: the one when its count is a
-    // multiple of four. It lands within a frame of the beat's edge, so the
-    // accent it sets is on the ring that beat starts. A host that stops
-    // ticking (it lost the beat) leaves every beat the same.
-    sinceTick += dt;
-    if (host.tick != lastTick)
-    {
-        lastTick = host.tick;
-        sinceTick = 0.0f;
-        downbeat = (static_cast<long>(std::lround(host.tick)) % 4) == 0;
-    }
-    if (sinceTick > 3.0f)
-    {
-        downbeat = false;
-    }
 
     // the cut is taken by whichever look sees it first; the time is shared,
     // so both looks in a blend light it together
@@ -154,28 +147,23 @@ void Pattern_Osc_Look::tick(float deltaTime)
     cutGlow = (sinceCut >= 0.0f && sinceCut < cutSeconds) ? 1.0f - smooth(sinceCut / std::max(cutSeconds, 0.01f)) : 0.0f;
 }
 
-float Pattern_Osc_Look::beatPhase() const
+float Pattern_Osc_Look::hitPhase() const
 {
-    const float period = 60.0f / std::max(bpm, 1.0f);
-    return std::clamp(sinceBeat / period, 0.0f, 1.0f);
+    return std::clamp(sinceHit / std::max(hitGap, 0.05f), 0.0f, 1.0f);
 }
 
-float Pattern_Osc_Look::accent() const
+float Pattern_Osc_Look::hitEnvelope(float attack, float release) const
 {
-    // with the tick arriving, the one is full and the rest sit under it;
-    // without, every beat is full
-    return (sinceTick > 3.0f || downbeat) ? 1.0f : 0.7f;
-}
-
-int Pattern_Osc_Look::barBeat() const
-{
-    if (sinceTick <= 3.0f)
+    if (sinceHit >= 1000.0f)
     {
-        const long n = static_cast<long>(std::lround(host.tick));
-        return static_cast<int>(((n % 4) + 4) % 4);
+        return 0.0f;
     }
-    // no tick: the beats since entry, the first of them the one
-    return ((std::max(beats, 1) - 1) % 4);
+    const float rise = std::max(attack, 0.0f);
+    if (sinceHit < rise)
+    {
+        return smooth(sinceHit / rise);
+    }
+    return std::exp(-(sinceHit - rise) / std::max(release, 0.01f));
 }
 
 float Pattern_Osc_Look::around(const eio::HSVStripNode* node)
@@ -427,42 +415,54 @@ void Pattern_Osc_Meter::reflect(ecore::PropertyBag& bag)
 // osc_chase
 // ============================================================================
 
+void Pattern_Osc_Chase::reset()
+{
+    Pattern_Osc_Look::reset();
+    scroll = 0.0f;
+}
+
+void Pattern_Osc_Chase::tick(float deltaTime)
+{
+    Pattern_Osc_Look::tick(deltaTime);
+    // a stripe past any one point every `beats_per_stripe` beats, on the
+    // sender's tempo - a speed, run free, so a beat that lands early or late
+    // never jumps it
+    const float stripesPerSecond = bpm / 60.0f / std::max(beatsPerStripe, 0.25f);
+    scroll = std::fmod(scroll + std::max(deltaTime, 0.0f) * stripesPerSecond, 1.0f);
+}
+
 void Pattern_Osc_Chase::render(eio::HSVStripNode* inNode, ecore::HSV& inOutColor) const
 {
     const float height = stageAlpha(inNode);
     const float round = around(inNode);
-    const float phase = beatPhase();
-    const float period = 60.0f / std::max(bpm, 1.0f);
+    const float swellNow = hitEnvelope(attack, release) * groove;
 
-    // the bed: the sub and the bass, heaviest at the foot
+    // the pole: stripes up the stage, wound `turns` times round the faces,
+    // climbing. Every other stripe is primary, the rest secondary, a dark
+    // gap between each - the marquee's lamps - and the gap closing on a kick
+    const float count = std::max(std::round(stripes), 1.0f);
+    const float wound = height * count + round * std::round(turns) * 2.0f - scroll * 2.0f;
+    const float cell = wound - 2.0f * std::floor(wound * 0.5f);          // 0..2: two stripes, one of each
+    const float within = cell - std::floor(cell);                         // 0..1 across a stripe
+    const float lampWidth = std::clamp(0.45f + 0.25f * swellNow, 0.05f, 0.95f);
+    const float edge = 0.12f;
+    const float lamp = smooth((within - (0.5f - lampWidth * 0.5f)) / edge + 0.5f)
+                     * (1.0f - smooth((within - (0.5f + lampWidth * 0.5f)) / edge + 0.5f));
+    const bool isPrimary = cell < 1.0f;
+
+    // how bright the lamps run: the level's presence, held back before the
+    // beat, lifted a little by each kick
+    const float lit = lamp * std::clamp((0.35f + 0.65f * levelPresence) * drive() + std::max(swell, 0.0f) * swellNow, 0.0f, 1.0f);
+
+    // the sub and bass a glow at the foot, between the lamps
     const float foot = 1.0f - height;
-    const float bed = (0.7f * subPresence * foot * foot + 0.5f * bassPresence * foot + 0.25f * levelPresence) * drive();
+    const float bed = (0.5f * subPresence * foot * foot + 0.35f * bassPresence * foot) * drive();
 
-    // the band: leaves the origin line on the beat and reaches the top as it
-    // runs out, a helix round the faces, the other way on alternate beats
-    const float turnWay = (beats % 2 == 0) ? 1.0f : -1.0f;
-    const float centre = kOriginAlpha + phase * (1.0f - kOriginAlpha)
-                       + 0.06f * std::sin(6.2831853f * (round + turnWay * twist * phase));
-    const float bandOff = (height - centre) / std::max(width, 0.02f);
-    const float fade = 1.0f - smooth(phase);
-    const float band = std::exp(-bandOff * bandOff) * fade * accent() * (0.75f + 0.25f * kick) * groove;
-
-    // the highs: a trail under the band, back toward the line
-    const float behind = centre - height;
-    const float trail = (behind > 0.0f && height > kOriginAlpha)
-        ? highPresence * 0.6f * std::exp(-behind / 0.15f) * fade * groove : 0.0f;
-
-    // the flash, as the band leaves: the whole stage, hardest on the one
-    const float flashLayer = std::clamp(flash, 0.0f, 1.0f) * accent()
-                           * std::exp(-sinceBeat / std::max(0.12f * period, 0.02f)) * groove;
-
-    float value = floorLevel + (1.0f - floorLevel) * std::clamp(bed + trail, 0.0f, 1.0f);
-    value += (1.0f - value) * band;
-    value += (1.0f - value) * flashLayer;
+    float value = floorLevel + (1.0f - floorLevel) * std::clamp(bed, 0.0f, 1.0f);
+    value += (1.0f - value) * lit;
 
     ecore::HSV colour = blendRgb(primary(1.0f), secondary(1.0f), balance());
-    colour = blendRgb(colour, secondary(1.0f), std::clamp(trail * 2.0f, 0.0f, 1.0f));
-    colour = blendRgb(colour, primary(1.0f), std::clamp(band, 0.0f, 1.0f));
+    colour = blendRgb(colour, isPrimary ? primary(1.0f) : secondary(1.0f), std::clamp(lamp, 0.0f, 1.0f));
     inOutColor = colour;
     inOutColor.setBrightnessAlpha(finish(value));
 }
@@ -470,9 +470,12 @@ void Pattern_Osc_Chase::render(eio::HSVStripNode* inNode, ecore::HSV& inOutColor
 void Pattern_Osc_Chase::reflect(ecore::PropertyBag& bag)
 {
     Pattern_Osc_Look::reflect(bag);
-    bag.add("flash", flash, 0.0f, 1.0f);
-    bag.add("width", width, 0.02f, 0.5f);
-    bag.add("twist", twist, 0.0f, 2.0f);
+    bag.add("stripes", stripes, 1.0f, 16.0f);
+    bag.add("turns", turns, 0.0f, 4.0f);
+    bag.add("beats_per_stripe", beatsPerStripe, 0.25f, 8.0f);
+    bag.add("swell", swell, 0.0f, 1.0f);
+    bag.add("attack", attack, 0.0f, 0.5f);
+    bag.add("release", release, 0.02f, 2.0f);
 }
 
 // ============================================================================
@@ -483,48 +486,49 @@ void Pattern_Osc_Steps::reset()
 {
     Pattern_Osc_Look::reset();
     time = 0.0f;
+    // the first kick lands on the foot
+    step = 3;
 }
 
 void Pattern_Osc_Steps::tick(float deltaTime)
 {
     Pattern_Osc_Look::tick(deltaTime);
     time = std::fmod(time + std::max(deltaTime, 0.0f), 3600.0f);
+    if (hitNow)
+    {
+        step = (step + 1) % 4;
+    }
 }
 
 void Pattern_Osc_Steps::render(eio::HSVStripNode* inNode, ecore::HSV& inOutColor) const
 {
     const float height = stageAlpha(inNode);
     const float round = around(inNode);
-    const float phase = beatPhase();
-    const float period = 60.0f / std::max(bpm, 1.0f);
-    const int step = barBeat();
     const int quarter = std::clamp(static_cast<int>(height * 4.0f), 0, 3);
+    const float swell = hitEnvelope(attack, release);
 
     // the sub, under everything; the level as a calm glow before the beat
     const float glow = (0.45f * subPresence + 0.35f * levelPresence) * drive();
 
-    // this beat's step, in the colour opposite the last one's, fading over
-    // `decay` of the beat; the last step lingering on the mids
-    const float fade = 1.0f - smooth(phase / std::max(decay, 0.05f));
+    // this kick's step, in the colour opposite the last one's, up over the
+    // attack and down over the release; the last step lingering on the mids
     float lit = 0.0f;
     bool litPrimary = (step % 2) == 0;
     if (quarter == step)
     {
-        lit = (0.55f + 0.45f * bassPresence) * fade * accent() * groove;
+        lit = (0.55f + 0.45f * bassPresence) * swell * groove;
         // the highs glint on the lit step
         const float glint = std::pow(0.5f + 0.5f * std::sin(height * 83.0f + round * 41.0f + time * 9.0f), 8.0f);
-        lit += (1.0f - lit) * highPresence * glint * fade * groove;
+        lit += (1.0f - lit) * highPresence * glint * swell * groove;
     }
     else if (quarter == (step + 3) % 4)
     {
-        lit = 0.5f * midPresence * (1.0f - phase) * groove;
+        lit = 0.5f * midPresence * (1.0f - hitPhase()) * groove;
         litPrimary = !litPrimary;
     }
 
-    // the one flashes the whole stage
-    const bool one = (step == 0);
-    const float flashLayer = one ? std::clamp(flash, 0.0f, 1.0f)
-                                 * std::exp(-sinceBeat / std::max(0.1f * period, 0.02f)) * groove : 0.0f;
+    // the foot's step swells the whole stage
+    const float flashLayer = (step == 0) ? std::clamp(flash, 0.0f, 1.0f) * swell * groove : 0.0f;
 
     float value = floorLevel + (1.0f - floorLevel) * std::clamp(glow, 0.0f, 1.0f);
     value += (1.0f - value) * lit;
@@ -541,5 +545,6 @@ void Pattern_Osc_Steps::reflect(ecore::PropertyBag& bag)
 {
     Pattern_Osc_Look::reflect(bag);
     bag.add("flash", flash, 0.0f, 1.0f);
-    bag.add("decay", decay, 0.05f, 1.0f);
+    bag.add("attack", attack, 0.0f, 0.5f);
+    bag.add("release", release, 0.02f, 2.0f);
 }
