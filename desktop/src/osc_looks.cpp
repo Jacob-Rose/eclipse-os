@@ -325,19 +325,19 @@ void Pattern_Osc_Bloom::tick(float deltaTime)
 {
     Pattern_Osc_Look::tick(deltaTime);
     const float dt = std::max(deltaTime, 0.0f);
-    // each colour on its band, eased: up quickly enough to feel it, down
+    // each layer on its band, eased: up quickly enough to feel it, down
     // slowly enough that it glides rather than flickers
-    red = ease(red, std::max(bass, sub * 0.8f), attack, release, dt);
-    green = ease(green, mid, attack, release, dt);
-    blue = ease(blue, high, attack, release, dt);
+    lows = ease(lows, std::max(bass, sub * 0.8f), attack, release, dt);
+    mids = ease(mids, mid, attack, release, dt);
+    highs = ease(highs, high, attack, release, dt);
     // the pars on the presence, slower: the room, not the hits; a voice
-    // coming in lifts the green
-    parRed = ease(parRed, std::max(bassPresence, subPresence * 0.8f), 0.4f, 1.5f, dt);
-    parGreen = ease(parGreen, std::clamp(midPresence + 0.5f * midEntry, 0.0f, 1.0f), 0.4f, 1.5f, dt);
-    parBlue = ease(parBlue, highPresence, 0.4f, 1.5f, dt);
+    // coming in lifts the mids
+    parLows = ease(parLows, std::max(bassPresence, subPresence * 0.8f), 0.4f, 1.5f, dt);
+    parMids = ease(parMids, std::clamp(midPresence + 0.5f * midEntry, 0.0f, 1.0f), 0.4f, 1.5f, dt);
+    parHighs = ease(parHighs, highPresence, 0.4f, 1.5f, dt);
     const float pace = 0.5f + 0.5f * drive();
-    turn = std::fmod(turn + dt * std::max(spin, 0.0f) * (0.25f + 0.75f * green) * pace, 1.0f);
-    climb = std::fmod(climb + dt * (0.12f + 0.45f * blue) * pace, 1.0f);
+    turn = std::fmod(turn + dt * std::max(spin, 0.0f) * (0.25f + 0.75f * mids) * pace, 1.0f);
+    climb = std::fmod(climb + dt * (0.12f + 0.45f * highs) * pace, 1.0f);
 }
 
 void Pattern_Osc_Bloom::render(eio::HSVStripNode* inNode, ecore::HSV& inOutColor) const
@@ -345,15 +345,17 @@ void Pattern_Osc_Bloom::render(eio::HSVStripNode* inNode, ecore::HSV& inOutColor
     const float power = drive();
     if (eio::nodeSpace(inNode) == eio::NodeSpace::Truss)
     {
-        // the pars: all three bands at once, as light - the room's colour
-        const float base = floorLevel * 0.6f;
-        const float body = 0.35f + 0.65f * power;
-        const Rgb light{base + (1.0f - base) * std::clamp(parRed * body, 0.0f, 1.0f),
-                        base + (1.0f - base) * std::clamp(parGreen * body, 0.0f, 1.0f),
-                        base + (1.0f - base) * std::clamp(parBlue * body, 0.0f, 1.0f)};
-        const float value = std::max({light.r, light.g, light.b, 0.0001f});
-        inOutColor = toHsv({light.r / value, light.g / value, light.b / value});
-        inOutColor.setBrightnessAlpha(finish(value));
+        // the pars: the room in the host's two colours - the primary for the
+        // lows, the secondary for the mids and highs, mixed by how much of
+        // each is there, as bright as the strongest
+        const float secondaryWeight = parMids + 0.5f * parHighs;
+        // pushed off the middle, since two of the host's colours far apart
+        // on the wheel mix to grey there
+        const float even = secondaryWeight / std::max(parLows + secondaryWeight, 0.001f);
+        const float share = smooth((even - 0.5f) * 3.0f + 0.5f);
+        const float lit = std::max({parLows, parMids, parHighs}) * (0.35f + 0.65f * power);
+        inOutColor = blendRgb(primary(1.0f), secondary(1.0f), std::clamp(share, 0.0f, 1.0f));
+        inOutColor.setBrightnessAlpha(finish(floorLevel + (1.0f - floorLevel) * std::clamp(lit, 0.0f, 1.0f)));
         return;
     }
 
@@ -361,45 +363,40 @@ void Pattern_Osc_Bloom::render(eio::HSVStripNode* inNode, ecore::HSV& inOutColor
     const float round = around(inNode);
     const float away = std::fabs(height - kOriginAlpha);
 
-    // red: the core, as far each way as the bass, and the sub's dim halo
-    // over the whole stage, heavier near the line
-    const float coreReach = 0.04f + std::max(reach, 0.0f) * red * power;
+    // the lows, primary: the core, as far each way as the bass and only as
+    // bright as it - no bass, no core - and the sub's dim halo over the
+    // whole stage, heavier near the line
+    const float coreReach = 0.04f + std::max(reach, 0.0f) * lows * power;
     const float coreOff = away / coreReach;
-    const float core = std::exp(-coreOff * coreOff) * (0.25f + 0.6f * red);
+    const float core = std::exp(-coreOff * coreOff) * 0.85f * lows;
     const float halo = 0.3f * subPresence * (1.0f - 0.6f * std::min(away * 2.0f, 1.0f));
 
-    // green: a shell just outside the core, in two lobes turning round the
-    // faces
-    const float shellAt = coreReach + 0.06f + 0.15f * green;
+    // the mids, secondary: a shell just outside the core, in two lobes
+    // turning round the faces, and a broad body through the middle of the
+    // tower, so a voice fills it rather than tracing an outline
+    const float shellAt = coreReach + 0.06f + 0.15f * mids;
     const float shellOff = (away - shellAt) / 0.14f;
     const float lobes = 0.5f + 0.5f * std::cos(6.2831853f * (round * 2.0f + turn));
-    // and a broad green body through the middle of the tower, so a voice
-    // fills it rather than tracing an outline
-    const float body = 0.35f * green * std::exp(-std::pow((height - 0.55f) / 0.3f, 2.0f));
-    const float shellLayer = shell * green * std::exp(-shellOff * shellOff) * (0.45f + 0.55f * lobes) + body;
+    const float body = 0.35f * mids * std::exp(-std::pow((height - 0.55f) / 0.3f, 2.0f));
+    const float shellLayer = shell * mids * std::exp(-shellOff * shellOff) * (0.45f + 0.55f * lobes) + body;
 
-    // blue: a thread up (and down) each column, leaving the core's edge and
-    // thinning out, each column on its own stagger; and a haze up the tower
+    // the highs, primary again over the secondary: a thread up (and down)
+    // each column, leaving the core's edge and thinning out, each column on
+    // its own stagger; and a secondary haze up the tower
     const float column = std::floor(round * static_cast<float>(scanner::kStageColumns));
     const float along = std::fmod(climb + column * 0.382f, 1.0f);
     const float threadOff = (away - (coreReach + along * 0.5f)) / 0.05f;
-    const float thread = blue * std::exp(-threadOff * threadOff) * (1.0f - along);
-    const float haze = 0.55f * blue * smooth((height - kOriginAlpha) / (1.0f - kOriginAlpha));
+    const float thread = highs * std::exp(-threadOff * threadOff) * (1.0f - along);
+    const float haze = 0.4f * highs * smooth((height - kOriginAlpha) / (1.0f - kOriginAlpha));
 
-    // mixed as light: each channel its layers, the floor a dim white under
-    // all three so the mode is visibly on
-    const float base = floorLevel * 0.6f;
-    Rgb light;
-    light.r = base + (1.0f - base) * std::clamp((core + halo) * power, 0.0f, 1.0f);
-    light.g = base + (1.0f - base) * std::clamp(shellLayer * power, 0.0f, 1.0f);
-    light.b = base + (1.0f - base) * std::clamp((thread + haze) * power, 0.0f, 1.0f);
-    const float value = std::max({light.r, light.g, light.b});
-    if (value <= 0.0001f)
-    {
-        inOutColor = ecore::HSV(0.0f, 0.0f, 0.0f);
-        return;
-    }
-    inOutColor = toHsv({light.r / value, light.g / value, light.b / value});
+    // each layer in its colour, the two mixed by how much of each is lit
+    const float primaryLit = core + halo + thread;
+    const float secondaryLit = shellLayer + haze;
+    const float lit = 1.0f - (1.0f - std::min(primaryLit, 1.0f)) * (1.0f - std::min(secondaryLit, 1.0f));
+    const float share = secondaryLit / std::max(primaryLit + secondaryLit, 0.001f);
+
+    const float value = floorLevel + (1.0f - floorLevel) * std::clamp(lit * power, 0.0f, 1.0f);
+    inOutColor = blendRgb(primary(1.0f), secondary(1.0f), std::clamp(share, 0.0f, 1.0f));
     inOutColor.setBrightnessAlpha(finish(value));
 }
 
@@ -449,8 +446,8 @@ void Pattern_Osc_Meter::tick(float deltaTime)
 
 void Pattern_Osc_Meter::render(eio::HSVStripNode* inNode, ecore::HSV& inOutColor) const
 {
-    // a pixel's worth of stage, so a bar's head is soft rather than a step
-    constexpr float kEdge = 0.03f;
+    // a couple of pixels' worth of stage, so a bar's head is soft
+    constexpr float kEdge = 0.06f;
     const float strength = 0.45f + 0.55f * drive();
     const eio::NodeSpace space = eio::nodeSpace(inNode);
 
@@ -464,7 +461,7 @@ void Pattern_Osc_Meter::render(eio::HSVStripNode* inNode, ecore::HSV& inOutColor
         constexpr float kParHues[5] = {0.0f, 30.0f, 120.0f, 220.0f, 285.0f};
         const float lit = 0.2f + 0.8f * pars[band];
         inOutColor = ecore::HSV(std::fmod(kParHues[band] + hueDrift, 360.0f), 1.0f, 1.0f);
-        inOutColor.setBrightnessAlpha(finish(std::max(floorLevel, lit * strength)));
+        inOutColor.setBrightnessAlpha(own(std::max(floorLevel, lit * strength)));
         return;
     }
 
@@ -477,7 +474,7 @@ void Pattern_Osc_Meter::render(eio::HSVStripNode* inNode, ecore::HSV& inOutColor
         const float fromFoot = std::fabs(angle) / 3.14159265f;
         const float lit = 1.0f - smooth((fromFoot - levelPresence) / 0.08f + 0.5f);
         inOutColor = ecore::HSV(std::fmod(fromFoot * 300.0f + hueDrift, 360.0f), 1.0f, 1.0f);
-        inOutColor.setBrightnessAlpha(finish(std::max(floorLevel, lit * strength)));
+        inOutColor.setBrightnessAlpha(own(std::max(floorLevel, lit * strength)));
         return;
     }
 
@@ -494,11 +491,11 @@ void Pattern_Osc_Meter::render(eio::HSVStripNode* inNode, ecore::HSV& inOutColor
     // the rainbow up the bar, each face a quarter of the wheel on; the cap
     // pale
     const float hue = std::fmod(height * 300.0f + static_cast<float>(band) * 90.0f + hueDrift, 360.0f);
-    const float sat = 1.0f - 0.7f * cap * (1.0f - lit);
+    const float sat = 0.9f - 0.6f * cap * (1.0f - lit);
 
-    const float value = std::max({floorLevel * (1.0f - lit), lit * strength, cap * 0.6f * strength});
+    const float value = std::max({floorLevel * (1.0f - lit), lit * strength, cap * 0.45f * strength});
     inOutColor = ecore::HSV(hue, sat, 1.0f);
-    inOutColor.setBrightnessAlpha(finish(value));
+    inOutColor.setBrightnessAlpha(own(value));
 }
 
 void Pattern_Osc_Meter::reflect(ecore::PropertyBag& bag)
@@ -627,6 +624,8 @@ void Pattern_Osc_Steps::tick(float deltaTime)
 {
     Pattern_Osc_Look::tick(deltaTime);
     time = std::fmod(time + std::max(deltaTime, 0.0f), 3600.0f);
+    // the wheel turns once every minute and a half
+    hueDrift = std::fmod(hueDrift + std::max(deltaTime, 0.0f) * 4.0f, 360.0f);
     if (hitNow)
     {
         step = (step + 1) % 4;
@@ -654,7 +653,8 @@ void Pattern_Osc_Steps::render(eio::HSVStripNode* inNode, ecore::HSV& inOutColor
     const float inQuarter = height * 4.0f - static_cast<float>(quarter);
     const float shape = 0.6f + 0.4f * std::sin(3.14159265f * inQuarter);
     float lit = 0.0f;
-    bool litPrimary = (step % 2) == 0;
+    // the step whose colour this quarter wears: this kick's, or the last
+    int litStep = step;
     if (quarter == step)
     {
         lit = (0.5f + 0.3f * bassPresence) * swell * shape * power;
@@ -665,7 +665,7 @@ void Pattern_Osc_Steps::render(eio::HSVStripNode* inNode, ecore::HSV& inOutColor
     else if (quarter == (step + 3) % 4)
     {
         lit = 0.45f * midPresence * (1.0f - hitPhase()) * shape * power;
-        litPrimary = !litPrimary;
+        litStep = (step + 3) % 4;
     }
 
     // every kick breathes the whole stage a little, the foot's step most
@@ -675,15 +675,14 @@ void Pattern_Osc_Steps::render(eio::HSVStripNode* inNode, ecore::HSV& inOutColor
     value += (1.0f - value) * lit;
     value += (1.0f - value) * std::clamp(breath, 0.0f, 1.0f);
 
-    // the ground is always the secondary - never the two mixed, which
-    // between two saturated colours is grey, and never flipping with the
-    // step, which would turn the whole tower on every kick - and the step
-    // its own colour over it
-    const ecore::HSV stepColour = litPrimary ? primary(1.0f) : secondary(1.0f);
-    ecore::HSV colour = secondary(1.0f);
+    // the ground a dim rainbow up the stage, drifting - never flipping with
+    // the step - and each step a quarter of the wheel on from the last
+    const ecore::HSV ground(std::fmod(hueDrift + height * 120.0f, 360.0f), 0.85f, 1.0f);
+    const ecore::HSV stepColour(std::fmod(hueDrift + 180.0f + static_cast<float>(litStep) * 90.0f, 360.0f), 1.0f, 1.0f);
+    ecore::HSV colour = ground;
     colour = blendRgb(colour, stepColour, std::clamp(lit * 1.5f, 0.0f, 1.0f));
     inOutColor = colour;
-    inOutColor.setBrightnessAlpha(finish(value));
+    inOutColor.setBrightnessAlpha(own(value));
 }
 
 void Pattern_Osc_Steps::reflect(ecore::PropertyBag& bag)

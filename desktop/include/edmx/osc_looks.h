@@ -153,6 +153,11 @@ namespace edmx
         /// as the screen goes dark (follow), lifted as a new video lands.
         float finish(float value) const;
 
+        /// A brightness for a look with colours of its own (osc_meter,
+        /// osc_steps): only clamped - the host's screen and its cuts are the
+        /// host's picture, and these looks are not.
+        static float own(float value) { return std::clamp(value, 0.0f, 1.0f); }
+
         /// The primary's share of the two colours on the host's screen, 0..1,
         /// a half when it says nothing.
         float balance() const;
@@ -235,18 +240,15 @@ namespace edmx
         float time{0.0f};
     };
 
-    /// osc_bloom: an aura on the origin line, where the ring sits, in light
-    /// rather than the host's colours: red is the bass and the sub, green
-    /// the mids, blue the highs, each its own layer and each eased in over
-    /// `attack` and out over `release`, so the colour glides between them
-    /// rather than flashing. Red is the core, reaching up and down the stage
-    /// with the bass and glowing dim over all of it with the sub; green a
-    /// shell around it, turning slowly round the faces in lobes; blue fine
-    /// threads climbing out of the core and a haze up the tower. Where they
-    /// overlap they mix as light does - a voice over a bassline is yellow.
-    /// The pars are all three at once, on the bands' presence rather than
-    /// their level and eased slower still - the room's colour, breathing -
-    /// lifting as a voice or a piano comes in.
+    /// osc_bloom: an aura on the origin line, where the ring sits, in the
+    /// host's two colours. The lows are the core, primary, reaching up and
+    /// down the stage with the bass and only as bright as it, with the sub a
+    /// dim halo over the whole stage; the mids a secondary shell around it,
+    /// turning slowly round the faces in lobes, and a body through the
+    /// middle of the tower; the highs primary threads climbing out of the
+    /// core and a secondary haze up the tower. Each eased in over `attack`
+    /// and out over `release`, so it glides rather than flashing. The pars
+    /// are the room in the same two colours, on the bands' presence, slower.
     class Pattern_Osc_Bloom : public Pattern_Osc_Look
     {
     public:
@@ -257,7 +259,7 @@ namespace edmx
         float shell{0.8f};
         /// Turns a second the shell's lobes make, at full mids.
         float spin{0.12f};
-        /// Seconds each colour takes to come up with its band, and to fall
+        /// Seconds each layer takes to come up with its band, and to fall
         /// away after it.
         float attack{0.08f};
         float release{0.5f};
@@ -270,25 +272,27 @@ namespace edmx
     private:
         float turn{0.0f};
         float climb{0.0f};
-        float red{0.0f};
-        float green{0.0f};
-        float blue{0.0f};
-        float parRed{0.0f};
-        float parGreen{0.0f};
-        float parBlue{0.0f};
+        float lows{0.0f};
+        float mids{0.0f};
+        float highs{0.0f};
+        float parLows{0.0f};
+        float parMids{0.0f};
+        float parHighs{0.0f};
     };
 
-    /// osc_meter: the bands as meters, one to a face of the obelisk - sub,
-    /// bass, mid, high going round - each a bar of its presence up the stage
-    /// in the rainbow, red at the foot to violet at the top, each face a
-    /// quarter of the wheel on from the last and the whole wheel drifting
+    /// osc_meter: a calm rainbow, its own colours and none of the host's:
+    /// the bands as meters, one to a face of the obelisk - sub, bass, mid,
+    /// high going round - each a soft-headed bar of its presence up the
+    /// stage in the rainbow, red at the foot to violet at the top, each face
+    /// a quarter of the wheel on from the last and the whole wheel drifting
     /// slowly, with a pale cap on its recent peak that falls slowly. The
     /// ring carries the whole level, lit round from its foot. The pars are a
     /// meter too, mirrored out from the middle of the truss - the sub's
     /// pair in the centre, then the bass, the mids, the highs, the level on
     /// the ends - each pair its band's colour and as bright as the band's
     /// presence, eased slowly over `attack` and `release`, all of them
-    /// lifting as a voice or a piano comes in. Steady: no beat, no kick.
+    /// lifting as a voice or a piano comes in. It does not dim with the
+    /// host's screen or lift on its cuts. Steady: no beat, no kick.
     class Pattern_Osc_Meter : public Pattern_Osc_Look
     {
     public:
@@ -349,14 +353,16 @@ namespace edmx
         int nextPulse{0};
     };
 
-    /// osc_steps: four steps up the stage. Each kick lights the next quarter -
-    /// the foot, then up, then the top, then the foot again - primary and
-    /// secondary in turn over a ground that is always the secondary,
-    /// swelling in and easing out, and breathes the whole stage a little
-    /// with it, the foot's step most. A voice or a piano coming in rises up
-    /// the stage from the foot as a glow. The bass sets how bright a step comes up, the mids how much of
-    /// the last one lingers, the highs glint on the lit step, and the sub
-    /// glows under all of it.
+    /// osc_steps: four steps up the stage in a rainbow of its own - none of
+    /// the host's colours, and not dimmed by its screen - still on the
+    /// host's audio. Each kick lights the next quarter - the foot, then up,
+    /// then the top, then the foot again - a quarter of the wheel on from
+    /// the last, swelling in and easing out, and breathes the whole stage a
+    /// little with it, the foot's step most. The ground is a dim rainbow up
+    /// the stage, the whole wheel drifting slowly. A voice or a piano coming
+    /// in rises up the stage from the foot as a glow. The bass sets how
+    /// bright a step comes up, the mids how much of the last one lingers,
+    /// the highs glint on the lit step, and the sub glows under all of it.
     class Pattern_Osc_Steps : public Pattern_Osc_Look
     {
     public:
@@ -374,6 +380,7 @@ namespace edmx
 
     private:
         float time{0.0f};
+        float hueDrift{0.0f};
         int step{3};
     };
 }
