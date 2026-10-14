@@ -6121,7 +6121,7 @@ class ScannerKnobs(ShowTest):
         self.cue(show, "record_countdown", ["sweep", "edge", "floor"])
 
     OSC_KNOBS = ["hue_a", "sat_a", "hue_b", "sat_b", "bright_a", "bright_b",
-                 "amount_a", "amount_b", "tick", "cut", "gain", "floor", "slew",
+                 "amount_a", "amount_b", "tick", "cut", "kick", "gain", "floor", "slew",
                  "follow", "cut_lift", "cut_seconds", "calm", "presence_slew"]
     OSC_WASH = OSC_KNOBS + ["swell", "glitter"]
     OSC_BLOOM = OSC_KNOBS + ["reach", "shell", "spin", "attack", "release"]
@@ -6193,6 +6193,22 @@ class ScannerKnobs(ShowTest):
         grooved = self._brightness(frames[-1])
         self.assertGreater(calm, 0.0)
         self.assertGreater(grooved, calm * 1.5)
+
+    def test_the_hosts_kick_trigger_lands_a_step(self):
+        """sync swim's /syncswim/kick, the moment it hears one, is a kick to
+        the beat looks on its own - no bass_hits level behind it, which is
+        only sampled 30 times a second."""
+        frames = []
+        show = self._show(on_frame=frames.append)
+        self.cue(show, "osc_steps", self.OSC_KNOBS + ["flash", "attack", "release"])
+        # full power, as if the groove were already in
+        for name, value in (("sat_a", 0.0), ("sat_b", 0.0), ("floor", 0.0), ("calm", 1.0)):
+            show.set_param(name, value)
+        self.settle(0.5)
+        dark = self._brightness(frames[-1])
+        show.set_param("kick", 1.0)
+        self.settle_until(lambda: self._brightness(frames[-1]) > dark + 5, timeout=2.0,
+                          message="a step lit by the kick trigger")
 
     def _steady_wash(self, show, frames):
         """The wash held flat: no level, no glitter, a floor to see by."""

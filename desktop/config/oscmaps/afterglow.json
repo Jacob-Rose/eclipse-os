@@ -479,6 +479,35 @@
       "enabled": true
     },
     {
+      "label": "kick trigger -> kick",
+      "trigger": {
+        "pattern": "*/kick",
+        "exclude": [
+          "*/mic/kick"
+        ],
+        "argument": 0
+      },
+      "mode": "value",
+      "range": {
+        "low": 0.0,
+        "high": 1.0,
+        "threshold": 0.5
+      },
+      "limit": {
+        "interval": 0.0,
+        "change": 0.0,
+        "keepalive": 0.0
+      },
+      "action": "param",
+      "params": {
+        "name": "kick",
+        "low": 0.0,
+        "high": 1.0,
+        "layer": ""
+      },
+      "enabled": true
+    },
+    {
       "label": "video start -> cut",
       "trigger": {
         "pattern": "*/video/start",

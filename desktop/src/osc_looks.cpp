@@ -111,13 +111,36 @@ void Pattern_Osc_Look::tick(float deltaTime)
 
     // a beat is the rising edge, with hysteresis so a spike that wobbles
     // across the line is one beat and not three
-    // a kick is the rising edge of bass_hits, with hysteresis, and at least
-    // a sixth of a second after the last - a flam is one kick
-    sinceHit += dt;
-    hitNow = false;
+    // a kick: the host's kick trigger, the moment it hears one - or, from a
+    // host without it, the rising edge of bass_hits, with hysteresis, which
+    // is only sampled 30 times a second and can miss a kick on the tail of
+    // the last. Whichever comes first; at least a sixth of a second after
+    // the last kick, so a flam (or both of them for one kick) is one
+    if (host.kick > 0.5f)
+    {
+        host.kick = 0.0f;
+        host.kickAt = now;
+    }
+    bool kicked = false;
+    if (host.kickAt > kickSeen)
+    {
+        kickSeen = host.kickAt;
+        kicked = (now - host.kickAt) < 0.1;
+    }
     if (!kickHigh && kick > 0.6f)
     {
         kickHigh = true;
+        kicked = true;
+    }
+    else if (kickHigh && kick < 0.3f)
+    {
+        kickHigh = false;
+    }
+
+    sinceHit += dt;
+    hitNow = false;
+    if (kicked)
+    {
         if (sinceHit >= 0.16f)
         {
             // a kick within a second and a half of the last is the same
@@ -135,10 +158,6 @@ void Pattern_Osc_Look::tick(float deltaTime)
             ++hits;
             hitNow = true;
         }
-    }
-    else if (kickHigh && kick < 0.3f)
-    {
-        kickHigh = false;
     }
     if (sinceHit > 1.5f)
     {
@@ -214,6 +233,7 @@ void Pattern_Osc_Look::reflect(ecore::PropertyBag& bag)
     bag.add("amount_b", host.amountB, 0.0f, 1.0f);
     bag.add("tick", host.tick, 0.0f, 16000000.0f);
     bag.add("cut", host.cut, 0.0f, 1.0f);
+    bag.add("kick", host.kick, 0.0f, 1.0f);
     bag.add("gain", gain, 0.0f, 2.0f);
     bag.add("floor", floorLevel, 0.0f, 1.0f);
     bag.add("slew", slew, 0.0f, 1.0f);

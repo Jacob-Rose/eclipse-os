@@ -49,7 +49,8 @@
 ///                         presence (slow), and bass against high is the
 ///                         timbre
 ///         bass_hits       the kick, jumping to 1 and decaying - its rising
-///                         edge is a hit, and a run of them is the groove
+///                         edge is a hit when no `kick` trigger has just
+///                         been one, and a run of hits is the groove
 ///         hits            any sharp hit - unused, kept on the bus
 ///         bpm             50..220 scaled to 0..1 - how fast osc_chase's
 ///                         pole scrolls, and nothing else
@@ -61,6 +62,8 @@
 ///         amount_a/_b     how much of the screen each covers
 ///         tick            the host's beat count - unused, kept as a knob
 ///         cut             set to 1 on each new video; the look takes it
+///         kick            set to 1 on each kick, the moment the host hears
+///                         it; the look takes it - the beat looks' timing
 ///
 /// The bus is for levels, which fade out when the host goes quiet. The rest
 /// are knobs because they are not levels: they hold where they were put, so
@@ -91,6 +94,13 @@ namespace edmx
         /// When the last cut was seen, in nowSeconds(); shared so that two
         /// looks in a blend light it together.
         double cutAt{-1000.0};
+        /// 1 from the host on each kick, the moment it is heard, back to 0
+        /// once a look has seen it - the kick to time by, where the decaying
+        /// bass_hits level is only sampled 30 times a second.
+        float kick{0.0f};
+        /// When the last kick trigger was seen, in nowSeconds(); shared like
+        /// cutAt.
+        double kickAt{-1000.0};
     };
 
     OscHost& sharedOscHost();
@@ -194,6 +204,8 @@ namespace edmx
     private:
         float midBaseline{0.0f};
         bool kickHigh{false};
+        /// The last kick trigger this look has taken.
+        double kickSeen{-1000.0};
         /// Hits in a row, each within reach of the last.
         int streak{0};
     };
