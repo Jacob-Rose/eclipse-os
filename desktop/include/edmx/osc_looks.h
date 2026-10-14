@@ -167,9 +167,13 @@ namespace edmx
         float bassPresence{0.0f};
         float midPresence{0.0f};
         float highPresence{0.0f};
-        /// 0..1: up over a couple of seconds once the sender's beats arrive
+        /// 0..1: up over a couple of seconds once the kicks arrive
         /// steadily, down over a few once they stop.
         float groove{0.0f};
+        /// 0..1: a voice or a piano coming in - the mids' presence risen
+        /// over where it has sat for the last several seconds, swelling in
+        /// and easing out. It settles back as the new level becomes the room.
+        float midEntry{0.0f};
         float kick{0.0f};
         float onset{0.0f};
         /// High against bass, 0..1: a half for a level mix, toward 1 for
@@ -188,6 +192,7 @@ namespace edmx
         float cutGlow{0.0f};
 
     private:
+        float midBaseline{0.0f};
         bool kickHigh{false};
         /// Hits in a row, each within reach of the last.
         int streak{0};
@@ -218,12 +223,18 @@ namespace edmx
         float time{0.0f};
     };
 
-    /// osc_bloom: an aura on the origin line, where the ring sits. The bass
-    /// is its core, primary, reaching up and down the stage with the bass's
-    /// presence; the mids a shell of secondary around it, turning slowly
-    /// round the faces in lobes; the sub a dim halo over the whole stage;
-    /// the highs fine threads climbing out of the core's edge. It breathes
-    /// with the presence and nothing else.
+    /// osc_bloom: an aura on the origin line, where the ring sits, in light
+    /// rather than the host's colours: red is the bass and the sub, green
+    /// the mids, blue the highs, each its own layer and each eased in over
+    /// `attack` and out over `release`, so the colour glides between them
+    /// rather than flashing. Red is the core, reaching up and down the stage
+    /// with the bass and glowing dim over all of it with the sub; green a
+    /// shell around it, turning slowly round the faces in lobes; blue fine
+    /// threads climbing out of the core and a haze up the tower. Where they
+    /// overlap they mix as light does - a voice over a bassline is yellow.
+    /// The pars are all three at once, on the bands' presence rather than
+    /// their level and eased slower still - the room's colour, breathing -
+    /// lifting as a voice or a piano comes in.
     class Pattern_Osc_Bloom : public Pattern_Osc_Look
     {
     public:
@@ -231,9 +242,13 @@ namespace edmx
         /// stage.
         float reach{0.5f};
         /// How bright the mids' shell runs.
-        float shell{0.7f};
+        float shell{0.8f};
         /// Turns a second the shell's lobes make, at full mids.
         float spin{0.12f};
+        /// Seconds each colour takes to come up with its band, and to fall
+        /// away after it.
+        float attack{0.08f};
+        float release{0.5f};
 
         virtual void reset() override;
         virtual void tick(float deltaTime) override;
@@ -243,18 +258,33 @@ namespace edmx
     private:
         float turn{0.0f};
         float climb{0.0f};
+        float red{0.0f};
+        float green{0.0f};
+        float blue{0.0f};
+        float parRed{0.0f};
+        float parGreen{0.0f};
+        float parBlue{0.0f};
     };
 
     /// osc_meter: the bands as meters, one to a face of the obelisk - sub,
     /// bass, mid, high going round - each a bar of its presence up the stage
-    /// from primary (the sub) to secondary (the highs), with a cap on its
-    /// recent peak that falls slowly. The ring carries the whole level, lit
-    /// round from its foot. Steady: no beat, no kick.
+    /// in the rainbow, red at the foot to violet at the top, each face a
+    /// quarter of the wheel on from the last and the whole wheel drifting
+    /// slowly, with a pale cap on its recent peak that falls slowly. The
+    /// ring carries the whole level, lit round from its foot. The pars are a
+    /// meter too, mirrored out from the middle of the truss - the sub's
+    /// pair in the centre, then the bass, the mids, the highs, the level on
+    /// the ends - each pair its band's colour and as bright as the band's
+    /// presence, eased slowly over `attack` and `release`, all of them
+    /// lifting as a voice or a piano comes in. Steady: no beat, no kick.
     class Pattern_Osc_Meter : public Pattern_Osc_Look
     {
     public:
         /// Stage heights a second a cap falls at.
         float fall{0.25f};
+        /// Seconds the pars take to come up with their band, and to fall.
+        float attack{0.4f};
+        float release{1.5f};
 
         virtual void reset() override;
         virtual void tick(float deltaTime) override;
@@ -263,52 +293,67 @@ namespace edmx
 
     private:
         float peaks[4]{0.0f, 0.0f, 0.0f, 0.0f};
+        /// The pars' bands, eased: sub, bass, mid, high, level.
+        float pars[5]{0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+        float hueDrift{0.0f};
     };
 
-    /// osc_chase: a barber's pole, or a theatre marquee: stripes of lamps
-    /// up the stage, primary and secondary in turn with a dark gap between,
-    /// wound round the faces and climbing a stripe a beat on the sender's
-    /// tempo - a speed, run free, never a flash or a jump on a beat. A kick
-    /// widens the lamps and lifts them a little; the sub and bass glow at the
-    /// foot between them. Before the beat kicks in the pole runs dim.
+    /// osc_chase: a barber's pole, or a theatre marquee, kept low: a few
+    /// narrow stripes of lamps up the stage, primary and secondary in turn
+    /// with wide dark gaps, wound round the faces and climbing a stripe every
+    /// eight beats on the sender's tempo - a slow crawl, run free, never a
+    /// flash or a jump on a beat. A kick sends a soft, slow pulse up the
+    /// pole from the foot, the lamps warming as it passes them; a voice or a piano
+    /// coming in fattens the lamps and fills them in. The sub and bass glow
+    /// at the foot between them.
     class Pattern_Osc_Chase : public Pattern_Osc_Look
     {
     public:
         /// Stripes up the stage, one of each colour to a pair.
-        float stripes{6.0f};
+        float stripes{4.0f};
         /// Times a stripe winds round the faces on its way up.
         float turns{1.0f};
         /// Beats a stripe takes to pass a point.
-        float beatsPerStripe{1.0f};
-        /// How far a kick lifts the lamps toward full.
-        float swell{0.35f};
-        /// Seconds a kick takes to swell in, and to die away.
-        float attack{0.05f};
-        float release{0.3f};
+        float beatsPerStripe{8.0f};
+        /// How bright a kick's pulse lifts the lamps it passes.
+        float pulse{0.3f};
+        /// Seconds a kick's pulse takes to come up, and to fade.
+        float attack{0.15f};
+        float release{0.8f};
 
         virtual void reset() override;
         virtual void tick(float deltaTime) override;
         virtual void render(eio::HSVStripNode* inNode, ecore::HSV& inOutColor) const override;
         virtual void reflect(ecore::PropertyBag& bag) override;
 
+        /// Seconds a kick's pulse takes to climb the stage.
+        float climb{3.0f};
+
     private:
         float scroll{0.0f};
+        /// Each kick's pulse, by its age in seconds; the oldest is replaced.
+        static constexpr int kPulses = 8;
+        float pulseAges[kPulses]{1000.0f, 1000.0f, 1000.0f, 1000.0f, 1000.0f, 1000.0f, 1000.0f, 1000.0f};
+        int nextPulse{0};
     };
 
     /// osc_steps: four steps up the stage. Each kick lights the next quarter -
-    /// the foot, then up, then the top, then the foot again - in the colour
-    /// opposite the last, and the foot's swells the whole stage. The bass
-    /// sets how bright a step comes up, the mids how much of
+    /// the foot, then up, then the top, then the foot again - primary and
+    /// secondary in turn over a ground that is always the secondary,
+    /// swelling in and easing out, and breathes the whole stage a little
+    /// with it, the foot's step most. A voice or a piano coming in rises up
+    /// the stage from the foot as a glow. The bass sets how bright a step comes up, the mids how much of
     /// the last one lingers, the highs glint on the lit step, and the sub
     /// glows under all of it.
     class Pattern_Osc_Steps : public Pattern_Osc_Look
     {
     public:
-        /// How far toward full the foot's step swells the whole stage.
-        float flash{0.3f};
+        /// How far toward full a kick breathes the whole stage; the foot's
+        /// step twice as far.
+        float flash{0.12f};
         /// Seconds a step takes to come up, and to die away.
-        float attack{0.05f};
-        float release{0.35f};
+        float attack{0.06f};
+        float release{0.45f};
 
         virtual void reset() override;
         virtual void tick(float deltaTime) override;

@@ -23,6 +23,13 @@ namespace
         return current + (target - current) * (1.0f - std::exp(-deltaTime / seconds));
     }
 
+    /// Toward a target, quicker up than down: a band's swell in over
+    /// `attack`, out over `release`.
+    float ease(float current, float target, float attack, float release, float deltaTime)
+    {
+        return glide(current, target, target > current ? attack : release, deltaTime);
+    }
+
     float smooth(float t)
     {
         t = std::clamp(t, 0.0f, 1.0f);
@@ -80,6 +87,13 @@ void Pattern_Osc_Look::tick(float deltaTime)
     bassPresence = glide(bassPresence, bass, presenceSeconds, dt);
     midPresence = glide(midPresence, mid, presenceSeconds, dt);
     highPresence = glide(highPresence, high, presenceSeconds, dt);
+
+    // a voice or a piano coming in: the mids over where they have sat for
+    // the last several seconds. Up over a third of a second, out over two,
+    // and back to nothing once the new level has become the room's
+    midBaseline = glide(midBaseline, midPresence, 8.0f, dt);
+    const float risen = std::clamp((midPresence - midBaseline) * 5.0f, 0.0f, 1.0f);
+    midEntry = ease(midEntry, risen, 0.3f, 2.0f, dt);
     kick = read(AudioChannel::BassHits);
     onset = read(AudioChannel::Hits);
     // slower than the bands, so a hat between kicks tints rather than flickers
@@ -291,46 +305,81 @@ void Pattern_Osc_Bloom::tick(float deltaTime)
 {
     Pattern_Osc_Look::tick(deltaTime);
     const float dt = std::max(deltaTime, 0.0f);
+    // each colour on its band, eased: up quickly enough to feel it, down
+    // slowly enough that it glides rather than flickers
+    red = ease(red, std::max(bass, sub * 0.8f), attack, release, dt);
+    green = ease(green, mid, attack, release, dt);
+    blue = ease(blue, high, attack, release, dt);
+    // the pars on the presence, slower: the room, not the hits; a voice
+    // coming in lifts the green
+    parRed = ease(parRed, std::max(bassPresence, subPresence * 0.8f), 0.4f, 1.5f, dt);
+    parGreen = ease(parGreen, std::clamp(midPresence + 0.5f * midEntry, 0.0f, 1.0f), 0.4f, 1.5f, dt);
+    parBlue = ease(parBlue, highPresence, 0.4f, 1.5f, dt);
     const float pace = 0.5f + 0.5f * drive();
-    turn = std::fmod(turn + dt * std::max(spin, 0.0f) * (0.25f + 0.75f * midPresence) * pace, 1.0f);
-    climb = std::fmod(climb + dt * (0.12f + 0.45f * highPresence) * pace, 1.0f);
+    turn = std::fmod(turn + dt * std::max(spin, 0.0f) * (0.25f + 0.75f * green) * pace, 1.0f);
+    climb = std::fmod(climb + dt * (0.12f + 0.45f * blue) * pace, 1.0f);
 }
 
 void Pattern_Osc_Bloom::render(eio::HSVStripNode* inNode, ecore::HSV& inOutColor) const
 {
+    const float power = drive();
+    if (eio::nodeSpace(inNode) == eio::NodeSpace::Truss)
+    {
+        // the pars: all three bands at once, as light - the room's colour
+        const float base = floorLevel * 0.6f;
+        const float body = 0.35f + 0.65f * power;
+        const Rgb light{base + (1.0f - base) * std::clamp(parRed * body, 0.0f, 1.0f),
+                        base + (1.0f - base) * std::clamp(parGreen * body, 0.0f, 1.0f),
+                        base + (1.0f - base) * std::clamp(parBlue * body, 0.0f, 1.0f)};
+        const float value = std::max({light.r, light.g, light.b, 0.0001f});
+        inOutColor = toHsv({light.r / value, light.g / value, light.b / value});
+        inOutColor.setBrightnessAlpha(finish(value));
+        return;
+    }
+
     const float height = stageAlpha(inNode);
     const float round = around(inNode);
     const float away = std::fabs(height - kOriginAlpha);
 
-    // the bass: the core, primary, as far each way as the bass is present
-    const float coreReach = 0.04f + std::max(reach, 0.0f) * bassPresence * drive();
+    // red: the core, as far each way as the bass, and the sub's dim halo
+    // over the whole stage, heavier near the line
+    const float coreReach = 0.04f + std::max(reach, 0.0f) * red * power;
     const float coreOff = away / coreReach;
-    const float core = std::exp(-coreOff * coreOff) * (0.3f + 0.7f * bassPresence);
+    const float core = std::exp(-coreOff * coreOff) * (0.25f + 0.6f * red);
+    const float halo = 0.3f * subPresence * (1.0f - 0.6f * std::min(away * 2.0f, 1.0f));
 
-    // the mids: a shell of secondary just outside it, in two lobes turning
-    // round the faces
-    const float shellAt = coreReach + 0.06f + 0.15f * midPresence;
-    const float shellOff = (away - shellAt) / 0.08f;
+    // green: a shell just outside the core, in two lobes turning round the
+    // faces
+    const float shellAt = coreReach + 0.06f + 0.15f * green;
+    const float shellOff = (away - shellAt) / 0.14f;
     const float lobes = 0.5f + 0.5f * std::cos(6.2831853f * (round * 2.0f + turn));
-    const float shellLayer = shell * midPresence * std::exp(-shellOff * shellOff) * (0.35f + 0.65f * lobes);
+    // and a broad green body through the middle of the tower, so a voice
+    // fills it rather than tracing an outline
+    const float body = 0.35f * green * std::exp(-std::pow((height - 0.55f) / 0.3f, 2.0f));
+    const float shellLayer = shell * green * std::exp(-shellOff * shellOff) * (0.45f + 0.55f * lobes) + body;
 
-    // the highs: a thread up (and down) each column, leaving the core's edge
-    // and thinning out as it goes; each column on its own stagger
+    // blue: a thread up (and down) each column, leaving the core's edge and
+    // thinning out, each column on its own stagger; and a haze up the tower
     const float column = std::floor(round * static_cast<float>(scanner::kStageColumns));
     const float along = std::fmod(climb + column * 0.382f, 1.0f);
-    const float threadOff = (away - (coreReach + along * 0.5f)) / 0.03f;
-    const float thread = highPresence * std::exp(-threadOff * threadOff) * (1.0f - along);
+    const float threadOff = (away - (coreReach + along * 0.5f)) / 0.05f;
+    const float thread = blue * std::exp(-threadOff * threadOff) * (1.0f - along);
+    const float haze = 0.55f * blue * smooth((height - kOriginAlpha) / (1.0f - kOriginAlpha));
 
-    // the sub: a dim halo over the whole stage, heavier near the line
-    const float halo = 0.5f * subPresence * (1.0f - 0.6f * std::min(away * 2.0f, 1.0f));
-
-    const float lit = 1.0f - (1.0f - core) * (1.0f - shellLayer) * (1.0f - thread) * (1.0f - halo);
-    const float value = floorLevel + (1.0f - floorLevel) * std::clamp(lit, 0.0f, 1.0f) * drive();
-
-    // each layer its colour: the core and halo primary, the shell and the
-    // threads secondary
-    const float secondaryShare = (shellLayer + thread) / std::max(core + halo + shellLayer + thread, 0.001f);
-    inOutColor = blendRgb(primary(1.0f), secondary(1.0f), std::clamp(secondaryShare, 0.0f, 1.0f));
+    // mixed as light: each channel its layers, the floor a dim white under
+    // all three so the mode is visibly on
+    const float base = floorLevel * 0.6f;
+    Rgb light;
+    light.r = base + (1.0f - base) * std::clamp((core + halo) * power, 0.0f, 1.0f);
+    light.g = base + (1.0f - base) * std::clamp(shellLayer * power, 0.0f, 1.0f);
+    light.b = base + (1.0f - base) * std::clamp((thread + haze) * power, 0.0f, 1.0f);
+    const float value = std::max({light.r, light.g, light.b});
+    if (value <= 0.0001f)
+    {
+        inOutColor = ecore::HSV(0.0f, 0.0f, 0.0f);
+        return;
+    }
+    inOutColor = toHsv({light.r / value, light.g / value, light.b / value});
     inOutColor.setBrightnessAlpha(finish(value));
 }
 
@@ -340,6 +389,8 @@ void Pattern_Osc_Bloom::reflect(ecore::PropertyBag& bag)
     bag.add("reach", reach, 0.0f, 1.0f);
     bag.add("shell", shell, 0.0f, 1.0f);
     bag.add("spin", spin, 0.0f, 1.0f);
+    bag.add("attack", attack, 0.0f, 1.0f);
+    bag.add("release", release, 0.02f, 3.0f);
 }
 
 // ============================================================================
@@ -358,11 +409,22 @@ void Pattern_Osc_Meter::reset()
 void Pattern_Osc_Meter::tick(float deltaTime)
 {
     Pattern_Osc_Look::tick(deltaTime);
+    const float dt = std::max(deltaTime, 0.0f);
     const float bars[4] = {subPresence, bassPresence, midPresence, highPresence};
     for (int band = 0; band < 4; ++band)
     {
-        peaks[band] = std::max(bars[band], peaks[band] - std::max(fall, 0.0f) * std::max(deltaTime, 0.0f));
+        peaks[band] = std::max(bars[band], peaks[band] - std::max(fall, 0.0f) * dt);
     }
+    // the pars on the presence, eased slowly, and all of them lifted a
+    // little as a voice or a piano comes in
+    const float lift = 0.35f * midEntry;
+    const float bands[5] = {subPresence, bassPresence, midPresence, highPresence, levelPresence};
+    for (int band = 0; band < 5; ++band)
+    {
+        pars[band] = ease(pars[band], std::clamp(bands[band] + lift, 0.0f, 1.0f), attack, release, dt);
+    }
+    // the wheel turns once a minute and a half
+    hueDrift = std::fmod(hueDrift + dt * 4.0f, 360.0f);
 }
 
 void Pattern_Osc_Meter::render(eio::HSVStripNode* inNode, ecore::HSV& inOutColor) const
@@ -370,15 +432,31 @@ void Pattern_Osc_Meter::render(eio::HSVStripNode* inNode, ecore::HSV& inOutColor
     // a pixel's worth of stage, so a bar's head is soft rather than a step
     constexpr float kEdge = 0.03f;
     const float strength = 0.45f + 0.55f * drive();
+    const eio::NodeSpace space = eio::nodeSpace(inNode);
 
-    if (eio::nodeSpace(inNode) == eio::NodeSpace::Ring)
+    if (space == eio::NodeSpace::Truss)
     {
-        // the ring: the whole level, lit round both ways from its foot
+        // the pars: mirrored out from the middle of the truss - sub, bass,
+        // mid, high, then the level on the ends - a pair to a band
+        const float along = std::clamp((nodeCoord(inNode).x - 2.5f) / 2.0f, 0.0f, 1.0f);
+        const float out = std::fabs(along - 0.5f) * 2.0f;
+        const int band = std::clamp(static_cast<int>(out * 4.5f), 0, 4);
+        constexpr float kParHues[5] = {0.0f, 30.0f, 120.0f, 220.0f, 285.0f};
+        const float lit = 0.2f + 0.8f * pars[band];
+        inOutColor = ecore::HSV(std::fmod(kParHues[band] + hueDrift, 360.0f), 1.0f, 1.0f);
+        inOutColor.setBrightnessAlpha(finish(std::max(floorLevel, lit * strength)));
+        return;
+    }
+
+    if (space == eio::NodeSpace::Ring)
+    {
+        // the ring: the whole level, lit round both ways from its foot, the
+        // rainbow round it
         const Coordinate at = nodeCoord(inNode);
         const float angle = std::atan2(at.x - scanner::kRingCenterX, scanner::kRingCenterY - at.y);
         const float fromFoot = std::fabs(angle) / 3.14159265f;
         const float lit = 1.0f - smooth((fromFoot - levelPresence) / 0.08f + 0.5f);
-        inOutColor = blendRgb(primary(1.0f), secondary(1.0f), fromFoot);
+        inOutColor = ecore::HSV(std::fmod(fromFoot * 300.0f + hueDrift, 360.0f), 1.0f, 1.0f);
         inOutColor.setBrightnessAlpha(finish(std::max(floorLevel, lit * strength)));
         return;
     }
@@ -393,15 +471,13 @@ void Pattern_Osc_Meter::render(eio::HSVStripNode* inNode, ecore::HSV& inOutColor
     const float lit = 1.0f - smooth((height - bar) / kEdge + 0.5f);
     const float cap = std::exp(-std::pow((height - peaks[band]) / kEdge, 2.0f));
 
-    // the sub's face all primary, the highs' all secondary, the two between
-    // stepping across; each bar's head a little further toward the next
-    const float own = static_cast<float>(band) / 3.0f;
-    const float head = bar > 0.0f ? std::clamp(height / bar, 0.0f, 1.0f) * 0.2f : 0.0f;
-    ecore::HSV colour = blendRgb(primary(1.0f), secondary(1.0f), std::clamp(own + head, 0.0f, 1.0f));
-    colour = blendRgb(colour, blendRgb(secondary(1.0f), primary(1.0f), own), cap * (1.0f - lit));
+    // the rainbow up the bar, each face a quarter of the wheel on; the cap
+    // pale
+    const float hue = std::fmod(height * 300.0f + static_cast<float>(band) * 90.0f + hueDrift, 360.0f);
+    const float sat = 1.0f - 0.7f * cap * (1.0f - lit);
 
     const float value = std::max({floorLevel * (1.0f - lit), lit * strength, cap * 0.6f * strength});
-    inOutColor = colour;
+    inOutColor = ecore::HSV(hue, sat, 1.0f);
     inOutColor.setBrightnessAlpha(finish(value));
 }
 
@@ -409,6 +485,8 @@ void Pattern_Osc_Meter::reflect(ecore::PropertyBag& bag)
 {
     Pattern_Osc_Look::reflect(bag);
     bag.add("fall", fall, 0.0f, 2.0f);
+    bag.add("attack", attack, 0.0f, 1.0f);
+    bag.add("release", release, 0.02f, 3.0f);
 }
 
 // ============================================================================
@@ -419,6 +497,10 @@ void Pattern_Osc_Chase::reset()
 {
     Pattern_Osc_Look::reset();
     scroll = 0.0f;
+    for (float& age : pulseAges)
+    {
+        age = 1000.0f;
+    }
 }
 
 void Pattern_Osc_Chase::tick(float deltaTime)
@@ -429,34 +511,64 @@ void Pattern_Osc_Chase::tick(float deltaTime)
     // never jumps it
     const float stripesPerSecond = bpm / 60.0f / std::max(beatsPerStripe, 0.25f);
     scroll = std::fmod(scroll + std::max(deltaTime, 0.0f) * stripesPerSecond, 1.0f);
+
+    // each kick starts a pulse at the foot; they climb on their own clocks,
+    // so a run of kicks is a run of swells rather than one restarting
+    for (float& age : pulseAges)
+    {
+        age = std::min(age + std::max(deltaTime, 0.0f), 1000.0f);
+    }
+    if (hitNow)
+    {
+        pulseAges[nextPulse] = 0.0f;
+        nextPulse = (nextPulse + 1) % kPulses;
+    }
 }
 
 void Pattern_Osc_Chase::render(eio::HSVStripNode* inNode, ecore::HSV& inOutColor) const
 {
     const float height = stageAlpha(inNode);
     const float round = around(inNode);
-    const float swellNow = hitEnvelope(attack, release) * groove;
+    const float power = drive();
 
-    // the pole: stripes up the stage, wound `turns` times round the faces,
-    // climbing. Every other stripe is primary, the rest secondary, a dark
-    // gap between each - the marquee's lamps - and the gap closing on a kick
+    // the pole: a few stripes up the stage, wound `turns` times round the
+    // faces, climbing; every other stripe primary, the rest secondary, a wide
+    // dark gap between - the marquee's lamps, fattening as a voice comes in
     const float count = std::max(std::round(stripes), 1.0f);
     const float wound = height * count + round * std::round(turns) * 2.0f - scroll * 2.0f;
     const float cell = wound - 2.0f * std::floor(wound * 0.5f);          // 0..2: two stripes, one of each
     const float within = cell - std::floor(cell);                         // 0..1 across a stripe
-    const float lampWidth = std::clamp(0.45f + 0.25f * swellNow, 0.05f, 0.95f);
-    const float edge = 0.12f;
+    const float lampWidth = std::clamp(0.22f + 0.25f * midEntry, 0.05f, 0.9f);
+    const float edge = 0.1f;
     const float lamp = smooth((within - (0.5f - lampWidth * 0.5f)) / edge + 0.5f)
                      * (1.0f - smooth((within - (0.5f + lampWidth * 0.5f)) / edge + 0.5f));
     const bool isPrimary = cell < 1.0f;
 
-    // how bright the lamps run: the level's presence, held back before the
-    // beat, lifted a little by each kick
-    const float lit = lamp * std::clamp((0.35f + 0.65f * levelPresence) * drive() + std::max(swell, 0.0f) * swellNow, 0.0f, 1.0f);
+    // the kicks' pulses: soft fronts climbing the pole from the foot over
+    // `climb` seconds each, swelling in over the attack and fading over the
+    // release as they go, overlapping into a swell on a run of kicks
+    float pulseSum = 0.0f;
+    for (const float age : pulseAges)
+    {
+        if (age >= 1000.0f)
+        {
+            continue;
+        }
+        const float front = smooth(std::min(age / std::max(climb, 0.2f), 1.0f)) * 1.2f - 0.1f;
+        const float frontOff = (height - front) / 0.1f;
+        const float swellIn = (attack > 0.0f && age < attack) ? smooth(age / attack) : 1.0f;
+        const float fadeOut = std::exp(-std::max(age - attack, 0.0f) / std::max(release, 0.01f));
+        pulseSum += std::exp(-frontOff * frontOff) * swellIn * fadeOut;
+    }
+    const float pulseLayer = std::clamp(pulse, 0.0f, 1.0f) * std::min(pulseSum, 1.0f) * power;
+
+    // the lamps' own glow: low, up with the level, filled in by a voice
+    const float glow = (0.12f + 0.3f * levelPresence + 0.35f * midEntry) * power;
+    const float lit = lamp * std::clamp(glow + pulseLayer, 0.0f, 1.0f);
 
     // the sub and bass a glow at the foot, between the lamps
     const float foot = 1.0f - height;
-    const float bed = (0.5f * subPresence * foot * foot + 0.35f * bassPresence * foot) * drive();
+    const float bed = (0.4f * subPresence * foot * foot + 0.25f * bassPresence * foot) * power;
 
     float value = floorLevel + (1.0f - floorLevel) * std::clamp(bed, 0.0f, 1.0f);
     value += (1.0f - value) * lit;
@@ -473,7 +585,8 @@ void Pattern_Osc_Chase::reflect(ecore::PropertyBag& bag)
     bag.add("stripes", stripes, 1.0f, 16.0f);
     bag.add("turns", turns, 0.0f, 4.0f);
     bag.add("beats_per_stripe", beatsPerStripe, 0.25f, 8.0f);
-    bag.add("swell", swell, 0.0f, 1.0f);
+    bag.add("pulse", pulse, 0.0f, 1.0f);
+    bag.add("climb", climb, 0.2f, 10.0f);
     bag.add("attack", attack, 0.0f, 0.5f);
     bag.add("release", release, 0.02f, 2.0f);
 }
@@ -505,37 +618,49 @@ void Pattern_Osc_Steps::render(eio::HSVStripNode* inNode, ecore::HSV& inOutColor
     const float height = stageAlpha(inNode);
     const float round = around(inNode);
     const int quarter = std::clamp(static_cast<int>(height * 4.0f), 0, 3);
+    const float power = drive();
     const float swell = hitEnvelope(attack, release);
 
-    // the sub, under everything; the level as a calm glow before the beat
-    const float glow = (0.45f * subPresence + 0.35f * levelPresence) * drive();
+    // the sub, under everything; the level as a calm glow
+    const float glow = (0.25f * subPresence + 0.2f * levelPresence) * power;
 
-    // this kick's step, in the colour opposite the last one's, up over the
-    // attack and down over the release; the last step lingering on the mids
+    // a voice or a piano coming in: a glow rising up the stage from the foot
+    const float entryTop = 0.15f + 0.75f * midEntry;
+    const float entry = 0.5f * midEntry * (1.0f - smooth((height - entryTop) / 0.25f + 0.5f)) * power;
+
+    // this kick's step, in the colour opposite the last one's, swelling in
+    // and easing out; soft at the quarter's edges so it is a shape and not a
+    // block; the last step lingering on the mids
+    const float inQuarter = height * 4.0f - static_cast<float>(quarter);
+    const float shape = 0.6f + 0.4f * std::sin(3.14159265f * inQuarter);
     float lit = 0.0f;
     bool litPrimary = (step % 2) == 0;
     if (quarter == step)
     {
-        lit = (0.55f + 0.45f * bassPresence) * swell * groove;
+        lit = (0.5f + 0.3f * bassPresence) * swell * shape * power;
         // the highs glint on the lit step
         const float glint = std::pow(0.5f + 0.5f * std::sin(height * 83.0f + round * 41.0f + time * 9.0f), 8.0f);
-        lit += (1.0f - lit) * highPresence * glint * swell * groove;
+        lit += (1.0f - lit) * 0.6f * highPresence * glint * swell * power;
     }
     else if (quarter == (step + 3) % 4)
     {
-        lit = 0.5f * midPresence * (1.0f - hitPhase()) * groove;
+        lit = 0.45f * midPresence * (1.0f - hitPhase()) * shape * power;
         litPrimary = !litPrimary;
     }
 
-    // the foot's step swells the whole stage
-    const float flashLayer = (step == 0) ? std::clamp(flash, 0.0f, 1.0f) * swell * groove : 0.0f;
+    // every kick breathes the whole stage a little, the foot's step most
+    const float breath = std::clamp(flash, 0.0f, 1.0f) * (step == 0 ? 1.6f : 1.0f) * swell * power;
 
-    float value = floorLevel + (1.0f - floorLevel) * std::clamp(glow, 0.0f, 1.0f);
+    float value = floorLevel + (1.0f - floorLevel) * std::clamp(glow + entry, 0.0f, 1.0f);
     value += (1.0f - value) * lit;
-    value += (1.0f - value) * flashLayer;
+    value += (1.0f - value) * std::clamp(breath, 0.0f, 1.0f);
 
+    // the ground is always the secondary - never the two mixed, which
+    // between two saturated colours is grey, and never flipping with the
+    // step, which would turn the whole tower on every kick - and the step
+    // its own colour over it
     const ecore::HSV stepColour = litPrimary ? primary(1.0f) : secondary(1.0f);
-    ecore::HSV colour = blendRgb(primary(1.0f), secondary(1.0f), balance());
+    ecore::HSV colour = secondary(1.0f);
     colour = blendRgb(colour, stepColour, std::clamp(lit * 1.5f, 0.0f, 1.0f));
     inOutColor = colour;
     inOutColor.setBrightnessAlpha(finish(value));

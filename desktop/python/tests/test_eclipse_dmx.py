@@ -6124,15 +6124,15 @@ class ScannerKnobs(ShowTest):
                  "amount_a", "amount_b", "tick", "cut", "gain", "floor", "slew",
                  "follow", "cut_lift", "cut_seconds", "calm", "presence_slew"]
     OSC_WASH = OSC_KNOBS + ["swell", "glitter"]
-    OSC_BLOOM = OSC_KNOBS + ["reach", "shell", "spin"]
+    OSC_BLOOM = OSC_KNOBS + ["reach", "shell", "spin", "attack", "release"]
+    OSC_CHASE = OSC_KNOBS + ["stripes", "turns", "beats_per_stripe", "pulse", "climb", "attack", "release"]
 
     def test_the_osc_looks_offer_the_hosts_knobs(self):
         show = self._show()
         self.cue(show, "osc_wash", self.OSC_WASH)
         self.cue(show, "osc_bloom", self.OSC_BLOOM)
-        self.cue(show, "osc_meter", self.OSC_KNOBS + ["fall"])
-        self.cue(show, "osc_chase", self.OSC_KNOBS + ["stripes", "turns", "beats_per_stripe",
-                                                     "swell", "attack", "release"])
+        self.cue(show, "osc_meter", self.OSC_KNOBS + ["fall", "attack", "release"])
+        self.cue(show, "osc_chase", self.OSC_CHASE)
         self.cue(show, "osc_steps", self.OSC_KNOBS + ["flash", "attack", "release"])
 
     def test_the_osc_colours_carry_from_one_look_to_the_next(self):
@@ -6150,12 +6150,12 @@ class ScannerKnobs(ShowTest):
             return pixel[0] > 200 and pixel[1] < 40 and pixel[2] < 40
         self.settle_until(lit_red, timeout=6.0, message="the wash in the host's red")
 
-        # the next look, colours never sent again: still red, once its floor
-        # is up far enough to see
-        self.cue(show, "osc_bloom", self.OSC_BLOOM)
+        # the next look in the host's colours, colours never sent again:
+        # still red, once its floor is up far enough to see
+        self.cue(show, "osc_chase", self.OSC_CHASE)
         show.set_param("floor", 1.0)
         self.settle_until(lambda: frames and frames[-1][0][0] > 200 and frames[-1][0][2] < 40,
-                          timeout=6.0, message="the bloom in the same red")
+                          timeout=6.0, message="the chase in the same red")
 
     def _play(self, show, seconds, kicks):
         """`seconds` of a loud room, restated the way a host does (the bus
