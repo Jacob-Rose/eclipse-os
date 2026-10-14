@@ -19,7 +19,8 @@
 /// these. Two kinds: osc_wash, osc_bloom and osc_meter are *presence*
 /// looks, written for a jam session rather than a bounced song - they move
 /// on the bands' slow presence and never flash on a beat or a kick - and
-/// osc_chase and osc_steps, last in the game's list, are the beat looks.
+/// osc_chase and osc_steps are the beat looks, and osc_spectrum, last,
+/// the most reactive: red, green and blue quick on the lows, mids and highs.
 /// They move on the *kick* the mic hears, never on the sender's beat clock:
 /// that is guessed from the music and drifts on a jam, and the kick is the
 /// drummer. Each kick swells in over `attack` and dies over `release`,
@@ -382,5 +383,40 @@ namespace edmx
         float time{0.0f};
         float hueDrift{0.0f};
         int step{3};
+    };
+
+    /// osc_spectrum: the reactive one - a rainbow of its own, none of the
+    /// host's colours and not dimmed by its screen, on the host's audio. Red
+    /// is the lows, filling up the stage from the foot as far as they reach;
+    /// green the mids, a band through the middle widening with them; blue the
+    /// highs, coming down from the top - each quick in and quick out
+    /// (`attack`, `release`), mixing as light where they meet, so the tower
+    /// runs the wheel as the music moves between them. A kick breathes the
+    /// whole stage a little. Under it all a dim rainbow ground drifts, and a
+    /// voice or a piano coming in rises up it from the foot. The pars are the
+    /// three bands as light.
+    class Pattern_Osc_Spectrum : public Pattern_Osc_Look
+    {
+    public:
+        /// How far toward full a kick breathes the whole stage.
+        float flash{0.15f};
+        /// Seconds red, green and blue take to come up with their bands, and
+        /// to fall away: quick, but never a snap.
+        float attack{0.03f};
+        float release{0.2f};
+        /// Seconds a kick's breath takes to swell in, and to fade.
+        float kickAttack{0.04f};
+        float kickRelease{0.3f};
+
+        virtual void reset() override;
+        virtual void tick(float deltaTime) override;
+        virtual void render(eio::HSVStripNode* inNode, ecore::HSV& inOutColor) const override;
+        virtual void reflect(ecore::PropertyBag& bag) override;
+
+    private:
+        float hueDrift{0.0f};
+        float red{0.0f};
+        float green{0.0f};
+        float blue{0.0f};
     };
 }

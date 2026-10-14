@@ -7,7 +7,7 @@
   //   ./launch-osc.sh --live          and onto whatever is plugged in here
   //
   // The cue list is the scanner machine's, so osc_wash, osc_bloom,
-  // osc_meter, osc_chase and osc_steps are five of its buttons - clicking
+  // osc_meter, osc_chase, osc_steps and osc_spectrum are six of its buttons - clicking
   // between them is the golden key stepping looks on the tower. The other cues are there too; on the
   // tower only the game reaches them.
   //

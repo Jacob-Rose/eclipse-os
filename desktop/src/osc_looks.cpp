@@ -692,3 +692,83 @@ void Pattern_Osc_Steps::reflect(ecore::PropertyBag& bag)
     bag.add("attack", attack, 0.0f, 0.5f);
     bag.add("release", release, 0.02f, 2.0f);
 }
+
+// ============================================================================
+// osc_spectrum
+// ============================================================================
+
+void Pattern_Osc_Spectrum::reset()
+{
+    Pattern_Osc_Look::reset();
+}
+
+void Pattern_Osc_Spectrum::tick(float deltaTime)
+{
+    Pattern_Osc_Look::tick(deltaTime);
+    const float dt = std::max(deltaTime, 0.0f);
+    // the wheel turns once every minute and a half
+    hueDrift = std::fmod(hueDrift + dt * 4.0f, 360.0f);
+    // red, green and blue on the lows, mids and highs: quick, but eased both
+    // ways so a hit is felt without the light snapping
+    red = ease(red, std::max(bass, sub * 0.8f), attack, release, dt);
+    green = ease(green, mid, attack, release, dt);
+    blue = ease(blue, high, attack, release * 0.8f, dt);
+}
+
+void Pattern_Osc_Spectrum::render(eio::HSVStripNode* inNode, ecore::HSV& inOutColor) const
+{
+    const float power = drive();
+    const float base = floorLevel * 0.5f;
+
+    if (eio::nodeSpace(inNode) == eio::NodeSpace::Truss)
+    {
+        // the pars: the three bands as light, straight
+        const Rgb light{base + (1.0f - base) * std::clamp(red * power, 0.0f, 1.0f),
+                        base + (1.0f - base) * std::clamp(green * power, 0.0f, 1.0f),
+                        base + (1.0f - base) * std::clamp(blue * power, 0.0f, 1.0f)};
+        const float value = std::max({light.r, light.g, light.b, 0.0001f});
+        inOutColor = toHsv({light.r / value, light.g / value, light.b / value});
+        inOutColor.setBrightnessAlpha(own(value));
+        return;
+    }
+
+    const float height = stageAlpha(inNode);
+
+    // the bands as light, each its own part of the stage, mixing where they
+    // meet: red the lows, filling up from the foot as far as they reach;
+    // green the mids, a band through the middle widening with them; blue
+    // the highs, coming down from the top
+    const float redLayer = red * (1.0f - smooth((height - (0.15f + 0.6f * red)) / 0.15f + 0.5f));
+    const float greenOff = (height - 0.5f) / (0.08f + 0.3f * green);
+    const float greenLayer = green * std::exp(-greenOff * greenOff);
+    const float blueLayer = blue * smooth((height - (0.85f - 0.6f * blue)) / 0.15f + 0.5f);
+
+    // the sub and the level as a dim rainbow ground up the stage, drifting;
+    // a voice or a piano coming in rising up it from the foot
+    const float entryTop = 0.15f + 0.75f * midEntry;
+    const float entry = 0.5f * midEntry * (1.0f - smooth((height - entryTop) / 0.25f + 0.5f));
+    const float groundLevel = 0.2f * subPresence + 0.15f * levelPresence + entry;
+    const Rgb ground = toRgb(ecore::HSV(std::fmod(hueDrift + height * 120.0f, 360.0f), 0.85f, 1.0f));
+
+    // a kick breathes the whole stage a little
+    const float breath = std::clamp(flash, 0.0f, 1.0f) * hitEnvelope(kickAttack, kickRelease);
+
+    // all of it as light: added, then held under full by its brightest
+    Rgb light;
+    light.r = base + (1.0f - base) * std::clamp((ground.r * groundLevel + redLayer + breath) * power, 0.0f, 1.0f);
+    light.g = base + (1.0f - base) * std::clamp((ground.g * groundLevel + greenLayer + breath) * power, 0.0f, 1.0f);
+    light.b = base + (1.0f - base) * std::clamp((ground.b * groundLevel + blueLayer + breath) * power, 0.0f, 1.0f);
+    const float value = std::max({light.r, light.g, light.b, 0.0001f});
+    inOutColor = toHsv({light.r / value, light.g / value, light.b / value});
+    inOutColor.setBrightnessAlpha(own(value));
+}
+
+void Pattern_Osc_Spectrum::reflect(ecore::PropertyBag& bag)
+{
+    Pattern_Osc_Look::reflect(bag);
+    bag.add("flash", flash, 0.0f, 1.0f);
+    bag.add("attack", attack, 0.0f, 0.5f);
+    bag.add("release", release, 0.02f, 2.0f);
+    bag.add("kick_attack", kickAttack, 0.0f, 0.5f);
+    bag.add("kick_release", kickRelease, 0.02f, 2.0f);
+}

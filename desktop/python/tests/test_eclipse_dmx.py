@@ -6134,6 +6134,8 @@ class ScannerKnobs(ShowTest):
         self.cue(show, "osc_meter", self.OSC_KNOBS + ["fall", "attack", "release"])
         self.cue(show, "osc_chase", self.OSC_CHASE)
         self.cue(show, "osc_steps", self.OSC_KNOBS + ["flash", "attack", "release"])
+        self.cue(show, "osc_spectrum", self.OSC_KNOBS + ["flash", "attack", "release",
+                                                        "kick_attack", "kick_release"])
 
     def test_the_osc_colours_carry_from_one_look_to_the_next(self):
         """The host's colours are one pair for every OSC look, so the golden

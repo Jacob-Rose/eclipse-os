@@ -658,6 +658,7 @@ std::unique_ptr<StateMachinePattern> edmx::makeScannerStateMachine()
         scannerLook<edmx::Pattern_Osc_Meter>("osc_meter"),
         scannerLook<edmx::Pattern_Osc_Chase>("osc_chase"),
         scannerLook<edmx::Pattern_Osc_Steps>("osc_steps"),
+        scannerLook<edmx::Pattern_Osc_Spectrum>("osc_spectrum"),
     };
 
     // The looks read the strip index, not coordinates, so the frame is the
