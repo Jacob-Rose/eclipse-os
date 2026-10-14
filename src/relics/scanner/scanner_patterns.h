@@ -498,6 +498,29 @@ namespace scanner
     };
 
 
+    /* @brief record_processing: a rainbow wheel turning round the ring, a
+    * loading spinner, while the game shapes, levels and saves the take.
+    *
+    * Hue by bearing round the ring's centre, the whole wheel turning at
+    * revsPerSecond, with a bright head and a tail falling to floorLevel
+    * behind it so the turn reads at a glance. The ring's alone: the desk
+    * sets it over the underlay, so the tower keeps the sculpture's own
+    * picture through the wait.
+    */
+    class Pattern_Scanner_Loading : public PatternScanner
+    {
+    public:
+        float revsPerSecond = 0.8f;
+        /// the bright tail, as a fraction of a turn
+        float tailFraction = 0.6f;
+        /// the rest of the wheel, still there in its colours
+        float floorLevel = 0.15f;
+
+        virtual void render(HSVStripNode* inNode, HSV& inOutColor) const override;
+        virtual void reflect(ecore::PropertyBag& bag) override;
+    };
+
+
     /* @brief record_countdown: the ring fills round as a circle - 3, 2, 1 -
     * and each count flashes the tower white over the sculpture's own
     * picture, before the tape rolls.

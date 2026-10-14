@@ -618,10 +618,9 @@ std::unique_ptr<StateMachinePattern> edmx::makeScannerStateMachine()
         scannerLook<Pattern_Scanner_ArmFire>("record_arm"),
         scannerLook<Pattern_Scanner_RecordCountdown>("record_countdown"),
         scannerLook<Pattern_Scanner_RecordComet>("record_active"),
-        // the take is in: a quick mint breath while the game shapes and
-        // levels it, before record_saved's slower green
-        scannerLookWith<Pattern_Scanner_SinePulse>("record_processing",
-            HSV(155.0f, 0.55f, 1.0f), 12.0f, 0.3f, 0.7f),
+        // the take is in: a rainbow loading wheel on the ring while the
+        // game shapes, levels and saves it, the tower its own picture
+        overUnderlay(scannerLook<Pattern_Scanner_Loading>("record_processing")),
         scannerLookWith<Pattern_Scanner_SinePulse>("record_saved",
             HSV(132.0f, 1.0f, 1.0f), 6.0f, 0.4f, 0.6f),                 // CRGB(0.0, 1.0, 0.2)
         // One recording look, not two: detected_recording flows straight into

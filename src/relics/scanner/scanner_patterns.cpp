@@ -495,6 +495,41 @@ void Pattern_Scanner_RecordComet::reflect(ecore::PropertyBag& bag)
     bag.add("tail", tailFraction, 0.02f, 1.0f);
 }
 
+void Pattern_Scanner_Loading::render(HSVStripNode* inNode, HSV& inOutColor) const
+{
+    // the bearing round the ring's centre, 0 at the top and on round the
+    // way the pixels are numbered (see Pattern_Scanner_RecordComet); a bare
+    // strip answers with its place along itself
+    float orbit;
+    if (inNode->GetStripNodeType() != StripNodeType::MAPPED2D)
+    {
+        orbit = stripAlpha(inNode);
+    }
+    else
+    {
+        const Coordinate at = nodeCoord(inNode);
+        orbit = frac(std::atan2(at.x - kRingCenterX, at.y - kRingCenterY) / (2.0f * kPi));
+    }
+
+    const float turn = frac(timeActive * revsPerSecond);
+    // the wheel's colours turn with the head, so it spins rather than a
+    // light running over a fixed rainbow
+    const float hue = frac(orbit - turn);
+    const float behind = frac(turn - orbit);
+    const float tail = clamp01(1.0f - behind / std::max(tailFraction, 1e-3f));
+    const float brightness = floorLevel + (1.0f - floorLevel) * tail * tail;
+
+    inOutColor = HSV(hue * 360.0f, 1.0f, 1.0f);
+    inOutColor.setBrightnessAlpha(brightness);
+}
+
+void Pattern_Scanner_Loading::reflect(ecore::PropertyBag& bag)
+{
+    bag.add("spin_rate", revsPerSecond, 0.1f, 3.0f);
+    bag.add("tail", tailFraction, 0.05f, 1.0f);
+    bag.add("floor", floorLevel, 0.0f, 1.0f);
+}
+
 Pattern_Scanner_RecordCountdown::Pattern_Scanner_RecordCountdown()
 {
     // one count's shape: snap to white, fall away before the next count
