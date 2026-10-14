@@ -1363,11 +1363,63 @@
       "colour": 45
     },
     {
-      "label": "obelisk - mono",
+      "label": "obelisk - rainbow_blobs",
       "trigger": {
         "kind": "note",
         "channel": 1,
         "number": 13
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "obelisk"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "rainbow_blobs"
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "obelisk",
+      "colour": 45
+    },
+    {
+      "label": "obelisk - prism",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 14
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "obelisk"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "prism"
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "obelisk",
+      "colour": 45
+    },
+    {
+      "label": "obelisk - mono",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 15
       },
       "mode": "press",
       "actions": [
@@ -2455,11 +2507,63 @@
       "colour": 53
     },
     {
-      "label": "scanner - audio_playback_seed",
+      "label": "scanner - secret_alien",
       "trigger": {
         "kind": "note",
         "channel": 1,
         "number": 32
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "scanner"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "secret_alien"
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "scanner",
+      "colour": 53
+    },
+    {
+      "label": "scanner - secret_frog",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 33
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "scanner"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "secret_frog"
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "scanner",
+      "colour": 53
+    },
+    {
+      "label": "scanner - audio_playback_seed",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 34
       },
       "mode": "press",
       "actions": [
@@ -2485,7 +2589,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 33
+        "number": 35
       },
       "mode": "press",
       "actions": [
@@ -2511,7 +2615,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 34
+        "number": 36
       },
       "mode": "press",
       "actions": [
@@ -2537,7 +2641,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 35
+        "number": 37
       },
       "mode": "press",
       "actions": [
@@ -2563,7 +2667,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 36
+        "number": 38
       },
       "mode": "press",
       "actions": [
@@ -2589,7 +2693,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 37
+        "number": 41
       },
       "mode": "press",
       "actions": [
@@ -2615,7 +2719,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 38
+        "number": 42
       },
       "mode": "press",
       "actions": [
@@ -2641,7 +2745,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 41
+        "number": 43
       },
       "mode": "press",
       "actions": [
@@ -2667,7 +2771,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 42
+        "number": 44
       },
       "mode": "press",
       "actions": [
@@ -2693,7 +2797,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 43
+        "number": 45
       },
       "mode": "press",
       "actions": [
@@ -2719,7 +2823,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 44
+        "number": 46
       },
       "mode": "press",
       "actions": [
@@ -2741,11 +2845,37 @@
       "colour": 53
     },
     {
+      "label": "scanner - golden",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 47
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "scanner"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "golden"
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "scanner",
+      "colour": 53
+    },
+    {
       "label": "scanner - cleanse_done",
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 45
+        "number": 48
       },
       "mode": "press",
       "actions": [
@@ -2759,6 +2889,136 @@
           "action": "state",
           "params": {
             "name": "cleanse_done"
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "scanner",
+      "colour": 53
+    },
+    {
+      "label": "scanner - osc_wash",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 51
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "scanner"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "osc_wash"
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "scanner",
+      "colour": 53
+    },
+    {
+      "label": "scanner - osc_bloom",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 52
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "scanner"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "osc_bloom"
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "scanner",
+      "colour": 53
+    },
+    {
+      "label": "scanner - osc_meter",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 53
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "scanner"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "osc_meter"
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "scanner",
+      "colour": 53
+    },
+    {
+      "label": "scanner - osc_chase",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 54
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "scanner"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "osc_chase"
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "scanner",
+      "colour": 53
+    },
+    {
+      "label": "scanner - osc_steps",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 55
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "scanner"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "osc_steps"
           }
         }
       ],
@@ -2793,11 +3053,37 @@
       "colour": 3
     },
     {
-      "label": "audio - bass",
+      "label": "audio - sub",
       "trigger": {
         "kind": "note",
         "channel": 1,
         "number": 12
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "pattern",
+          "params": {
+            "name": "audio"
+          }
+        },
+        {
+          "action": "state",
+          "params": {
+            "name": "sub"
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "audio",
+      "colour": 3
+    },
+    {
+      "label": "audio - bass",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 13
       },
       "mode": "press",
       "actions": [
@@ -2823,7 +3109,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 13
+        "number": 14
       },
       "mode": "press",
       "actions": [
@@ -2849,7 +3135,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 14
+        "number": 15
       },
       "mode": "press",
       "actions": [
@@ -2875,7 +3161,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 15
+        "number": 16
       },
       "mode": "press",
       "actions": [
@@ -2901,7 +3187,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 16
+        "number": 17
       },
       "mode": "press",
       "actions": [
@@ -2927,7 +3213,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 17
+        "number": 18
       },
       "mode": "press",
       "actions": [
@@ -2953,7 +3239,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 18
+        "number": 21
       },
       "mode": "press",
       "actions": [
@@ -2979,7 +3265,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 21
+        "number": 22
       },
       "mode": "press",
       "actions": [
@@ -3005,7 +3291,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 22
+        "number": 23
       },
       "mode": "press",
       "actions": [
@@ -3031,7 +3317,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 23
+        "number": 24
       },
       "mode": "press",
       "actions": [
@@ -3057,7 +3343,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 24
+        "number": 25
       },
       "mode": "press",
       "actions": [
@@ -3083,7 +3369,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 25
+        "number": 26
       },
       "mode": "press",
       "actions": [
@@ -3109,7 +3395,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 26
+        "number": 27
       },
       "mode": "press",
       "actions": [
@@ -3135,7 +3421,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 27
+        "number": 28
       },
       "mode": "press",
       "actions": [
@@ -3161,7 +3447,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 28
+        "number": 31
       },
       "mode": "press",
       "actions": [
@@ -3187,7 +3473,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 31
+        "number": 32
       },
       "mode": "press",
       "actions": [
@@ -3213,7 +3499,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 32
+        "number": 33
       },
       "mode": "press",
       "actions": [
@@ -3239,7 +3525,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 33
+        "number": 34
       },
       "mode": "press",
       "actions": [
@@ -3265,7 +3551,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 34
+        "number": 35
       },
       "mode": "press",
       "actions": [
@@ -3291,7 +3577,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 35
+        "number": 36
       },
       "mode": "press",
       "actions": [
@@ -3317,7 +3603,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 36
+        "number": 37
       },
       "mode": "press",
       "actions": [
@@ -3343,7 +3629,7 @@
       "trigger": {
         "kind": "note",
         "channel": 1,
-        "number": 37
+        "number": 38
       },
       "mode": "press",
       "actions": [

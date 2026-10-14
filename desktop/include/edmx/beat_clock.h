@@ -407,6 +407,7 @@ namespace edmx
     {
         // -- levels: how loud, smoothed. The backdrop numbers.
         Level,          ///< syn_Level        - the whole spectrum
+        Sub,            ///< below the bass; sync swim's mic/sub, no Synesthesia twin
         Bass,           ///< syn_BassLevel
         Mid,            ///< syn_MidLevel
         MidHigh,        ///< syn_MidHighLevel

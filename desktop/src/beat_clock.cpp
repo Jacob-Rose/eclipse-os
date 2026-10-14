@@ -440,7 +440,7 @@ namespace
     /// OSC map — resolves through it, and two lists that must agree is one
     /// list that eventually does not.
     const char* const kAudioChannelNames[kAudioChannelCount] = {
-        "level", "bass", "mid", "midhigh", "high",
+        "level", "sub", "bass", "mid", "midhigh", "high",
         "hits", "bass_hits", "mid_hits", "midhigh_hits", "high_hits",
         "presence", "bass_presence", "mid_presence", "midhigh_presence", "high_presence",
         "beat", "bpm", "bpm_confidence", "intensity",

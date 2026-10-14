@@ -296,6 +296,32 @@
       "enabled": true
     },
     {
+      "label": "mic sub -> sub",
+      "trigger": {
+        "pattern": "*/mic/sub",
+        "exclude": [],
+        "argument": 0
+      },
+      "mode": "value",
+      "range": {
+        "low": 0.0,
+        "high": 1.0,
+        "threshold": 0.5
+      },
+      "limit": {
+        "interval": 0.02,
+        "change": 0.01,
+        "keepalive": 0.2
+      },
+      "action": "audio",
+      "params": {
+        "channel": "sub",
+        "low": 0.0,
+        "high": 1.0
+      },
+      "enabled": true
+    },
+    {
       "label": "mic bass -> bass",
       "trigger": {
         "pattern": "*/mic/bass",

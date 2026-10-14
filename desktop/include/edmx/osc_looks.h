@@ -16,7 +16,15 @@
 ///
 /// A rock on the scanner hands the rig to whatever is sending OSC at the Pi
 /// (see OscLiveState in afterglow's game.py), and a second rock steps through
-/// these. They are the scanner machine's states like any other, so the game
+/// these. Two kinds: osc_wash, osc_bloom and osc_meter are *presence*
+/// looks, written for a jam session rather than a bounced song - they move
+/// on the bands' slow presence and never flash on a beat or a kick - and
+/// osc_chase and osc_steps, last in the game's list, are the beat looks,
+/// which lock to the sender's tempo and flash on it. Every one of them runs
+/// held back (`calm`) until the beat kicks in - a run of steady beats from
+/// the sender (`groove`) - and settles back when it is lost.
+///
+/// They are the scanner machine's states like any other, so the game
 /// names them with `state <tag> <seconds>` and the blend between two is the
 /// machine's own.
 ///
@@ -32,12 +40,15 @@
 /// only know the channels and knobs:
 ///
 ///   bus   level           overall loudness - the body
-///         bass mid high   the bands - the bass widens, the mids hurry,
-///                         the highs glitter, and bass against high is the
+///         sub bass        the bands, each a layer of its own in every
+///         mid high        look; read twice, as it is (fast) and as its
+///                         presence (slow), and bass against high is the
 ///                         timbre
-///         bass_hits       the kick, jumping to 1 and decaying - the flash
-///         hits            any sharp hit - a flick on the bed
-///         beat            spikes on the beat - a rising edge is a beat
+///         bass_hits       the kick, jumping to 1 and decaying - the beat
+///                         looks' punch
+///         hits            any sharp hit - unused, kept on the bus
+///         beat            spikes on the beat - a rising edge is a beat,
+///                         and a run of them is the groove
 ///         bpm             50..220 scaled to 0..1 - how long a beat takes
 ///   knob  hue_a sat_a     the primary colour
 ///         hue_b sat_b     the secondary
@@ -97,6 +108,13 @@ namespace edmx
         /// How far a new video lifts the whole stage, fading over cutSeconds.
         float cutLift{0.7f};
         float cutSeconds{0.8f};
+        /// How hard the look runs before the beat kicks in, against full
+        /// once it has: what the music drives (not the floor) is scaled
+        /// from this to 1 as the groove comes up.
+        float calm{0.35f};
+        /// Seconds a band's presence glides over: the slow reading the
+        /// presence looks move on, under the bands' fast one.
+        float presenceSlew{0.6f};
 
         virtual void reset() override;
         virtual void tick(float deltaTime) override;
@@ -124,11 +142,33 @@ namespace edmx
         /// the rest, or full on every beat with no tick arriving.
         float accent() const;
 
+        /// What the music drives the look with, calm..1 with the groove.
+        float drive() const { return calm + (1.0f - calm) * groove; }
+
+        /// Which beat of the bar this is, 0..3, off the host's tick; counted
+        /// from entry when no tick is arriving.
+        int barBeat() const;
+
+        /// Where a node stands around the obelisk, 0..1, a closed loop:
+        /// its column over the eight. The ring's nodes answer by their x
+        /// across the same width, which puts them in step with the faces.
+        static float around(const eio::HSVStripNode* node);
+
         AudioLevel* bus{nullptr};
         float level{0.0f};
+        float sub{0.0f};
         float bass{0.0f};
         float mid{0.0f};
         float high{0.0f};
+        /// The same, slow: how much of each band is there at all.
+        float levelPresence{0.0f};
+        float subPresence{0.0f};
+        float bassPresence{0.0f};
+        float midPresence{0.0f};
+        float highPresence{0.0f};
+        /// 0..1: up over a couple of seconds once the sender's beats arrive
+        /// steadily, down over a few once they stop.
+        float groove{0.0f};
         float kick{0.0f};
         float onset{0.0f};
         /// High against bass, 0..1: a half for a level mix, toward 1 for
@@ -147,21 +187,25 @@ namespace edmx
 
     private:
         bool beatHigh{false};
+        /// Beats in a row, each within reach of the last.
+        int streak{0};
         float lastTick{-1.0f};
         /// Seconds since the tick knob last changed, large before the first.
         float sinceTick{1000.0f};
     };
 
-    /// osc_wash: the stage a gradient from primary to secondary rolling up
-    /// about a stage a bar (faster on the mids), each colour taking as much of it as it takes of the
-    /// host's screen; bright on the level, flashing on the kick, glittering
-    /// on the highs.
+    /// osc_wash: a tide. The stage is a gradient from primary to secondary,
+    /// each colour taking as much of it as it takes of the host's screen,
+    /// rolling up it slowly and hurrying with the mids' presence. Four
+    /// layers under it: the sub a deep swell rising from the floor, the bass
+    /// the body of the gradient, the mids a slow wave of brightness drifting
+    /// around the faces, the highs a soft shimmer at the top. No beat in it.
     class Pattern_Osc_Wash : public Pattern_Osc_Look
     {
     public:
-        /// How far toward full a kick lifts the whole stage.
-        float flash{0.6f};
-        /// How deep the highs' glitter cuts into the wash.
+        /// How far up the stage the sub's swell reaches at full.
+        float swell{0.45f};
+        /// How deep the highs' shimmer is.
         float glitter{0.35f};
 
         virtual void reset() override;
@@ -171,37 +215,26 @@ namespace edmx
 
     private:
         float roll{0.0f};
+        float drift{0.0f};
         float time{0.0f};
     };
 
-    /// osc_pulse: the secondary as a bed under the level, flicking on every
-    /// hit, and on every beat a ring of primary leaving the origin line both
-    /// ways, gone by the next beat - wider on the bass, brightest on the one.
-    class Pattern_Osc_Pulse : public Pattern_Osc_Look
+    /// osc_bloom: an aura on the origin line, where the ring sits. The bass
+    /// is its core, primary, reaching up and down the stage with the bass's
+    /// presence; the mids a shell of secondary around it, turning slowly
+    /// round the faces in lobes; the sub a dim halo over the whole stage;
+    /// the highs fine threads climbing out of the core's edge. It breathes
+    /// with the presence and nothing else.
+    class Pattern_Osc_Bloom : public Pattern_Osc_Look
     {
     public:
-        /// The ring's width, a share of the stage.
-        float ring{0.1f};
-        /// How bright the bed sits, against the level.
-        float bed{0.4f};
-        /// How far a hit flicks the bed up.
-        float flick{0.25f};
-
-        virtual void render(eio::HSVStripNode* inNode, ecore::HSV& inOutColor) const override;
-        virtual void reflect(ecore::PropertyBag& bag) override;
-    };
-
-    /// osc_meter: the level as a bar up the stage, primary at the foot to
-    /// secondary at its head - the head further toward secondary the brighter
-    /// the sound - punching on the kick, with a peak cap that falls slowly
-    /// and flashes on the beat.
-    class Pattern_Osc_Meter : public Pattern_Osc_Look
-    {
-    public:
-        /// Stage heights a second the peak cap falls at.
-        float fall{0.35f};
-        /// How much of the bar's brightness is the kick's: 0 is a steady bar.
-        float punch{0.25f};
+        /// How far the core reaches each way at full bass, a share of the
+        /// stage.
+        float reach{0.5f};
+        /// How bright the mids' shell runs.
+        float shell{0.7f};
+        /// Turns a second the shell's lobes make, at full mids.
+        float spin{0.12f};
 
         virtual void reset() override;
         virtual void tick(float deltaTime) override;
@@ -209,6 +242,70 @@ namespace edmx
         virtual void reflect(ecore::PropertyBag& bag) override;
 
     private:
-        float peak{0.0f};
+        float turn{0.0f};
+        float climb{0.0f};
+    };
+
+    /// osc_meter: the bands as meters, one to a face of the obelisk - sub,
+    /// bass, mid, high going round - each a bar of its presence up the stage
+    /// from primary (the sub) to secondary (the highs), with a cap on its
+    /// recent peak that falls slowly. The ring carries the whole level, lit
+    /// round from its foot. Steady: no beat, no kick.
+    class Pattern_Osc_Meter : public Pattern_Osc_Look
+    {
+    public:
+        /// Stage heights a second a cap falls at.
+        float fall{0.25f};
+
+        virtual void reset() override;
+        virtual void tick(float deltaTime) override;
+        virtual void render(eio::HSVStripNode* inNode, ecore::HSV& inOutColor) const override;
+        virtual void reflect(ecore::PropertyBag& bag) override;
+
+    private:
+        float peaks[4]{0.0f, 0.0f, 0.0f, 0.0f};
+    };
+
+    /// osc_chase: on the beat. Each beat a band of primary leaves the origin
+    /// line and climbs to the top as the beat runs out, twisting round the
+    /// faces - the other way on alternate beats - with the stage flashing as
+    /// it leaves, hardest on the one. Under it the sub and bass are a bed at
+    /// the foot, the highs a trail behind the band, and the kick punches the
+    /// band itself. Before the beat kicks in it is the bed and nothing more.
+    class Pattern_Osc_Chase : public Pattern_Osc_Look
+    {
+    public:
+        /// How far toward full the beat flashes the stage.
+        float flash{0.6f};
+        /// The band's width, a share of the stage.
+        float width{0.12f};
+        /// Turns round the faces the band makes on its way up.
+        float twist{0.5f};
+
+        virtual void render(eio::HSVStripNode* inNode, ecore::HSV& inOutColor) const override;
+        virtual void reflect(ecore::PropertyBag& bag) override;
+    };
+
+    /// osc_steps: the bar in four steps up the stage. Beat one lights the
+    /// foot, two the next quarter, then three, then the top, each in the
+    /// colour opposite the last and fading through its beat, and the one
+    /// flashes the whole stage. The bass sets how bright a step lands, the
+    /// mids how much of the last step lingers, the highs glint on the lit
+    /// step, and the sub glows under all of it.
+    class Pattern_Osc_Steps : public Pattern_Osc_Look
+    {
+    public:
+        /// How far toward full the one flashes the whole stage.
+        float flash{0.7f};
+        /// How much of the beat a step takes to fade, 0..1.
+        float decay{0.8f};
+
+        virtual void reset() override;
+        virtual void tick(float deltaTime) override;
+        virtual void render(eio::HSVStripNode* inNode, ecore::HSV& inOutColor) const override;
+        virtual void reflect(ecore::PropertyBag& bag) override;
+
+    private:
+        float time{0.0f};
     };
 }

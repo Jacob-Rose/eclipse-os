@@ -121,7 +121,7 @@ JACKET_STATES = (
 #: included - it arrives already scaled across its 50..220, so that a reader
 #: does not have to special-case one channel's units.
 AUDIO_CHANNELS = (
-    "level", "bass", "mid", "midhigh", "high",
+    "level", "sub", "bass", "mid", "midhigh", "high",
     "hits", "bass_hits", "mid_hits", "midhigh_hits", "high_hits",
     "presence", "bass_presence", "mid_presence", "midhigh_presence", "high_presence",
     "beat", "bpm", "bpm_confidence", "intensity",

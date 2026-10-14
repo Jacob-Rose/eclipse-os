@@ -112,6 +112,7 @@ namespace
             // family is a derivative of.
             case AudioChannel::Level:
             case AudioChannel::Bass:
+            case AudioChannel::Sub:
             case AudioChannel::Mid:
             case AudioChannel::MidHigh:
             case AudioChannel::High:

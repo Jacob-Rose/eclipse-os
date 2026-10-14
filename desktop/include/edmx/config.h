@@ -195,7 +195,7 @@ namespace edmx
     {
         /// "mixxx"       - the VU notes on the MIDI cable fill `level`,
         ///                 `level_instant`, `level_average` and
-        ///                 `level_meter`. The other eighteen channels stay
+        ///                 `level_meter`. The other nineteen channels stay
         ///                 dark, which is what they have always done.
         /// "synesthesia" - the visualiser's audio uniforms fill `level` and
         ///                 the bands over OSC. The MIDI VU notes still land

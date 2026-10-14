@@ -94,6 +94,7 @@ STATE_GROUPS: List[Tuple[str, List[Tuple[str, Tuple[str, str]]]]] = [
     # authority on the names and TheAudioMeter pins the two together.
     ("audio", [
         ("level", ("state", "level")),
+        ("sub", ("state", "sub")),
         ("bass", ("state", "bass")),
         ("mid", ("state", "mid")),
         ("midhigh", ("state", "midhigh")),

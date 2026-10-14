@@ -650,8 +650,10 @@ std::unique_ptr<StateMachinePattern> edmx::makeScannerStateMachine()
         // through these. Desk-only - they read the audio bus - so the
         // obelisk's own table does not carry them; see osc_looks.h.
         scannerLook<edmx::Pattern_Osc_Wash>("osc_wash"),
-        scannerLook<edmx::Pattern_Osc_Pulse>("osc_pulse"),
+        scannerLook<edmx::Pattern_Osc_Bloom>("osc_bloom"),
         scannerLook<edmx::Pattern_Osc_Meter>("osc_meter"),
+        scannerLook<edmx::Pattern_Osc_Chase>("osc_chase"),
+        scannerLook<edmx::Pattern_Osc_Steps>("osc_steps"),
     };
 
     // The looks read the strip index, not coordinates, so the frame is the
