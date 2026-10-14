@@ -260,21 +260,24 @@ void Pattern_Obelisk_Prism::render(HSVStripNode* inNode, HSV& inOutColor) const
     behind -= std::floor(behind);
     behind /= armCount;
 
-    // a tail that falls off squared, so the head reads as a head; a sliver
-    // ahead of it softens the edge it would otherwise step onto a column with
+    // the head eased in and out on both sides: a smooth tail behind it, and
+    // a leading edge wider than a column, so with only eight columns round
+    // the tower the sweep fades from one to the next rather than snapping
+    // onto each
+    const auto ease = [](float t) { t = std::clamp(t, 0.0f, 1.0f); return t * t * (3.0f - 2.0f * t); };
     const float tailTurns = std::max(tail, 0.01f);
-    float sweep = std::max(0.0f, 1.0f - behind / tailTurns);
-    sweep *= sweep;
+    float sweep = ease(1.0f - behind / tailTurns);
     const float ahead = 1.0f / armCount - behind;
-    sweep = std::max(sweep, std::max(0.0f, 1.0f - ahead / 0.04f));
+    sweep = std::max(sweep, ease(1.0f - ahead / std::max(lead, 0.01f)));
     if (!sweeps)
     {
         sweep = 0.0f;
     }
 
-    // the sweep brightens the field and washes it toward white at the head
+    // the sweep brightens the field and washes it a little toward white at
+    // the head
     const float level = baseLevel + (1.0f - baseLevel) * sweep;
-    inOutColor = HSV(hue, 1.0f - 0.45f * sweep * sweep, level);
+    inOutColor = HSV(hue, 1.0f - std::clamp(whiten, 0.0f, 1.0f) * sweep * sweep, level);
 }
 
 void Pattern_Obelisk_Prism::reflect(ecore::PropertyBag& bag)
@@ -290,5 +293,7 @@ void Pattern_Obelisk_Prism::reflect(ecore::PropertyBag& bag)
     bag.add("depth", depth, 0.0f, 1.0f, [this] { updateHead(); });
     bag.add("arms", arms, 1.0f, 4.0f);
     bag.add("tail", tail, 0.02f, 1.0f);
+    bag.add("lead", lead, 0.01f, 0.5f);
+    bag.add("whiten", whiten, 0.0f, 1.0f);
     bag.add("twist", twist, -1.0f, 1.0f);
 }

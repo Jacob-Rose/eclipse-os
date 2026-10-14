@@ -137,13 +137,17 @@ public:
     float hueSpread = 1.0f;      // how much of the wheel the field's gradient spans, 0..1
     float contrast = 1.6f;       // stretches the field: noise sits near its middle, this spreads it
     float hueCycle = 40.0f;      // seconds for the wheel to drift round once
-    float baseLevel = 0.55f;     // the field's brightness under the sweeps
+    float baseLevel = 0.65f;     // the field's brightness under the sweeps
 
     float loopSeconds = 16.0f;   // one acceleration and slowdown
-    float laps = 6.0f;           // turns in a loop, rounded: whole, so it wraps clean
-    float depth = 0.9f;          // 0 steady speed, 1 the slow end is a full stop
+    float laps = 3.0f;           // turns in a loop, rounded: whole, so it wraps clean
+    float depth = 0.6f;          // 0 steady speed, 1 the slow end is a full stop
     float arms = 2.0f;           // sweeps, evenly round the tower (rounded)
-    float tail = 0.3f;           // a sweep's tail, as a fraction of a turn
+    float tail = 0.4f;           // a sweep's tail, as a fraction of a turn
+    float lead = 0.15f;          // its soft leading edge, a fraction of a turn: wider
+                                 // than a column (an eighth), so it fades across
+                                 // the columns instead of stepping onto each
+    float whiten = 0.2f;         // how far the head washes toward white
     float twist = 0.0f;          // turns of lag from foot to tip: a spiral
     bool sweeps = true;          // off, the field alone - rainbow_blobs
 
@@ -167,7 +171,7 @@ private:
 /*
 * The golden key's first step: prism's rainbow field without the sweeps -
 * the blobs gone rainbow, at the blobs' full brightness. The key's second
-* scan brings the spin (prism), and that is where it stays.
+* scan brings the spin (prism), and the third goes home to the blobs.
 */
 class Pattern_Obelisk_RainbowBlobs : public Pattern_Obelisk_Prism
 {
