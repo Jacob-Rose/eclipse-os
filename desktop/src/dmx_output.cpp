@@ -766,6 +766,18 @@ std::vector<RelicProbe> edmx::probeRelicPorts(int baud, int millisecondsEach)
 
     for (const SerialPortInfo& info : SerialPort::enumeratePorts())
     {
+        // A relic is a USB CDC device - ttyACM on Linux, cu.usbmodem on a
+        // mac - never a USB-serial bridge. A bridge is what the DMX widgets
+        // are (the Open widget is a bare FT232), and the Hello written onto
+        // one goes out on the DMX line at 115200: the fixtures read it as a
+        // frame of junk and flash as the show starts. Windows names every
+        // port COMn, so there the probe still asks them all.
+        const std::string& path = info.path;
+        if (path.rfind("/dev/ttyUSB", 0) == 0 || path.rfind("/dev/cu.usbserial", 0) == 0)
+        {
+            continue;
+        }
+
         SerialPort probe;
         std::string error;
         // DTR on: a relic is a CDC device and will not answer without it.
