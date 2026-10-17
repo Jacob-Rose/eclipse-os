@@ -1316,6 +1316,25 @@ namespace
                       static_cast<double>(seen[2].origin == MidiMessage::Origin::Unknown), 1.0, 0.0);
             }
 
+            // A pad controller named but not plugged in: the map is still
+            // its alone. Mixxx's VU note 65 is the UV rainbow pad, and with
+            // the Launchpad in the case it was holding the UV on.
+            midi.setPads({"Launchpad"});
+            midi.setMonitor(true);
+            midi.handleMessage(0x90, 65, 40, end + 0.30);                     // Mixxx's VU, not a clock note
+            midi.handleMessage(0x90, 65, 127, end + 0.31, /*fromPads*/ true); // the UV rainbow pad
+            const std::vector<MidiMessage> named = midi.drainMonitor(droppedLines);
+            midi.setMonitor(false);
+            midi.setPads({});
+            check("monitor.named_two_lines", static_cast<double>(named.size()), 2.0, 0.0);
+            if (named.size() == 2)
+            {
+                check("monitor.named_pads_unplugged_vu_is_the_beats",
+                      static_cast<double>(named[0].origin == MidiMessage::Origin::Beat), 1.0, 0.0);
+                check("monitor.named_pads_pad_is_pads",
+                      static_cast<double>(named[1].origin == MidiMessage::Origin::Pads), 1.0, 0.0);
+            }
+
             // Half a beat later the envelope should be half a beat in, which is
             // what a pattern actually reads.
             check("mixxx.phase_mid_beat", clock.timeSinceBeat(end + (kPeriod / 2.0)),

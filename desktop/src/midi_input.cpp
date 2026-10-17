@@ -597,13 +597,14 @@ void MidiInput::handleMessage(unsigned char status, unsigned char data1, unsigne
     if (monitoring.load() && status < 0xF0 && status >= 0x80)
     {
         // The origin rides in the top byte, so the desk can keep Mixxx's
-        // notes out of its map: with a pad controller on this input, a
-        // message that is not the controller's is the beat's - and with
-        // none, a note the clock is about to take (the tempo, the beat, a
-        // VU level, on the beat channel) is the beat's whoever sent it.
-        // Mixxx says 52 on every beat, and 52 is also the flash pad.
+        // notes out of its map: with a pad controller named, a message that
+        // is not the controller's is the beat's, plugged in or not - and
+        // with none named, a note the clock is about to take (the tempo, the
+        // beat, a VU level, on the beat channel) is the beat's whoever sent
+        // it. Mixxx says 52 on every beat, and 52 is also the flash pad.
         const bool pads = fromPads || allPads.load();
-        unsigned int origin = pads ? 1u : (padsClient.load() >= 0 ? 2u : 0u);
+        const bool padsOnly = padsClient.load() >= 0 || padsNamed.load();
+        unsigned int origin = pads ? 1u : (padsOnly ? 2u : 0u);
         if (origin == 0u && isClockNote(status, data1))
         {
             origin = 2u;
