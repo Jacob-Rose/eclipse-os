@@ -14,7 +14,7 @@ namespace std {
     template<>
     struct hash<ecore::Name> {
         size_t operator()(const ecore::Name& name) const {
-            return name.GetHash();
+            return name.getHash();
         }
     };
 }
