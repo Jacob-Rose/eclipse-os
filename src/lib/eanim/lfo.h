@@ -5,6 +5,10 @@
 
 #pragma once
 
+#include <string>
+
+#include "../ecore/property.h"
+
 #include "../ecore/core.h"
 #include "../ecore/tickable.h"
 
@@ -35,6 +39,9 @@ namespace eanim
        virtual float evaluate(float val) const override;
 
        float getCurrentOffset() const { return currentOffset; }
+
+       /// The phase, as `<prefix>offset`. @see eanim::GeneratorHSV::reflectState
+       void reflectState(ecore::PropertyBag& bag, const std::string& prefix);
 
        float speed = 1.0f;
        float width = 1.0f;

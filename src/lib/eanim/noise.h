@@ -5,6 +5,10 @@
 
 #pragma once
 
+#include <string>
+
+#include "../ecore/property.h"
+
 #include <list>
 
 #include "../external/FastNoiseLite.h"
@@ -42,7 +46,35 @@ namespace eanim
         float timeScale = 1.0f;
 
         FastNoiseLite noise;
+
+        /// What makes this field this field: its seed, drawn at random when
+        /// it was built, and its clock - as `<prefix>seed` and `<prefix>time`,
+        /// so a copy of the look elsewhere can be put at the same picture.
+        /// The rest (frequency, type, scale) is the look's own constants and
+        /// travels in its code. @see eanim::GeneratorHSV::reflectState
+        void reflectState(ecore::PropertyBag& bag, const std::string& prefix);
+
+        void setSeed(int inSeed);
+        int getSeed() const { return seed; }
+        float getCurrentTime() const { return currentTime; }
+
+        /// The clock is a float, and a float that only ever grows runs out of
+        /// resolution: at 2^18 its steps are 0.03, which is a whole 30ms tick,
+        /// and a tick that rounds to nothing is a field that stops moving.
+        /// The whiteboard got there in six days. So the clock loops instead,
+        /// and because the field is not periodic the loop has a seam: over the
+        /// last kLoopFade of it evaluate() fades to the field as it will be
+        /// when the clock lands on zero again. Two samples per pixel for that
+        /// window, one the rest of the time. In clock units (seconds *
+        /// timeScale), so a fast field gets a shorter seam and never notices.
+        static constexpr float kLoopLength = 1024.0f;
+        static constexpr float kLoopFade = 8.0f;
+
     private:
         float currentTime;
+        int seed{0};
+        /// the seed as the bag sees it: a float, applied back through
+        /// setSeed when a state lands. rand() fits a float exactly.
+        float seedState{0.0f};
     };
 }

@@ -11,10 +11,20 @@
 
 #include "../ecore/core.h"
 
-#define USING_NEOPIXEL USE_ARDUINO && true
+// parenthesised so `#if !USING_NEOPIXEL` means what it reads like
+#define USING_NEOPIXEL (USE_ARDUINO && true)
 
 #if USING_NEOPIXEL
 #include <Adafruit_NeoPixel.h>
+#else
+// The host has no pixel driver, but relics/wiring.h names a colour order per
+// sculpture and is compiled on both sides. Adafruit's values, so the table
+// reads the same in a host test as on the board.
+typedef uint16_t neoPixelType;
+#define NEO_RGB    ((0 << 6) | (0 << 4) | (1 << 2) | (2))
+#define NEO_GRB    ((1 << 6) | (1 << 4) | (0 << 2) | (2))
+#define NEO_BGR    ((2 << 6) | (2 << 4) | (1 << 2) | (0))
+#define NEO_KHZ800 0x0000
 #endif
 
 #include "../ecore/hsv.h"
@@ -23,6 +33,18 @@ using namespace ecore;
 
 namespace eio
 {
+    /// @brief Where a strip is plugged in, and what it is.
+    ///
+    /// The one thing about a sculpture that its code cannot tell you. Every
+    /// relic's strip is one of these, and they all live in relics/wiring.h -
+    /// the only file a pin number is allowed in.
+    struct StripWiring
+    {
+        uint16_t pin;
+        uint16_t length;
+        neoPixelType order; // NEO_GRB + NEO_KHZ800 and friends. Ignored on a host.
+    };
+
     /// @brief HSV Wrapper for Adafruit_Neopixel
     ///
     /// HSV Wrapper for an Adafruit Neopixel strip, allows us to lerp and perform much cleaner calculations 
@@ -37,11 +59,30 @@ namespace eio
         HSVStrip(uint16_t inLedCount, uint16_t inLedPin, neoPixelType inPixelType);
 #endif
         HSVStrip(uint16_t inLedCount, uint16_t inLedPin);
+        explicit HSVStrip(const StripWiring& wiring);
         ~HSVStrip();
 
         HSV getHSV(uint16_t idx) const;
         void setHSV(uint16_t idx, const HSV& hsv);
         void setHSV(uint16_t idx, float h, uint8_t s, uint8_t v);
+
+        /// Writes a pixel straight through, with no HSV step and no gamma.
+        ///
+        /// This is for a frame that arrived already rendered — a desk driving
+        /// the strip over elink. Gamma has to be applied exactly once and the
+        /// desk has already done it, so going through setHSV here would correct
+        /// a corrected frame and crush everything below mid-brightness toward
+        /// black. Quiet failure, not a loud one, which is why it gets its own
+        /// door rather than a flag on the existing one.
+        ///
+        /// strip_HSV is deliberately left alone: it is what the relic's own
+        /// patterns read and write, and it should still hold the look that was
+        /// running when the desk took over. The next tick after a handback
+        /// paints every node anyway.
+        ///
+        /// The strip's own brightness still applies — it is a current limit,
+        /// not a preference, and 344 pixels at full white is 20A.
+        void setPixelRGB(uint16_t idx, uint8_t r, uint8_t g, uint8_t b);
 
         uint8_t getStripBrightness() const;
         void setStripBrightness(uint8_t brightness);
@@ -63,6 +104,23 @@ namespace eio
         std::vector<HSV> strip_HSV;
 #if USING_NEOPIXEL
         Adafruit_NeoPixel strip;
+#else
+        // the host build has no pixel driver behind the strip: strip_HSV *is*
+        // the framebuffer, and a consumer (see edmx::Renderer) reads it back out
+        // via getStripHSV() on show().
+        uint8_t hostBrightness{255};
+
+        // ...except for setPixelRGB, which bypasses strip_HSV by design. On a
+        // host it lands here instead, so the elink path can be driven and read
+        // back with no hardware attached. Sized on first use.
+        std::vector<uint8_t> hostPixels;
+#endif
+
+    public:
+#if !USING_NEOPIXEL
+        /// What setPixelRGB has written, 3 bytes per pixel. Host builds only —
+        /// this is how a test sees what a relic would have lit.
+        const std::vector<uint8_t>& getHostPixels() const { return hostPixels; }
 #endif
     };
 

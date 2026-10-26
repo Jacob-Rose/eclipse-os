@@ -4,6 +4,8 @@
 // See readme.md for full license details.
 #include "state_generic.h"
 
+#include <algorithm>
+
 #include "../ecore/core.h"
 #include "../ecore/math.h"
 #include "../ecore/logging.h"
@@ -50,7 +52,15 @@ void State_GenericHSV::tick(float deltaTime)
                 }
 #endif
                 HSV color = node->getStripSegment()->getParentStrip()->getHSV(node->getStripIdx());
-                generator->render(node.get(), color);
+
+                // A node the look leaves to what is underneath it is the
+                // underlay's to paint, not the look's - see
+                // GeneratorHSV::leavesToUnderlay. Anything else renders.
+                const eanim::Underlay* underlay = generator->getUnderlay();
+                if(!(underlay && generator->leavesToUnderlay(node.get()) && underlay->sample(node.get(), color)))
+                {
+                    generator->render(node.get(), color);
+                }
                 if(GetStatus() == StateStatus::TransitionIn || GetStatus() == StateStatus::TransitionOut)
                 {
                     node->setBuffer(getStateID(), color);
@@ -65,30 +75,52 @@ void State_GenericHSV::tick(float deltaTime)
     }
 }
 
-void StateMachine_GenericHSV::tick(float deltaTime)
+void StateMachine_GenericHSV::captureBlendSource()
 {
-    StateMachine::tick(deltaTime);
-
     if(!io)
     {
         return;
     }
-
-    if(getNextState())
+    for(const auto& seg : io->strip_segments)
     {
-        //dbgLog("should be transitioning now");
-        for(const auto& seg : io->strip_segments)
+        HSVStrip* strip = seg.second->getParentStrip();
+        for(const std::shared_ptr<HSVStripNode>& node : seg.second->getNodes())
         {
-            for(const std::shared_ptr<HSVStripNode>& node : seg.second->getNodes())
-            {
-                float alpha = currentTransitionTime / transitionTime;
-                alpha = clamp(alpha, 0.0f, 1.0f); // ensure alpha is between 0 and 1
+            node->setBuffer(kSnapshotBuffer, strip->getHSV(node->getStripIdx()));
+        }
+    }
+}
 
-                HSV color = getActiveState() == nullptr ? HSV(0.f, 0.f, 0.f) : node->getBuffer(ActiveState->getStateID());
-                HSV color2 = getNextState() == nullptr ? HSV(0.f, 0.f, 0.f) : node->getBuffer(NextState->getStateID());
-                color.blendWith(color2, alpha); // blend the current color with the buffer color
-                node->setHSV(color); // set the blended color to the node
-            }
+void StateMachine_GenericHSV::tick(float deltaTime)
+{
+    StateMachine::tick(deltaTime);
+
+    if(!io || !getNextState())
+    {
+        return;
+    }
+
+    // Both looks have rendered into their buffers; the blend decides what
+    // each node shows between them. Where the outgoing picture comes from is
+    // the machine's business (the active look, or a frozen mix after a
+    // retarget) - see getBlendSourceBuffer.
+    const float alpha = getTransitionProgress();
+    const int fromBuffer = getBlendSourceBuffer();
+    const int toBuffer = NextState->getStateID();
+    const StateBlend& blend = getBlend();
+
+    for(const auto& seg : io->strip_segments)
+    {
+        const std::vector<std::shared_ptr<HSVStripNode>>& nodes = seg.second->getNodes();
+        const float span = nodes.size() > 1 ? static_cast<float>(nodes.size() - 1) : 1.0f;
+        float position = 0.0f;
+
+        for(const std::shared_ptr<HSVStripNode>& node : nodes)
+        {
+            const HSV from = fromBuffer == kNoBuffer ? HSV(0.f, 0.f, 0.f) : node->getBuffer(fromBuffer);
+            const HSV to = node->getBuffer(toBuffer);
+            node->setHSV(blend.mix(from, to, alpha, position / span));
+            position += 1.0f;
         }
     }
 }

@@ -7,17 +7,27 @@
 
 #include "../ecore/core.h"
 
-#define USE_SCREEN 1
+// there is no screen on a host build, and the gif/display libraries are
+// arduino-only. parenthesised so `#if !USE_SCREEN` reads correctly.
+#ifndef USE_SCREEN
+#define USE_SCREEN (USE_ARDUINO && 1)
+#endif
 
 #if USE_SCREEN
 #include <AnimatedGIF.h>
 
 #include <Adafruit_GC9A01A.h>
+#else
+// Relic IO headers hold a shared_ptr<Adafruit_GC9A01A> whether or not there is
+// a screen behind it. A declaration is enough for those headers to compile on
+// a host: nothing there constructs one, so the type never needs completing.
+class Adafruit_GC9A01A;
 #endif
 
 #include <memory>
 #include <chrono>
 #include <ctime>
+#include <vector>
 
 #include "../ecore/tickable.h"
 
