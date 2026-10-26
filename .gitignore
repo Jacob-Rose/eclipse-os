@@ -7,3 +7,5 @@ build
 secrets.h
 
 opencodetmp/*
+# host library tests (tests/run.sh)
+build-tests/

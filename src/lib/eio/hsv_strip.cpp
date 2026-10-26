@@ -70,16 +70,8 @@ void HSVStrip::setHSV(uint16_t idx, float h, uint8_t s, uint8_t v)
     }
 #endif
 
-    uint32_t v32 = ((uint32_t)v * 255u) / SCALE_FACTOR;
-    strip_HSV[idx].v = static_cast<uint8_t>(std::clamp(v32, static_cast<uint32_t>(0), static_cast<uint32_t>(255)));
-
-    uint32_t s32 = ((uint32_t)s * 255u) / SCALE_FACTOR;
-    strip_HSV[idx].s = static_cast<uint8_t>(std::clamp(s32, static_cast<uint32_t>(0), static_cast<uint32_t>(255)));
-
-    h = std::fmod(h, 360.0f);
-    h /= 360.0f;
-    uint64_t h64 = ((uint64_t)h * static_cast<uint64_t>(UINT16_MAX)) / SCALE_FACTOR;
-    strip_HSV[idx].h = static_cast<uint16_t>(std::clamp(h64, static_cast<uint64_t>(0), static_cast<uint64_t>(UINT16_MAX)));
+    // degrees and two 8-bit channels, into the same fixed point as everything else
+    strip_HSV[idx] = HSV(h, s * (1.0f / 255.0f), v * (1.0f / 255.0f));
 
     updateStripPixel(idx);
 }

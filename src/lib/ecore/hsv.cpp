@@ -41,128 +41,67 @@ void HSV::blendWith(const HSV& otherColor, float alphaAsFloat)
 
 HSV HSV::blend(const HSV& a, const HSV& b, float alphaAsFloat)
 {
-    alphaAsFloat = std::clamp(alphaAsFloat, 0.0f, 1.0f);
-    fpInt alphaAsInt = alphaAsFloat * SCALE_FACTOR;
-
-    fpInt invAlphaAsInt = SCALE_FACTOR - alphaAsInt;
+    const fpInt t = efp::fromUnit(alphaAsFloat);
 
     HSV blendedColor;
-
-    blendedColor.h = (static_cast<uint32_t>(a.h) * invAlphaAsInt) / SCALE_FACTOR + 
-                     (static_cast<uint32_t>(b.h) * alphaAsInt) / SCALE_FACTOR;// radialLerp(a.h, b.h, alphaAsInt);
-
-    blendedColor.s = (static_cast<uint32_t>(a.s) * invAlphaAsInt) / SCALE_FACTOR + 
-                     (static_cast<uint32_t>(b.s) * alphaAsInt) / SCALE_FACTOR;
-    blendedColor.v = (static_cast<uint32_t>(a.v) * invAlphaAsInt) / SCALE_FACTOR + 
-                     (static_cast<uint32_t>(b.v) * alphaAsInt) / SCALE_FACTOR;
-
+    blendedColor.h = efp::lerpTurns(a.h, b.h, t); // the short way round the hue circle
+    blendedColor.s = efp::lerp(a.s, b.s, t);
+    blendedColor.v = efp::lerp(a.v, b.v, t);
     return blendedColor;
 }
 
-// Utility: Wrap angle between 0 and 360
-float wrapHueFp(fpInt h) {
-    while (h < 0) h += SCALE_FACTOR;
-    while (h >= SCALE_FACTOR) h -= SCALE_FACTOR;
-    return h;
-}
-
-// Utility: Shortest hue distance for blending
-float blendHueFp(fpInt h1, fpInt h2) {
-    fpInt delta = h2 - h1;
-
-    if (delta > SCALE_FACTOR / 2) delta -= SCALE_FACTOR;
-    else if (delta < -SCALE_FACTOR/2) delta += SCALE_FACTOR;
-    return wrapHueFp(h1 + delta / 2);
-}
-
-HSV ecore::HSV::add(const HSV &a, const HSV &b)
+HSV HSV::add(const HSV& a, const HSV& b)
 {
     HSV out;
-    out.h = blendHueFp(a.h, b.h); // Circular blend
-    out.setSaturationAlpha(std::min(a.getSatFloat() + b.getSatFloat(), 1.0f)); // Clamped addition
-    out.setBrightnessAlpha(std::min(a.getValFloat() + b.getValFloat(), 1.0f)); // Clamped addition
+    out.h = efp::lerpTurns(a.h, b.h, efp::HALF); // halfway round the short arc
+    out.s = efp::addClamped(a.s, b.s);
+    out.v = efp::addClamped(a.v, b.v);
     return out;
-}
-
-// Perform the radial lerp in fixed-point (using integers)
-fpInt HSV::radialLerp(fpInt a, fpInt b, float tAsFloat) {
-    fpInt tAsInt = tAsFloat * SCALE_FACTOR;
-    return radialLerp(a, b, tAsInt);
-}
-
-// Perform the radial lerp in fixed-point (using integers)
-fpInt HSV::radialLerp(fpInt a, fpInt b, fpInt tAsInt) {
-
-    // Calculate the shortest path around the circle (using integer math)
-    uint32_t diff = b - a;
-    if (diff > SCALE_FACTOR / 2) {
-        diff -= SCALE_FACTOR; // Go the shorter way
-    } else if (diff < ((int32_t)SCALE_FACTOR) / -2) {
-        diff += SCALE_FACTOR; // Go the shorter way
-    }
-
-    // Perform the interpolation (using fixed-point multiplication)
-    fpInt result = a + (uint32_t(tAsInt)) * diff / SCALE_FACTOR;
-
-    result %= SCALE_FACTOR;
-
-    return result;
 }
 
 void HSV::setSaturationAlpha(float alpha)
 {
-    float tmpSat = std::clamp(alpha, 0.f, 1.f);
-    s = static_cast<fpInt>(tmpSat * SCALE_FACTOR);
+    s = efp::fromUnit(alpha);
 }
 
 void HSV::setBrightnessAlpha(float alpha)
 {
-    float tmpBrightness = std::clamp(alpha, 0.f, 1.f);
-    v = static_cast<fpInt>(tmpBrightness * SCALE_FACTOR);
+    v = efp::fromUnit(alpha);
 }
 
 void HSV::setHueDegree(float inDegrees)
 {
-    float tmpHue = std::fmod(inDegrees, 360.0f);
-    tmpHue /= 360;
-    h = static_cast<fpInt>(tmpHue * SCALE_FACTOR);
+    h = efp::fromTurns(inDegrees * (1.0f / 360.0f));
 }
-
 
 float HSV::getHueFloat() const
 {
-    float val = static_cast<float>(h);
-    return (val / SCALE_FACTOR) * 360.f;
+    return efp::toFloat(h) * 360.f;
 }
 
 float HSV::getSatFloat() const
 {
-    float val = static_cast<float>(s);
-    return val / SCALE_FACTOR;
+    return efp::toFloat(s);
 }
 
 float HSV::getValFloat() const
 {
-    float val = static_cast<float>(v);
-    return val / SCALE_FACTOR;
+    return efp::toFloat(v);
 }
 
 uint8_t HSV::getValAs8() const
 {
-    uint32_t v32 = ((uint32_t)v * 255u) / SCALE_FACTOR;
-    return static_cast<uint8_t>(std::clamp(v32, static_cast<uint32_t>(0), static_cast<uint32_t>(255)));
+    return efp::to8(v);
 }
 
 uint8_t HSV::getSatAs8() const
 {
-    uint32_t s32 = ((uint32_t)s * 255u) / SCALE_FACTOR;
-    return static_cast<uint8_t>(std::clamp(s32, static_cast<uint32_t>(0), static_cast<uint32_t>(255)));
+    return efp::to8(s);
 }
 
 uint16_t HSV::getHueAs16() const
 {
-    uint32_t h32 = ((uint32_t)h * static_cast<uint32_t>(UINT16_MAX)) / SCALE_FACTOR;
-    return static_cast<uint16_t>(std::clamp(h32, static_cast<uint32_t>(0), static_cast<uint32_t>(UINT16_MAX)));
+    return efp::turnsTo16(h);
 }
 
 

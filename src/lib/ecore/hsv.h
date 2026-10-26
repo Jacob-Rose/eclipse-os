@@ -72,14 +72,11 @@ namespace ecore
 
         std::string to_string() const;
         
-        // all values stored and done math in int space for gainful performance. Has resolution limits, but usually surpass the hardware capabilities anyway.
-        fpInt h; // once converted to scale in float space | 0.f - 360.0f in degrees, clamps itself and wraps around in setHueDegree()
-        fpInt s; // once converted to scale in float space | 0.f - 1.f
-        fpInt v; // once converted to scale in float space | 0.f - 1.f
-
-    private:
-        static fpInt radialLerp(fpInt a, fpInt b, float t);
-        static fpInt radialLerp(fpInt a, fpInt b, fpInt t);
+        // stored and blended in fixed point (see fp.h) so the per-pixel math is
+        // integer math. Resolution is 1/16384, well past what the hardware shows.
+        fpInt h; // turns domain: 0 .. ONE-1, wrapping. setHueDegree() takes degrees
+        fpInt s; // unit domain: 0 .. ONE
+        fpInt v; // unit domain: 0 .. ONE
     };
 
     struct HSVPalette
