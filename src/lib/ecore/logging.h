@@ -38,26 +38,19 @@ namespace ecore
             Library     = 0b00100000, // part of the core eclipse library
         };
     
-        // Enable bitwise operations
-        constexpr Category operator|(Category lhs, Category rhs) {
-            return static_cast<Category>(
-                static_cast<std::underlying_type_t<Category>>(lhs) |
-                static_cast<std::underlying_type_t<Category>>(rhs)
-            );
-        };
+        // the flags combine; != comes with the enum class for free
+        using CategoryBits = std::underlying_type_t<Category>;
 
-        constexpr Category operator&(Category lhs, Category rhs) {
-            return static_cast<Category>(
-                static_cast<std::underlying_type_t<Category>>(lhs) &
-                static_cast<std::underlying_type_t<Category>>(rhs)
-            );
-        };
+        constexpr Category operator|(Category lhs, Category rhs)
+        {
+            return static_cast<Category>(static_cast<CategoryBits>(lhs) | static_cast<CategoryBits>(rhs));
+        }
 
-        inline bool operator!=(Category lhs, Category rhs) {
-            return static_cast<std::underlying_type_t<Category>>(lhs) != 
-                   static_cast<std::underlying_type_t<Category>>(rhs);
-        };
-    
+        constexpr Category operator&(Category lhs, Category rhs)
+        {
+            return static_cast<Category>(static_cast<CategoryBits>(lhs) & static_cast<CategoryBits>(rhs));
+        }
+
         constexpr Verbosity ProjectVerbosity = Verbosity::Display;
         constexpr Category ProjectHideCategories = (
             Category::None |
