@@ -148,7 +148,10 @@ void StateMachinePattern::ensureBuilt(const PatternContext& context)
         manager->addState(state);
         instances.push_back(state);
         generators.push_back(generator);
-        generator->setUnderlay(underlay);
+        if (def.composeOver)
+        {
+            def.composeOver(generator.get(), underLayer != nullptr);
+        }
     }
 
     if (!instances.empty())
@@ -162,14 +165,14 @@ void StateMachinePattern::ensureBuilt(const PatternContext& context)
     }
 }
 
-void StateMachinePattern::setUnderlay(const eanim::Underlay* inUnderlay)
+void StateMachinePattern::setUnderLayer(eanim::GeneratorHSV* under)
 {
-    underlay = inUnderlay;
-    for (const std::shared_ptr<eanim::GeneratorHSV>& generator : generators)
+    underLayer = under;
+    for (size_t idx = 0; idx < generators.size() && idx < states.size(); ++idx)
     {
-        if (generator)
+        if (generators[idx] && states[idx].composeOver)
         {
-            generator->setUnderlay(underlay);
+            states[idx].composeOver(generators[idx].get(), under != nullptr);
         }
     }
 }
@@ -204,6 +207,24 @@ void StateMachinePattern::render(const PatternContext& context, std::vector<ecor
         if (states[idx].applyInput && generators[idx])
         {
             states[idx].applyInput(generators[idx].get(), inputA, inputB);
+        }
+    }
+
+    // The layer underneath, into the nodes first: a state's look starts
+    // from what the strip shows (State_GenericHSV::RenderBase::LastFrame),
+    // so this is the picture every look - both of a cross-fade - composes
+    // over. A layer stack in all but name; it becomes a LayeredGeneratorHSV
+    // once a machine can be one layer of it.
+    if (underLayer)
+    {
+        for (const auto& seg : io->strip_segments)
+        {
+            for (const std::shared_ptr<eio::HSVStripNode>& node : seg.second->getNodes())
+            {
+                ecore::HSV color = node->getStripSegment()->getParentStrip()->getHSV(node->getStripIdx());
+                underLayer->render(node.get(), color);
+                node->setHSV(color);
+            }
         }
     }
 
@@ -248,16 +269,6 @@ void StateMachinePattern::reflect(ecore::PropertyBag& bag)
     if (activeIndex < generators.size() && generators[activeIndex])
     {
         generators[activeIndex]->reflect(bag);
-    }
-}
-
-void StateMachinePattern::reflectCurves(eanim::CurveBag& bag)
-{
-    // Same shape and same lifetime rules as reflect(): the showing look's
-    // drawable curves, and only its.
-    if (activeIndex < generators.size() && generators[activeIndex])
-    {
-        generators[activeIndex]->reflectCurves(bag);
     }
 }
 
@@ -476,6 +487,12 @@ namespace
                 std::make_shared<scanner::State_ScannerHSV>(stateName, io,
                     std::static_pointer_cast<scanner::PatternScanner>(generator)));
         };
+        // every scanner look is a PatternScanner: over the sculpture's own
+        // picture it joins the tower, on its own it paints it
+        def.composeOver = [](eanim::GeneratorHSV* look, bool live) {
+            using Mode = scanner::PatternScanner::ObeliskMode;
+            static_cast<scanner::PatternScanner*>(look)->obeliskMode = live ? Mode::Join : Mode::Paint;
+        };
         return def;
     }
 
@@ -517,18 +534,15 @@ namespace
     /// A look that is a plain GeneratorHSV, not a PatternScanner - no clock
     /// to rewind, so the default State_GenericHSV wrapper is the right one.
     /// The obelisk's ambient looks are these.
-    /// The same def, with the look leaving the obelisk to the underlay -
-    /// for the states that are the ring's alone. The make is wrapped rather
-    /// than the class changed because `none` is a Solid the success and
-    /// failure states also are, and those do paint the tower.
+    /// The same def, with the look leaving the obelisk to the layer under
+    /// it - for the states that are the ring's alone. The def is wrapped
+    /// rather than the class changed because `none` is a Solid the success
+    /// and failure states also are, and those do paint the tower.
     StateDef overUnderlay(StateDef def)
     {
-        auto inner = def.make;
-        def.make = [inner]() {
-            std::shared_ptr<eanim::GeneratorHSV> look = inner();
-            // scannerLook / scannerSolid only ever build PatternScanners
-            static_cast<scanner::PatternScanner*>(look.get())->leaveObeliskToUnderlay = true;
-            return look;
+        def.composeOver = [](eanim::GeneratorHSV* look, bool live) {
+            using Mode = scanner::PatternScanner::ObeliskMode;
+            static_cast<scanner::PatternScanner*>(look)->obeliskMode = live ? Mode::Leave : Mode::Paint;
         };
         return def;
     }

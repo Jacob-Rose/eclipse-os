@@ -315,14 +315,6 @@ void Pattern::reflect(ecore::PropertyBag& bag)
 // GeneratorHSV adapter
 // ============================================================================
 
-void GeneratorPattern::reflectCurves(eanim::CurveBag& bag)
-{
-    if (generator)
-    {
-        generator->reflectCurves(bag);
-    }
-}
-
 void GeneratorPattern::reflect(ecore::PropertyBag& bag)
 {
     // Not calling up: a relic look does its own motion internally and reads

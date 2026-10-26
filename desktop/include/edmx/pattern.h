@@ -140,11 +140,13 @@ namespace edmx
         /// there is no reason for the two to diverge.
         virtual class StateMachinePattern* asStateMachine() { return nullptr; }
 
-        /// What is showing underneath, on a relic the show has taken over -
-        /// see eanim::Underlay. Null when nothing is. A pattern that composes
-        /// looks hands it to them; the default keeps nothing, for a pattern
-        /// with no looks that could use it.
-        virtual void setUnderlay(const eanim::Underlay* /*underlay*/) {}
+        /// The layer under this pattern, on a relic the show has taken over:
+        /// the sculpture's own look, running here in step with it (see
+        /// edmx::RelicShadow). Rendered into the nodes before the pattern's
+        /// own looks each frame, so a look that joins the sculpture finds its
+        /// picture in hand. Null when nothing is underneath. Not owned. The
+        /// default keeps nothing, for a pattern with no looks that compose.
+        virtual void setUnderLayer(eanim::GeneratorHSV* /*under*/) {}
 
         /// The knobs this pattern offers, gathered fresh on every call.
         ///
@@ -157,11 +159,6 @@ namespace edmx
         /// knobs overrides this, calls up, and adds them; one that has no use
         /// for speed and width overrides without calling up.
         virtual void reflect(ecore::PropertyBag& bag);
-
-        /// The drawable shapes this pattern offers - reflect(), for
-        /// AutomationCurves. Same freshness rules. Empty by default: most
-        /// patterns have no live shape worth handing to a curve editor.
-        virtual void reflectCurves(eanim::CurveBag& /*bag*/) {}
 
         /// An impulse, by tag - `trigger <tag>` on the protocol. True if the
         /// running look answered to it; false, the default, is "no such
@@ -214,7 +211,6 @@ namespace edmx
         /// Straight through to the generator: a relic look's knobs are the
         /// look's, not the wrapper's, and speed/width mean nothing here.
         void reflect(ecore::PropertyBag& bag) override;
-        void reflectCurves(eanim::CurveBag& bag) override;
 
     private:
         /// Rebuilds the node set when the rig changes shape.

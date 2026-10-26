@@ -63,14 +63,14 @@ namespace edmx
     /// ticks it beside the show. The code is the relic's own, compiled for
     /// the host: same noise, same palette, same pixel.
     ///
-    /// It is an eanim::Underlay, so a look samples it by node. Only nodes on
-    /// the profile's object answer.
+    /// It is a GeneratorHSV, rendered under the show's looks: it paints the
+    /// nodes on the profile's object and leaves every other node as it was.
     ///
     /// The relic keeps its clocks moving under the takeover (see
     /// RelicCore::tickWhileLinked and what the obelisk does with it), so a
     /// copy put in step once stays in step; the desk re-asks every few
     /// seconds anyway, because two clocks are two clocks.
-    class RelicShadow : public eanim::Underlay
+    class RelicShadow : public eanim::GeneratorHSV
     {
     public:
         RelicShadow();
@@ -89,7 +89,7 @@ namespace edmx
         bool applySim(const std::string& text, std::string& outError);
 
         /// Advances the look. Nothing before the first applySim.
-        void tick(float deltaTime);
+        void tick(float deltaTime) override;
 
         void clear();
 
@@ -108,8 +108,15 @@ namespace edmx
         ecore::HSV colorAt(uint16_t stripIdx) const;
         uint16_t pixelCount() const;
 
-        // -- eanim::Underlay --
-        bool sample(const eio::HSVStripNode* node, ecore::HSV& outColor) const override;
+        /// The colour under `node`, or false when the shadow has nothing for
+        /// it (not live, or a node on an object it is not simulating).
+        bool sample(const eio::HSVStripNode* node, ecore::HSV& outColor) const;
+
+        // GeneratorHSV interface: sample() into the colour, or leave it
+        void render(eio::HSVStripNode* node, ecore::HSV& inOutColor) const override
+        {
+            sample(node, inOutColor);
+        }
 
     private:
         bool spawn(const std::string& name, std::string& outError);

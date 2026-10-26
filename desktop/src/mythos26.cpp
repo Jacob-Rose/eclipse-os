@@ -258,10 +258,7 @@ void Pattern_Mythos_BeatPulse::reflect(ecore::PropertyBag& bag)
     bag.add("entry_hit", bHitOnEntry);
 
     bag.add("color", pulseColor);
-}
 
-void Pattern_Mythos_BeatPulse::reflectCurves(eanim::CurveBag& bag)
-{
     // The envelope itself, drawable. The attack/decay knobs are the shorthand
     // that *writes* this curve, so the two can fight: a drawn shape holds
     // until either knob is touched, at which point setEnvelope rebuilds the
@@ -956,10 +953,6 @@ void Pattern_Mythos_CanyonWave::reflect(ecore::PropertyBag& bag)
     bag.add("rainbow_lift", rainbowLift, 0.0f, 1.0f);
     bag.add("rainbow_turn", rainbowTurn, 0.0f, 0.5f);
     bag.add("truss_rainbow", trussRainbow, 0.0f, 1.0f);
-}
-
-void Pattern_Mythos_CanyonWave::reflectCurves(eanim::CurveBag& bag)
-{
     bag.add("envelope", envelope.curve);
 }
 
@@ -1119,10 +1112,6 @@ void Pattern_Mythos_GradientStrobe::reflect(ecore::PropertyBag& bag)
     bag.add("truss_decay", trussDecay, 0.05f, 1.5f);
     bag.add("truss_invert", trussInvert, 0.0f, 1.0f);
     bag.add("invert_decay", invertDecay, 0.05f, 1.0f);
-}
-
-void Pattern_Mythos_GradientStrobe::reflectCurves(eanim::CurveBag& bag)
-{
     bag.add("envelope", envelope.curve);
 }
 
@@ -1834,10 +1823,6 @@ void Pattern_Mythos_Scaffold::reflect(ecore::PropertyBag& bag)
     bag.add("ground", ground);
     bag.add("glint", glint);
     bag.add("ember", ember);
-}
-
-void Pattern_Mythos_Scaffold::reflectCurves(eanim::CurveBag& bag)
-{
     bag.add("envelope", envelope.curve);
 }
 

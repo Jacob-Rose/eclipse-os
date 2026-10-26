@@ -85,11 +85,12 @@ void Pattern_Audio_Meter::reflect(ecore::PropertyBag& bag)
     bag.add("peak_mix", peakMix, 0.0f, 1.0f);
 
     // Read-only in spirit: the bus overwrites both every frame, so writing one
-    // lasts until the next tick. Registered anyway because `params` is how a
-    // desk reads a look's numbers, and "what is this channel doing right now"
-    // is the single most useful number this look has.
-    bag.addState("value", value);
-    bag.addState("peak", peak);
+    // lasts until the next tick. Registered as knobs anyway, not as state -
+    // state is a clock for the sim handshake and never shown - because
+    // `params` is how a desk reads a look's numbers, and "what is this
+    // channel doing right now" is the single most useful number this look has.
+    bag.add("value", value, 0.0f, 1.0f);
+    bag.add("peak", peak, 0.0f, 1.0f);
 }
 
 

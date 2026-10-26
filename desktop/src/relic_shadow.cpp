@@ -120,7 +120,7 @@ bool RelicShadow::applySim(const std::string& text, std::string& outError)
     }
 
     ecore::PropertyBag bag;
-    state->reflectState(bag);
+    state->reflect(bag);
     ecore::applyState(bag, values);
     syncedAt = std::chrono::steady_clock::now();
 
@@ -154,7 +154,7 @@ std::string RelicShadow::describeState() const
         return std::string();
     }
     ecore::PropertyBag bag;
-    state->reflectState(bag);
+    state->reflect(bag);
     return ecore::serializeState(bag);
 }
 

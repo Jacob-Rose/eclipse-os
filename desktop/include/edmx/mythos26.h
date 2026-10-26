@@ -100,7 +100,6 @@ namespace edmx
         virtual void tick(float deltaTime) override;
         virtual void render(eio::HSVStripNode* node, ecore::HSV& inOutColor) const override;
         virtual void reflect(ecore::PropertyBag& bag) override;
-        virtual void reflectCurves(eanim::CurveBag& bag) override;
 
         /// White to open on. The whole look is one colour and one envelope, so
         /// this is the knob that changes it — a `color` property, which means a
@@ -789,7 +788,6 @@ namespace edmx
         virtual void tick(float deltaTime) override;
         virtual void render(eio::HSVStripNode* node, ecore::HSV& inOutColor) const override;
         virtual void reflect(ecore::PropertyBag& bag) override;
-        virtual void reflectCurves(eanim::CurveBag& bag) override;
 
         /// How much rainbow is showing right now, 0..1, for tests.
         float getRainbowLevel() const { return rainbow; }
@@ -884,7 +882,6 @@ namespace edmx
         virtual void tick(float deltaTime) override;
         virtual void render(eio::HSVStripNode* node, ecore::HSV& inOutColor) const override;
         virtual void reflect(ecore::PropertyBag& bag) override;
-        virtual void reflectCurves(eanim::CurveBag& bag) override;
 
         float getStrobeLevel() const { return strobe; }
         /// The channel's slewed level, 0..1, for tests.
@@ -1279,7 +1276,6 @@ namespace edmx
         virtual void tick(float deltaTime) override;
         virtual void render(eio::HSVStripNode* node, ecore::HSV& inOutColor) const override;
         virtual void reflect(ecore::PropertyBag& bag) override;
-        virtual void reflectCurves(eanim::CurveBag& bag) override;
 
         /// How far the beat's lift is out right now, 0..1, for tests.
         float getPulseLevel() const { return pulse; }

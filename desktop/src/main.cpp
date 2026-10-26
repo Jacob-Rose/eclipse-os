@@ -842,7 +842,7 @@ namespace
                 ecore::PropertyBag theirs;
                 if (relicLook)
                 {
-                    relicLook->reflectState(theirs);
+                    relicLook->reflect(theirs);
                 }
                 check("sim: clocks agree after a tick",
                       ecore::serializeState(theirs) == shadow.describeState() ? 1 : 0, 1);
@@ -857,7 +857,7 @@ namespace
                 ecore::PropertyBag bag;
                 if (State_GenericHSV* look = core.activeLook())
                 {
-                    look->reflectState(bag);
+                    look->reflect(bag);
                 }
                 check("sim: set landed the clocks",
                       ecore::serializeState(bag) == "lfo.offset=2.5 palette.offset=0.25" ? 1 : 0, 1);
@@ -869,19 +869,19 @@ namespace
             check("shadow: and is cleared", shadow.isLive() ? 1 : 0, 0);
         }
 
-        // ---- a look that leaves the tower to the underlay ------------------
+        // ---- a look that leaves the tower to the layer under it -------------
         //
-        // A dark solid with leaveObeliskToUnderlay set, on the obelisk's own
-        // nodes, over a fixed-colour underlay: the strip must come out the
-        // underlay's colour, not black. Same renderer the machine uses.
+        // A dark solid in ObeliskMode::Leave, on the obelisk's own nodes,
+        // over a flat-colour layer rendered into the nodes first: the strip
+        // must come out the layer's colour, not black. Same renderer the
+        // machine uses, same pre-pass StateMachinePattern makes.
         {
-            struct FlatUnderlay : eanim::Underlay
+            struct FlatLayer : eanim::GeneratorHSV
             {
-                bool sample(const eio::HSVStripNode* node, ecore::HSV& out) const override
+                void render(eio::HSVStripNode* node, ecore::HSV& out) const override
                 {
-                    if (eio::nodeSpace(node) != eio::NodeSpace::Obelisk) return false;
+                    if (eio::nodeSpace(node) != eio::NodeSpace::Obelisk) return;
                     out = ecore::HSV(200.0f, 0.5f, 0.8f);
-                    return true;
                 }
             } flat;
 
@@ -920,8 +920,19 @@ namespace
             }
 
             auto look = std::make_shared<scanner::Pattern_Scanner_Solid>(ecore::HSV(0.0f, 0.0f, 0.0f));
-            look->leaveObeliskToUnderlay = true;
-            look->setUnderlay(&flat);
+            look->obeliskMode = scanner::PatternScanner::ObeliskMode::Leave;
+
+            auto layerUnder = [&rig, &flat]() {
+                for (auto& seg : rig.strip_segments)
+                {
+                    for (const std::shared_ptr<eio::HSVStripNode>& node : seg.second->getNodes())
+                    {
+                        ecore::HSV c = node->getStripSegment()->getParentStrip()->getHSV(node->getStripIdx());
+                        flat.render(node.get(), c);
+                        node->setHSV(c);
+                    }
+                }
+            };
 
             auto state = std::make_shared<State_GenericHSV>("dark", &rig);
             state->setGenerator(look);
@@ -932,6 +943,7 @@ namespace
             machine.setRelicIO(&rig);
             machine.setActiveState(state);
             machine.init();
+            layerUnder();
             machine.tick(0.03f);
 
             int towerLit = 0;
@@ -945,7 +957,8 @@ namespace
             check("underlay: the tower shows the underlay through a dark look", towerLit, 4);
             check("underlay: the ring is still the look's", ringDark, 4);
 
-            look->leaveObeliskToUnderlay = false;
+            look->obeliskMode = scanner::PatternScanner::ObeliskMode::Paint;
+            layerUnder();
             machine.tick(0.03f);
             towerLit = 0;
             for (uint16_t i = 0; i < 4; ++i)
@@ -960,14 +973,14 @@ namespace
             Pattern_Obelisk_FourSeasons a;
             a.tick(3.25f);
             ecore::PropertyBag bagA;
-            a.reflectState(bagA);
+            a.reflect(bagA);
             const std::string text = ecore::serializeState(bagA);
             check("reflect: seasons names its seed and clock",
                   (text.rfind("noise.seed=", 0) == 0 && text.find(" noise.time=") != std::string::npos) ? 1 : 0, 1);
 
             Pattern_Obelisk_FourSeasons b;
             ecore::PropertyBag bagB;
-            b.reflectState(bagB);
+            b.reflect(bagB);
             check("reflect: both values applied", ecore::applyState(bagB, text), 2);
             check("reflect: the seed landed", a.coreNoise.getSeed() == b.coreNoise.getSeed() ? 1 : 0, 1);
             check("reflect: the clock landed",
@@ -980,7 +993,7 @@ namespace
             // a look with no clocks says nothing
             scanner::Pattern_Scanner_Solid solid(ecore::HSV(0.0f, 0.0f, 0.0f));
             ecore::PropertyBag empty;
-            solid.reflectState(empty);
+            solid.reflect(empty);
             check("reflect: a scanner look has its one clock", static_cast<long long>(empty.size()), 1);
         }
 
@@ -2664,10 +2677,25 @@ namespace
             case ecore::Property::Type::Bool:  out << "b " << property.get(); break;
             case ecore::Property::Type::Color: out << "c " << colorToHex(property.getColor()); break;
             case ecore::Property::Type::Float: out << "f " << property.get(); break;
+            case ecore::Property::Type::Curve: break; // see curveLine
         }
 
         out << " " << property.minValue << " " << property.maxValue;
         return out.str();
+    }
+
+    /// Whether a property goes out as a PARAM line: a knob, and not a curve,
+    /// which has its own line. A clock (Role::State) is the sim handshake's
+    /// business, not a widget - a look that wants a live number shown
+    /// registers it as a knob, as the audio meter does.
+    bool isKnob(const ecore::Property& property)
+    {
+        return property.isKnob() && property.type != ecore::Property::Type::Curve;
+    }
+
+    bool isCurve(const ecore::Property& property)
+    {
+        return property.type == ecore::Property::Type::Curve;
     }
 
     /// One `CURVE name t:v[:easing] ...` line: a look's live AutomationCurve.
@@ -2675,14 +2703,15 @@ namespace
     /// Easing travels as the easing_functions enum *index* - the python
     /// mirror's EASING_NAMES is in enum order precisely so an integer means
     /// the same shape on both sides. A key with no third field is linear.
-    std::string curveLine(const eanim::CurveRef& ref)
+    std::string curveLine(const ecore::Property& property)
     {
         std::ostringstream out;
-        out << "CURVE " << ref.name;
+        out << "CURVE " << property.name;
 
-        for (int idx = 0; idx < ref.curve->getKeyCount(); ++idx)
+        const eanim::AutomationCurve* curve = property.curveValue;
+        for (int idx = 0; curve != nullptr && idx < curve->getKeyCount(); ++idx)
         {
-            const eanim::AutomationKey* key = ref.curve->getKey(idx);
+            const eanim::AutomationKey* key = curve->getKey(idx);
             out << " " << key->time << ":" << key->value;
             if (key->bUseEasing)
             {
@@ -2725,18 +2754,22 @@ namespace
 
         for (const ecore::Property& property : bag.all())
         {
-            emit(prefix + paramLine(property));
+            if (isKnob(property))
+            {
+                emit(prefix + paramLine(property));
+            }
         }
 
         // The look's drawable shapes ride in the same block: a client that
         // rebuilds on PARAMS gets knobs and curves as one announcement, with
         // each curve's *current* keys - which is what lets a curve editor
         // open on the live envelope rather than on a blank.
-        eanim::CurveBag curves;
-        pattern->reflectCurves(curves);
-        for (const eanim::CurveRef& ref : curves.all())
+        for (const ecore::Property& property : bag.all())
         {
-            emit(prefix + curveLine(ref));
+            if (isCurve(property))
+            {
+                emit(prefix + curveLine(property));
+            }
         }
     }
 
@@ -2994,6 +3027,11 @@ namespace
                + (known.empty() ? " (this look has none)" : " (have: " + known + ")"));
             return false;
         }
+        if (isCurve(*target))
+        {
+            emit("ERR '" + name + "' is a curve: set it with curve " + name + " t:v ...");
+            return false;
+        }
 
         // What every knob read before the set, so the echo can carry every
         // knob the set moved and not only the one named: a look's `mode`
@@ -3039,9 +3077,9 @@ namespace
         for (size_t i = 0; i < bag.all().size(); ++i)
         {
             const ecore::Property& property = bag.all()[i];
-            if (&property == target)
+            if (&property == target || !isKnob(property))
             {
-                continue;
+                continue; // a clock moves every frame; it is not news
             }
             const std::string now = paramLine(property);
             if (now != before[i])
@@ -3050,11 +3088,12 @@ namespace
             }
         }
 
-        eanim::CurveBag curves;
-        pattern.reflectCurves(curves);
-        for (const eanim::CurveRef& ref : curves.all())
+        for (const ecore::Property& property : bag.all())
         {
-            emit(prefix + curveLine(ref));
+            if (isCurve(property))
+            {
+                emit(prefix + curveLine(property));
+            }
         }
         return true;
     }
@@ -3067,16 +3106,19 @@ namespace
                     const std::vector<std::string>& words, size_t firstKey,
                     const std::string& prefix)
     {
-        eanim::CurveBag bag;
-        pattern.reflectCurves(bag);
+        ecore::PropertyBag bag;
+        pattern.reflect(bag);
 
-        eanim::CurveRef* target = bag.find(name);
-        if (target == nullptr)
+        const ecore::Property* target = bag.find(name);
+        if (target == nullptr || !isCurve(*target))
         {
             std::string known;
-            for (const eanim::CurveRef& ref : bag.all())
+            for (const ecore::Property& property : bag.all())
             {
-                known += (known.empty() ? "" : ", ") + ref.name;
+                if (isCurve(property))
+                {
+                    known += (known.empty() ? "" : ", ") + property.name;
+                }
             }
             emit("ERR no curve '" + name + "'"
                + (known.empty() ? " (this look has none)" : " (have: " + known + ")"));
@@ -3111,11 +3153,8 @@ namespace
             }
         }
 
-        *target->curve = parsed;
-        if (target->onChanged)
-        {
-            target->onChanged();
-        }
+        *target->curveValue = parsed;
+        target->changed();
 
         emit(prefix + curveLine(*target));
         return true;
@@ -5283,7 +5322,7 @@ int main(int argc, char** argv)
         // compose over it. Ticked first so a sample this frame is this
         // frame's picture.
         show.shadow.tick(deltaTime);
-        show.pattern->setUnderlay(show.shadow.isLive() ? &show.shadow : nullptr);
+        show.pattern->setUnderLayer(show.shadow.isLive() ? &show.shadow : nullptr);
 
         // Client mode renders nothing: the picture is arriving on stdin and
         // the pattern here would only fight it. Ticked past entirely rather

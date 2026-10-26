@@ -64,6 +64,12 @@ namespace edmx
         std::function<std::shared_ptr<State_GenericHSV>(
             const char* stateName, eio::RelicIO* io,
             std::shared_ptr<eanim::GeneratorHSV> generator)> makeState;
+
+        /// Optional: how the look treats the sculpture when a layer is under
+        /// it (live) or not. The scanner's looks join or leave the tower over
+        /// the sculpture's own picture and paint it on their own; a look with
+        /// no such choice leaves this empty.
+        std::function<void(eanim::GeneratorHSV*, bool live)> composeOver;
     };
 
 
@@ -96,7 +102,6 @@ namespace edmx
         /// gets the current look's, and emitParams() re-announces them on every
         /// state change.
         void reflect(ecore::PropertyBag& bag) override;
-        void reflectCurves(eanim::CurveBag& bag) override;
 
         /// To the look that is showing, same as the knobs.
         bool trigger(const ecore::GameplayTag& tag) override;
@@ -127,15 +132,15 @@ namespace edmx
         /// are remote buttons; here they are whatever the UI wires them to.
         void setInput(bool inputA, bool inputB);
 
-        /// To every look in the machine, not only the showing one: a
-        /// cross-fade renders two, and the one arriving should already see
-        /// what it is arriving over.
-        void setUnderlay(const eanim::Underlay* underlay) override;
+        /// Rendered into the nodes ahead of the machine each frame, so every
+        /// look - the two of a cross-fade included - starts from the layer's
+        /// picture. Each state's composeOver is told whether one is there.
+        void setUnderLayer(eanim::GeneratorHSV* under) override;
 
     private:
         void ensureBuilt(const PatternContext& context);
 
-        const eanim::Underlay* underlay{nullptr};
+        eanim::GeneratorHSV* underLayer{nullptr};
 
         std::string name;
         std::vector<StateDef> states;

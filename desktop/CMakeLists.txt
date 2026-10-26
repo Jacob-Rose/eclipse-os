@@ -33,7 +33,6 @@ set(ECLIPSE_SRC  "${ECLIPSE_ROOT}/src")
 # ---------------------------------------------------------------------------
 set(ECLIPSE_CORE_SOURCES
     ${ECLIPSE_SRC}/lib/ecore/coord.cpp
-    ${ECLIPSE_SRC}/lib/ecore/fp.cpp
     ${ECLIPSE_SRC}/lib/ecore/hsv.cpp
     ${ECLIPSE_SRC}/lib/ecore/logging.cpp
     ${ECLIPSE_SRC}/lib/ecore/math.cpp
