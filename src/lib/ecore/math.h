@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <vector>
 #include <cfloat>
 
@@ -54,6 +55,15 @@ namespace ecore
     float get_index_from_alpha(float a, const std::vector<float>& keys);
 
     float get_random_float();
+
+    /* @brief A cheap deterministic hash to 0..1.
+    *
+    * For texture that has to hold still: every caller asking about the same
+    * n - this frame and the next - gets the same answer, which
+    * get_random_float cannot promise. Unsigned throughout, so the overflow
+    * the mixing leans on is defined.
+    */
+    float hash01(uint32_t n);
 
     float get_random_float_in_range(float min, float max);
     //float get_random_float_in_range(FloatRange range) { return get_random_float_in_range(range.min, range.max); }

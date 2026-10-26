@@ -23,7 +23,9 @@ namespace ecore
             Fatal,
         };
 
-        static std::string getVerbosityString(Verbosity inVerbosity);
+        // not static: defined in logging.cpp; a static declaration here gave
+        // every other translation unit an internal function with no definition
+        std::string getVerbosityString(Verbosity inVerbosity);
     
         enum class Category : uint64_t
         {
