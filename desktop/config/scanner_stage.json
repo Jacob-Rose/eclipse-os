@@ -1,0 +1,82 @@
+{
+  // The scanner's show with the DMX truss in it: the ring, the obelisk and
+  // the ten U'King pars (plus the UV) on one stage, one look across all three.
+  //
+  //   python -m eclipse_dmx view config/scanner_stage.json --live --host scanner-pi
+  //
+  // Everything config/scanner.json says still holds - the cue list is the
+  // game's own state tags, `state <tag> <seconds>` is what the game sends.
+  // This file adds a device, and where it stands.
+  //
+  // The truss rides the same eclipse-dmx as the sculpture, so with --host the
+  // Enttec cable has to be on the pi, not the desk. It is an enttec_open
+  // widget, which on Linux goes through libftdi (installed there); "port":
+  // "auto" finds it by USB and cannot confuse it with the obelisk, which is a
+  // CDC device on ttyACM and never a candidate. A truss that is not plugged in
+  // comes up OFFLINE, says so in the viewer's header, and the show runs on
+  // without it - exactly as the obelisk does.
+
+  "master": {
+    "brightness": 1.0,
+    "gamma": 2.2
+  },
+
+  "pattern": {
+    "name": "scanner"
+  },
+
+  "devices": [
+    // The stage: literal coordinates, x across the obelisk's eight strips
+    // (0..7), y up - the floor at 0, the sculpture's top at 42, the ring on
+    // it with its lowest pixel on the origin line y 16 (kStage*/kRing* in
+    // src/relics/scanner/scanner_patterns.h).
+    { "device": "scanner_ring", "offset": [0, 0], "view_scale": [0.9, 1.0] },
+    { "device": "obelisk",      "offset": [0, 0], "view_scale": [0.5, 1.1] },
+
+    {
+      // The truss, on the stage's origin line - y 16, kStageOriginY in
+      // src/relics/scanner/scanner_patterns.h: the ring's lowest pixel is on
+      // it too, and it is where a beat-synced look starts from - as wide as
+      // one face of the sculpture and centred on it.
+      //
+      // The pars are normalized - 0..1 along the truss in their own file -
+      // and a normalized device's local coordinates are the pattern frame's
+      // *diagonal*: 0..1 becomes (0,0)..(8,43), a line climbing the whole
+      // stage. So both axes are fitted: x to two strip-units (a face is two
+      // strips), y to 0 - which collapses the climb to a flat row - and the
+      // offset puts that row at y 16, centred on the obelisk's middle, x
+      // 3.5. The truss is physically about the sculpture's width, so it
+      // sees the slice of a look that one face does rather than a lap of
+      // all eight strips. The UV samples the middle of the run.
+      //
+      // Move it by changing these two lines. On the floor at the foot of
+      // the obelisk is `"offset": [2.5, 0]`; spanning every strip is
+      // `"fit": [7, 0]` at `"offset": [0, 0]`; standing off to the side and
+      // climbing the same height as the sculpture, as mythos26 places it,
+      // is `"offset": [10, 0]` with no fit at all.
+      "device": "uking_par36_x10",
+      "name": "pars",
+      "offset": [2.5, 16],
+      "fit": [2, 0],
+
+      // Wide and short on screen: ten pars in a line want the width and none
+      // of the height. View only; the pattern never sees it.
+      "view_scale": [1.7, 0.45],
+
+      // Trim the truss against the sculpture here, not in the device file: it
+      // is a property of this room, not of the lights.
+      "brightness": 1.0
+    }
+  ],
+
+  // A second pattern on a few named fixtures, rendered over the show.
+  //
+  // The UV par is on the truss's cable, so it is a fixture of the pars device
+  // and not a device of its own - but it has its own job. This layer gives
+  // it its own machine: `off`, `flash` (the beat pulse, envelope drawable at
+  // the desk) and `on`, driven with `layer uv state <mode>` independently of
+  // the show's cues, and written over whatever the show put on the fixture.
+  "layers": [
+    { "name": "uv", "fixtures": ["pars/uv"], "pattern": "uv", "state": "off" }
+  ]
+}

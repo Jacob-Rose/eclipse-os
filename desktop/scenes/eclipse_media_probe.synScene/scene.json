@@ -1,0 +1,12 @@
+{
+	"CONTROLS" : [],
+	"CREDIT" : "eclipse-os",
+	"DESCRIPTION" : "Shows what the app hands a scene when you load media, and through which call. Left half is _loadMedia, right half is _loadUserImage, and the strip along the bottom is the three flags that are supposed to tell you which one to use. Diagnostic only - it keys nothing.",
+	"GPU" : 0,
+	"HEIGHT" : 1080,
+	"IMAGE_PATH" : "eclipse_media_probe.png",
+	"MEDIA" : [ { "FILTER" : "linear", "WRAP" : "repeat" } ],
+	"TAGS" : [ "utility", "test", "media", "eclipse" ],
+	"TITLE" : "Eclipse Media Probe",
+	"WIDTH" : 1920
+}

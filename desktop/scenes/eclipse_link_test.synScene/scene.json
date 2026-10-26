@@ -1,0 +1,57 @@
+{
+	"CONTROLS" :
+	[
+		{
+			"DEFAULT" : [ 0.35, 0.35, 0.35 ],
+			"DESCRIPTION" : "The colour the rig is showing. Driven over OSC by eclipse-dmx; see the scene's main.glsl. This is the FIRST colour control in this list, which is what makes it /controls/global/color/1 - the positional address is the order these are declared in, so moving it down this list repoints the sender. Its default is a flat grey on purpose: grey means nothing has arrived.",
+			"IS_META" : true,
+			"NAME" : "rig_color",
+			"TYPE" : "color",
+			"UI_GROUP" : "Link"
+		},
+		{
+			"DEFAULT" : [ 0.20, 0.20, 0.25 ],
+			"DESCRIPTION" : "A second colour, here only so there is a /controls/global/color/2 to aim at. Drive this one to confirm the positional addresses are what you think they are.",
+			"NAME" : "rig_color_2",
+			"TYPE" : "color",
+			"UI_GROUP" : "Link"
+		},
+		{
+			"DEFAULT" : 1,
+			"DESCRIPTION" : "The diagnostic overlay: history strip, r/g/b bars, second swatch, heartbeat and status frame. Turn it off and the scene is a full-bleed wash of the incoming colour, which is how you would actually run it once the link works.",
+			"MAX" : 1,
+			"MIN" : 0,
+			"NAME" : "test_card",
+			"TYPE" : "toggle",
+			"UI_GROUP" : "Link"
+		},
+		{
+			"DEFAULT" : 1.0,
+			"DESCRIPTION" : "Output level. Leave this at 1 while testing - dimming the card also dims the evidence.",
+			"MAX" : 2.0,
+			"MIN" : 0.0,
+			"NAME" : "brightness",
+			"TYPE" : "slider",
+			"UI_GROUP" : "Link"
+		}
+	],
+	"CREDIT" : "eclipse-os",
+	"DESCRIPTION" : "A test card for an external colour source over OSC. Answers 'is the colour arriving, and is it changing' and tells apart the ways that can fail. Not audio reactive by design.",
+	"GPU" : 0,
+	"HEIGHT" : 1080,
+	"IMAGE_PATH" : "eclipse_link_test.png",
+	"PASSES" :
+	[
+		{
+			"FILTER" : "linear",
+			"FLOAT" : true,
+			"HEIGHT" : 1080,
+			"TARGET" : "BuffA",
+			"WIDTH" : 1920,
+			"WRAP" : "clamp"
+		}
+	],
+	"TAGS" : [ "utility", "test", "osc", "eclipse" ],
+	"TITLE" : "Eclipse Link Test",
+	"WIDTH" : 1920
+}

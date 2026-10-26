@@ -1,0 +1,417 @@
+{
+  // mythos-show: the show, as a cue list.
+  //
+  // The same room as config/mythos26.json - the ring, the obelisk, the truss
+  // with the UV on its tail, and the probe that hands the rig's colour to
+  // Synesthesia - opening on the show rather than the audio meter, with the
+  // two layers the cues ask for patched over it, and a table of what each cue
+  // wants from the rest of the room. Read that file for the MIDI and audio
+  // setup; nothing about the wiring is different here.
+  //
+  //   ./launch-mythos-set.sh                            the set
+  //   python -m eclipse_dmx view config/mythos-show.json --bpm 128
+  //   eclipse-dmx --config config/mythos-show.json --dry-run --bpm 128 --frames 80
+  //
+  // The cues themselves are src/mythos26.cpp; the spec they were written from
+  // is "pattern spec.txt" at the top of the checkout.
+
+  "master": {
+    "brightness": 1.0,
+    "gamma": 2.2
+  },
+
+  // The show. Sixteen cues - see makeMythos26StateMachine. The frame is
+  // the stage's, so the pars are placed below with a fit rather than left
+  // on the frame's diagonal.
+  "pattern": {
+    "name": "mythos26",
+    // Opens dark: the set starts on the blackout and the first cue is a
+    // press, not whatever was up the moment the launcher came round.
+    "state": "blackout"
+  },
+
+  // Tempo in, from Mixxx - the fallback source. See config/mythos26.json for
+  // the setup and what each note is.
+  "midi": {
+    // how far ahead of the music the rig runs, in ms. Measured: python -m eclipse_dmx calibrate
+    "latency_ms": 0,
+
+    "enabled": true,
+    "port": "auto",
+    "ignore": ["Traktor", "Kontrol"],
+    // The pad controller, by name fragment: the launcher subscribes the
+    // Launchpad on this same input, and its notes are pads and nothing
+    // else - never the beat, the tempo or a VU level, whatever number the
+    // grid gave them. Without this the flash pad, note 52, was Mixxx's
+    // tempo note and set the rig to 177bpm.
+    "pads": ["Launchpad"],
+    "clock": true,
+    "notes": true,
+    "beat_note": 50,
+    "bpm_note": 52,
+    "vu_instant_note": 64,
+    "vu_average_note": 68,
+    "vu_meter_note": 69,
+    "beat_channel": 1,
+    "bpm": 128,
+    "free_run": true
+  },
+
+  // The music, from Synesthesia: the levels, the presence and the kicks, on
+  // the bus the cues read. Not the beat: "bpm" is off, so the grid is
+  // Mixxx's - its clock and its beat note on the cable above - and the
+  // visualiser's syn_BPM / syn_OnBeat never reach the clock. The detector
+  // proved unreliable for tempo on the night; the cable is the DJ's own
+  // grid. `midi status` says beat_from=midi. (The glitch cue still re-deals
+  // on syn_OnBeat off the bus, on purpose: that is what its scene re-deals
+  // on, and the rig should tear with the picture, not with the grid.)
+  //
+  // And Mixxx's VU notes, on the same cable, land on the bus under this
+  // source too - on their own three slots, level_instant / level_average /
+  // level_meter, never on `level`, which is the visualiser's here. Three
+  // cues ask for the cable's meter by name: the geode's red rides the
+  // instant (note 64, "Enable VU mono current" in the mapping's settings -
+  // it is off by default there) and the average, and Synesthesia's bass as
+  // well, whichever is loudest; the tunnel's wash and the punk's colour
+  // lean ride the average (note 68, on by default). `channels` shows them
+  // landing.
+  //
+  // Flip "source" to "mixxx" (or run the launcher with --no-osc-in) for the
+  // night the visualiser will not start: those three carry on, the other
+  // presence cues sit at their floors, and the kick cues wait for a kick
+  // that never comes.
+  "audio": {
+    "source": "synesthesia",
+    "port": 7000,
+    "bpm": false,
+    "map": "oscmaps/synesthesia.json"
+  },
+
+  "devices": [
+    {
+      // The ring, in stage coordinates - see config/mythos26.json.
+      "device": "scanner_ring",
+      "offset": [0, 0],
+      "view_scale": [0.9, 1.0]
+    },
+    {
+      // The pillar, at the origin, in its own coordinates.
+      "device": "obelisk",
+      "offset": [0, 0],
+      "view_scale": [0.3, 1.0],
+      "brightness": 1.0
+    },
+    {
+      // The truss, standing beside the sculpture and climbing its height.
+      //
+      // The pars are normalized - 0..1 along the truss - and on the stage's
+      // frame that 0..1 is the frame's diagonal, (0,0) to (8,43). Fitting x
+      // to 0 collapses the climb to a vertical line, y to 42 makes it the
+      // sculpture's height, and the offset stands it at x 10, clear of the
+      // obelisk's 0..7. So a cue pouring down the stage pours down the truss
+      // at the same rate, and a beat that climbs the obelisk climbs the pars.
+      //
+      // The UV par is in here too, at the tail of the same DMX line, sampling
+      // the middle of the run - but the `uv` layer below paints it, so what
+      // the show puts there is never seen.
+      "device": "uking_par36_x10",
+      "name": "pars",
+      "offset": [10, 0],
+      "fit": [0, 42],
+      "view_scale": [1.7, 0.45],
+      "brightness": 1.0
+    },
+    {
+      // The colour this show sends to the screen behind it - see
+      // devices/synesthesia.json. The middle of the truss.
+      "device": "synesthesia",
+      "offset": [10, 21],
+      "fit": [0, 0],
+      "view_scale": [0.3, 0.3]
+    }
+  ],
+
+  // The layers: what rides over the show, each its own small cue list with
+  // its own row in the viewer and its own pads on the surface.
+  //
+  // Both open `off`, and the cue table below is what turns them on - so a
+  // cue that wants the flash has it and the one after does not, without
+  // anyone remembering to switch it off. Both are also plain layers to the
+  // desk: `layer flash state flash`, a knob on `layer flash param color`,
+  // the envelope drawn in the curve editor.
+  "layers": [
+    {
+      // The bpm flash: the beat pulse, white unless its `color` knob says
+      // otherwise, summed over every light but the UV. At `blend: add` a
+      // layer at black is not there, which is what makes it safe to leave
+      // patched under the cues that never ask for it.
+      "name": "flash",
+      "fixtures": ["scanner_ring/*", "obelisk/*", "pars/par_*"],
+      "pattern": "flash",
+      "blend": "add",
+      "state": "off"
+    },
+    {
+      // The blacklight: off, flashing on the beat, on, on every kick, or
+      // breathing through a hue wheel. `over`, not `add` - the UV has its own
+      // job and what the show wanted on it is irrelevant.
+      "name": "uv",
+      "fixtures": ["pars/uv"],
+      "pattern": "uv",
+      "state": "off"
+    }
+  ],
+
+  // The cue table: what each state of the show asks of the rest of the room.
+  //
+  // A state is a look on the rig and nothing else - src/mythos26.cpp knows
+  // nothing about Synesthesia or the layers. This is where a *cue* is
+  // assembled: the scene and media the visualiser should be on, and the
+  // state each layer should take. tools/make-launchpad-map.py reads it to
+  // put the whole cue on one pad, and the viewer's cue buttons fire it too.
+  //
+  //   scene    a Synesthesia scene name, spelled freely - it is folded the
+  //            way the app matches it. Empty sends nothing.
+  //   media    a media file for the scene, by name; empty sends nothing. The
+  //            app has no "no media" message, so a cue with none leaves the
+  //            last one selected, which its scene may or may not show. A
+  //            scene that reads syn_Media whether or not it was given any
+  //            (the flame, the tunnel) gets black.mp4 - two seconds of
+  //            nothing, made with one ffmpeg line in readme.md - so the
+  //            cue before it does not colour it.
+  //   layers   the state each layer takes, by layer name. A layer left out
+  //            is left alone; every cue here names both, so a cue never
+  //            inherits the last one's flash. The executable reads this
+  //            half itself and applies it on *every* change of the show's
+  //            state, however it arrived - a pad, a button, a `state` at
+  //            the desk, an OSC binding - so the UV is what the cue wants
+  //            even when only the state was sent. A mode's layers are
+  //            still the desk's, fired by the mode pad.
+  //   controls the scene's own controls to set, by control name as the
+  //            scene declares it (folded the way the app addresses it), a
+  //            number each - a toggle is 0 or 1 - or [r, g, b] 0..1 for a
+  //            colour control. Sent after the scene. The few a cue needs
+  //            for the look to be the look - not a preset.
+  //   modes    what the mode pad changes about the room, by mode number:
+  //            "2", "3" and, on a cue that has one, "4", each the same
+  //            four fields over the cue. The look's own half of a mode -
+  //            the geode gone blue, the rain a downpour, the churn's next
+  //            palette - is in src/mythos26.cpp beside the cue; this is
+  //            the half the executable cannot reach. Mode 1 is the cue.
+  //            The pad steps round however many the cue has (three, or
+  //            four for the churn and the nova); hitting the cue again is
+  //            mode 1, and the four numbered pads name one outright.
+  //   mode_ramp seconds the scene's controls a mode changes glide over
+  //            instead of snapping - the clouds' height, which the look
+  //            glides to on its own. Only a mode change ramps; a cue
+  //            coming up sends its controls at once, its scene being new.
+  //   pads     the cue's own buttons on the surface, for a control flown
+  //            by hand: a label, the look's knobs to set (`params`), the
+  //            scene's controls to send (`controls`), and a `ramp` in
+  //            seconds for the scene's half to glide over. The look glides
+  //            on its own. See the clouds.
+  //
+  // A cue with no entry here is the state alone, which is what the empty
+  // slots are.
+  "cues": {
+    "neuron": {
+      "scene": "Neuron Proximitors",
+      "layers": { "flash": "off", "uv": "off" }
+    },
+    "geode": {
+      // Eclipse Voronoi (scenes/eclipse_voronoi.synScene): Shane's geode with
+      // its crystals painted rig_color, which the probe sends live - so this
+      // cue needs no colour in the table at all. The look's own half is in
+      // src/mythos26.cpp, and it is what makes the modes work: mode 1 is red
+      // riding the mids, mode 2 goes blue. On the stock scene only the truss
+      // went blue and the crystals stayed red, which is the exact
+      // incoherence this feature exists to remove.
+      //
+      // texture_color 0 keeps the agate's marbling and drops its yellow-olive
+      // hue, so the sent colour is the only colour. media_texture 0 so that
+      // this cue - which names no media, and so inherits the last cue's clip -
+      // cannot get the rain's video cut into its crystals.
+      //
+      // No flash to open on: the red is the meter, and a white over it on
+      // the beat was the cue coming up strobing. The flash pad is there. 2
+      // is the geode gone blue - a grained blue field with its own paler
+      // blue landing on the kick; 3 is the red with blue on the kick.
+      "scene": "Eclipse Voronoi",
+      "layers": { "flash": "off", "uv": "off" },
+      "controls": { "rig_amount": 1, "texture_color": 0, "media_texture": 0,
+                    "color_by_hand": 0, "auto_second": 1 }
+    },
+    "rain": {
+      // Opens on black - the app's only "no media", see the note above - and
+      // mode 2 is the toggle that puts the video up. 3 is the film's green,
+      // a downpour the colour glides into, black again; 4 the same gone
+      // white. Both rig-side, in makeMythos26StateMachine.
+      "scene": "VideoFX_1",
+      "media": "black.mp4",
+      "layers": { "flash": "off", "uv": "rainbow" },
+      "modes": {
+        "2": { "media": "alien-message.mp4" }
+      }
+    },
+    "fire": {
+      // With any media loaded the flame renders the video through itself;
+      // black is how it renders its own fire after the rain's clip.
+      "scene": "Dynamical Flame",
+      "media": "black.mp4",
+      "layers": { "flash": "off", "uv": "off" }
+    },
+    "glitch": {
+      "scene": "Glitch",
+      "media": "alien-message.mp4",
+      "layers": { "flash": "off", "uv": "rainbow" }
+    },
+    "tunnel": {
+      // The tunnel adds a little of its media into the walls on the highs.
+      // No strobe by default: the wash breathes with Mixxx's average on its
+      // own, and the flash pad is there for the night that wants it.
+      "scene": "Fire Tunnel",
+      "media": "black.mp4",
+      "layers": { "flash": "off", "uv": "rainbow" }
+    },
+    "blown": {
+      "scene": "Filter Blown v2",
+      "media": "275593_medium.mp4",
+      "layers": { "flash": "off", "uv": "off" }
+    },
+    "reaction": {
+      // The rig reads the room the way the scene does: the rainbow when
+      // the presence is up, a low white grain when it is not.
+      "scene": "Reaction-Confusion",
+      "media": "87841-602894456.mp4",
+      "layers": { "flash": "off", "uv": "rainbow" }
+    },
+    "punk": {
+      // `smoke` is the scene's own beat flash - it inverts lightness on
+      // syn_OnBeat, so the visual goes *dark* on the beat. The look used to
+      // follow it down to navy and flashed the whole way through; now it
+      // holds its level and leans toward a bright blue as far as Mixxx's
+      // average VU says, so the track moves the colour, not the lights.
+      // The white flash layer is off.
+      "scene": "Milk, Honey, Smoke, Bile",
+      "layers": { "flash": "off", "uv": "rainbow" },
+      "controls": { "smoke": 1 }
+    },
+    "canyon": {
+      "scene": "Vibe Thresholds",
+      "media": "361331_medium.mp4",
+      "layers": { "flash": "off", "uv": "rainbow" }
+    },
+    "scaffold": {
+      // The scene's flight through the lattice: the look's struts sweep
+      // down the stage on the beat clock over a dim fog. No flash: a white
+      // over moving lines turns them back into a strobe.
+      "scene": "Scaffold Fractal",
+      "layers": { "flash": "off", "uv": "off" }
+    },
+    "churn": {
+      // Eclipse Churn (scenes/eclipse_churn.synScene) paints Churning in
+      // two colours: rig_color, which the probe sends live - the look's
+      // colour A - and rig_color_2, which nothing sends, so the cue does:
+      // colour B of each palette, as the look has it. black.mp4 because
+      // the churn mixes a little of its media into the paint. Mode 4 is
+      // the rainbow: the paint job off (rig_amount 0 is stock Churning,
+      // its own rainbow) and its palette phasing in time, while the rig
+      // turns its pair through the wheel.
+      "scene": "Eclipse Churn",
+      "media": "black.mp4",
+      "layers": { "flash": "off", "uv": "rainbow" },
+      "controls": { "rig_amount": 1, "rig_contrast": 0.6, "color_phasing": 0,
+                    "rig_color_2": [0.05, 0.10, 1.00] },
+      "modes": {
+        "2": { "controls": { "rig_color_2": [0.05, 0.85, 0.90] } },
+        "3": { "controls": { "rig_color_2": [0.40, 0.08, 0.80] } },
+        "4": { "controls": { "rig_amount": 0, "color_phasing": 1 } }
+      }
+    },
+    "nova": {
+      // Eclipse Nova (scenes/eclipse_nova.synScene): the galaxies are
+      // rig_color, which the probe sends live - the look's galaxy colour -
+      // and the wash is rig_color_2 with auto_second off, which the cue
+      // sends: the palette's wash. base_amount is the ground, and the
+      // ground is the wash dimmed - the scene's background is
+      // rig_color_2 * base_amount, nothing else - so 0.35 is the hand
+      // palette's dim yellow, and the look's `base` is the same colour at
+      // the same value; regime 1 (mode 2) is a full wash, regime 2 (mode
+      // 3) is black. Mode 4 lets the scene derive its own second colour
+      // again - the complement of the probe - so it cycles with it; the
+      // look moves its galaxies to the blue whose complement is the yellow.
+      "scene": "Eclipse Nova",
+      "layers": { "flash": "off", "uv": "rainbow" },
+      "controls": { "color_by_hand": 0, "auto_second": 0, "base_amount": 0.35,
+                    "rig_color_2": [1.00, 0.85, 0.15] },
+      "modes": {
+        "2": { "controls": { "rig_color_2": [0.45, 0.75, 1.00], "base_amount": 1.0 } },
+        "3": { "controls": { "rig_color_2": [0.25, 0.55, 1.00], "base_amount": 0.0 } },
+        "4": { "controls": { "auto_second": 1 } }
+      }
+    },
+    "clouds": {
+      // The flight. The scene's auto height is off, for good: the modes
+      // are the heights - low, where the cue opens; cruising; high - and
+      // each moves the look's target and the scene's manual_height
+      // together, the look gliding over its own `glide` and the scene over
+      // `mode_ramp`, the same two seconds. The speed is the cue's two
+      // pads, the same way.
+      //
+      // CHECKED AGAINST THE SCENE. Synesthesia 1.25.4,
+      // Contents/Resources/release/cloudten.synScene. Two corrections:
+      //
+      //   height -> manual_height. `height` is not a control; the scene
+      //   calls it manual_height, and auto_height 0 is what hands it over,
+      //   which the cue already had right. `speed` and `auto_height` were
+      //   correct as written. (The scene's other controls, unused here:
+      //   flip_side, horizontal_motion, sun_position, city_fps.)
+      //
+      //   black.mp4 -> white.mp4. THIS IS WHY THE CUE CAME UP BLACK. The
+      //   scene's last pass ends with
+      //
+      //     if(_isMediaActive()){ mask = _loadMediaAsMask().r; }
+      //     col *= mask;
+      //
+      //   It does not tint by its media the way the flame and the tunnel do
+      //   - it MULTIPLIES by it. Black media is a mask of zero, so the two
+      //   seconds of nothing that mean "no media" everywhere else in this
+      //   table erase this scene completely. White media is a mask of one,
+      //   which is the same "ignore it" in the only language this scene
+      //   understands. Made the same way as black.mp4; see readme.md.
+      //
+      //   Note this cannot be fixed by leaving media out: with no entry the
+      //   cue inherits the last one's clip, and any clip that is not white
+      //   masks this scene by its own luminance. It needs white named.
+      "scene": "Cloud Ten",
+      "media": "white.mp4",
+      "layers": { "flash": "off", "uv": "rainbow" },
+      "controls": { "auto_height": 0, "manual_height": 0, "speed": 0.25 },
+      "modes": {
+        "2": { "controls": { "manual_height": 0.50 } },
+        "3": { "controls": { "manual_height": 0.85 } }
+      },
+      "mode_ramp": 2.0,
+      "pads": [
+        { "label": "slower",   "params": { "speed": 0.08 },  "controls": { "speed": 0.08 },  "ramp": 2.0 },
+        { "label": "faster",   "params": { "speed": 0.70 },  "controls": { "speed": 0.70 },  "ramp": 2.0 }
+      ]
+    },
+    "white": {
+      // The house lights, after the show: white at half, nothing riding
+      // over it. The screen goes to VideoFX_1 on black - the app's only
+      // "no media", the same as the rain opens on - so no video plays.
+      "scene": "VideoFX_1",
+      "media": "black.mp4",
+      "layers": { "flash": "off", "uv": "off" }
+    },
+    "blackout": {
+      // Before the show: everything off, the layers with it - a flash left
+      // on from the last cue is not a blackout - and the screen on black
+      // the same way.
+      "scene": "VideoFX_1",
+      "media": "black.mp4",
+      "layers": { "flash": "off", "uv": "off" }
+    }
+  }
+}

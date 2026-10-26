@@ -1,0 +1,3222 @@
+# eclipse-dmx
+
+Runs eclipse-os patterns on a real DMX rig, from a desktop, through an Enttec
+USB widget. Windows and Linux.
+
+This is a replacement for QLC+ on a fixed install, not a layer on top of one.
+There is no show-control stack in the middle: a config file describes the
+patch, the executable renders frames and puts them on the wire, and a python
+wrapper handles configuration and drives the running process.
+
+```
+config.json ──> eclipse-dmx ──> Enttec USB widget ──> DMX fixtures
+                  ^   ^
+   MIDI tempo in ─┘   │  line protocol on stdin
+                python wrapper
+```
+
+## Why it is built this way
+
+The pattern code is the same code that runs on the microcontrollers. `ecore`,
+`eanim` and `eio::HSVStrip` compile unchanged for the desktop — the only thing
+that differs is what sits behind the framebuffer. On a relic that is a strip of
+neopixels; here it is a DMX universe. Patterns do not know the difference, so a
+look developed for one runs on the other.
+
+The split between the executable and python is deliberate:
+
+- **the executable** owns frame timing and the wire. A DMX rig wants a steady
+  refresh, and that is not something to hand to a garbage collector.
+- **python** owns configuration and decisions. Building a patch, validating it,
+  and running a cue list are all much nicer in python, and none of them are on
+  the frame deadline.
+
+## Build
+
+Two steps, and the first is once per machine.
+
+**Windows**
+
+```powershell
+cd desktop
+.\tools\setup-toolchain.ps1     # once: installs a pinned MinGW-w64 via winget
+.\build.ps1
+```
+
+**Linux / macOS**
+
+```sh
+cd desktop
+./tools/setup-toolchain.sh      # once: installs a compiler + cmake via apt/dnf/pacman/brew
+./build.sh
+```
+
+The setup script records what it installed in `tools/toolchain.env{,.ps1}`,
+and the build script reads that. So the build does not depend on what happens
+to be on PATH in a given shell, and a fresh machine gets the same compiler as
+the one this was verified on. Both scripts are safe to re-run — they detect an
+existing toolchain and just record the path.
+
+If you already have a toolchain you would rather use, skip setup and point the
+build at it:
+
+```powershell
+$env:ECLIPSE_DMX_MINGW_BIN = "C:\path\to\mingw64\bin"    # windows
+export ECLIPSE_DMX_CXX=/usr/bin/g++                       # linux/macos
+```
+
+The binary lands in `build/eclipse-dmx` or `build\eclipse-dmx.exe`. On MinGW it
+is statically linked against the gcc runtime, so it can be copied to a show
+laptop that has never seen a compiler.
+
+Verified with GCC 16.1.0 (MinGW-w64 UCRT, POSIX threads) on Windows 11.
+
+`.\build.ps1 -Clean` / `./build.sh --clean` blows away `build/` first.
+
+## Check it works with no hardware
+
+`--dry-run` swaps the widget for a console output that prints each frame's
+channel values to stderr. The whole chain runs; only the wire is missing.
+
+```sh
+./build/eclipse-dmx --config config/example.json --dry-run --frames 5
+```
+
+You should see the first twelve channels of five frames. Four RGB fixtures at
+channels 1, 4, 7 and 10 means twelve channels of colour, changing frame to
+frame as the palette sweeps.
+
+## Watch it
+
+Reading channel values off a terminal tells you the numbers changed. It does
+not tell you the rig looks right. So there is a viewer:
+
+```sh
+python -m eclipse_dmx view config/uking_par36_x10.json --pattern obelisk_seasons
+```
+
+A window, one glowing disc per fixture, labelled with its name and address.
+Nothing goes on the wire unless you add `--live`, so this is safe to run at a
+desk with no rig attached.
+
+```
+[space] blackout   [n]/[p] pattern   [↑]/[↓] master   [←]/[→] speed   [q] quit
+```
+
+### the window
+
+**Each device gets its own panel inside the main window** — drag it by the
+title bar, size it by the grip in the bottom-right, and its fixtures lay
+themselves out into whatever room it ends up with. The panels are children of
+the window rather than real OS windows, so they move with it, stay on top of it,
+and cannot be lost behind it. FL Studio's plugin windows work the same way and
+for the same reasons.
+
+Drawing an environment into one shared canvas does not work: a 344-pixel
+sculpture and ten pars have nothing in common as a picture, and the sculpture
+squashes the pars into a corner.
+
+Panels open tiled and stop re-tiling the moment one is moved by hand, because a
+hand-placed layout is worth more than an even one.
+
+How much room each opens with is `view_scale` in the environment — `[0.3, 1.0]`
+for a pillar, `[1.7, 0.45]` for a truss. **It is a view property and touches
+nothing the pattern sees.** It is explicit rather than inferred from the
+geometry: a pillar and a truss plainly want different panel shapes, but *how*
+different is a judgement about the room and the screen, which you make by
+looking at the window and not from a fixture list.
+
+Above 64 fixtures a panel drops the glow and draws bare pixels. Not a style
+choice — a glow is nine canvas items and tk recolours them one at a time from
+python, so 344 of them would be 3096 calls per repaint.
+
+Under the picture is a split: the cue list on the left, and on the right the
+running look's own knobs — see [tuning a look while it runs](#tuning-a-look-while-it-runs).
+The two are separated because they answer different questions. The left is a
+fixed table you learn the shape of; the right changes every time the left is
+clicked, and mixing them in one column moved the buttons whenever a look with
+more properties came up.
+
+Three things about it are deliberate.
+
+**The layout comes out of the config**, from the same `position` fields the
+patterns are driven by — not from a hardcoded rig and not from the obelisk's
+LED geometry. Point it at a different config and you get a picture of that rig.
+A fixture with no `position` falls back to its patch order, so a config that
+never mentions position still draws as the row it almost certainly is.
+
+**The colours are read back out of the DMX universe**, not off the pattern. The
+executable streams what it actually put in the frame, so a wrong patch shows up
+as a wrong picture. A viewer fed from the pattern would cheerfully show a
+beautiful rig while the fixtures sat dark, which is the one bug a viewer exists
+to catch.
+
+It needs tkinter, which ships with python on Windows and macOS. On Debian and
+Ubuntu, `sudo apt install python3-tk`.
+
+### the curve editor
+
+`[e]`, or the **curves** button in the band, unfolds a timeline between the
+picture and the buttons: an editor for the `AutomationCurve` shapes the relics
+play from an impulse (`src/lib/eanim/automation_curve.h`). The window grows by
+the band rather than the desk shrinking by it, because the rig picture is what
+a curve is being shaped against.
+
+Double-click adds a key, dragging moves it, right-click deletes it, and the
+easing menu sets the shape of the segment *leaving* the selected key — the
+same convention the C++ reads by. The cap is eight keys because that is
+`kMaxKeys` on the sculpture: nothing drawable here fails to fit there.
+
+The value axis is a 0..1 weight. Aim it at the master or any of the running
+look's float knobs, press play (or drag along the ruler to scrub), and the
+curve drives that knob live on the same rig the cue buttons drive — shape a
+hit against the actual look instead of imagining it. The transport is a
+*lease*: the knob's value is held when playback or a scrub starts and put
+back when it stops, so an audition never becomes an edit. **copy c++** puts
+the `addKey` calls on the clipboard, ready to paste into a state.
+
+The look pane's **reset** button is the way back from everything else: every
+knob and curve returns to the values the cue constructed, taken from the
+look's first announcement — the executable starts fresh with the desk, so
+first-seen *is* the cue's defaults.
+
+A look can also hand out its *own* curves — `reflectCurves()`, reflect for
+shapes. Those appear in the aim menu as `~ envelope` and the like: aiming at
+one loads the live shape (the beat pulse's attack/decay envelope, the boot
+swell), and every finished edit writes the whole curve back over the
+protocol (`CURVE` announcements, the `curve` command), so the next beat
+plays the shape you just drew. The attack/decay knobs still work; they
+rebuild the curve over a drawn one, last writer wins, and the drawing
+follows.
+
+The maths is `eclipse_dmx/curves.py`, a line-for-line mirror of the C++
+evaluate — including two accidents the vendored easing library ships with
+(an unsequenced double decrement in `easeInOutCubic`, and the bounce trio
+calling the *int* `abs`), mirrored on purpose so the editor draws what the
+binary will actually play.
+
+### binding a pad — the MIDI map
+
+`[m]`, or the **midi** button, unfolds a band down the right: a list of
+bindings and a form for the selected one. A binding is a trigger, a mode and
+**a list of actions**, and the actions are a registry — `syn: scene`,
+`rig: state`, `rig: look knob`, `rig: protocol line` and the rest — so a pad
+on a controller and a bass drum arriving over OSC can do the same things.
+
+**One pad does as many things as you like.** Press **+ do** and the row grows
+another action; the list runs in order, which is worth relying on — a `state`
+followed by a `param` is a knob turned on the look that state just brought
+up. This is the shape a cue actually has: the visualiser moves to a scene
+*and* the rig moves to a state, and to whoever hit the pad that is one thing,
+so it is one row rather than two bound to the same note. The **−** beside an
+action removes it; the last one stays, because a trigger that does nothing has
+no spelling in the file (use **del** to remove the row).
+
+**Nothing has to be typed to bind a pad.** Press **+ learn**, hit the pad,
+and the trigger is filled in from what arrived; then say what it should do.
+The editor's own **learn** button does the same for the binding already
+selected, which is how a pad gets moved without touching the numbers. Both
+disarm as soon as one message lands.
+
+Three details that are the point of it:
+
+- **The pad being learned does not also fire.** The event is offered to learn
+  before the dispatcher sees it and eaten when taken — otherwise binding a pad
+  to a cue would launch that cue in front of the room.
+- **The release is not a second binding.** A pad speaks twice, down and up;
+  learn takes the press and swallows the up-stroke that follows.
+- **A knob binds as a `cc`** and a pad as a `note`, off the message itself,
+  so nothing depends on reading a controller's chart.
+
+**And learn read backwards: find.** Press **find**, hit a pad, and the mapping
+that pad fires is the one selected in the list. On a surface with eighty-odd
+pads the usual question is *what does this one do*, and answering it by
+reading `ch=1 note 81` off a row and hunting for the pad is the wrong way
+round. Like learn it takes the whole pad — press and release — so asking what
+a button does never does it. A pad bound once per page steps: arm **find**
+again, hit the same pad, get the next binding on it.
+
+The map is `midimaps/default.json` beside the config, or `--midimap FILE`, and
+an evening's bindings are saved on the way out rather than asked about — a set
+is not the time for a dialog.
+
+### lighting the pads
+
+`--midi-out SPEC` names a MIDI **output** and the surface starts showing the
+map: every bound pad lit in its own colour, and the pad for what the rig is
+*already doing* **pulsing**. The **lamp** box in the editor is that colour, as
+a palette index — the controller's own numbering, out of its manual, rather
+than this desk inventing a second name for a colour the hardware has named.
+
+**How a pad knows it is the live one.** An action in the registry may offer a
+`check` alongside its `run` — "is my effect in force right now?" — answering
+yes, no, or *cannot know*. A pad pulses when every action that can answer says
+yes. So it is a property of the actions, not of the state machine: a new kind
+of binding that can report its own state lights correctly with nothing in the
+lamp code changed.
+
+Three rules fall out of that, and all three are the point:
+
+- **Cannot-know abstains rather than vetoes.** Most of the registry is verbs
+  with no readback. If they counted as *no*, the commonest cue there is — a
+  scene on the visualiser beside a state on the rig — could never light.
+- **Everything that can answer has to agree.** A pad that loads a machine
+  *and* opens one of its looks is only live when both are true. That is what
+  makes `jacket / campfire` a cue rather than two buttons: on jacket at some
+  other look it is lit, not pulsing.
+- **A Synesthesia action never answers no on no information.** With nothing
+  known it passes, so a scene binding can never be the reason a pad fails to
+  light. The cost is a fresh surface where scene pads pulse until the first
+  cue is fired; it settles on the first press.
+
+The rig answers off what it actually did — `rig: state` compares the running
+look and `rig: pattern` the running pattern (for a state machine, *which
+machine is loaded*), both read from `STATE` and the `PARAMS` header rather
+than from what was last pressed here. So a state changed from a click, a
+shortcut or an OSC binding moves the lamp too.
+
+**Synesthesia answers off two sources that do not rank equally.** What this
+desk sent is always available and is right until the app is touched from its
+own window. What the app *announced* is true — it publishes `/scenes/{name}`
+on every scene launch, and if **Settings > OSC > Output** is on at its end
+that arrives on the same port the audio does, gets recorded, and outranks the
+sent record. That is the one thing that catches a scene changed in
+Synesthesia's own window, and it is worth switching on for exactly that.
+
+Presets, favslots and media have no OSC output at all — the app only accepts
+them, it never reports them — so those pads light off the sent record and
+nothing else. A new scene retires the remembered preset, since a preset
+belongs to the scene that was running when it loaded. `syn: control` is a
+fader rather than a cue and abstains entirely.
+
+Three things worth knowing before switching it on:
+
+- **A Launchpad X has to be in Programmer mode to take LED messages at all.**
+  Its manual is explicit — colours are accepted "in Lighting Custom Modes (and
+  Programmer mode)" — and in Session or Note mode a host LED message is not
+  refused so much as unreliable: some pads light, some do not, which reads
+  exactly like a failing cable. The desk sends the mode SysEx on the way in.
+- **Programmer mode changes what the pads send.** The grid becomes notes
+  11–88, the top row and right column become control changes. Bindings learned
+  in a custom mode were learned against other numbers, so they will need
+  learning again — which is what **+ learn** is for.
+- **It puts the controller back on the way out.** Programmer mode disables the
+  Launchpad's own Setup button, so a desk that exited without restoring Live
+  mode would leave the box somewhere its front panel cannot get out of.
+
+### pages — a tab per machine
+
+Sixty-six looks do not fit on sixty-four pads, and cramming them in gives a
+surface nobody can read. So a mapping can name a **page**, and only the page
+showing is on the surface — the grid is one machine at a time.
+
+A page hides a row from the pad as well as from the lamp, and it has to:
+two pages put different rows on the same pad, so a tab is a way of *choosing*
+between them rather than of stacking them. Leave `page` blank and the row is
+on every page, which is what the tabs and the arrows are — and what every map
+written before pages is, so an old file behaves exactly as it did.
+
+`desk: page` is the action that switches, and it is the first action that
+touches neither the rig nor the visualiser — it changes what the controller
+is, not what the lights are doing. `opens_on` at the top of the file says
+which tab the desk starts on.
+
+### the whole rig on one surface
+
+`config/midimaps/launchpad-all-states.json` is every look of every machine,
+laid out for a Launchpad X; `config/midimaps/mythos-show.json` is the show's
+page of it alone, with no tabs, and is what the launcher runs on:
+
+```
+./launch-mythos-set.sh                                  # the show's map
+./launch-mythos-set.sh --midimap config/midimaps/launchpad-all-states.json
+```
+
+The launcher picks `midimaps/<config name>.json` beside whatever `--config`
+it is given, and falls back to the all-states map for a config with none of
+its own.
+
+- **The grid** is the page's machine, one look per pad — 16 for mythos26, 12
+  for jacket, 26 for scanner, and so on. Each pad carries `rig: pattern` then
+  `rig: state`, so it lands right even if the rig was moved from the desk
+  while the page was up.
+- **The show's page is a cue list**, not a list of looks - and on its own
+  it is `mythos-show.json`. Its sixteen pads
+  are the bottom two rows, and each carries the *whole cue* off
+  `config/mythos-show.json`'s cue table: the state, then each layer's state
+  (`rig: layer state`), then the visualiser's scene and media — the rig
+  first, so a dead visualiser costs the rig nothing. Above them, row 4 is
+  the **mode pad** — one pad, `rig: cue mode`, stepping whatever cue is up
+  through its modes 1, 2, 3 (4 on the churn and the nova) and round, and
+  firing what the cue table says the room does in each (the rain's video
+  off in 2 and 3). It lights when the cue is off mode 1; hitting the cue
+  again is mode 1. A gap along the same row, **four pads name a mode
+  outright** — the churn's and the nova's palette buttons — each lit when
+  the cue is in that one. Rows 5 and 6 are the layers the config declares,
+  a pad per state: the flash off or on, the UV off / flash / on / kick /
+  rainbow. So a layer can be moved off a cue's default by hand, and
+  hitting the cue puts it back. Row 7 is the **cues' own pads** — the
+  clouds' slower / faster — off the table's `pads`.
+  The viewer's cue buttons fire the same table, and its `mode` and pad
+  buttons are the same pads. Both files come out of one run of the
+  generator and carry the same rows, so they cannot disagree about what a
+  cue does.
+- **The right column** — the scene-launch buttons — are the tabs. Each is
+  `desk: page` *and* `rig: pattern`: the page so the grid shows that machine's
+  looks, the pattern so the rig is on the machine those looks belong to.
+  Either alone would be a lie, and the tab pulses only when both are true.
+- **Up and Down** are the two momentary inputs a look reads — a jacket's
+  remote buttons, on a rig that has none. Bound in `value` mode, so the arrow
+  is *held* rather than latched: a button sends full going down and zero
+  coming up, and one row covers both edges. Eight of jacket's twelve looks
+  read them. The lamp follows your finger.
+- **Left, Right and the four mode buttons are left alone.** They are hardware
+  with a meaning printed on them, and burying a look under one is how a
+  surface stops being readable.
+
+Colour is the machine: mythos26 cyan, jacket amber, obelisk blue, uv purple,
+flash pink, generic green, scanner magenta.
+
+It is generated rather than written, because seventy-odd rows of JSON have to
+agree with what the rig announces and the rig is the only authority on that:
+
+```
+python tools/make-launchpad-map.py --probe
+```
+
+Add a look to a machine and re-run it. Hand-edit the JSON and it is right
+until the next time.
+
+The button numbers were measured off the device in Programmer mode rather
+than read off a diagram: the grid is notes 11–88, and the top row is CC 91 Up,
+92 Down, 93 Left, 94 Right, then 95 Session, 96 Note, 97 Custom, 98 Capture.
+
+Underneath, the executable knows nothing about any of this. It grew one
+generic verb — `midi out <spec>` opens a port and `midi send F0 00 20 ...`
+puts bytes on it — and every Launchpad-shaped decision lives in
+`eclipse_dmx/launchpad.py`, where it is tested with no controller plugged in.
+A second make of controller is a new module there and no C++ at all.
+`--list-midi` now lists outputs (`MIDI-OUT`) beside inputs.
+
+### the frame stream
+
+The viewer is a client of a flag anything can use:
+
+```sh
+./build/eclipse-dmx --config config/example.json --dry-run --emit-frames
+```
+
+On stdout, alongside the normal protocol:
+
+```
+FIXTURES par_1 par_2 par_3 ...      once, at startup, in patch order
+F e3c545 d94616 d55b1c ...          one per frame, rrggbb per fixture
+```
+
+`--emit-rate` caps it, 30 per second by default. It is a display rate, not the
+DMX refresh — the rig still runs at `device.fps` whatever the viewer asks for.
+
+### out to a visualiser
+
+The viewer is one client of that stream; here is the other. `osc` runs a show
+and sends one fixture's colour to an OSC colour control, so the visuals behind
+the truss are tinted by the same render that is lighting it:
+
+```sh
+cd python
+python -m eclipse_dmx osc --test                       # is anything listening
+python -m eclipse_dmx osc ../config/mythos26.json --device synesthesia
+```
+
+The first consumer is **Synesthesia** — and the scenes that read it are in
+`scenes/`. Two settings there, in **Settings → OSC**, and the first one is the
+one that bites: OSC **input** ships switched *off*, and off means the packets
+are discarded with no error at either end. The second is the port, `6000` out
+of the box, which is why that is what the sender defaults to.
+Start with `eclipse_link_test`, which is a test card for exactly this and tells
+apart the ways it can fail; `eclipse_chroma_key` is the look. Nothing about the
+sender is Synesthesia-specific: it is UDP, an address, and three floats.
+
+**Which colour**, and why it is one fixture rather than the rig. A rig is rarely
+one colour. The mean of a palette sweep across a truss is grey every time, and a
+"primary colour" that is always grey is worse than no feature — so `--device`
+names a point of the look instead. `devices/synesthesia.json` is one fixture
+with no wire, placed by the environment, existing only to be read back out of
+the frame stream. `--fixture N` indexes the flat run of fixtures directly.
+
+`--ungamma` defaults to the config's `master.gamma` and undoes it. The frame
+carries gamma already applied, because an LED is linear in duty cycle and an eye
+is not; a screen is downstream of a display that corrects again, and passing the
+corrected value on applies it twice and reads washed out.
+
+What it cannot tell you is whether any of it arrived. UDP is unacknowledged, and
+on Windows loopback a closed port does not even come back as an error — so a
+whole set aimed at a visualiser that was never started reports zero failures.
+That is why `--test`, which sweeps a hue with no show and no hardware, is the
+first thing to run: it separates "the app is not listening" from "the show is
+not producing a colour", and from across a room those look identical.
+
+#### naming the machine instead of its address
+
+The visualiser is often not on this laptop, and on a network that hands out
+addresses by DHCP the one it had last week is not the one it has tonight. So
+`--address` takes a name:
+
+```sh
+python -m eclipse_dmx osc config/mythos26.json --device synesthesia \
+    --address mac-mini.local:6000
+python -m eclipse_dmx view config/mythos26.json --live \
+    --osc mac-mini.local:6000 --osc-device synesthesia
+```
+
+**The name is looked up again while the set runs** — every 15s, or
+`--resolve-every` (`--osc-resolve-every` on the viewer; `0` resolves once, as
+before). If the answer moves, the socket is re-pointed and the change is
+printed. This is the whole reason to name a machine rather than an address:
+the failure it avoids is invisible from this end. A connected UDP socket keeps
+sending to the address it was given, a machine that took a new lease is not at
+that address any more, and nothing anywhere reports it — the counter still
+climbs, the report still says everything went out, and the visuals sit dark.
+
+A failed look-up is not a re-point: the address in hand is kept. One name going
+quiet for a moment is a wifi hiccup far more often than it is a machine that
+moved, and going dark over it would turn a blip into an unlit visualiser for
+the rest of the set.
+
+**A name that does not resolve at startup no longer stops the show.** The
+machine being asleep at soundcheck is normal; the rig runs, the link has
+nowhere to send, and it picks the machine up when it appears. Only an IP
+address that will not connect is still fatal, because that is a typo.
+
+`.local` is mDNS, and it needs both ends: the machine has to be announcing, and
+this one has to be able to ask. On Debian and Ubuntu asking usually means
+`avahi-daemon` plus `libnss-mdns`; on a systemd-resolved machine it means
+`MulticastDNS` on for the link. The sender tells the two apart rather than
+printing one "cannot resolve":
+
+```sh
+avahi-resolve-host-name -4 mac-mini.local   # is it announcing?
+resolvectl mdns                             # can we ask, on this link?
+```
+
+An IPv6 literal needs its brackets — `[fe80::1%wlan0]:6000` — because an
+address full of colons has no last one to split a port off. Where a name
+answers with both families the IPv4 answer is taken: an OSC input bound to
+`0.0.0.0`, which is the usual thing, cannot be reached over v6 at all, and
+being sent to the wrong family is exactly the silent failure above. A v6-only
+name still resolves; that is a preference, not a filter.
+
+Two more flags exist for one failure each. `--separate` sends r, g and b as
+three messages instead of one with three floats, for a build of the app that
+wants them that way. `--control` takes an address: the default
+`/controls/global/color/1` is **positional** — the first colour control in the
+order the running scene declares them — and `/controls/scene/<name>` is the
+stable alternative, at one address per scene.
+
+### back the other way — the visualiser's audio engine
+
+The wire goes both ways. Synesthesia Pro can send its **audio analysis** out
+over OSC, and this takes it in and binds it to the rig's own knobs:
+
+```sh
+python -m eclipse_dmx view config/mythos26.json --live --osc-in 7000
+python -m eclipse_dmx run  config/mythos26.json --osc-in            # port 7000
+./launch-mythos-set.sh                                              # on by default
+```
+
+**Why take audio from a visualiser.** Because it is already being computed, by
+something with a better view of the music than this program has. eclipse-dmx
+hears nothing — its beat arrives as MIDI notes from Mixxx, which is a beat grid
+and a VU meter and nothing else. Synesthesia is running a real FFT on the same
+music and publishing forty-odd derived values a frame: `syn_BassLevel`,
+`syn_Hits`, `syn_Presence`, `syn_OnBeat`, `syn_BPM` and the rest, split into
+bass / mid / midhigh / high. Those are the numbers a look wants and the ones
+this rig has no way to compute.
+
+**Switching it on**, in the app: **Settings → OSC**, turn *OUTPUT* on, tick
+**Output Audio Variables**, set the output IP to the machine running the rig
+and the output port to `7000`. Two settings, both off out of the box, and off
+looks exactly like every other failure here.
+
+**The output address takes a numeric IP and nothing else** — no hostname, no
+`.local`. That is an asymmetry with this end, which does take names
+(`--osc jakes-mac-mini.local:6000`, re-resolved on an interval, so the
+visualiser can move), and it is worth knowing because the app's default of
+`127.0.0.1` means *the machine Synesthesia is running on*. On a rig where the
+visualiser sits on its own machine, that sends the whole analysis into that
+machine's loopback and nothing ever leaves it — right when both halves are
+tested together, silently wrong the moment they are not. So:
+
+| | |
+| --- | --- |
+| a fixed rig | give the desk a DHCP reservation or a static address, and type it in |
+| a rig that moves | `255.255.255.255` — broadcast, documented, and needs no address at all |
+
+The show prints the number to type when it opens the port, so it does not have
+to be looked up under pressure:
+
+```
+osc in: point Synesthesia's OSC *output* at 192.168.50.85:7000 - it takes a
+        numeric IP only, and 127.0.0.1 there means the machine it is running on
+```
+
+and, on Linux with ufw active and the port not allowed, what will otherwise eat
+the packets:
+
+```
+osc in: ufw is active, its default for incoming is DROP, and nothing in its
+        rules mentions port 7000 ... sudo ufw allow from 192.168.0.0/16 to any
+        port 7000 proto udp
+```
+
+#### which addresses — the one thing that has to be looked at
+
+**Synesthesia's docs name the uniforms but not the OSC addresses they arrive
+on**, and v1.20 renamed them ("more nested and readable"). So there is no
+honest way to write a binding except to look at what this build sends:
+
+```sh
+python -m eclipse_dmx osc-watch --port 7000     # play a track for 15s
+```
+
+```
+445 packets, 37 addresses:
+  /audio/level/bass                    x445    0.294..1.000  -> bass
+  /audio/hits/bass                     x445    0.030..1.000  -> bass_hits
+  /audio/hits/high                     x445   -0.000..-0.000 -> high_hits
+  /audio/level/raw                     x445    0.023..1.000  -> nothing
+  /audio/bpm/bpm                       x445  118.506..118.630 -> bpm
+```
+
+That is a real capture, and it is why this command exists rather than a table
+in this file. The scheme is `/audio/<family>/<band>` — **the band comes after
+the family**, so the first version of the shipped map, which globbed
+`*bass*level*` from the documented uniform names, matched precisely nothing.
+The right-hand column is what the map does with each address, and the command
+also lists enabled bindings that matched nothing at all, which is the failure
+that is otherwise invisible from the rig.
+
+The `-> nothing` and the flat `-0.000` above are both worth reading. Nothing
+takes `/audio/level/raw` on purpose — it is the unsmoothed level beside
+`/audio/level/all`, and binding both would put two writers on one channel. And
+`/audio/hits/high` sitting at exactly zero across 445 samples, while every band
+around it moves, is a uniform this build does not fill; see the note on
+`hit_pars` in `config/mythos26.json`.
+
+That is the same move `midi-watch` makes for Mixxx's notes and it is here for
+the same reason: every step of wiring this up is verifiable except the last
+one. It needs no show and no rig — the app sends whether or not anything here
+is running — but it cannot run *while* a show holds the port, because a UDP
+port has one owner.
+
+#### the bindings
+
+`config/oscmaps/synesthesia.json`, found by name beside the config, or named
+with `--oscmap`. A binding is a pattern, a mode and an action:
+
+| | |
+| --- | --- |
+| `pattern` | a **glob** against the address, so `*bass*level*` survives the app renaming what is around it |
+| `exclude` | globs that veto a match — `*level*` minus `*bass*`/`*mid*`/`*high*` is how "the whole spectrum" is said, since a glob cannot say "not" |
+| `mode` | `value` (every message, scaled) or `trigger` (once, on the way up through `threshold`) |
+| `range` | the incoming range mapped onto 0..1 — `syn_BPM` arrives at 50..220 |
+| `limit` | the least interval and the least change worth sending |
+| `action` | **the same registry the MIDI mappings use** — a pad and a bass drum can do the same things |
+
+What ships is **one binding per channel of the audio bus**, and almost nothing
+else: nineteen lines pointing `syn_BassLevel` at `bass`, `syn_MidHighHits` at
+`midhigh_hits`, and so on down the list. One exception, off — `syn_OnBeat` →
+`tv_static`, as an example of a `trigger`.
+
+The tempo is not a special case here: `syn_BPM` fills the `bpm` channel like
+anything else, and [`audio.bpm`](#mixxx-or-synesthesia) is what decides whether
+the clock reads it. There is one route to the rig's tempo, and two ways to set
+one number is the confusion the `source` switch exists to remove.
+
+That is a deliberate change of shape. A binding aimed straight at a **knob**
+has to know which look is running and what its knobs are called, so it is
+written per show and dies when the look changes — which is what the first
+version of this file was, and why it only ever drove three knobs. A binding
+aimed at a **channel** knows neither, so it is written once and every look that
+ever wants bass can have it. See [the audio bus](#the-audio-bus) for the other
+half.
+
+Four actions were added for this and work from a MIDI fader too: **`audio`**
+(fill a channel of the bus), **`param`** (a knob on the running look, or on a
+named layer's), **`master`**, and **`bpm`** (still registered, for a config
+that wants the tempo without the bus; the shipped map no longer uses it).
+
+#### watching the link while it runs
+
+`osc-watch` cannot run while a show holds the port, which is exactly when the
+question gets asked. So the viewer has an **osc panel** — the `osc` button, or
+`[o]` — a band down the right showing what is arriving, what is going out, and
+what the map does with each of them:
+
+```
+in  :7000
+  41 addresses, 12043 messages, heard now
+  /syn/BassHits              #####. 0.830          -> bass_hits
+  /syn/Wobble                ##.... 0.310          -> nothing
+  /scenes/neongrid                  -              -> app scene
+
+out Jakes-Mac-mini.local:6000 -> 192.168.1.40
+  4120 sent, 0 refused by the socket
+  a socket that accepts a send proves nothing about
+  the far end; UDP has no reply. See 'app' below.
+
+app
+  scene /scenes/neongrid  (2s ago)
+```
+
+Rows are **discovered**, not listed — nothing in the panel knows what addresses
+exist, so a build that nests its uniforms differently, or a scene publishing
+controls of its own, appears without any code being edited. Which is the point,
+given the addresses are undocumented.
+
+It never claims the link is "connected", because over UDP there is no such
+thing and the sender's own comment says so. It reports the three things that
+are knowable, kept apart on purpose: **in** (when something last arrived —
+proof the app is running and pointed here), **out** (whether the endpoint
+resolves and how many sends the socket took or refused — *not* proof anything
+received them), and **app** (the last `/scenes/{name}`, the one message the
+visualiser sends about itself). A rig sending happily to an app that is not
+listening reads as "out: sending, in: nothing heard" — the failure that costs
+an evening, and the one a single green lamp would have hidden.
+
+`osc-watch` does the same check offline, and also reports the other direction:
+enabled bindings whose glob matched nothing that arrived.
+
+**You do not have to know to open it.** The two states that are otherwise
+indistinguishable from a rig working normally get named once in the status
+line:
+
+```
+osc in: nothing has arrived on 7000 in 8s - is Synesthesia's OSC *output* on
+        and pointed here? [o] for the panel
+osc in: 41 addresses arriving and no binding takes any of them - the map's
+        globs do not match this build. [o] for the panel
+```
+
+The first names the app's OSC **output** deliberately. It is a separate setting
+from its input, and a desk whose colour is already reaching the visualiser
+proves only that the *outbound* half works — which is exactly the evidence that
+makes the inbound half look like it must be fine too. The two directions are
+independent: different port, different setting, either can work alone.
+
+#### rate, which is not a detail
+
+Audio uniforms arrive at frame rate — sixty a second, per uniform, forever.
+Every one turned into a protocol line would be thousands a minute down the pipe
+the cues also use. So a `value` binding is limited three ways, all per binding:
+a minimum interval between sends (default 1/30s), a minimum change worth
+sending (default 0.01), and a **keepalive** — the longest it may stay silent
+about a value that is not changing (default 0.2s). A `trigger` has none of them
+— dropping a beat is the one thing that mode exists not to do, and an edge has
+no held value to restate.
+
+**The keepalive is not an optimisation, it is a correctness fix, and it shipped
+broken.** The change threshold and the bus's staleness decay are each right
+alone and wrong together: the binding says "a level holding still says
+nothing", which was correct when a binding drove a *knob* — a knob that has
+been set stays set — while the bus fades any channel nobody has restated within
+`kStaleAfter` (0.8s), which is a dead-man's switch so a dropped link cannot
+leave the rig lit at whatever the music was doing when it went. Paired with no
+keepalive, they delete any steady value: suppressed at one end, stale at the
+other, and the look driven from it fades out while the music is still playing.
+0.2s against a 0.35s hold leaves room for one keepalive to be lost, which
+matters because nothing retransmits UDP.
+
+Streamed values go down the protocol **without waiting for the reply**
+(`ShowController.set_param(..., wait=False)`). A round trip per value would
+serialise the sender against the show's own loop, and there is nothing to do
+with the answer; the reply is still parsed on the reader thread, so the
+recorded knob values catch up either way.
+
+Nothing here is fatal. No map file, a map that will not parse, a port already
+held, a binding aimed at a knob the running look does not have: each is a line
+in the status area and the show carries on. The rig is the show; this drives
+knobs on top of it.
+
+### the audio bus
+
+Every number the rig knows about the *sound* — as opposed to the grid — lives
+in one place, and both sources fill the same slots:
+
+```
+Mixxx ──VU notes over MIDI──┐
+                            ├──> the audio bus ──> a mod ──> any pattern knob
+Synesthesia ──OSC──> the OSC map ──┘         21 channels, 0..1
+```
+
+Twenty-two channels, named after Synesthesia's uniforms, lowercased and
+un-camelled — `syn_BassLevel` is `bass`, `syn_MidHighHits` is `midhigh_hits`:
+
+| | |
+| --- | --- |
+| levels | `level` `bass` `mid` `midhigh` `high` |
+| hits | `hits` `bass_hits` `mid_hits` `midhigh_hits` `high_hits` |
+| presence | `presence` `bass_presence` `mid_presence` `midhigh_presence` `high_presence` |
+| the grid | `beat` `bpm` `bpm_confidence` `intensity` |
+| Mixxx only | `level_instant` `level_average` `level_meter` |
+
+Everything is 0..1, `bpm` included: it arrives already scaled across its
+50..220, so nothing downstream has to special-case one channel's units.
+`channels` at the desk prints what is on the bus right now and which of it is
+live.
+
+Mixxx's three VU notes land on their own three slots whatever `audio.source`
+says — they are the cable's, and a cue that names one is asking for Mixxx's
+meter: the geode's red on `level_instant`, the tunnel's wash and the punk's
+drop on `level_average`. With `audio.source: mixxx` the average is **also**
+`level` — the same slot `syn_Level` fills the rest of the time. That
+aliasing is what makes the source a switch: a look reading a level does not
+learn that the cable changed.
+
+Deliberately absent are Synesthesia's `syn_*Time` clocks and its BPMSin/BPMTri
+waves. They are unbounded or generated, and the bus's hold-and-decay means
+nothing for a value that only counts up. A pattern that wants a beat-rate sine
+already has a clock.
+
+#### mods — the analysis as an ordinary parameter
+
+A **mod** points a knob the running look already has at a channel:
+
+```
+mod intensity bass 0 1              # the running look's own knob
+layer hit_ring mod level bass_hits  # a layer's
+mod intensity off
+mods                                # what is driving what
+```
+
+Every frame, before the look renders, the engine writes
+`low + (high - low) × bus.get(channel)` into that property. Because a
+`Property` points straight at the pattern's member and fires its `onChanged`, a
+knob driven this way is indistinguishable from one turned at the desk — which
+is why **no pattern needed changing to become audio-reactive**, and why one
+written next year will not either. `low`/`high` are the *knob's* range, not the
+channel's; inverting them is legal and useful, for something that should close
+down as a level rises. `slew` is a symmetric low-pass in seconds, 0 to follow
+exactly.
+
+A mod can be declared in the config, which is the show's opening state:
+
+```json
+"mods": { "intensity": "bass" },
+"layers": [
+  { "name": "hit_ring", "fixtures": ["scanner_ring/*"], "pattern": "solid",
+    "blend": "add", "color": "#ff0000", "mods": { "level": "bass_hits" } }
+]
+```
+
+or changed live at the desk, which is the difference between a rig you tune and
+a rig you edit and relaunch. One knob has one driver: repointing replaces
+rather than stacks, because two writers on one property is a race whose winner
+is whichever ran last.
+
+A mod survives a cue change — that is the point, the bus keeps driving as the
+show moves — but a knob does not. `mods` marks one whose property the current
+look has never had as `no-param`, which is the only way that failure is
+visible: a per-frame writer cannot complain sixty times a second.
+
+#### additive layers
+
+A layer takes `"blend": "add"` and sums with what the show put on its fixtures
+instead of writing over it. `"over"` is the default and what layers have always
+done — right for a light with its own job, like the UV par, where what the show
+wanted on it is irrelevant. `add` is right for a light doing two things at
+once.
+
+The guarantee that makes it useful: **an additive layer sitting at black is
+invisible.** So a hit layer is safe to leave patched — it rides over every cue,
+not just the one written for it, and a night with no visualiser costs the hits
+and nothing else. (This is why the compositor does not use `ecore::HSV::add`,
+which blends the two hues at a flat 50% however dark either is, and so would
+drag the show's colour halfway to red while emitting no light. The two are
+summed as light — in RGB, channel by channel, clamped — which is what two
+lamps pointed at one surface actually do. It was for a while a hue lerp
+weighted by each side's share of the light, which kept the black-layer
+guarantee but walked the hue as a number: a white flash over the punk's
+purple landed halfway from 280 to 0, and the rig flashed green-cyan on
+every beat. See `edmx/color_mix.h`.)
+
+A layer's `fixtures` take a trailing `*` as a prefix match, in the device's own
+order: `scanner_ring/*` is the whole ring, `pars/par_*` is the ten pars without
+the UV on the end of the same cable.
+
+#### the three hit layers, and why the show does not carry them
+
+`config/audio_layers_test.json` — a bench rig, and the only config that
+declares any layers:
+
+| layer | section | | channel |
+| --- | --- | --- | --- |
+| `hit_ring` | the scanner ring, 35px | red | `bass_hits` |
+| `hit_obelisk` | the pillar, 344px | green | `mid_hits` |
+| `hit_pars` | the truss, 10 pars | blue | `midhigh_hits` |
+
+Each runs `solid` — one colour, one level — with its level on a mod. Nothing in
+the pattern knows about audio: it is a colour and a number, and the bus turns
+the number. Which is why adding a fourth needs no new code.
+
+**These were in the show, patched permanently, and that was a mistake worth
+recording.** The argument for leaving them there was the invisibility
+guarantee above: a layer sitting at black adds nothing, so it costs nothing
+under the cues it was not written for. That holds exactly until the channels
+are actually being fed. Then every cue in the show is itself plus red, green
+and blue; the obelisk is 344 pixels of yellow-green jittering at whatever
+`mid_hits` is doing; and the audio meter — an instrument, whose whole job is to
+report one number honestly — reports that number plus a layer.
+
+A permanent additive overlay across three devices is an implicit global effect.
+A rig should not have one, and "it is invisible while the input is dead" is not
+a property to design around. So the capability stays and the patching does not.
+
+#### reading the bus off the rig
+
+`pattern audio` — the `audio` button in the viewer, the `audio` tab (cc 29) on
+the launchpad, and what `config/mythos26.json` currently opens on — is a cue
+per channel. Twenty-one of them, built straight off the channel table, so a
+channel added to `AudioChannel` is a cue with nothing else edited.
+
+Every other look here is a show. This one is an instrument, and it earns its
+place because the analysis wire has four ways to fail that all present as *"the
+lights are not moving"* — output off, wrong address, firewall, globs that do not
+match — plus a fifth that presents as nothing at all: **a uniform the app
+publishes and never fills.** That one is not hypothetical; `/audio/hits/high` is
+exactly that on this build.
+
+So the meter draws three things apart:
+
+| | |
+| --- | --- |
+| a value | whole-rig brightness, in the family's colour — white levels, red hits, blue presence, green grid, amber for Mixxx's own two |
+| a peak | held above the value and decaying, because a transient is two frames wide and flickers too fast to size by eye |
+| **not wired** | a dim amber breath, too faint to mistake for a reading. A channel nobody is filling and a channel sitting at zero are the same number and completely different problems |
+
+Not spatial, deliberately. A meter that filled up the rig would read as a
+different number on each device — the obelisk keeps its own 0..43 rather than
+being squashed into the show's 0..1, the ring stands in literal stage
+coordinates, and the truss is offset past both.
+
+#### mixxx or synesthesia
+
+One setting, and it is enforced rather than advisory:
+
+```json
+"audio": { "source": "synesthesia", "port": 7000, "map": "oscmaps/synesthesia.json" }
+```
+
+| | |
+| --- | --- |
+| `mixxx` | the VU notes fill `level` / `level_instant` / `level_average` / `level_meter`, as always, and the beat is Mixxx's grid. The other eighteen channels stay dark, so the hit layers sit at black — which, being additive, means they vanish rather than break |
+| `synesthesia` | the app fills `level` and the eighteen over OSC, and with `"bpm": true` **owns the beat** too. The MIDI VU notes still land on their own three `level_*` slots — the cues that name Mixxx's meter read those — but never on `level`, and with the beat on the bus the MIDI cable is not wired to the clock, so the two cannot both write the same thing |
+| `none` | nothing fills it |
+
+A config declaring `synesthesia` opens the port on its own — `--osc-in` is then
+for overriding it, not for remembering it at a venue.
+
+**The beat can come with it — the show's config says not.** With `"bpm":
+true`, `syn_BPM` sets the tempo, `syn_OnBeat` sets the phase, and the MIDI
+cable stops reaching the clock: having picked the app that is actually
+listening to the music, taking its answer for where the beat is as well is
+the consistent choice, and a split is the arrangement where the two could
+quietly fight, because `markBeat` folds every gap between beats into the
+tempo. That is `config/mythos26.json`. **`config/mythos-show.json` runs the
+one supported split** — `"bpm": false`: the analysis from the visualiser,
+the beat from Mixxx's grid on the cable — because the detector proved
+unreliable for tempo on the night, and the DJ's own grid is the better
+source. The cable is wired to the clock in that mode and the bus's two beat
+channels are ignored by it; `midi status` says `beat_from=midi`.
+
+Both of Synesthesia's own channels imply a tempo — `syn_BPM` states it,
+`syn_OnBeat` implies it by when it fires — so while the first is live the second
+sets phase only. The stated number is the better of the two: it is smoothed
+inside the detector, where `syn_OnBeat` arrives over UDP through a rate-limited
+binding.
+
+Nothing happens at all unless the `bpm` channel is live. A channel nobody is
+filling reads zero, and zero would mean 50bpm — so a link that never came up or
+dropped mid-set leaves the tempo exactly where it was, and the clock free-runs,
+which is what it is for.
+
+`midi status` reports both owners:
+
+```
+MIDI-STATUS port="..." ... beat_from=osc audio_from=synesthesia bpm=130.0 src=osc lock=yes ... bus=bass=0.71 bass_hits=0.93
+```
+
+`beat_from` is the *configured* owner; `src` is whoever last actually set the
+tempo. They differ in exactly the case worth being able to see at a venue —
+Mixxx playing and the rig not following it reads as `beat_from=osc` with
+`src=internal`, which says the cable is not wired to the clock rather than that
+the cable is dead.
+
+So flipping that one word back to `"mixxx"` is a complete, working fallback for
+the night Synesthesia will not start: the beat returns to the cable (where the
+show already has it), the hit layers go dark, and nothing else changes.
+`--no-osc-in` does the same without editing anything.
+
+## Run it for real
+
+```sh
+./build/eclipse-dmx --config config/example.json
+```
+
+`"port": "auto"` picks the first attached serial device that looks like a
+widget. If that guesses wrong — likely on Windows, where a COM port does not
+say what is behind it — list them and be explicit:
+
+```sh
+./build/eclipse-dmx --list-ports
+./build/eclipse-dmx --config config/example.json --port COM4
+```
+
+## Devices and environments
+
+A **device** is a physical thing: a sculpture, a truss of pars. It owns its
+geometry, how its numbers are read, and its own way onto a wire. It lives in
+`devices/`, described once, and is referred to by name.
+
+An **environment** is a room with things in it, and the show running on them. It
+lists devices, says where each one sits in the pattern's coordinate space, and
+holds the master, the pattern and the tempo — because those belong to the show,
+not to any one device.
+
+```json
+{
+  "master":  { "brightness": 1.0, "gamma": 2.2 },
+  "pattern": { "name": "audio", "state": "beat_pulse" },
+  "devices": [
+    { "device": "obelisk",         "offset": [0, 0],  "view_scale": [0.3, 1.0] },
+    { "device": "uking_par36_x10", "offset": [10, 0], "view_scale": [1.7, 0.45] }
+  ]
+}
+```
+
+`config/mythos26.json` is that, for real. **One pattern renders once across
+every device** — that is the whole point, and the difference between a show and
+two rigs running the same look side by side.
+
+A config with `fixtures` at the top level and no `devices` array is read as an
+environment holding one device at the origin, so every config written before
+this still works unchanged.
+
+### placing a device
+
+| field | what it does |
+| --- | --- |
+| `offset` | `[x, y]` added to the device's coordinates |
+| `scale` | `[x, y]` multiplied before the offset |
+| `fit` | `[w, h]` — scale so the device's own extent becomes this size; `null` on an axis leaves it alone |
+| `brightness` | per-device trim, on top of the show's master |
+| `output` | override the device file's port/type for this room |
+| `view_scale` | `[x, y]` — how big its panel is drawn, relative to an even share |
+
+`world = local * scale + offset`, where `local` is whatever the device's own
+coordinate space produced.
+
+**The device's coordinates are the device's.** The obelisk is 0..7 across its
+sides and 0..43 up its strips, and that is what every `Pattern_Obelisk_*` look
+was tuned against — squash it into a pattern's 0..1 and `obelisk_seasons` goes
+one flat colour, because the number it reads to pick a palette per face is that
+0..7. So `mythos26.json` places the obelisk with an offset and no scale at all,
+and moves the pars out to `x: 10` to sit clear of it.
+
+`fit` exists for when a device genuinely does need rescaling into a pattern's
+space, and takes `null` per axis so you can fit the one the pattern reads and
+leave the other alone.
+
+`view_scale` is a *view* property and touches nothing the pattern sees — see
+[the window](#the-window).
+
+### fixture profiles — the short way
+
+A rig is usually N of the same light. A profile states that model's channel
+layout once, and one `fixtures` entry patches the whole bank:
+
+```json
+"fixtures": [
+  { "profile": "uking_par36", "name": "par", "address": 1, "count": 10 }
+]
+```
+
+That is ten U'King Par 36 in 7-channel mode at addresses 1, 8, 15 … 64, with
+each fixture's dimmer driven and its strobe/mode/colour channels parked. See
+`config/uking_par36_x10.json`.
+
+With a profile, `address` is the fixture's **own DMX address** — the number set
+on its display — not the red channel. `count` patches that many one footprint
+apart; `spacing` overrides the stride if addresses were left with gaps.
+
+`--list-profiles` prints the shipped ones:
+
+```
+uking_par36 (7ch)  1:dimmer=255  2:red  3:green  4:blue  5:park=0  6:park=0  7:park=0
+rgb3        (3ch)  1:red  2:green  3:blue
+rgb4_dimmer (4ch)  1:dimmer=255  2:red  3:green  4:blue
+rgb7_par    (7ch)  1:red  2:green  3:blue  4:dimmer=255  5:park=0  6:park=0  7:park=0
+```
+
+#### zero-based or one-based
+
+DMX512 numbers its 512 slots 1..512, and that is what this assumes. Plenty of
+fixtures label their address dial 0..511 instead, so the first light reads as
+`0` and the next as `8`. Rather than make you translate, say which numbering
+the file uses:
+
+```json
+"addressing": "zero"
+```
+
+Every channel number in the file is then read that way — fixture addresses,
+`start_channel`, `dimmer_channel`, and `static_channels` keys — and
+`--show-patch` reports back in the same numbering, so what you read on screen
+matches what is dialled on the fixture.
+
+This changes nothing on the wire. A fixture at zero-based `0` and one at
+one-based `1` are the same slot and produce byte-identical output. The default
+is `"one"`.
+
+One corner worth knowing: an *absent* `dimmer_channel` means the fixture has no
+dimmer, in either numbering. An explicit `0` under zero-based addressing is a
+real dimmer in the first slot.
+
+Define your own in a `profiles` block, straight off the fixture's manual —
+offsets are 1-based within the fixture, so a chart transcribes directly. A
+profile defined here shadows a built-in of the same name:
+
+```json
+"profiles": {
+  "my_par": {
+    "footprint": 8,
+    "dimmer": 1, "dimmer_value": 255,
+    "red": 2, "green": 3, "blue": 4,
+    "park": { "5": 0, "6": 0, "7": 0, "8": 0 }
+  }
+}
+```
+
+`park` is the part that matters most. A cheap par will sit dark, or strobe, or
+run its own colour macro and ignore you entirely, until its mode channels are
+pinned. Putting that in the profile solves it once per model instead of once
+per rig.
+
+`red`, `green` and `blue` name where the renderer writes, not what comes out.
+The U'King UV par in `devices/uking_par36_x10.json` is three banks of UV LEDs
+behind a dimmer — the same shape as an RGB par, and patched with the same three
+fields — so it adds the look's three components together and lights with how
+bright and how *pale* the look is at its point. A single-colour fixture with N
+intensity channels fits here without a new kind of profile; it just means
+`--show-patch` says `r=` about a channel whose manual says something else.
+
+### checking a patch
+
+Before touching hardware, print what actually resolved:
+
+```sh
+eclipse-dmx --config config/uking_par36_x10.json --show-patch
+```
+
+Then confirm the physical order — on ten identical pars, the only way to know
+that `par_7` is the seventh one on the truss is to light it alone and go look:
+
+```sh
+eclipse-dmx --config config/uking_par36_x10.json --pattern identify
+```
+
+`identify` lights one fixture at a time in white, in patch order. White because
+a wrong channel order shows up as a colour cast rather than hiding behind a hue
+that happens to look plausible. `pattern.speed` is fixtures per second.
+
+### the long way
+
+See `config/example.json` for a plain row of RGB pars, and
+`config/example_7ch_pars.json` for spelling out every channel by hand. Without
+a profile, `start_channel` is the **red** channel and `dimmer_channel` /
+`static_channels` keys are absolute channel numbers.
+
+```json
+{
+  "device":  { "type": "enttec_pro", "port": "auto", "fps": 40 },
+  "master":  { "brightness": 1.0, "gamma": 2.2 },
+  "pattern": { "name": "palette_wave", "speed": 0.25, "palette": "p_bluemagic" },
+  "fixtures": [
+    { "name": "par_left", "start_channel": 1, "channels": "rgb", "position": [0.0, 0.0] }
+  ]
+}
+```
+
+Channel numbers are 1-based, the way they read on a fixture's own display.
+`//` comments are allowed.
+
+### fixtures
+
+| field | meaning |
+| --- | --- |
+| `name` | for logs and error messages |
+| `start_channel` | address of the fixture's **red** channel |
+| `channels` | order within the fixture: `rgb`, `grb`, `brg`, … |
+| `dimmer_channel` | absolute channel of a master dimmer, `0` for none |
+| `dimmer_value` | what to hold the dimmer at, default 255 |
+| `static_channels` | absolute channel → fixed value, for strobe/mode channels |
+| `position` | `[x, y]`, where the fixture is in the rig; drives spatial patterns |
+| `position_step` | with `count`, how far the position moves per fixture |
+| `brightness` | per-fixture trim, 0..1 |
+
+`start_channel` points at red rather than at the fixture's own address, because
+on a par with a dimmer in front of the colours those are not the same number.
+`dimmer_channel` and the `static_channels` keys are absolute, so you never have
+to work out an offset.
+
+If a fixture stays dark on a real rig, it is almost always one of two things:
+the master dimmer is not being driven (`dimmer_channel`), or the fixture is in
+a mode that ignores its colour channels (`static_channels`).
+
+### patterns
+
+| name | what it does |
+| --- | --- |
+| `solid` | every fixture on `pattern.color` |
+| `palette_wave` | the palette swept across the rig, driven by an eanim LFO |
+| `rainbow` | hue ramp along the rig, rotating over time |
+| `chase` | a lit fixture running the rig, driven by an eanim Saw |
+| `pulse` | whole rig breathing on `pattern.color` |
+| `identify` | one fixture at a time in white, for commissioning |
+| `metronome` | the whole rig in white at the top of every beat, for [the beep test](#latency--the-beep-test) |
+| `off` | dark |
+| `obelisk_seasons` | the obelisk's four-seasons noise field |
+| `obelisk_theater` | the obelisk's theatre chase |
+| `obelisk_mono` | the obelisk's flat colour |
+| `jacket` | the jacket's twelve looks, as a state machine |
+| `mythos26` | the show — beat-driven, see below |
+
+`rainbow` is the one to reach for when commissioning: anything other than a
+clean spectrum across the rig means a channel order is wrong.
+
+`--list-patterns` prints the live list, which is the authoritative one.
+
+#### relic patterns
+
+The `obelisk_*` entries are not reimplementations. They are
+`src/relics/obelisk/state_obelisk.cpp` compiled for the host and run as-is.
+
+A relic pattern is a `GeneratorHSV`: it reads a node's 2D coordinate and writes
+a colour, and it has no idea whether the node is an LED on a strip or a par on
+a truss. `edmx::GeneratorPattern` builds one `HSVStripNode_Mapped2D` per
+fixture, hands them to the generator, and the look renders. Adding another relic
+pattern is one source file in `ECLIPSE_RELIC_SOURCES` and one line in
+`ensureBuiltinsRegistered()`.
+
+What needs care is the *coordinate space*. Relic patterns were written against
+a physical layout, and a noise field tuned for a 43-pixel strip reads as flat
+colour if you hand it 0..1. So a rig's normalised positions are stretched
+across a span:
+
+```json
+"pattern": { "coord_span_x": 8, "coord_span_y": 43 }
+```
+
+The defaults run a line of fixtures diagonally across the obelisk's own space:
+8 wide (its four sides, two strips each, which is where the per-side palettes
+in `obelisk_seasons` come from) and 43 tall (one strip, which is where its
+noise gets its variation). A rig therefore picks up both the side palettes and
+real spatial motion. Change them to take a different slice.
+
+`pattern.palette` takes either a built-in name from `kits/palettes.h` or an
+explicit list like `["#ff0044", "#22ffcc"]`. `--list-palettes` names them all.
+
+### the obelisk — a relic as a device
+
+Everything above runs a relic's *look* on somebody else's rig. `config/obelisk.json`
+is the other direction: the sculpture itself, patched as a device you can make
+patterns for.
+
+```sh
+python -m eclipse_dmx view config/obelisk.json --pattern obelisk_seasons
+```
+
+344 pixels — four sides, two vertical strips each, 43 tall. Nothing reaches
+hardware from this config; `config/obelisk_usb.json` is the same sculpture on
+its cable — see [over usb](#over-usb).
+
+Two things had to change to describe something that is not a truss of pars.
+
+**The frame buffer is the rig's, not DMX's.** 344 pixels at three channels each
+is 1032, twice a universe. That is only legal because nothing is putting it on a
+DMX wire, so the 512-slot limit moved off the buffer and onto the outputs that
+actually speak DMX. Patch the same file to `enttec_open` and the overflow is an
+error again, correctly.
+
+**Positions are coordinates, not an ordering.** A truss is one-dimensional and a
+single 0..1 position along it says everything. The obelisk is not, and
+`obelisk_seasons` reads x as *which side* and y as *how far up* — that is where
+its four palettes come from. Collapse that to one number and every side gets the
+same colour, which looks entirely plausible and is the wrong picture. So:
+
+```json
+"coord_space": "literal"
+```
+
+says the `position` fields are already in the pattern's own space and reach it
+untouched. The default, `"normalized"`, is the existing behaviour: spread the
+rig over 0..1 and let `coord_span_*` stretch it.
+
+Same shape of decision as `addressing` — it changes what the numbers in the
+*file* mean and nothing else.
+
+The geometry itself is eight entries, one per strip, because `position_step`
+lets one entry describe a run rather than a point:
+
+```json
+{ "profile": "rgb3", "name": "a_up", "address": 1, "count": 43,
+  "position": [0, 0], "position_step": [0, 1] }
+```
+
+Those eight lines are the eight `GenerateAxisRow` calls in
+`src/relics/obelisk/obelisk.cpp`, in the same order with the same numbers. Read
+them side by side — if the sculpture is ever rewired, they both change.
+
+The viewer switches to bare pixels above 64 nodes: one dot each, no glow, and
+labels on the run rather than on every pixel. A glow is nine canvas items and tk
+recolours them one at a time from python, so 344 of them would be 3096 calls per
+repaint and the window would crawl.
+
+### the scanner show, on screen
+
+`config/scanner.json` is afterglow's ring-and-obelisk show at a desk:
+
+```sh
+python -m eclipse_dmx view config/scanner.json
+```
+
+Both devices in one window, and every game state on a cue button — the
+`scanner` pattern names its states with afterglow's own tags (`power_up`,
+`scan_idle`, `record_countdown`, `void`, …), so clicking down the list is
+clicking through the game, and `state <tag> <seconds>` typed at the process is
+byte-for-byte what the game sends.
+
+The two devices stand on one stage: literal coordinates, x across and y up,
+the obelisk's floor at y=0, its top at 42, and the ring a circle on the
+sculpture with its lowest pixel on the *origin line* y=16 — the height the
+truss hangs at in `scanner_stage.json`, and where a beat-synced look starts
+from (`kStageOriginY` and the `kRing*` constants in
+`src/relics/scanner/scanner_patterns.h`). The spatial looks read
+that space rather than the wiring order — the detected wave and the countdown
+sweep climb the obelisk and pass through the ring on the way, the record comet
+orbits the ring's centre and gives every side of the tower a climb of its own
+— which is the point of previewing on this rig rather than a bare strip.
+
+#### the objects, beside the stage
+
+One stage is what lets a wave cross everything as one wave. It is also the
+wrong space for a look that wants the sculpture *as a sculpture* — a beam
+going round its four sides — or the truss as a truss. So a node carries both:
+its stage coordinate, and which object it is part of with its place in that
+object's own terms.
+
+A device file says what it is:
+
+```json
+"space": "obelisk"        // or "ring", "truss"
+```
+
+and every node built for it becomes an `eio::HSVStripNode_Space`: a mapped
+node (every look that checks for `MAPPED2D` and casts sees exactly what it
+saw before) that also answers `asSpace()` — the house downcast without RTTI,
+the same idiom as `asStateMachine()` — with the object (`space`), the node's
+place among the object's nodes (`index`, `count`), the object's own
+coordinates before the environment placed it (`local`: for the obelisk, strip
+0..7 and height 0..42 whatever the stage did to it), and the same normalized
+over the object's extent (`u`, `v`).
+
+A look asks with `eio::spaceOf(node)` and branches; a node with no space —
+a bare strip, a file that never said — comes back null and the look falls
+through to the stage, so a look written for the objects still runs on
+anything. `scan_idle` is the first: the ring breathes as it always did, each
+flash sends a pulse up the obelisk from foot to tip — its own `pulse` curve,
+read by every row a little later the higher it stands (`rise`, the climb as a
+share of the cycle; `flash_phase`, where in the breath it leaves) — and the
+truss stays dark — `truss_scan` turns on a scanner running its length
+(`sweep_rate`, `sweep_width`) — with `floor` for how much of the breath is
+left behind them. One clock: the pulse leaves the foot *on* the ring's flash,
+which a beam on a rotation of its own never did.
+
+The plumbing is `PatternContext::nodeMappings`, filled beside `nodeCoords`
+from each device's locals before placement, and `edmx::makeStripNode`, which
+both `GeneratorPattern` and the state machine's `HostRelicIO` build their
+nodes through — so a look gets the same answer bare or in a machine.
+
+#### layers: a light with its own job
+
+One pattern across the whole stage is the point of a show. It is the wrong
+shape for a light that has a job of its own — the UV par on the truss, which
+wants to be off, or hitting on the beat, or on, whatever the tower is doing.
+A **layer** is that: its own pattern, bound to fixtures by name, rendered
+after the show each frame and written over what the show put there.
+
+```json
+"layers": [
+  { "name": "uv", "fixtures": ["pars/uv"], "pattern": "uv", "state": "off" }
+]
+```
+
+`config/scanner_stage.json` has exactly that. The `uv` pattern is a machine
+with three states — `off`, `flash` (the show's beat pulse, with its
+envelope drawable at the desk and its `rate` for half or double time) and
+`on` (a `level` knob) — and it is driven independently of the show's cues:
+
+```
+layer uv state flash          layer uv states
+layer uv param decay 0.4      layer uv params [dump]
+layer uv curve envelope 0:0 0.05:1:7 0.4:0
+layers                        everything about every layer, again
+```
+
+Its announcements are the show's own lines with `LAYER uv` in front —
+`LAYER uv STATES off flash on`, `LAYER uv PARAM decay f 0.3 0.01 3`,
+`LAYER uv CURVE envelope …` — so a client that reads the show's reads a
+layer's by stripping the prefix. The wrapper does: `show.layers["uv"]` is a
+`LayerView` with the same `params`, `curves`, `set_state`, `set_param`,
+`set_curve` and `reset_look` the show has.
+
+In the viewer a layer is a row under the pattern buttons — its name, then a
+button per state — and a button beside **look** in the knob pane that points
+the knobs, the curve editor and reset at it. Cue the UV to `flash`, point
+the pane at `uv`, and draw its envelope; the show's own look is not touched.
+
+A fixture is named `device/fixture`, or `fixture` alone while only one device
+has one of that name. A name that resolves to nothing is fatal at startup,
+like a device file that does not exist: a layer quietly bound to nothing
+would be a UV that never comes on with nothing saying why. The UV is a
+fixture of the pars device rather than a device of its own because it is on
+the truss's DMX cable, and a device is a wire — a layer is how it gets its
+own pattern anyway.
+
+Nothing reaches hardware without `--live`. With it, the obelisk device's own
+output drives a plugged-in sculpture exactly as the game does, so a new look
+goes from screen to object with the same file.
+
+### mythos26 — the show
+
+`config/mythos-show.json` is the show: the cue list, the two layers over it,
+and the table of what each cue asks of the rest of the room. (`config/
+mythos26.json` is the same room opening on the audio meter, for trusting the
+wire before a set.) The cues were written from `pattern spec.txt` at the top
+of the checkout, and are numbered the way it numbers them.
+
+Unlike `jacket` and the `obelisk_*` looks, these are not a relic's patterns
+borrowed for a rig — they are written for the rig, in `src/mythos26.cpp`.
+They stand on the scanner's stage (the obelisk at x 0..7 and y 0..42, the
+ring on it, the truss stood beside it climbing the same height), which is the
+space the two looks the show borrows from the generic list were written in;
+and they read the music — the beat off the trigger rack, the analysis off the
+audio bus.
+
+| cue | the rig | the room |
+| --- | --- | --- |
+| 1 `neuron` | cyan into deep blue noise, drifting — the scene's own two colours, hue 170 to 232 | scene *Neuron Proximitors* |
+| 2 `geode` | red, riding Mixxx's instant VU — the cable's own bass, on the bus whatever else fills it — never below 0.2; mode 2 takes the whole look blue, crystals included | *Eclipse Voronoi*; the probe sends the crystal colour, so the scene turns with the truss instead of staying red behind it; the flash layer off — the meter is the beat |
+| 3 `rain` | matrix rain, every drop its own colour; the truss read as a row through it | *VideoFX_1* on `black.mp4`, the video a mode away; the UV breathing through a hue wheel |
+| 4 `fire` | fire 2012; the truss read as a row through the flames | *Dynamical Flame* + `black.mp4` |
+| 5 `glitch` | the rig re-dealt to a new colour on every beat — the scene re-deals its background on the same one — torn into five bands up the stage, half of them the complement; the pars dimmer between beats and taking each deal as a ripple up the truss | *Glitch* + `alien-message.mp4` |
+| 6 `tunnel` | pink into purple noise, breathing with Mixxx's average VU, slewed so it breathes rather than pumps | *Fire Tunnel* + `black.mp4`; the flash layer off — the pad is there |
+| 7 `blown` | hot pink drifting into a paler rose, riding the mids, never below 0.65; a kick pops it to full and leaves a green afterglow in patches over a third of the rig — green the accent, pink the cue — the scene's default palette runs black through magenta to green | *Filter Blown v2* + `275593_medium.mp4`; the UV on the kick |
+| 8 `reaction` | the rainbow across the stage, turning slowly, blended in by the presence over a low white grain — across most of the meter and slewed, so it swells rather than switches | *Reaction-Confusion* + `87841-602894456.mp4` |
+| 9 `punk` | punk purple into honey orange, scrolling slowly, dropping toward navy as far as Mixxx's average VU says — a drop, the way the scene's goes, riding the meter rather than the grid; the pars move as the scene's smoke does — swirled through the gradient and lifted on the bass hits, flipped toward the other colour on the beat, never dropped to dark; modes 2 and 3 are the beat strobe instead, in half and double time | *Milk, Honey, Smoke, Bile* with its `smoke` on, which inverts its lightness on the beat; the flash layer off (a white over the drop whited it out), the UV on the kick |
+| 10 `canyon` | orange, rust, brown, green and blue bands pouring down the stage, one seamless loop, blended round the wheel so nothing between them is grey and eased into each other so no band has an edge, half the loop on the rig at once; on the beat the colours turn toward a rainbow and back — each hue swung up to a quarter wheel, the pars 0.4 of that — each band keeping its own level: a colour pulse, not a light pulse | *Vibe Thresholds* + `361331_medium.mp4` |
+| 11 `scaffold` | mostly dark: a cyan glint where a slow field peaks on a near-black ground, red-orange in patches — both out on the beat and hidden again before the next, the pattern coming and going with the grid | *Scaffold Fractal*; the flash layer off — the pattern is the beat, and a white over it was a flash over something already there |
+| 12 `churn` | the neuron's field in the churn's two colours — red into blue — busier, pushed by the level the way the paint is, and its `contrast` up so a patch picks a side far more often than it sits purple between; the level speeds the field up and the bass hits punch it toward full — the pars most of that, at a little less contrast; three palettes and a rainbow on the mode pads | *Eclipse Churn* + `black.mp4`; the probe sends colour A, the cue table colour B |
+| 13 `nova` | galaxies on a wash over a dark ground, the galaxies swelling with the bass presence, the field turning faster on the bass and a ring of light running out from the middle of the stage on every beat, as the scene's do; the wash pulses on the beat as far as the bass presence says — cyan on yellow over dark blue, by hand; three palettes and a rainbow | *Eclipse Nova*, `auto_second` off; the probe sends the galaxy colour, the cue table the wash |
+| 14 `clouds` | a sunset down the stage — yellow overhead into pink at the horizon — over a cloud deck in shadow, streaming past on a loop that has no seam, with wisps of it in the sky; the modes are the heights — low where the cue opens, cruising, high — and `height` glides between them; `speed` glides to where two pads put it, and a mode leaves it be; the pars' level set by the height — dim down in the deck, bright sunset above it — with a pink-to-yellow sunset along the line of them and the clouds passing over that light | *Cloud Ten* + `white.mp4`, with its auto height off for good; the modes ramp its `manual_height` over `mode_ramp` and the two pads its `speed`. Checked against the scene — white, not black, because this one multiplies by its media rather than tinting with it |
+| 15 `white` | the house lights: white at half | both layers off |
+| 16 `blackout` | everything off | both layers off |
+
+Sixteen because that is what the spec says, and two rows of the surface.
+
+**Every cue has a `mode`** — 1, 2 or 3, and on the churn and the nova a 4 —
+and the surface has one pad for it, stepping the running cue round, and
+four beside it naming one outright. Mode 1 is the cue as written; the rest
+are the cue's own, a line each beside it in `src/mythos26.cpp`:
+
+| cue | 2 | 3 |
+| --- | --- | --- |
+| `neuron`, `tunnel` | the field slowed and widened | quick and busy |
+| `geode` | gone blue: a grained blue field on the mids, a paler blue on the kick, the white flash off | the red, with blue on the kick |
+| `rain` | the video up (`alien-message.mp4`) | the film's green, a downpour, black again |
+| `fire` | embers | the whole bed alight |
+| `glitch` | one colour across the rig | darker between beats, torn further apart on each |
+| `blown` | a brighter base | dark until the pop |
+| `reaction` | the rainbow whatever the music | quick: two wheels across the stage, turning fast |
+| `punk` | half time | double time |
+| `canyon` | a slow fly, the rainbow once a bar | fast, the rainbow in double time |
+| `scaffold` | lit: the ground up, twice the glint | hard: the ground black, the ember wide open and quick |
+| `churn` | magenta into cyan | orange into violet — and **4** the red-and-blue pair turned through the wheel, the scene let back to its own rainbow |
+| `nova` | Nova's regime 1: orange galaxies, a sky-blue wash, deep blue ground | its regime 2: violet galaxies, an azure wash, near-black — and **4** the hand palette through the wheel, the scene deriving its own second colour |
+| `clouds` | dusk: pink into violet, the deck darker | golden hour: orange down to the horizon, the deck warm |
+
+Three is the floor, not the count: a cue with more variants beside it has
+more, and the knob's maximum is how the desk knows how far the pad steps —
+so the churn's and the nova's four palette pads are the same four the
+other cues have, with the fourth doing what the third does on a cue with
+three. Each is a diff on the cue as built: the knobs the cue opened with are
+snapshotted and put back before a mode's own changes go over them, so 2 is
+never on top of 3, and 1 is the way back. The room's half — the video off,
+the flash layer off — is the cue table's `modes` in `config/mythos-show.json`,
+fired by the same pad — the rain opens on black and its mode 2 is the video. Hitting a cue again is mode 1; a knob tuned by hand
+in mode 1 survives a cue change as it always did.
+
+The `intensity` knob is still on every cue, 0..1, for a fader or a mod:
+the depth of a noise wash, how far a presence wash rides above its floor,
+how eagerly the fire ignites, how many drops are in the rain. It never
+takes the rig to black.
+
+**The truss is read as a row through the fire and the rain.** The pars
+stand beside the obelisk at x 10, climbing its height, and neither
+simulation reaches there — the flames are born at x 0..7, the drops fall
+there — so the truss saw the ember bed on its lowest par and nothing of the
+rain. For those two cues the pars are read across the obelisk's width at
+`truss_row` instead, the fifth run from the floor by default, where the
+flames are still full and the drops are still passing. Every other cue
+keeps them climbing beside the pillar.
+
+**The layers are how the additive parts are done.** `flash` is the beat pulse
+summed over every light but the UV — white unless its `color` knob says
+otherwise, its envelope drawable at the desk, off until a cue asks. `uv` is
+the blacklight's own list: `off`, `flash`, `on`, `kick` (every bass hit) and
+`rainbow` (a hue wheel, which on three banks of one colour is the blacklight
+breathing between a third and two thirds and never off). Both have a row in
+the viewer and a row of pads on the surface, so either can be moved off a
+cue's default by hand.
+
+**The cue table** is the `cues` block of the config, and it is the desk's,
+not the executable's: a state is a look on the rig, and the scene, the media,
+the layers and the scene's own controls around it are assembled where the pad
+is. Every pad on the
+show's page carries the whole cue (`tools/make-launchpad-map.py` reads the
+table), and the viewer's cue buttons fire the same table. Every written cue
+names both layers, so a cue never inherits the last one's flash; a state with
+no entry is the state alone.
+
+A cue can also carry `controls`: the scene's own knobs, by the name the scene
+declares them, a number each — or `[r, g, b]` for a colour control, which
+goes as one message of three floats, the way the probe's colour does —
+sent after the scene. It is for the one or two
+a look depends on — the punk cue turns on `smoke`, which is Milk, Honey's own
+beat strobe, so the visual and the flash layer hit the same beat. It is not a
+preset: a preset lives in the app on one machine, a cue in this file on every
+machine that opens it. Note that the app has no "no media" message either, and
+the flame and the tunnel read `syn_Media` whether or not the cue gave them
+any — after the rain's clip they would show the rain's clip. Those two cues
+name `black.mp4`, which is two seconds of nothing, made once in the media
+folder the app watches:
+
+```sh
+ffmpeg -f lavfi -i color=c=black:s=64x64:r=30:d=2 -c:v libx264 -pix_fmt yuv420p black.mp4
+```
+
+###### black is not always "nothing" — check which way the scene reads it
+
+`black.mp4` means "no media" only to a scene that **adds** or **mixes** its
+media in. To a scene that **multiplies** by it, black means *erase the
+picture*, and the cue comes up dead black with nothing in the logs to say why.
+
+Cloud Ten is the one in this set. Its last pass ends:
+
+```glsl
+if(_isMediaActive()){ mask = _loadMediaAsMask().r; }
+col *= mask;
+```
+
+So the clouds cue names **`white.mp4`** instead — a mask of one, which is the
+same "ignore it" in the only language that scene understands. Made the same
+way, at the render's aspect rather than square, because
+`_loadMediaAsMask` returns `vec4(0.0)` for any pixel whose corrected UV falls
+outside 0..1 — a square clip letterboxed on a 16:9 frame would mask the sides
+to black:
+
+```sh
+ffmpeg -f lavfi -i color=c=white:s=128x72:r=30:d=2 -c:v libx264 -pix_fmt yuv420p white.mp4
+```
+
+Leaving media out of such a cue does not work either: with no entry it
+inherits the last cue's clip, and any clip that is not white masks the scene
+by its own luminance. It has to be named.
+
+Worth grepping a new scene for before it goes in the table — `_loadMedia`,
+`_textureMedia` and `_loadMediaAsMask` are three different contracts:
+
+| the scene does | with `black.mp4` | give it |
+|---|---|---|
+| `col += media` / `mix(col, media, k)` | nothing, as intended | `black.mp4` |
+| `col *= _loadMediaAsMask()` | **the whole scene goes black** | `white.mp4` |
+| `col = media` (media replaces a texture) | **that surface goes black** | neither — a control that ignores media, as `media_texture` does in Eclipse Voronoi |
+
+##### what the shaders actually do
+
+Read from the scenes themselves, because a look can only match a colour the
+scene holds. Four hold one: Neuron lerps two hard-coded blues and its hue
+rotation is commented out; Dynamical Flame is red into amber at palette 0
+(the slider has three others — pin it if anyone touches it); Fire Tunnel is a
+black-body ramp that at its defaults washes to a mauve haze; Filter Blown v2
+is ten fixed cosine palettes and its default runs black, magenta, pale pink,
+green — which is why the blown cue is magenta with a green kick. Vibe
+Thresholds defaults to its fixed "Psy Fire" palette (red, indigo, blue, cyan,
+orange — the canyon table, near enough) over the raw video, with hue-shift
+mode off. Two do not hold: Glitch steps between four stock photos on every
+`syn_OnBeat`, and Milk, Honey is a feedback sim that cycles its channels every
+frame. For those the beat is the match, not the colour.
+
+Voronoi Geode was a fifth — a fixed red stone with its hue rotation
+commented out, which is what the `geode` cue used to match by hand. It is no
+longer in this list because the cue no longer runs it: see Eclipse Voronoi
+below.
+
+The three eclipse scenes are the other way round: they hold no colour of
+their own and take it from the rig. Eclipse Churn paints Churning in
+`rig_color` and `rig_color_2`; Eclipse Nova paints its galaxies `rig_color`
+and its wash `rig_color_2`; Eclipse Voronoi paints the geode's crystals
+`rig_color` and needs no second colour from the table at all — it derives one
+as the complement. The first is the probe's, live — and for those
+cues the probe is no longer a point of the field but **the palette's first
+colour outright**: the `synesthesia` device declares `"space": "probe"`, and
+a look with a palette (the washes, the nova) paints that node its colour A,
+so the scene is keyed to the cue and not to whichever patch of noise is
+passing the truss. The second colour nothing sends, so the cue table does,
+as a colour control, once per palette. The rainbow modes turn the rig's pair
+through the wheel and hand the scene its own rainbow — Churning's
+`color_phasing` with the paint job off, Nova's `auto_second`.
+
+##### a cue's own pads
+
+A cue can carry `pads`: buttons of its own on the surface, for a control
+the operator flies by hand. The clouds have two — slower, faster; the
+heights are its modes — and each moves the look's knob (`params`) and the
+scene's control (`controls`) together, the rig first. Neither snaps: the look's
+`height` and `speed` are targets it glides to over its `glide` seconds, and
+the pad's `ramp` is the scene's half of the same move, the control re-sent
+in steps from wherever this desk last put it until it lands on the target,
+on a thread so the pad returns at once. A control never sent snaps, having
+nothing to glide from — the app does not say where its sliders are. The
+generator lays a cue's pads on the rows above the layers; the viewer has a
+button each. A pad pressed under another cue aims its knob at a look that
+has no such knob and is refused harmlessly.
+
+A cue whose modes move a scene control the look glides to — the clouds'
+`manual_height` — carries `mode_ramp`, seconds the mode's controls glide
+over the same way a pad's `ramp` does. Only a mode change ramps: the cue
+coming up sends its controls at once, its scene being new, and so does a
+mode that re-sends the scene.
+
+Writing a cue for real is a `GeneratorHSV` in `mythos26.h`/`.cpp` and a
+changed line in `makeMythos26StateMachine()`; nothing in the runner, the
+protocol or the viewer needs to know. If you rename a slot, rename it in
+three places — there, `MYTHOS26_STATES` in `python/eclipse_dmx/config.py`,
+and the button table in `python/eclipse_dmx/viewer.py` — and in the cue
+table if it has an entry.
+
+##### the shape of a hit, and how often
+
+A beat look opens on the beat. What shapes it is the envelope, and that — with
+the rate — is stated where the cue is made rather than inside the look:
+
+```cpp
+//                                          attack  decay  rate
+beatLook<Pattern_Mythos_BeatPulse>("beat_pulse", 0.15f, 0.60f, 1.0f),
+```
+
+Attack and decay are what a beat look *is* — a crack and a trail, or a swell and
+a long fall — so they belong where the cue list is rather than buried in a
+constructor. They stay live knobs once it is running; these are what it opens
+on. The UV par's `flash` is the same class dressed with its own three numbers,
+and `beatPulseState()` is that one line handed to whichever list wants it —
+the audio bus's.
+
+`intensity` is how hard the hit lands, and it scales the envelope rather than
+the whole look: at a lifted `floor` it brings the flash down toward the level
+between hits instead of dimming the rig, so 0 means *no flash*, not no light.
+
+##### half time, quarter time and double time
+
+`rate` is hits per beat, and it takes four values:
+
+| `rate` | |
+| --- | --- |
+| `0.25` | quarter time — one hit a bar, on the one |
+| `0.5` | half time — the one and the three |
+| `1` | on the beat |
+| `2` | double time — on the beat and between them |
+
+Anything else snaps to the nearest of those. A slider will hand over 1.37 on
+its way past; 1.37 hits a beat is a rig drifting against the track, not a look.
+
+It divides the beat **count**, never the tempo. The point of half time is the
+same hit half as often, and stretching the envelope with the rate would soften
+it instead — so double time keeps the envelope it had, which on the default
+shape means a 750ms fall inside a 250ms gap: the rig hovers rather than pulses.
+That is the look behaving correctly, and `decay` is right there next to it.
+Half time is the other way round — the fall finally has room, and you see the
+envelope's real shape, often for the first time.
+
+**Where the slow rates land is the clock's bar, not the look's.** Four beats
+from the last downbeat the clock was told about — a MIDI Start, or `midi align`
+— so half time takes the one and the three of that bar and quarter time takes
+the one. Two looks in half time agree with each other, and a look agrees with
+itself an hour later.
+
+The one is an **assumption** until someone declares it. Mixxx sends beats and
+says nothing at all about bars, so out of the box the one is wherever the grid
+happened to start, and it can be a beat, two or three out. The fix is one
+gesture — **`midi align`, on the one** — and it moves every look at once. A
+`beat` tap does *not*: tapping a tempo in means tapping every beat, and a tap
+that declared the bar would leave the slow rates hitting on all of them.
+
+**There used to be a divider here** — `beat div 1 | 2 | 4`, and **on 1 / on 2 /
+on 4** in the viewer. It is not coming back. The rate is per look, which the
+divider was not: one look in half time is a decision, every look in half time
+at once was a mode. But the reason `4` was dropped from it — a clock that
+counted beats with no idea which of them was the one — is exactly what the bar
+above fixes, so once a bar is back, as `rate 0.25`.
+
+A per-look version of that bar came and went in between: setting the rate
+seated half time's pairs on the beat you set it on. It was a gesture that
+worked and a bar that did not, because it could not be shared between looks,
+had to be re-made on every cue change, and was counted off beat messages —
+which Mixxx duplicates and drops, so it wandered on its own between gestures.
+
+On the beat and double time cannot land wrong: they fall on the same instants
+whatever whole beat they are counted from. Only the slow rates have a choice to
+make.
+
+##### the VU meter, and what reads it
+
+Three cues read it by name — the geode's red rides `level_instant`, the
+tunnel's wash and the punk's drop ride `level_average` — and they read it
+under `audio.source: synesthesia` too, because the three VU slots are the
+cable's whichever source owns the rest of the bus. The `level_instant`,
+`level_average` and `level_meter` cues on the [audio bus](#the-audio-bus)
+are how you look at it. This is here because getting it wrong twice is what
+these paragraphs are for.
+
+**A wash wants the loudness of the track, not the waveform.** Mixxx sends
+several meters and they behave differently, so all three useful ones are read
+and kept apart — a look picks one by name, never by note number:
+
+| `VuSource` | note | what it is |
+| --- | --- | --- |
+| `Instant` | 64 | the level right now, resent every 40ms — peaks on every kick |
+| `Average` | 68 | the level against its two-second window — 0 at the quietest the last two seconds got, 1 at the loudest |
+| `Meter` | 69 | a meter bar, quantised — moves in visible steps |
+
+`Average` is the one a backdrop wants, and that is the whole fix for a wash
+that flashes: `Instant` peaks on every kick, so anything driven from it pulses
+at beat rate no matter what you do downstream. `Average` is also one of the few
+VU options the mapping enables by default. Reach for `Instant` when you want
+something to *hit* on transients, which is a different look, not a broken one.
+
+*What note 68 actually is.* The mapping's script (`Midi_for_light-scripts.js`,
+the one shipped with Mixxx) sends its "average fit" on 0x44 = 68: the current
+level fitted to the min and max of the last two seconds. So it still rises on
+a kick — it is auto-ranged, not slow — and a wash on it wants a longer slew
+than the geode's, which the tunnel has. The plain two-second *mean* is note 66,
+"Enable VU mono average mid" in the mapping's settings, off by default; point
+`vu_average_note` at it if a set wants the slower thing.
+
+*How a reading is smoothed.* Take a symmetric one-pole — equally slow up and
+down. Deliberately not VU ballistics (fast attack, limited release): that is
+how a meter is *drawn*, and because it snaps upward it keeps every transient it
+is supposed to be removing. A light 0.25s is plenty, because the signal is
+already averaged upstream; raise it if you point at `Instant`.
+
+*How long a reading lasts.* It is held flat for 0.35s and then fades out over
+the next 0.45s. The hold is so anything sampling it every frame does not ripple
+with how long ago the last message landed; the fade is a dead-man's switch,
+because a level held up forever after the link dropped would be the rig lying
+about having a signal.
+
+`Instant` needs **Enable VU mono current** ticked in the mapping's settings —
+note 64, off by default there, and the one the geode's red rides. Without it
+that cue sits at its floor and the `level_instant` meter cue at its
+dead-channel blink; everything else still works.
+
+##### the static looks
+
+`tv_static_mono` and `tv_static`, which are cues on the `generic` machine now
+rather than on the show's list — a look with no beat and no game under it
+belongs in the free-standing pile. The class is still `mythos26.h`'s, because
+it was written for this rig rather than borrowed from a relic.
+
+Every fixture a new random value every frame, in greys or in hue. No smoothing
+and no motion, deliberately: the moment consecutive frames relate to each other
+it stops reading as static and starts reading as a bad pattern.
+
+The values come from hashing (frame number, fixture index) rather than from a
+generator with state, which keeps `render()` const and stateless and makes a
+given frame reproducible — the difference between a testable look and one you
+can only eyeball.
+
+**`beat_pulse`** swells: a rise of a couple of hundred milliseconds into a fall
+of most of a second, in white. It was the other way round to begin with — 12ms
+up and 200ms down, a crack with a clear dark gap before the next beat — and
+that pair of numbers is the whole difference if you want it to hit again.
+
+Its envelope is an **automation curve**, `eanim::AutomationCurveTrigger`, and
+the beat is the impulse that fires it. `setEnvelope(attack, decay)` is the
+shorthand for a rise and a fall; for any other shape, put keys on
+`envelope.curve` directly:
+
+```cpp
+envelope.curve.clear();
+envelope.curve.addKey(0.00f, 0.0f);
+envelope.curve.addKey(0.20f, 1.0f, easing_functions::EaseOutCubic);
+envelope.curve.addKey(0.80f, 0.0f);
+```
+
+The curve lives in `src/lib/eanim/`, not in the desktop tree, so the relics get
+it too — it is a `FloatAttribute`, which means anything that already takes one
+of those takes a trigger.
+
+#### what a beat landing mid-pass does
+
+The envelope is longer than a beat at any tempo this runs at, so the fall never
+finishes. `envelope.retriggerMode` decides what happens then:
+
+| mode | what it does |
+| --- | --- |
+| `Restart` | the timeline resets and the output steps to the curve's first value — a visible drop to dark on every beat, unless the curve fits in the gap |
+| `RestartHold` | the timeline resets, but the output is **held** where it had got to until the new rise climbs past it. The default here: the beat still lands on time and still peaks, and the rig swells between a trough and full instead of cutting to black |
+| `Overlap` | each impulse gets its own voice and the live ones are combined, `Max` or `Sum`. The old pass finishes underneath the new one rather than being cancelled by it. Four voices, then the oldest is stolen |
+
+One detail worth knowing before you shorten the rise. The trigger reads the
+curve's *peak across the frame* rather than its value at the end of one. With a
+rise shorter than a frame — 12ms against 25ms at 40fps — sampling instantaneously
+would reach full brightness only when a frame happened to land on the crest, and
+every other beat would come out dimmer by a different amount. A rig flickering
+unevenly on a steady tempo is exactly the artefact that avoids.
+
+### tuning a look while it runs
+
+A look's numbers — an attack time, a gain, a flag — are worth turning at the
+desk rather than recompiling for. So a look can hand out the ones that matter,
+and everything downstream builds itself from that:
+
+```cpp
+void Pattern_Mythos_TvStatic::reflect(ecore::PropertyBag& bag)
+{
+    bag.add("monochrome", monochrome);
+    bag.add("floor", floorLevel, 0.0f, 1.0f);
+}
+```
+
+One line per knob, and that is the whole registration. `bag.add` takes the
+member itself, not a copy and not a setter, so the look goes on reading its own
+field exactly as it did. Where a value is derived from — an envelope keeps a
+built curve, not the two numbers behind it — pass a callback:
+
+```cpp
+bag.add("attack", attackSeconds, 0.0f, 1.0f, [this] { setEnvelope(attackSeconds, decaySeconds); });
+```
+
+Floats, bools and colours. A colour is here because the alternative was three
+sliders spelling one out in hue, saturation and value, and nobody picks a
+colour that way — it registers the same one-liner and travels as `#rrggbb`:
+
+```cpp
+bag.add("color", pulseColor);
+```
+
+Anything richer than those three belongs in the config.
+
+The viewer puts the running look's knobs in the right-hand pane — a slider and
+a box for a float, a checkbox for a bool, a swatch for a colour. The slider is
+for finding a value and the box is for saying one, because a 0..3 slider a
+hundred pixels wide cannot express 0.15. Clicking the swatch opens the system
+colour picker, on the colour the look is showing, with the show still running
+behind it.
+
+**The set belongs to the look, not to the pattern.** On a state machine, a cue
+change replaces it wholesale, and the executable re-announces it every time, so
+the panel follows the show without being asked.
+
+Over the protocol:
+
+```
+params                      what the running look offers
+param <name> <value>        turn one; on/off work for a bool,
+                            #rrggbb for a colour
+params dump                 the current set as one line of JSON
+```
+
+Each knob is announced with its type — `PARAM attack f 0.15 0 1`, `PARAM hold b
+1 0 1`, `PARAM color c #ffffff 0 1` — so one parser reads all three and only
+branches on the widget it builds. What a value *is* depends on the knob it is
+sent to: `#ff2200` is a colour on a colour and an error on an attack time,
+rather than a number that happened to parse.
+
+Values outside a knob's range are clamped rather than refused — the range is
+what a slider spans, and a number typed slightly past it is a request for the
+end of the slider. Some knobs snap instead: a beat look's `rate` takes the
+nearest of quarter time, half time, on the beat and double time. Either way, what it landed
+on is echoed back on a `PARAM` line *before* the `OK`, so a client that waits
+for the reply and then reads has the new value and not the old one.
+
+Tuning is **live only**. Nothing is written to a config file behind you:
+`params dump` is how a session that found something is kept.
+
+**Triggers** are the third surface, after the knobs and the shapes: an impulse
+by tag, sent at the moment the thing it stands for happens.
+
+```
+trigger <tag>               the running look's trigger, now
+```
+
+A tag is a gameplay tag (`ecore::GameplayTag`): dotted text, `scanner.ping`,
+compared by hash, with the dots as a hierarchy so a handler can take
+`scanner` and get the family. The tags a look answers to are declared once
+beside it - `scanner_tags` in scanner_patterns.h - and the game sends the
+same spelling.
+
+A look that answers overrides `onTrigger` and does whatever an impulse means
+to it - restarts an envelope, winds its clock to the hit. The scanner's
+`scan_idle` answers to `scanner.ping`: afterglow sends it as it plays the
+scan ping, so the ring's flash and the obelisk's pulse land on the sound's
+transient instead of pacing beside it on a clock of their own, and the look
+then holds at the end of that cycle until the next ping. Until the first
+ping it waits at that same dark end, so entering the look never flashes on
+its own; `wait_for_ping off` frees its clock for a desk with no game behind
+it. A tag the look does not answer to is an `ERR`, so a cue list naming a
+trigger the look lost finds out.
+
+```python
+show.set_param("decay", 0.9)
+show.set_param("color", "#0040ff")
+show.get_param("decay")        # Param(decay=0.9, 0.01..3)
+show.params                    # the whole set, replaced on every cue change
+print(show.dump_params())      # {"attack": 0.15, "decay": 0.9, ...}
+```
+
+`ecore::PropertyBag` is in `src/lib/ecore/`, and `reflect()` is a virtual on
+`eanim::GeneratorHSV`, so this is available to the relics and not only here.
+
+### the beat
+
+Beat-driven looks read `edmx::BeatClock`, one per process. Something upstream
+says "beat now" and how fast; patterns ask how far into the beat it is, every
+frame.
+
+It **predicts**: beats arrive twice a second and frames render forty times a
+second, so the clock interpolates from the last beat at the current tempo. And
+it **free-runs**: if the link drops mid-set the rig keeps pulsing at the last
+known tempo rather than freezing. It drifts, which is a much better failure than
+a dark stage, and it re-locks the moment a real beat lands. `midi.free_run:
+false` turns that off.
+
+None of this needs a device. With no `midi` block the rig keeps its own time at
+`midi.bpm`, which is what you want at a bench:
+
+```sh
+eclipse-dmx --config config/mythos26.json --dry-run --bpm 128 --frames 80
+```
+
+#### from Mixxx
+
+`config/mythos26.json` is this, configured. Three steps.
+
+On **Linux the order matters**: start eclipse-dmx first, then Mixxx, and the
+port to pick in step 1 is `eclipse-dmx IN`. The rig publishes it. See
+[from Mixxx, on Linux](#from-mixxx-on-linux) below, which is a shorter story
+than this one.
+
+**1. Load the mapping.** Mixxx → **Preferences → Controllers** → click its MIDI
+output → set *Load Mapping* to **MIDI for light** → **Apply**. The port must
+show as enabled; the mapping is output-only, so nothing will appear to happen
+yet.
+
+**2. Set what it sends.** In that same panel, the mapping has a **Settings**
+tab. Leave *Enable Beat*, *Enable BPM* and *Enable VU mono average* on — notes
+50, 52 and 68, which is the minimum this needs. Tick *Enable VU mono current*
+(note 64) if you want the transient-reactive source too. Turn **off** *Enable
+MTC Timecode*; it defaults on and nothing here reads it. Note the *Midi Channel*
+setting, default 1.
+
+**3. Run.**
+
+```sh
+eclipse-dmx --list-midi                     # confirm Mixxx's port is visible
+eclipse-dmx --config config/mythos26.json   # on Linux, this one goes first
+```
+
+The config says `"auto"`, which on Windows prefers a port named for DJ software
+or a virtual cable. `--list-midi` on the show laptop shows:
+
+```
+MIDI 0  Traktor Kontrol S2 MK3      the controller, on midi.ignore
+MIDI 1  eclipse-os OUT              a spare cable, nothing sends on it
+MIDI 2  Mixxx OUT                   this
+```
+
+Name whichever of those you mean in `midi.port` if `auto` picks wrong — naming
+one always wins.
+
+**If Mixxx's own port is not in that list**, it needs a virtual cable in the
+middle, and then you name *that* in `midi.port` instead. On Windows that is
+[loopMIDI][loopmidi] (free): create a port, and **start it before Mixxx** —
+Mixxx enumerates MIDI devices once, at startup, and will not see a port created
+afterwards, which is the single most common reason one is missing from its list.
+macOS has one built in: Audio MIDI Setup → Window → Show MIDI Studio → IAC
+Driver → tick *Device is online*.
+
+[loopmidi]: https://www.tobias-erichsen.de/software/loopmidi.html
+
+##### from Mixxx, on Linux
+
+There is no virtual cable to install here, because **this rig is one**.
+
+Mixxx on Linux does not publish a MIDI port for something else to read. It goes
+looking for one to write into — so the port that has to exist is *ours*, and
+eclipse-dmx publishes it on the ALSA sequencer the moment MIDI is enabled:
+
+```
+$ ./build/eclipse-dmx --config config/mythos26.json
+MIDI-OPEN eclipse-dmx IN (128:0), listening
+```
+
+```
+$ aplaymidi -l
+ Port    Client name                      Port name
+ 14:0    Midi Through                     Midi Through Port-0
+128:0    eclipse-dmx                      eclipse-dmx IN
+```
+
+Which means the whole setup is:
+
+1. **Start eclipse-dmx.** Before Mixxx, always. Mixxx looks for MIDI devices
+   once, at startup, and a port that appears afterwards is a port it will not
+   offer you until it is restarted. This is the same rule as loopMIDI on
+   Windows and it is the same one people trip over.
+2. **Mixxx → Preferences → Controllers → `eclipse-dmx IN`.** Load *MIDI for
+   light* against it, set the Settings tab as above, Apply.
+3. **Play something**, and type `midi status` at the running show:
+
+```
+MIDI-STATUS port="eclipse-dmx IN (128:0), listening" ... ticks=0 beats=16
+            bpm=120.0 src=midi_note
+```
+
+`beats` climbing is the confirmation, and `src=midi_note` says it is the
+mapping's note 50 doing it rather than an interval we guessed. `port=` naming
+*us* rather than a source is not a fault on this platform — it is the normal
+state, and it stays that way after Mixxx connects.
+
+###### the whole set, in one command
+
+`launch-mythos-set.sh` is that sequence with the preflight this machine needs:
+the show, the viewer, the wire and the colour out to Synesthesia, off
+`config/mythos26.json`.
+
+```sh
+./launch-mythos-set.sh              # the set: live rig on the pi, viewer, OSC
+./launch-mythos-set.sh --bench      # the same look, nothing on the wire
+./launch-mythos-set.sh --headless   # no window - over ssh, or no tkinter
+./launch-mythos-set.sh --local      # the wires on this machine, not the pi's
+```
+
+It puts the **rig on the pi**, by default: the show renders here and its
+frames go over ssh to `scanner-pi`, where the obelisk's cable and the ring's
+GPIO are — [client mode](#client-mode--the-other-way-round). `--local` keeps
+the wires on this machine; `--client NAME` names another pi. The ssh check
+runs first, and a *defaulted* pi that does not answer is a warning and a set
+on this machine's wires, on the same reasoning as the controller below.
+
+It names the **controller**, because the config cannot: `midi.port` is `auto`,
+and auto will not open a box of buttons (see [binding a pad](#binding-a-pad--the-midi-map)
+and the note on `midi.ignore`) — so without this the Launchpad is never
+subscribed and the cue pads do nothing. Named, not addressed, since `20:1` is
+an enumeration order rather than a fact; and only when it is actually plugged
+in, because a named port that is missing is fatal at startup and a controller
+left in the flight case must not be the reason a set does not run. Unplugged,
+the beat still arrives on `eclipse-dmx IN` exactly as before. `--midi SPEC` or
+`ECLIPSE_MIDI_PORT` moves it, `--midi ""` opens none.
+
+It names the **lamps** the same way — `--midi-out SPEC` or
+`ECLIPSE_MIDI_OUT`, defaulting to the Launchpad's *MIDI Out* port (not "MIDI
+In", which is what the device listens on). With or without the window:
+`--headless` runs the same map through `run`/`osc --midimap`, firing the
+pads and painting the lamps off the executable's `MIDI-IN` stream with no
+tkinter in the process - `eclipse_dmx/pads.py` is the viewer's midi half
+with the window taken away. See [lighting the pads](#lighting-the-pads).
+
+`--host [NAME]` runs the show on another machine — `scanner-pi` unless told
+otherwise, or `$ECLIPSE_HOST` — keeping the window here. That name is the ssh
+**alias**, not the hostname: `~/.ssh/config` is where the user and the key
+live, and naming the machine directly (`scanner-pi.local`) walks past the
+whole `Host` block, so ssh falls back to default identities and refuses with
+a key sitting right there. The preflight spots that case and says which name
+to use instead. That is
+[over ssh](#over-ssh) with the launcher's preflight in front of it: it checks
+`ssh NAME true` before opening anything, because a key that is not set up
+fails as a password prompt inside a pipe, which is a hang rather than a
+question.
+
+Two things move to the far end with the show, and the launcher says so rather
+than letting them be discovered:
+
+- **The wires.** The DMX widget, the obelisk and the ring are the host's, so
+  the local port listing is skipped — a "nothing plugged in" warning about
+  this machine would be answering a question nobody asked.
+- **MIDI.** The executable is what reads a port, so over there it is the
+  *host's* ALSA and the Launchpad on this desk is invisible. The pads and the
+  lamps therefore stand down when a host is named, and say so. Name
+  `--midi`/`--midi-out` explicitly and they are believed and passed through,
+  because over ssh naming one can only mean the controller is plugged into
+  the host.
+
+The OSC sender is unaffected either way: it is desk-side, off the frame
+stream, so the colour still reaches the visualiser from this machine.
+
+It also opens the audio link back from the visualiser — `--osc-in 7000`, the
+map beside the config — which `--no-osc-in` turns off and `--osc-in PORT` (or
+`ECLIPSE_OSC_IN_PORT`) moves. See [back the other way](#back-the-other-way--the-visualisers-audio-engine).
+
+It checks what only fails at the venue: that the binary is built, that this
+python has tkinter, which serial ports are visible, whether a `/dev/tty*` we
+would fall back to is one this user cannot open, and whether QLC+ is running
+and already holding the widget. Then it prints the Mixxx reminder above and
+execs the wrapper, so Ctrl-C reaches the show and the rig is put dark on the
+way out. `--bpm`, `--state`, `--config` and `--osc` are the knobs worth having
+at a venue; anything after `--` goes to `eclipse_dmx` untouched.
+
+The visualiser defaults to **the mac mini** — `Jakes-Mac-mini.local:6000`, the
+machine Synesthesia runs on — named rather than addressed, so it survives a new
+DHCP lease (see [naming the machine instead of its
+address](#naming-the-machine-instead-of-its-address)). `--osc` takes anything
+else, and `ECLIPSE_OSC_ADDRESS` in the show laptop's environment moves the
+default without editing the script. The name is resolved once before anything
+opens, so it prints as an address in the preflight; it is not waited out if it
+is not up, because the link keeps looking on its own.
+
+`start.bat` at the top of the checkout is the Windows counterpart, minus the
+preflight - nothing there is a Windows problem.
+
+###### rewiring it without restarting anything
+
+The sequencer is a patchbay, so a connection is a thing you can make from
+outside either program:
+
+```sh
+aconnect -l                       # every client and what is wired to what
+aconnect "Mixxx" "eclipse-dmx"    # wire one to the other, live
+aconnect -d "Mixxx" "eclipse-dmx" # and unwire it
+```
+
+This is the fix when Mixxx was started first and cannot see us: it will have
+opened *some* output already, and `aconnect` can move it without a restart.
+
+###### going the other way, to a port that is already there
+
+`midi.port` can still name a source, and on the sequencer it may be a name, a
+fragment of one, or the `client:port` address `aconnect` prints:
+
+```json
+"port": "128:0"
+```
+
+We subscribe to it, and our own port stays published alongside — so both routes
+work at once and neither has to be torn down for the other. `"listen"` is the
+explicit form of publish-and-wait, for a config that should never reach out.
+
+```
+$ ./build/eclipse-dmx --list-midi
+MIDI 0	Midi Through Port-0	14:0
+OK 1 midi inputs
+```
+
+The third column is the sequencer address. **Only ports that can actually be
+subscribed to are listed** — the PipeWire bridge's inputs look like MIDI ports
+and are not sources, so they are left out rather than offered as something to
+try and fail at in the dark.
+
+A device node is still a device node: `midi.port` starting with `/` opens it as
+raw MIDI, sequencer or no. That is also the one thing `--list-midi` stops
+showing once the sequencer answers, since every device is on both and listing
+each twice helps nobody.
+
+###### what this needs installed
+
+`libasound.so.2`, which is on any machine that has ever played a sound. It is
+**not linked** — the binary loads it by hand and shrugs if it is missing, in
+which case Linux behaves as it did before: rawmidi device nodes only, and no
+Mixxx. So `./build.sh` needs no ALSA dev package and the executable starts on a
+machine with no sound stack at all. The rest of that argument is in
+`src/alsa_seq.cpp`.
+
+##### what it sends
+
+Notes, **not** beat clock, on the mapping's Midi Channel:
+
+| note | dec | meaning |
+| --- | --- | --- |
+| 0x30 | 48 | deck change |
+| 0x32 | 50 | **the beat**, velocity 100 |
+| 0x34 | 52 | **the tempo**, velocity = bpm − 50 |
+| 0x40 | 64 | VU mono **current** — instantaneous, every 40ms |
+| 0x44 | 68 | VU mono **2-second average** — the loudness of the track |
+| 0x45 | 69 | first VU **meter bar** |
+| 0x46+ | 70+ | the rest of the meter bars |
+
+Two things follow, and both are already the defaults. `beat_note` is 50 rather
+than "any note" — with the VU meters on, taking any note-on as a beat would
+strobe the rig rather than pulse it. And the tempo arrives *explicitly* on note
+52, which beats any interval we could measure, so `bpm_note` decodes it.
+
+Notes 64, 68 and 69 are the exception to "turn the VU meters off" — all three
+are read, into the three `VuSource` slots above. *Enable VU mono average* is
+already on in the mapping's defaults; tick *Enable VU mono current* as well if
+you want `Instant` available.
+
+`clock` stays on regardless. Mixxx sends no 0xF8, so it costs nothing, and
+`ticks=0` in `midi status` is a useful confirmation that what is on the cable is
+what you think it is.
+
+##### verifying it, rather than hoping
+
+```sh
+python -m eclipse_dmx midi-watch config/mythos26.json --seconds 15
+```
+
+Play a track. This listens, prints every message that arrives, and tells you
+which of them we are reading as the beat:
+
+```
+notes seen (channel, note, count):
+  ch1    note 50    x32  <- taken as the beat
+  ch1    note 52    x32  <- taken as the tempo
+  ch1    note 48    x2
+MIDI-STATUS port="loopMIDI Port" ... beats=32 bpm=128.0 src=midi_note lock=yes
+```
+
+If the numbers differ from 50 and 52, put what you actually see into
+`beat_note` / `bpm_note` / `beat_channel` and run it again. Nothing is driven
+while it watches — it forces a dry run, so a rig cannot flash at you mid-check.
+
+The same thing live, once running: `midi monitor on` on stdin prints every
+message; `midi status` gives the counts.
+
+##### keeping the DJ controller out of it
+
+A controller on the same machine — the S2, a Mixtrack, anything — is also a
+MIDI input, is often the *only* MIDI input, and sends notes from every pad, jog
+and transport button. It is simultaneously what `"auto"` would reach for and the
+last thing that should be allowed to move the beat.
+
+Two defences, and the shipped configs use both:
+
+```json
+"port": "loopMIDI",
+"ignore": ["Traktor", "Kontrol"]
+```
+
+Naming the port is the real fix — a MIDI input is a separate stream, so once we
+are on the cable the controller's messages are not something we filter out, they
+are something we never see. `ignore` is the backstop for when the cable is
+missing at startup and `auto` would otherwise fall through to whatever is left.
+With every input ignored, it refuses, says so, and free-runs:
+
+```
+WARN midi: midi.port is "auto" but every MIDI input is on midi.ignore
+           (0:Traktor Kontrol S2 MK3 (ignored))
+```
+
+An explicitly named port always wins over `ignore` — naming it means you meant
+it. `auto` also ignores hardware brand names in its own preference list, for the
+same reason.
+
+On Linux the same problem mostly solves itself, because `listen` is not a
+stream we went and opened — it is a port other things connect *to*. A controller
+sitting there sending pad hits is not connected to it and never will be unless
+somebody wires it up on purpose. `ignore` still applies to what `auto` would
+subscribe to.
+
+##### the pad controller, on the same input as the beat
+
+The Launchpad is the opposite case: it *is* wired up on purpose - the
+launcher subscribes it on the same published port Mixxx connects to - and
+its notes are wanted, just not by the clock. A Launchpad X in Programmer mode
+sends the grid as notes 11..88 on channel 1; the flash pad is 52, and 52 off
+Mixxx is the tempo note. Two things have to hold and both are `midi.pads`'s
+job (a list of name fragments, `["Launchpad"]` by default):
+
+- **A pad never moves the clock.** Every sequencer event carries its source
+  client, and one from a port matching `pads` is a pad whatever its number:
+  recorded for the monitor, never a tick, a beat, a tempo or a VU level. A
+  backend that opened the pad controller as its one device treats all of it
+  so. Without this, pressing `flash` set the rig to 177bpm.
+- **Mixxx never presses a pad.** The monitor line says where a message came
+  from - `MIDI-IN ch=1 note_on 52 127 from=pads`, `... from=beat` - and the
+  desk's map fires on the pads' and never on the beat's. With no pad
+  controller on the input to tell them apart, a note the clock takes (the
+  tempo, the beat, the VU notes on the beat channel) is the beat's whoever
+  sent it. Without this, Mixxx's 52 on every beat pressed `flash` on every
+  beat, and `flash off` did not stay pressed.
+
+`midi status` says `pads=yes` when the input has one.
+
+##### the full block
+
+```json
+"midi": {
+  "enabled": true,
+  "port": "loopMIDI",
+  "ignore": ["Traktor", "Kontrol"],
+  "pads": ["Launchpad"],
+  "clock": true,
+  "notes": true,
+  "beat_note": 50,
+  "bpm_note": 52,
+  "vu_instant_note": 64,
+  "vu_average_note": 68,
+  "vu_meter_note": 69,
+  "beat_channel": 1,
+  "bpm": 128,
+  "free_run": true
+}
+```
+
+Naming a `port` counts as enabling MIDI, so `"midi": {"port": "loopMIDI"}` on
+its own works. What `port` takes:
+
+| value | what it does |
+| --- | --- |
+| `"auto"` | prefers a name that looks like DJ software or a virtual cable; otherwise the only *device* there is |
+| `"Mixxx"` | a full port name, or any case-insensitive fragment of one |
+| `"2"` | the index `--list-midi` printed |
+| `"128:0"` | an ALSA sequencer address, as `aconnect` prints it (Linux) |
+| `"/dev/snd/midiC1D0"` | a device node, opened as raw MIDI (Linux) |
+| `"listen"` | publish `eclipse-dmx IN` and wait to be connected to (Linux) |
+
+`"auto"` will not guess between several unrecognised devices, because opening
+the wrong input looks exactly like opening none — and on the ALSA sequencer it
+will not take a lone application for a tempo source either, because there every
+running program is a port. What it does instead is `"listen"`, which is the one
+fallback that cannot be wrong.
+
+#### from anything else
+
+`midi.clock` follows standard MIDI beat clock: 0xF8 twenty-four times a quarter
+note, with 0xFA/0xFB/0xFC and Song Position Pointer. It costs nothing when no
+0xF8 ever arrives, which is why it stays on for Mixxx.
+
+Tempo comes off a rolling window of the last 24 ticks — the tick 24 ago was one
+beat ago by definition, so it is exact after a single beat rather than
+converging over tens of them.
+
+Beat clock gives tempo but not, on its own, *phase* — a 0xF8 stream joined
+halfway through a bar has no marker saying which tick is the beat. Start,
+Continue and Song Position Pointer resolve that. If a source sends none of them,
+`midi align` puts the one where you say it is and a `beat` tap puts the beat
+there. If a source sends both notes and clock, notes win, because a note is an
+explicit beat.
+
+**A beat message is not taken as a beat.** What arrives on a real cable is not
+one clean beat per beat: Mixxx sends the same beat twice, sends nothing for the
+next one, and puts the other deck's beats over the top of this one's. So each
+message is matched against the grid already running — too soon to be a
+different beat and it is dropped; two beats along and the count moves by two;
+nowhere near the grid and it is ignored, unless a second one agrees with it, at
+which point the music has genuinely moved and the grid follows. None of that
+happens until four beats have agreed that the grid is worth measuring against,
+and a tap never goes through it at all. This is what keeps `rate 0.5` on the
+same half of the pair all night: the slow rates are counted off that number,
+and one beat miscounted moves them for good.
+
+Everything downstream of "which notes arrive" is checked without a device:
+
+```sh
+eclipse-dmx --midi-selftest
+```
+
+It replays a synthesised Mixxx stream, a bare clock stream, a source sending
+both, and a raw byte stream with running status and an interleaved realtime
+byte, in synthetic time, and checks the beats and tempo that come out. It is in
+the test suite, and it is what caught the clock tempo being a whole bpm out for
+the first thirty beats.
+
+At the desk: `beat` taps a beat, `midi align` says which one is the one, `bpm
+<n>` sets the tempo outright, and the viewer has them on buttons plus `[t]` for
+the tap — `tap` for the beat and `the one` for the bar. `status` reports what
+the clock thinks, `bar_beat` counting 1..4 from the last downbeat it was given:
+
+```
+bpm=128.0 src=midi_note lock=yes free_run=on beat=417 bar_beat=3
+```
+
+`src` is where the tempo came from and `lock` is whether beats are still
+arriving from outside. `lock=no` with the rig still pulsing means it is
+free-running — the link went quiet and it is keeping its own time.
+
+#### latency — the beep test
+
+The beat reaches a lamp late. It is rendered on the next frame, crosses the
+network in [client mode](#client-mode--the-other-way-round), sits in a DMX
+frame that takes 23ms to leave the widget, and then the fixture answers at
+its own pace. From the desk none of that is visible except as the lights
+being *just* behind the music — every beat, all night, by the same amount.
+That last part is what makes it fixable: it is a constant, and `midi.latency_ms`
+pays it back.
+
+```json
+"midi": {
+  "latency_ms": 45
+}
+```
+
+With that set, every look reads the clock 45ms ahead, and a flash that was
+going to take 45ms to reach the truss lands on the kick. The grid itself does
+not move — a beat is still filed against the moment its message arrived, and
+Mixxx's tempo message every beat still holds the phase where it was — only
+what the looks are *told* moves. Negative is allowed, for a PA on a delay line
+that puts the music behind the lights.
+
+The number comes from the beep test, which is Rock Band's screen:
+
+```sh
+./launch-mythos-set-latency.sh              # the set's config, the rig on the pi
+./launch-mythos-set-latency.sh --local      # the wires on this machine
+python -m eclipse_dmx calibrate config/mythos26.json --client scanner-pi   # by hand
+```
+
+The launcher is the set's launcher cut down: same default pi, same fallback
+to this machine's wires when it does not answer, and it opens on
+`config/mythos-show.json` because that is the file the set runs off and the
+file `[s]` writes into.
+
+A click on this machine's speakers, and the rig flashing white on the same
+beat — the `metronome` look, on the same executable and the same `--client`
+road a set uses, so what it measures is what a set needs. Then either:
+
+- **by feel** — `[up]`/`[down]` move the latency a millisecond at a time,
+  ten with shift, until the flash and the click land together; or
+- **by tap** — `[b]`, then `[space]` on every click for three bars while the
+  rig is held dark; `[f]`, then `[space]` on every flash while the click is
+  muted. Where the two runs of taps land differs by exactly how late the
+  flash is — your reaction time is in both and cancels — and `[a]` applies
+  the answer. Twelve taps a round, the first two not counted.
+
+`[s]` writes it to the config, as a line at the top of the `midi` block
+with the rest of the file left exactly as it was, comments included. It is
+live before that: the number on screen is the number the show is running,
+and `latency <ms>` / `latency nudge <ms>` on the protocol are the same knob
+for trimming a set by ear while it plays.
+
+Two things it is honest about. The click goes out through this machine's own
+sound stack at a small fixed latency of its own — tens of milliseconds, kept
+small on purpose and about what the music has through the same stack — so
+the number is "the rig, relative to a sound played here", which is the right
+number for a set played from here. And it runs the show *here*, where the
+speakers are: `--host` is refused, because a beep from the pi is not the
+reference anyone is listening to.
+
+The click is streamed raw to `pw-cat`, `pacat` or `aplay`, whichever opens
+first, so nothing needs installing on a machine that already plays sound.
+`--no-click` runs the screen without it, for a bench.
+
+### gamma
+
+`master.gamma` defaults to 2.2. LEDs are linear in duty cycle and eyes are
+not, so without correction a fade spends most of its travel already looking
+lit. Set it to `1.0` if your fixtures correct internally, or if you are
+matching against something that sends linear values.
+
+## Control protocol
+
+The executable reads one command per line on stdin and replies `OK` or `ERR` on
+stdout. Logs go to stderr, so the two are separable when it is being piped.
+
+```
+pattern <name>            speed <float>          width <float>
+brightness <float>        master <float>         color <#rrggbb | h s v>
+palette <name|#a,#b,...>  blackout <on|off>      status
+quit
+
+state <name> [s] [blend]  states                 input <a|b> <on|off>
+blend [name]              params                 params dump
+param <name> <value>      trigger <tag>
+
+bpm <float>               beat                   latency [ms | nudge <ms>]
+midi open <spec>          midi close             midi align
+midi free-run <on|off>    midi monitor <on|off>  midi list / midi status
+
+link pixels               link cue               link take
+link release              link sim               link cmd <text>
+link hello
+
+layers                    layer <name> state <s> [seconds] [blend]
+layer <name> states       layer <name> blend [name]
+layer <name> params [dump]
+layer <name> param <k> <v>    layer <name> curve <k> <t:v...>
+layer <name> trigger <tag>
+```
+
+`state`, `blend` and `input` need a state machine pattern; the rest work on
+anything. A `state` cue can carry how long its fade is and how it looks -
+`state fire 0.5 dip` - in either order, either alone, and both stick until the
+next cue says otherwise; `blend <name>` sets the look without cueing a state,
+and `blend` alone answers `BLENDS` (the choices) and `BLEND` (the current one).
+The blends are `cut` (at once), `crossfade` (the straight HSV lerp the relics
+have always done, and the default), `rgb` (mixed like two lamps, so orange into
+blue does not pass through green), `dip` (through black) and `wipe` (the new
+look sweeps along the rig). A cue that lands mid-fade continues from the
+picture on the rig rather than snapping back to the look it was leaving, so any
+state can be cued at any moment - including the one being left.
+The `link` commands need `device.type` to be a relic — see
+[over usb](#over-usb). In cue mode `state <name>` goes to the relic rather than
+to our own state machine, so a cue list drives either end without changing.
+The tempo commands work whatever is running, because the beat clock is
+process-wide — dial a tempo in on `solid`, switch to `mythos26`, and it is
+already right. `latency` is how far ahead of the music the clock is read, in
+milliseconds, so a beat lands on the lamp when it lands on the ear; see
+[the beep test](#latency--the-beep-test).
+
+`beat` and `midi align` are timed to when the line *arrived*, not to the frame
+that got round to reading it: stdin is read on its own thread and every line
+is stamped as it lands. A tap through the pipe is therefore as exact as one
+off a MIDI cable, which the beep test depends on.
+
+With `--emit-frames` on, a `BEAT <n> <bpm> <src> <lock|free>` line goes out the
+moment each beat lands, outside the frame rate limit. That is what the viewer's
+tempo readout is fed from.
+
+A relic on the other end of a link talks back, and whatever it says arrives as
+`RELIC <device> <line>` — its answer to a Hello, and a note each time a takeover
+starts or lapses. Named, because an environment can hold two of them.
+
+Before the first frame the executable also sends one line per device:
+
+```
+DEVICE <index> <name> <first fixture> <count> <output>
+```
+
+A frame is one flat run of fixtures across every device in order, so those are
+what a UI slices it apart with. `FIXTURES` names them all, in the same order.
+
+## Python wrapper
+
+```sh
+export PYTHONPATH=desktop/python      # or: pip install -e desktop/python
+```
+
+Describe a rig, validate it, run it:
+
+```python
+from eclipse_dmx import Config, ShowController
+
+config = Config()
+config.add_bank("uking_par36", count=10, address=1, name_prefix="par")
+
+config.validate()          # raises on a channel collision or a bad patch
+
+with ShowController(config) as show:
+    show.set_pattern("chase")
+    show.set_palette(["#ff2200", "#ffaa00"])
+    show.set_master(0.6)
+    show.wait(seconds=30)
+```
+
+`add_bank` takes a built-in profile name or a `FixtureProfile` you define:
+
+```python
+from eclipse_dmx import FixtureProfile
+
+my_par = FixtureProfile(
+    name="my_par", footprint=8,
+    dimmer=1, red=2, green=3, blue=4,
+    park={5: 0, 6: 0, 7: 0, 8: 0},
+)
+config.add_bank(my_par, count=6, address=81)
+```
+
+The controller writes the config to a temp file, starts the executable, waits
+for `READY`, and speaks the protocol on its stdin. Leaving the `with` block
+shuts the process down, which sends the rig one dark frame on the way out.
+
+The tempo side is there too, including a callback per beat:
+
+```python
+from eclipse_dmx import ShowController, list_midi_ports
+
+print(list_midi_ports())
+
+with ShowController("config/mythos26.json", on_beat=print) as show:
+    show.midi_open("loopMIDI")     # or leave it to the config
+    show.set_state("beat_pulse")   # a cue on the audio bus, while the show is empty
+    show.wait(seconds=60)
+
+    show.set_bpm(128)              # no MIDI? drive it by hand
+    show.tap_beat()                # ...and put the beat here
+    show.midi_align()              # and this one is the one
+```
+
+`show.bpm`, `show.beat`, `show.beat_source` and `show.beat_locked` track what
+the executable reports. Like frames, they only move when frames are being
+emitted — passing `on_beat` turns that on.
+
+Validation in python is stricter than in the executable, on purpose. A channel
+claimed twice is a warning at runtime — a half-repatched rig should still light
+up — but an error when you are generating config from code, where it is
+almost certainly a mistake.
+
+There is a CLI for the common jobs:
+
+```sh
+python -m eclipse_dmx ports                    # what serial ports exist
+python -m eclipse_dmx midi                     # what MIDI inputs exist
+python -m eclipse_dmx midi-watch my_rig.json   # what one of them is sending
+python -m eclipse_dmx list                     # patterns, palettes and profiles
+python -m eclipse_dmx validate my_rig.json     # check a patch, touch nothing
+python -m eclipse_dmx patch my_rig.json        # print the resolved channel map
+python -m eclipse_dmx generate --profile uking_par36 --count 10 -o my_rig.json
+python -m eclipse_dmx run my_rig.json --dry-run --seconds 5
+python -m eclipse_dmx view my_rig.json          # watch it in a window
+python -m eclipse_dmx osc my_rig.json           # its colour out to a visualiser
+python -m eclipse_dmx calibrate my_rig.json     # the beep test: how late is the rig
+```
+
+And a worked example with a cue list in `python/example_show.py`.
+
+## Widgets
+
+**Enttec DMX USB PRO** (`"type": "enttec_pro"`) is the one to use. It has
+firmware that owns the DMX timing, so a frame is just a framed message over its
+virtual COM port and the host being briefly busy does not disturb the output.
+PRO Mk2 works on port 1.
+
+**Enttec Open DMX USB** (`"type": "enttec_open"`) covers the bare FTDI cables,
+which is most of what "USB to DMX" means when it is cheap. There is no firmware:
+the host generates the DMX break and clocks the frame out itself.
+
+On **Linux this goes through libftdi rather than the serial port**, and that is
+not a preference — the tty path does not work on these widgets. See
+[the widget that would not light](#the-widget-that-would-not-light) below, which
+is worth reading before debugging one, and `include/edmx/ftdi_dmx.h` for the
+mechanism. It is `dlopen`'d, so a machine without libftdi still builds and runs
+and falls back to the serial port.
+
+A happy side effect: **there is no permissions problem on this path.**
+`/dev/ttyUSB0` belongs to group `uucp` or `dialout`, which your user is usually
+not in, and udev recreates the node on every replug so any `chown` is undone.
+libftdi talks to the USB device node instead, which `69-libftdi.rules` already
+tags `uaccess` — the logged-in user gets an ACL automatically, on every replug,
+with no group and no sudo. If you are on the serial fallback and hit
+`Permission denied`, eclipse-dmx now prints the group, whether you are in it,
+and the exact command.
+
+Three things make or break this path, all learned the hard way:
+
+- **Wait for the frame to be *on the wire* before the break.** Not "flush" —
+  wait. The break must not be asserted while the previous frame is still going
+  out, or that frame is truncated and the break lands where no receiver expects
+  it. `FlushFileBuffers` does this on Windows. **On Linux nothing does**:
+  `tcdrain()` returns when the kernel has handed the bytes to USB, and
+  `ftdi_write_data()` when USB has accepted them, while the chip still has
+  22.6ms of a 513-byte frame left to clock out at 250000. So the wait is
+  computed from the frame's own length and enforced by hand — that is
+  `EnttecOpenOutput::sendVia`, and it is the difference between a dark rig and
+  a lit one.
+- **Do not `sleep` for the break.** It is 92us, and a Windows sleep rounds up to
+  the scheduler tick — 1ms at best, often 15. The problem is not that this is
+  long but that it *varies*, and a receiver that cannot find a consistent break
+  start reads every frame shifted. `serial_port.cpp` spins instead.
+- **Send the whole frame at raised priority.** The break, the mark and the data
+  are one indivisible thing to a receiver — a gap in the middle reads as a new
+  break and the frame lands shifted. Nothing on the host is generating that
+  timing except our thread, so if the scheduler preempts it mid-frame the rig
+  blinks. `TimeCriticalSection` raises priority for the few milliseconds of the
+  send and drops it straight back.
+
+  This is worth the trouble: on this rig it took an unexplained flicker every
+  few seconds — roughly one bad frame in two hundred — down to none over a
+  minute of watching.
+
+Get either wrong and the failure is not silence, it is a rig that looks steady
+on a solid colour and strobes the moment anything animates — because a shifted
+frame lands your colour data on the fixture's mode and strobe channels.
+
+### which one do I have?
+
+You cannot always tell from the USB descriptor. A widget that enumerates as a
+plain `FT232R USB UART` with a stock EEPROM is a bare cable and wants
+`enttec_open`; a real PRO programs its EEPROM to say `DMX USB PRO`. But clones
+vary, so if in doubt try both:
+
+```sh
+eclipse-dmx --config my_rig.json --device enttec_open --pattern solid
+eclipse-dmx --config my_rig.json --device enttec_pro   --pattern solid
+```
+
+`solid` is the right pattern for this: an unchanging frame, so anything other
+than one steady colour means the frames are not arriving intact.
+
+If QLC+ is installed, its Inputs/Outputs panel names the device it found, and
+its `Fixtures/` folder holds `.qxf` definitions that are a far better source for
+a channel map than most listings online.
+
+### the widget that would not light
+
+Worth writing down, because everything about the failure said the software was
+fine and it was not.
+
+An Open DMX widget on Linux, through the serial port: the port opens, the
+measured line rate is **249400** against DMX's 250000, the framing reads back as
+8N2, `TIOCSBRK` returns success in 0.128ms, `--list-ports` finds the device,
+frames go out at a steady 40fps, and the widget's own activity LED blinks. Every
+diagnostic available says it is working. The fixtures stay dark, except for a
+single flash every few minutes.
+
+The cause is that **no Linux API tells you when a frame has left the chip.**
+`tcdrain()` returns once the kernel has handed the bytes to USB. A 513-byte
+frame is 22.6ms of actual transmission at 250000. Assert the next break before
+that finishes — which any reasonable-looking frame rate does — and the break
+lands *inside* the previous frame. A receiver reads that as a packet starting
+mid-packet and discards it. Every frame is quietly wrong, forever, and the one
+that occasionally aligns is the flash.
+
+Two things follow, and both are now in the code:
+
+- The wait is **computed, not asked for**: `bytes x 11 / 250000` seconds from
+  the moment of the write, spun out rather than slept, before the next break.
+- It goes through **libftdi**, not the tty. A guard delay alone was not enough
+  on the serial path at any frame rate tried — 5ms, 20ms, 45ms periods, all
+  dark — while libftdi with the same guard lights the rig.
+
+The measurements that got there, in case another widget ever does this:
+
+| transport | frame | pacing | result |
+| --- | --- | --- | --- |
+| kernel tty | 71B @ 24fps | — | dark |
+| kernel tty | 513B @ 40fps | none | dark |
+| kernel tty | 513B @ 22fps | 20ms after `tcdrain` | dark |
+| libftdi | 513B @ 43fps | none | dark |
+| libftdi | 513B @ 30fps | full frame time | **lights** |
+
+The tool that settles "is it even reaching the fixture" is a raw blast of every
+channel — but **not at 255**. A 7-channel par has strobe and function channels,
+and 255 on those means "strobe" and "ignore DMX and run your own program", so
+an all-255 test can look exactly like a dead wire. Send a dimmer and one colour
+at full with the rest at zero.
+
+**console** (`"type": "console"`, or `--dry-run`) prints frames instead of
+sending them.
+
+**preview** (`"type": "preview"`) renders and drops the frame. For a rig whose
+destination is the viewer rather than hardware. Unlike `console` it prints
+nothing, so the log of a show you are watching stays readable, and it does not
+claim the rig is a DMX one.
+
+**relic_usb** (`"type": "relic_usb"`, or `relic_usb_cue`) is not a widget at all
+— it is an eclipse-os relic on its own USB cable. See [over usb](#over-usb).
+`"start": "released"` opens the cable but leaves the sculpture on its own looks
+until a `link take`; the default, `"streaming"`, takes it on the first frame.
+
+## Over USB
+
+A laptop can take a relic over for a show and hand it back afterwards.
+
+```sh
+# flash the relic first: ../upload.sh obelisk  (USE_RELIC_LINK 1 is the default)
+eclipse-dmx --probe-relics
+eclipse-dmx --config config/obelisk_usb.json
+
+# or watch it and drive it at the same time
+python -m eclipse_dmx view config/obelisk_usb.json --live
+```
+
+### first light
+
+Done, on a real obelisk. Recorded here because it is also the order to work
+through if a second sculpture ever misbehaves.
+
+1. **Flash it.** `./upload.sh obelisk` from the repo root — that is the
+   obelisk, dev, `USE_RELIC_LINK 1`. Dev rather than `deploy` on a first run —
+   the logs are worth more than the frame rate. Build is 396 KB of flash (18%) and 71.5 KB of RAM (27%).
+2. **`eclipse-dmx --probe-relics`.** ✓ `RELIC COM4  obelisk strip=0:344
+   brightness=63`. That is the sculpture naming itself, its one strip, its
+   length, and the current limit it will apply on top of anything sent.
+   `strip=0:344` matching the patch is the check worth making.
+3. **A frame.** `--config config/obelisk_usb.json --frames 90` ✓, with
+   `RELIC EOSLINK take` in the log — the sculpture confirming the takeover.
+4. **Cues.** `link cmd states` ✓ `EOSLINK states blobs seasons theater mono`, and
+   `link cmd state theater` ✓ `EOSLINK state theater`.
+5. **Both modes.** `link cue` ✓ `EOSLINK release asked`, then a cue in cue mode,
+   then `link pixels` ✓ `EOSLINK take` again.
+6. **An abrupt disconnect.** The show killed with no release; the relic answered
+   a Hello again three seconds later ✓. The holdover itself is covered in
+   synthetic time by `--link-selftest`; what this proves is that a desk
+   vanishing mid-frame does not leave the sculpture wedged.
+
+7. **Reflashing with no button.** `--reboot-bootsel` ✓ (COM4 gone, `RPI-RP2`
+   mounted), `.uf2` dropped on it ✓, relic back and taking frames ✓.
+
+And it looks right on the sculpture — confirmed by eye during the run above, so
+the patch, the strip order and the coordinate space all agree with the physical
+object. That is the half no protocol reply can tell you.
+
+If the wrong pixels ever light rather than none, the patch and the strip
+disagree: compare the Hello's `strip=0:344` against `--show-patch`.
+
+Two things travel, and they are not alternatives:
+
+| mode | what goes down the wire | costs | buys |
+| --- | --- | --- | --- |
+| **cue** | `state theater` | a few bytes, occasionally | the relic renders its own looks; survives a bad cable |
+| **pixel** | 1044 bytes, 30 times a second | ~31 KB/s, continuous | *any* desk look on the relic — mythos26, the beat, the knobs |
+
+`link cue` and `link pixels` switch between them live. Cues are sent in either
+mode, because arming the look a relic will fall back to is exactly what you want
+set before a stream drops.
+
+### the takeover, and how it ends
+
+The relic does not wait to be told. If no pixel frame has arrived for half a
+second it takes its own pixels back and carries on rendering. A pulled USB cable
+should cost you a look, not a dark sculpture in front of a room.
+
+`link release` ends it immediately instead, and so does closing the show — a set
+that ends should end, not fade out on a timeout.
+
+While the desk owns the pixels the relic skips its own rendering entirely rather
+than computing a look and overwriting it. On a 344-pixel relic that look is a
+Perlin field per pixel per frame, which is the expensive half of a tick. Its
+*clocks* keep moving, though (`ObeliskCore::tickWhileLinked`) — see below for
+why that matters.
+
+### joining rather than seizing: the shadow
+
+A takeover has two edges, and left to themselves both are cuts: the sculpture
+snaps from its own look to the desk's on the first frame, and back on the
+release. Sending the sculpture's picture back up the cable to blend against
+would cost more than the picture going down it. So instead the desk asks the
+relic *what it is doing* and runs the same thing itself.
+
+```
+link take            # -> sim, then the stream starts once the shadow is live
+RELIC obelisk EOSLINK sim blobs noise.seed=41 noise.time=812.4
+SHADOW obelisk blobs noise.seed=41 noise.time=812.4
+LINK obelisk streaming over blobs
+```
+
+Three pieces:
+
+- **`reflectState`.** Beside `reflect` (the knobs) and `reflectCurves` (the
+  shapes), a look can hand out its *clocks*: `GeneratorHSV::reflectState`
+  registers them with `PropertyBag::addState`, and `ecore::serializeState` /
+  `applyState` turn the bag into `name=value` text and back. The primitives
+  do the work — a `PerlinNoiseGenerator2D` names its seed and its time, an
+  `LFO` its phase — so a look is one line per field. Optional: a look with no
+  clocks says nothing, and one that has clocks and says nothing simply cannot
+  be shadowed.
+- **`sim`.** A relic command. Bare, it answers `EOSLINK sim <look> <state>`
+  for whatever is showing. `sim <look> k=v ...` sets it, with no blend — the
+  desk putting the sculpture where its own copy is.
+- **`RelicShadow`.** On the desk: spawns the named look on the relic's own IO
+  layer (the same `ObeliskIO` the firmware builds, compiled for the host, so
+  the geometry is the sculpture's and not the show's patch of it), applies
+  the state, and ticks it beside the show. It is an `eanim::Underlay`: any
+  look that wants to compose over the sculpture samples it by node. Which
+  relics can be shadowed is a `RelicShadowProfile` each — identity, node
+  space, an IO factory, a look factory — registered in
+  `relic_shadow_profiles.cpp`; the profile is picked from the relic's Hello.
+  The obelisk has one; a stranger gets a `WARN` and a take from black.
+
+`link take` sends `sim` and waits for the shadow before the first frame, so
+the takeover *is* the sculpture's own picture; then it is the showing look's
+business what happens. The scanner's idle look composes over the underlay:
+each ping's pulse claims the tower row by row as it climbs (its `wake` curve),
+the claim eases off as the next ping comes due, and when the pings stop the
+tower is the sculpture's own again — at which point `link release` is a
+handback nobody sees, because the relic's clocks kept time underneath and
+its next frame is the one the desk just sent. Every five seconds while
+streaming the desk re-asks `sim` and nudges the shadow, since two clocks are
+two clocks.
+
+Parity — the shadow drawing the same pixel as the relic, given the same
+answer — is checked by `--link-selftest` against the real `ObeliskCore`, pixel
+for pixel.
+
+### the wire
+
+One format, `src/lib/elink/`, compiled into both ends — the desk builds frames
+with it and the relic parses them with it, so there is no second definition to
+drift. Same reason the patterns are shared rather than ported.
+
+```
+EC 15 | type | len lo | len hi | payload | crc lo | crc hi
+```
+
+A CRC because the failure it catches is silent: a corrupt pixel frame is not an
+error anyone sees, it is one wrong-coloured frame that reads as a glitch in the
+look rather than as a bad cable. And a resync scan, because a relic gets plugged
+into a running desk and the first bytes it ever sees are the tail of something.
+
+Pixel payloads carry a strip id, a start and a count, so a frame does not have to
+be the whole strip and a relic with more than one is addressable.
+
+### reflashing without the BOOTSEL button
+
+```sh
+eclipse-dmx --reboot-bootsel          # find it, reboot it, drop the .uf2 on RPI-RP2
+```
+
+and `link bootsel` from a running show, when the port is already open.
+
+Two mechanisms, tried in that order. An elink `Reboot` frame is deliberate and
+confirmable — only a relic running our firmware answers a Hello, so if one does
+we know exactly what we are rebooting. The **1200-baud touch** is the fallback:
+it is the convention every Arduino-family board uses, which means it also works
+on a relic flashed before the link existed, and that is precisely the board you
+most want to reflash without reaching behind a sculpture.
+
+`Reboot` is its own frame type rather than a command string on purpose. The
+relic does not come back from it — it reboots as a mass-storage device and waits
+for a `.uf2` — so it should be impossible to arrive at by fat-fingering a cue.
+
+Note the deliberate 1200 guard in `RelicUsbOutput::open`: a show config that
+somehow asked for `"baud": 1200` would otherwise drop the sculpture into its
+bootloader instead of driving it.
+
+### two things about USB CDC that cost an hour
+
+Both of these make a perfectly healthy relic look dead, and neither is visible
+from anything the relic does.
+
+**DTR has to be asserted.** A CDC device treats DTR as "a host is here", and
+until it is set it throws away everything it writes. `SerialPort::open` used to
+deliberately leave DTR alone — correct for a DMX widget, where plenty of FTDI
+boards wire it to a reset or an RS485 driver-enable and asserting it holds the
+thing mute. So it is a parameter now, and the two device families get opposite
+answers. Symptom if you get it wrong: the port opens, the relic is running, and
+`--probe-relics` reports nothing at all.
+
+**The port is not ready when `open()` returns.** The host has to bring the line
+up and the device has to notice, and anything written into that gap is simply
+gone. Measured on a Pico: an immediate write is lost, 300ms later is reliable.
+Both `--probe-relics` and `RelicUsbOutput::open` wait now — otherwise the first
+frames of a show would go missing, which reads as a rig that takes a moment to
+"warm up" rather than as a bug.
+
+### finding the relic
+
+`"port": "auto"` sends a Hello to every port and takes whichever answers by name.
+
+It does not guess from the port name, because that cannot work: a Pico is USB
+CDC and a DMX widget is an FTDI part, and on Windows both are `COMn` with a
+registry description that names neither — this machine's widget reports itself
+as `\Device\VCP0`. Guessing would mean a show quietly driving a widget that
+ignores it.
+
+`--probe-relics` is the same handshake as a diagnostic, and it is the first
+thing to run when nothing lights.
+
+### talking to it
+
+A relic answers on its log stream, as text, and the show forwards those lines as
+`RELIC ...`. A Hello gets back its name, its strips and their lengths, so a patch
+that does not match the sculpture shows up at load-in rather than as a half-lit
+rig during a set.
+
+Typing into a serial monitor still works. `RelicLink` gathers printable bytes
+seen between frames into a line and hands it to `handleCommand`, so `switch` or
+`state theater` typed by hand does what it always did — the link replaced the old
+`Serial.readString()` path rather than sitting beside it, because two readers on
+one port eat each other's bytes.
+
+### is the bandwidth there
+
+Comfortably, and the number that looks like the limit is not one.
+
+`Serial.begin()` reads like a baud ceiling and is not: on an RP2040 `Serial` is
+USB CDC, where the rate is a value the host sets and neither end obeys. Real
+throughput is USB's, on the order of 1 MB/s. 31 KB/s is about 3% of it.
+
+The real ceiling is the sculpture. 344 WS2812s take ~30us each to clock out, so
+`show()` alone is **10.3ms**, and the relic's loop sleeps 30ms a tick in a dev
+build. Hence `"fps": 30` in the config rather than 40 — sending faster does not
+draw faster, it just means frames are read and dropped a tick later. With
+`DEPLOYMENT 1` the loop goes to ~20ms and 40 becomes reasonable.
+
+### three things that would have bitten
+
+**`DEPLOYMENT` used to disable serial input.** `USE_SERIAL_INPUT` was
+`1 && !DEPLOYMENT`, so the build that goes on a sculpture for a show was exactly
+the build with no way in. `USE_RELIC_LINK` is its own flag, on in both.
+
+**Exactly one end applies gamma.** The sculpture's own path is HSV → `ColorHSV`
+→ `gamma32` → pixel, inside `HSVStrip::updateStripPixel`. A streamed frame is
+already RGB and goes through `HSVStrip::setPixelRGB` instead, straight to the
+driver, so `master.gamma` on the desk is the only correction in the path and the
+viewer and the sculpture agree. Plumbed through `strip_HSV` it would be gamma
+twice, and everything below mid-brightness would crush toward black — quiet
+failure, not a loud one, which is why it gets its own door rather than a flag on
+the existing one.
+
+**`Serial` may already be taken.** A relic built with `USE_SERIAL_MQTT` has a
+line-based MQTT bridge on that port and binary frames would corrupt both. The
+sketch refuses to compile with both on. The obelisk uses neither, so it is free.
+
+### the sculpture is dimmer than the picture, and that is correct
+
+`setGlobalBrightness(EBrightness::HIGH)` is 63/255, and the relic applies it on
+top of whatever arrives. That is a current limit, not a preference — 344 pixels
+at full white is about 20A — so the link does not bypass it. A Hello reports the
+value so it is at least visible.
+
+### verifying it without a sculpture
+
+```sh
+eclipse-dmx --link-selftest
+```
+
+41 checks over the frame format, the parser and the relic's end of the link:
+resync after garbage, a corrupted byte caught by the CRC, an absurd length that
+must not wedge the reader, a byte-at-a-time trickle, a frame sized for a longer
+relic, the holdover expiring in synthetic time, and the obelisk's own 1044-byte
+frame arriving intact.
+
+The last block runs a **real `ObeliskCore`** — its geometry, its state machine,
+`RelicCore::runTick` and the gating inside it — through a loopback. That is the
+code the Pico executes, compiled with `USE_ARDUINO=0`, so the takeover, a cue
+landing mid-stream, and the handback are all tested before anything is flashed.
+
+What it cannot cover is what only exists on the device: the USB stack, the
+WS2812 write, and every question about timing.
+
+### what it does not solve
+
+One relic per config and one port; nothing fans a look out to several
+sculptures. And the relic's frame rate is its own — the desk cannot make an
+obelisk draw faster than its `show()` allows.
+
+## Over ssh
+
+The desk on one machine, the rig on another:
+
+```sh
+python -m eclipse_dmx view config/scanner.json --live --host scanner-pi
+python -m eclipse_dmx run  config/scanner.json --host scanner-pi --seconds 30
+```
+
+The window is the same window, with the knobs, the cue list and the curve
+editor; what changed is where the executable runs. Nothing in the control
+protocol had to: it is lines on stdin and stdout, flushed one at a time, and
+`ssh host cmd` presents exactly those two pipes. So `ShowController` runs
+`ssh` in place of the binary, the config path goes across relative to
+`desktop/` (the same checkout at both ends names the file the same way), and
+everything above it is unchanged. The frame stream is a few kilobytes a frame,
+which a LAN does not notice.
+
+The point of it is where the wires are. The obelisk's USB cable is on the pi,
+so the elink frames never leave it; the scanner's ring is on the pi's GPIO, so
+it is painted there. What runs at the far end is not the bare executable but a
+wrapper that does what the host has to do for itself — afterglow's
+`launch-desk.sh`, which starts `main-py/ring_bridge.py` as root: eclipse-dmx,
+its stdin and stdout relayed verbatim, and the ring's slice of every `F` line
+put on the NeoPixels on the way past. Name something else with
+`--remote-command` (or `ECLIPSE_DMX_REMOTE_COMMAND`); `eclipse-dmx` on the
+host's PATH is enough for a rig with no ring.
+
+Three things the far end has to be set up for, all one-off:
+
+- **A key, not a password.** ssh runs in batch mode, because a prompt in a
+  pipe is a hang. `ssh scanner-pi true` should print nothing and exit 0.
+- **Root without a prompt**, for the NeoPixels. One line in
+  `/etc/sudoers.d/` — `launch-desk.sh` has it, and says so on the protocol if
+  it is missing.
+- **The game stopped.** It owns the ring and the relic's port while it runs,
+  and the bridge refuses to start beside it rather than fight it. A dry run
+  (no `--live`) opens no port and paints no ring, so it can run alongside.
+
+The bridge also closes one gap on purpose: the executable keeps running when
+its stdin closes, which is right for a supervisor detaching from an unattended
+rig and wrong for a desk that vanished mid-show — that would leave a process
+holding the obelisk until someone found it. Over ssh, EOF *is* the desk
+leaving, so the bridge sends `quit` and the relic gets its pixels back.
+
+What does not cross the link: MIDI. The executable reads it, so a controller
+or Mixxx on the desk is invisible to a show on the pi; a pad-to-cue mapping
+that leans on `MIDI-IN` lines goes quiet. The OSC sender is desk-side off the
+frame stream and works as before.
+
+The same rule decides where a DMX widget goes: on the machine running the
+executable. `config/scanner_stage.json` is the scanner's show with the truss
+in it — ring, obelisk and the ten pars on one stage, the truss on the floor at
+the foot of the sculpture so a wave starts on both and climbs from there:
+
+```sh
+python -m eclipse_dmx view config/scanner_stage.json --live --host scanner-pi
+```
+
+With `--host`, the Enttec cable is plugged into the pi. It is an `enttec_open`
+widget, so on the pi it goes through libftdi (see [widgets](#widgets)); `auto`
+finds it by USB and cannot mistake the obelisk for it, which is a CDC device on
+`ttyACM` and never a candidate. Unplugged, the truss is OFFLINE in the header
+and the show runs without it.
+
+One more thing the far end needs for that: the executable there has to be
+built from sources that know the show. `launch-desk.sh` does not build, on
+purpose, and the bridge warns when the binary on the pi is older than what was
+pulled — a cue that answers `unknown pattern` is what a stale binary looks
+like from the desk.
+
+## Client mode — the other way round
+
+`--host` puts the executable beside the wires and drives it from here. That
+costs the desk its MIDI: the executable is what opens a port, so over there
+`eclipse-dmx IN` is published on the *pi's* sequencer and Mixxx on this
+machine cannot see it. The beat, the tempo, the VU, the pads and the lamps all
+belong to the far end.
+
+Client mode is the same link the other way round. The show runs **here**,
+where the controllers are plugged in, and only the picture crosses:
+
+```sh
+python -m eclipse_dmx view config/mythos26.json --live --client scanner-pi
+python -m eclipse_dmx run  config/mythos26.json --client scanner-pi   # headless
+./launch-mythos-set.sh            # the pi is the launcher's default
+./launch-mythos-set.sh --local    # the wires on this machine instead
+```
+
+It is the mythos set's default: `launch-mythos-set.sh` runs `--client
+scanner-pi` unless told `--local` (or `--host`, or given an empty
+`ECLIPSE_CLIENT`). A defaulted pi that does not answer ssh is not the reason
+a set fails to start — the launcher says the sculpture will stay dark and
+runs on this machine's wires; name it with `--client` to insist. `view`,
+`run` and `osc` all take `--client`, so a headless set reaches the pi too.
+
+The far end runs `eclipse-dmx --sink`, which renders nothing and paints what
+arrives — the same `F aabbcc ...` lines `--emit-frames` already produces. Three
+details make it work:
+
+- **The bytes are painted, not rendered.** An F line is read back out of the
+  universe at the sending end, so it has already been through master,
+  brightness and gamma. Running it through those again would darken the rig
+  by a curve on every hop.
+- **The render still runs, for its other half.** A fixture's dimmer and its
+  parked mode channels are constants, and the frame stream carries only rgb —
+  so a par driven from F lines alone sits at dimmer 0 with its mode channel
+  floating, which on a cheap fixture means dark and running its own colour
+  macro. The sink renders into the universe for those, then overwrites the
+  three colour channels. Fed full red, the pars come out `255 255 0 0 0 0 0`.
+- **The far end does not need to know the show.** A look the sink's build
+  cannot make — the config's, or a layer's — is a `WARN sink:` and an `off`
+  stand-in, not the `ERR pattern` a desk would give. The pi's binary will be
+  older than the show every time a cue is written, and since it only paints,
+  that is not its problem. What it does need is the config *file*: the path
+  crosses and the far end opens its own copy, so a show has to be committed
+  and pulled there before its name means anything on the pi.
+
+The ring needs nothing new: it is a `preview` device and was always painted by
+`ring_bridge` from the frames going past, so the sink's own `--emit-frames`
+hands it the stream it already reads. The obelisk and the DMX widget are
+driven by the sink itself, through the same output layer as ever.
+
+**What you are trading.** Under `--host` the far end renders locally at
+`device.fps` and a network stall costs you a stuttery preview. Under
+`--client` the rig's picture arrives over the wire, so a stall is visible on
+the sculpture. And `--emit-rate` stops being a display rate and becomes the
+rate the rig is driven at — it has to be at least the fastest `device.fps`
+over there (30 covers the 24 this rig asks for).
+
+OSC is unaffected either way: the sender is desk-side off the frame stream,
+and the audio listener is local.
+
+## What is not here yet
+
+- **Art-Net / sACN.** Only the USB widgets. The `DmxOutput` interface is the
+  place to add one.
+- **Multiple universes.** One 512-channel universe.
+- **Moving heads.** RGB colour fixtures only; pan/tilt has no representation in
+  the config yet, though a profile's `park` will hold them somewhere sensible.
+- **White / amber / UV channels.** Profiles model dimmer + RGB + parked
+  channels. An RGBW fixture works, but its white channel can only be parked at
+  a fixed value, not driven from the colour.
+- **Config hot reload.** Restart to change the patch. Look, brightness and
+  tempo are live over the control protocol.
+- **MIDI out.** Input only, and only tempo off it — no control-change mapping
+  to patterns, no faders. `MidiInput::handleMessage` is where that would start.
+- **Bars.** The clock keeps a bar, but it is an assumed one: four beats long,
+  starting at the last downbeat it was *told* about, because nothing upstream
+  reliably says where a bar begins. Four is not a knob, and a source in three
+  has no way to say so. `midi align` on the one is the whole of the fix — see
+  [half time, quarter time and double
+  time](#half-time-quarter-time-and-double-time).
+- **Stereo VU.** Only the mono meters are read. The mapping sends left and
+  right separately, which a rig split into two halves could use.
+
+## Tests
+
+```sh
+./test.sh                 # all of it
+./test.sh Viewer          # only names containing "Viewer"
+./test.sh Viewer Midi     # either
+```
+
+Runnable from anywhere, and it needs nothing installed — plain unittest, plus
+the built executable for the tests that drive it. Anything needing the
+executable or a display skips itself when there is not one, so this stays
+runnable on a build machine and on a show laptop.
+
+**Use a name while you are working.** A full run drives the executable a few
+hundred times and opens a few dozen windows; a single class is seconds. Run the
+whole thing before you commit, not before you look at a diff.
+
+`python/tests/harness.py` holds what the suite skips on and how it waits.
+`settle_until(predicate)` is the wait worth knowing about: it pumps the event
+loop until the thing being waited for has happened, and only spends its full
+timeout when the test is about to fail anyway. `settle(seconds)` is for the
+other case — letting a span of *show* time pass, where arriving early would
+mean measuring the wrong moment.
+
+### The windows a run opens
+
+The viewer cannot be tested headless: the assertions read geometry and pixel
+colour back off a live tk canvas, which only exists once a window manager has
+mapped it. So a run opens real windows on whatever desktop you are sitting at.
+
+They announce themselves under the WM class `Eclipse-dmx-tests` (set by the
+harness through `ECLIPSE_DMX_WM_CLASS`, which the viewer reads — a real viewer
+is `Eclipse-dmx`), so a compositor can tell a test run from your actual viewer
+and put the run somewhere harmless. On hyprland, in `custom/rules.lua`:
+
+```lua
+local TESTS = "^(Eclipse-dmx-tests)$"
+hl.window_rule({match = {class = TESTS}, workspace = "special:tests silent"})
+hl.window_rule({match = {class = TESTS}, float = true})
+hl.window_rule({match = {class = TESTS}, no_initial_focus = true})
+
+-- and to look at the run while it is going
+hl.bind("SUPER + ALT + T", hl.dsp.workspace.toggle_special("tests"))
+```
+
+Any compositor wants the same three ideas: a workspace of its own, floating,
+no focus. Floating is not only politeness — a tiled window ignores the size a
+test asked for, so the geometry tests all quietly ran at one tile size.
+
+## Layout
+
+```
+desktop/
+  include/edmx/    json, serial_port, dmx_output, fixture, config, pattern
+  src/             implementations, plus main.cpp (the show runner)
+  devices/         one file per physical thing: the obelisk, the truss of pars
+  config/          environments — rooms with devices in them, and the show
+  scenes/          Synesthesia scenes that take their colour from the rig
+  python/          the wrapper package, the viewer, and the OSC sender
+  python/tests/    the suite; harness.py is the shared scaffolding
+  test.sh          run it, all of it or one name's worth
+  tools/           toolchain setup, one script per platform
+  CMakeLists.txt   builds only the slice of the library that is off-Arduino clean
+```
+
+The library changes that made this possible are in `src/lib/`: platform
+includes are now behind `USE_ARDUINO`, and `ecore/platform_host.h` supplies the
+few Arduino symbols the portable code leans on. The microcontroller build is
+unaffected.

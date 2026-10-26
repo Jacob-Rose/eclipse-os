@@ -1,0 +1,2272 @@
+"""Configuration model for eclipse-dmx.
+
+This is the python side of the config file the executable reads. Keeping a
+typed model here rather than hand-writing JSON means a rig can be described in
+code, validated before anything is sent to hardware, and diffed between shows.
+
+Validation is intentionally strict where the executable is forgiving: a channel
+collision is a warning at runtime because a half-patched rig should still light
+up, but if you are generating config from python you almost certainly want to
+hear about it before you commit.
+"""
+
+from __future__ import annotations
+
+import json
+import re
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
+
+DMX_CHANNEL_COUNT = 512
+
+#: Types that put frames on a DMX wire, and are therefore bound by the 512
+#: slots a universe has. Everything else renders into a buffer as long as the
+#: rig is - which is how a 344-pixel relic fits.
+DMX_WIRE_TYPES = ("enttec_pro", "enttec_open")
+
+#: Types that drive an eclipse-os relic over its own USB cable, rather than a
+#: DMX widget. The frame buffer is the pixel buffer; see edmx::RelicUsbOutput.
+RELIC_TYPES = ("relic_usb", "relic_usb_cue")
+
+DEVICE_TYPES = (
+    "enttec_pro",
+    "enttec_open",
+    "relic_usb",
+    "relic_usb_cue",
+    "console",
+    "preview",
+    "none",
+    "null",
+)
+
+#: How a fixture's `position` is read. Must stay in step with edmx::CoordSpace
+#: in desktop/include/edmx/config.h.
+COORD_SPACES = ("normalized", "literal")
+
+PATTERN_NAMES = (
+    # built-ins
+    "solid",
+    "palette_wave",
+    "rainbow",
+    "chase",
+    "pulse",
+    "identify",
+    "metronome",
+    "off",
+    # relic patterns, run unmodified through edmx::GeneratorPattern.
+    # Must stay in step with ensureBuiltinsRegistered() in desktop/src/pattern.cpp.
+    "obelisk_seasons",
+    "obelisk_theater",
+    "obelisk_mono",
+    # a whole relic state machine, with its own looks and transitions
+    "jacket",
+    # afterglow's state machine: every game tag as a state - the ring and the
+    # obelisk render it live, config/scanner.json previews it at a desk
+    "scanner",
+    # the scanner's individual looks, bare - for poking one on any rig
+    "scanner_power_up",
+    "scanner_boot",
+    "scanner_idle",
+    "scanner_emergency",
+    "scanner_detected",
+    "scanner_shimmer",
+    "scanner_mushroom",
+    "scanner_mushroom_new",
+    "scanner_success_mushroom",
+    "scanner_playback_mushroom",
+    "scanner_playback_generic",
+    # the generic looks - free-standing stage patterns, most from WLED - as
+    # one machine: each look a cue state
+    "generic",
+    # the obelisk's own ambient looks, likewise grouped
+    "obelisk",
+    # the show: written for this rig, and beat-driven
+    "mythos26",
+    # the UV par's modes, for a layer over the show
+    "uv",
+    # the bpm flash, for an additive layer over the whole rig
+    "flash",
+    # the audio bus, one cue per channel: an instrument rather than a look.
+    # See edmx/audio_meter.h and AUDIO_STATES.
+    "audio",
+)
+
+#: The jacket's looks, in the order its state machine lists them. Must stay in
+#: step with makeJacketStateMachine() in desktop/src/state_machine.cpp. The
+#: executable is the authority — see patterns.list_states — this is here so a
+#: config can be checked without a binary around.
+JACKET_STATES = (
+    "digital_void",
+    "enchanted_forest",
+    "warp_turbines",
+    "rainbow_road",
+    "breathe_with_me",
+    "parrot",
+    "system_overload",
+    "cyber_toxin",
+    "datamine",
+    "blue_magic",
+    "campfire",
+    "hitstop",
+)
+
+#: The audio bus's channels, in the order the executable lists them. Must stay
+#: in step with AudioChannel in desktop/include/edmx/beat_clock.h - the
+#: executable is the authority; this is so a config and an OSC map can be
+#: validated without one running.
+#:
+#: The names are Synesthesia's, lowercased and un-camelled: `syn_BassLevel` is
+#: `bass`, `syn_MidHighHits` is `midhigh_hits`. Everything is 0..1, `bpm`
+#: included - it arrives already scaled across its 50..220, so that a reader
+#: does not have to special-case one channel's units.
+AUDIO_CHANNELS = (
+    "level", "bass", "mid", "midhigh", "high",
+    "hits", "bass_hits", "mid_hits", "midhigh_hits", "high_hits",
+    "presence", "bass_presence", "mid_presence", "midhigh_presence", "high_presence",
+    "beat", "bpm", "bpm_confidence", "intensity",
+    "level_instant", "level_average", "level_meter",
+)
+
+#: The `audio` pattern's cues, in machine order - one per channel, named after
+#: it, and then the beat flash. The channels are the same tuple rather than a
+#: copy, because the executable builds that part of its cue list straight off
+#: the channel table too: a channel added to AudioChannel is a cue there and a
+#: cue here with nothing edited in either place.
+#:
+#: `beat_pulse` is on the end and is not a channel. It is the show's old beat
+#: look, parked here while mythos26 is empty - a look that fires on the beat
+#: belongs nearer the bus than the free-standing pile. See makeAudioStateMachine
+#: and edmx/audio_meter.h.
+AUDIO_STATES = AUDIO_CHANNELS + ("beat_pulse",)
+
+#: mythos26's states, in the order its state machine lists them. Must stay in
+#: step with makeMythos26StateMachine() in desktop/src/mythos26.cpp.
+#:
+#: Sixteen cues, numbered the way "pattern spec.txt" numbers them. Rename a
+#: cue here when you rename it there.
+MYTHOS26_STATES = (
+    "neuron",    # 1. cyan into deep blue noise
+    "geode",     # 2. red riding the mid presence, the flash layer on
+    "rain",      # 3. matrix rain, every drop its own colour
+    "fire",      # 4. fire 2012
+    "glitch",    # 5. a new colour on every kick
+    "tunnel",    # 6. pink into purple noise, the flash layer on
+    "blown",     # 7. purple riding the mids, green on the kick, the UV on the kick
+    "reaction",  # 8. the rainbow across the stage on the presence, white noise without it
+    "punk",      # 9. purple into honey orange, leaning blue on the meter; the pars swirl on the bass
+    "canyon",    # 10. canyon bands pouring down, a rainbow on the beat
+    "scaffold",  # 11. cyan and red-orange struts sweeping down on the beat clock
+    "churn",     # 12. the field in two rig colours, pushed by the level; three palettes and a rainbow
+    "nova",      # 13. galaxies on a wash over a dark ground; three palettes and a rainbow
+    "clouds",    # 14. a sunset over a cloud deck, flown through; height and speed glide
+    "white",     # 15. the house lights: white at half
+    "blackout",  # 16. everything off
+)
+
+#: The generic looks' states, in machine order. Must stay in step with
+#: makeGenericStateMachine() in desktop/src/state_machine.cpp.
+GENERIC_STATES = (
+    "matrix_rain",
+    "fire_2012",
+    "flow",
+    "lake",
+    "pacifica",
+    "phased",
+    "saw",
+    "spots_fade",
+    "twinkleup",
+    "waterfall",
+    "color_clouds",
+    "rainbow",
+    "chase",
+    "theater",
+    "blobs",
+    "tv_static_mono",
+    "tv_static",
+)
+
+#: The obelisk machine's states. Must stay in step with
+#: makeObeliskStateMachine() in desktop/src/state_machine.cpp.
+OBELISK_STATES = (
+    "seasons",
+    "blobs",
+    "mono",
+)
+
+#: The UV par's modes, for a layer. Must stay in step with
+#: makeUvStateMachine() in desktop/src/mythos26.cpp.
+UV_STATES = (
+    "off",
+    "flash",
+    "on",
+    "kick",
+    "rainbow",
+)
+
+#: The bpm flash layer's modes. Must stay in step with
+#: makeFlashStateMachine() in desktop/src/mythos26.cpp.
+FLASH_STATES = (
+    "off",
+    "flash",
+)
+
+#: Which patterns are state machines, and what states each offers. Used to
+#: check `pattern.state` before a binary is necessarily around.
+STATE_MACHINE_STATES = {
+    "jacket": JACKET_STATES,
+    "mythos26": MYTHOS26_STATES,
+    "audio": AUDIO_STATES,
+    "generic": GENERIC_STATES,
+    "obelisk": OBELISK_STATES,
+    "uv": UV_STATES,
+    "flash": FLASH_STATES,
+}
+
+ADDRESSING_MODES = ("one", "zero")
+
+BUILTIN_PALETTES = (
+    "p_retrosunset",
+    "p_bluemagic",
+    "p_darkpurple_neo",
+    "p_disney100",
+    "p_purplesky",
+    "p_iceCream",
+    "p_ritual",
+    "p_parrot",
+    "p_naturenight",
+    "p_bootgradient",
+    "p_nostalgicrain",
+)
+
+_HEX_COLOR = re.compile(r"^#?(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$")
+
+Color = Union[str, Dict[str, float]]
+
+
+class ConfigError(ValueError):
+    """Raised when a config would not do what the caller meant."""
+
+
+@dataclass
+class FixtureProfile:
+    """The channel layout of a fixture *model*, independent of where it sits.
+
+    This is what a fixture's manual describes. Offsets are 1-based within the
+    fixture, so a chart reading "CH1 dimmer, CH2 red" transcribes directly.
+
+    ``park`` is the important part: cheap pars sit dark, or strobe, or run
+    their own colour macro and ignore you entirely until their mode channels
+    are pinned. Encoding that per model solves it once instead of per rig.
+    """
+
+    name: str
+    footprint: int = 3
+    red: int = 1
+    green: int = 2
+    blue: int = 3
+    dimmer: int = 0          # 0 = the model has no master dimmer
+    dimmer_value: int = 255
+    park: Dict[int, int] = field(default_factory=dict)
+
+    def validate(self) -> None:
+        where = f"profile '{self.name}'"
+
+        if not 1 <= self.footprint <= DMX_CHANNEL_COUNT:
+            raise ConfigError(f"{where}: footprint {self.footprint} is out of range")
+
+        claimed: Dict[int, str] = {}
+
+        def claim(offset: int, what: str) -> None:
+            if not 1 <= offset <= self.footprint:
+                raise ConfigError(
+                    f"{where}: {what} is at channel {offset}, "
+                    f"outside the {self.footprint}-channel footprint"
+                )
+            if offset in claimed:
+                raise ConfigError(f"{where}: channel {offset} is used by both {claimed[offset]} and {what}")
+            claimed[offset] = what
+
+        claim(self.red, "red")
+        claim(self.green, "green")
+        claim(self.blue, "blue")
+        if self.dimmer:
+            claim(self.dimmer, "dimmer")
+        for offset, value in self.park.items():
+            if not 0 <= int(value) <= 255:
+                raise ConfigError(f"{where}: park value {value} at channel {offset} is outside 0..255")
+            claim(int(offset), "a parked channel")
+
+    def instantiate(self, name: str, address: int) -> "Fixture":
+        """Places this model at `address`, the number set on its display."""
+        return Fixture(
+            name=name,
+            start_channel=address,
+            channels="rgb",
+            _offsets=(self.red - 1, self.green - 1, self.blue - 1),
+            dimmer_channel=(address + self.dimmer - 1) if self.dimmer else 0,
+            dimmer_value=self.dimmer_value,
+            static_channels={address + int(o) - 1: int(v) for o, v in self.park.items()},
+        )
+
+    def to_dict(self) -> Dict[str, Any]:
+        out: Dict[str, Any] = {
+            "footprint": self.footprint,
+            "red": self.red,
+            "green": self.green,
+            "blue": self.blue,
+        }
+        if self.dimmer:
+            out["dimmer"] = self.dimmer
+            out["dimmer_value"] = self.dimmer_value
+        if self.park:
+            out["park"] = {str(k): int(v) for k, v in self.park.items()}
+        return out
+
+
+# Must stay in step with builtinProfiles() in desktop/src/fixture.cpp.
+BUILTIN_PROFILES: Dict[str, FixtureProfile] = {
+    # U'King Par 36, 7-channel mode:
+    #   1 master dimmer  2 red  3 green  4 blue
+    #   5 strobe  6 mode  7 colour selection
+    "uking_par36": FixtureProfile(
+        name="uking_par36",
+        footprint=7,
+        dimmer=1,
+        red=2,
+        green=3,
+        blue=4,
+        park={5: 0, 6: 0, 7: 0},
+    ),
+    "rgb3": FixtureProfile(name="rgb3", footprint=3, red=1, green=2, blue=3),
+    "rgb4_dimmer": FixtureProfile(
+        name="rgb4_dimmer", footprint=4, dimmer=1, red=2, green=3, blue=4
+    ),
+    "rgb7_par": FixtureProfile(
+        name="rgb7_par", footprint=7, red=1, green=2, blue=3, dimmer=4,
+        park={5: 0, 6: 0, 7: 0},
+    ),
+}
+
+
+def _optional_float(value: Any) -> Optional[float]:
+    """None stays None; anything else becomes a float."""
+    return None if value is None else float(value)
+
+
+def _check_color(value: Color, where: str) -> None:
+    if isinstance(value, str):
+        if not _HEX_COLOR.match(value):
+            raise ConfigError(f"{where}: '{value}' is not a hex colour like '#ff0044'")
+        return
+    if isinstance(value, dict):
+        unknown = set(value) - {"h", "s", "v"}
+        if unknown:
+            raise ConfigError(f"{where}: unexpected keys {sorted(unknown)}; expected h, s, v")
+        return
+    raise ConfigError(f"{where}: expected a hex string or an {{h, s, v}} dict, got {type(value).__name__}")
+
+
+@dataclass
+class DeviceConfig:
+    """Which widget to talk to, and how fast."""
+
+    type: str = "enttec_pro"
+    port: str = "auto"
+
+    # 115200 is what the PRO's firmware expects, and it is not negotiable:
+    # there is a microcontroller behind the FTDI reading at a fixed rate, so a
+    # "faster" link just hands it garbage and the fixtures flicker. What
+    # actually buys headroom is sending fewer channels per frame.
+    baud: int = 115200
+    fps: float = 40.0
+    console_channels: int = 12
+
+    def validate(self) -> None:
+        if self.type not in DEVICE_TYPES:
+            raise ConfigError(f"device.type '{self.type}' is not one of {DEVICE_TYPES}")
+        if not 1 <= self.fps <= 200:
+            raise ConfigError(f"device.fps {self.fps} is out of range; DMX tops out around 44")
+        if self.baud <= 0:
+            raise ConfigError(f"device.baud {self.baud} must be positive")
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "type": self.type,
+            "port": self.port,
+            "baud": self.baud,
+            "fps": self.fps,
+            "console_channels": self.console_channels,
+        }
+
+
+@dataclass
+class MasterConfig:
+    """Rig-wide trim applied after the pattern and before the wire."""
+
+    brightness: float = 1.0
+    gamma: float = 2.2
+
+    def validate(self) -> None:
+        if not 0.0 <= self.brightness <= 1.0:
+            raise ConfigError(f"master.brightness {self.brightness} must be between 0 and 1")
+        if self.gamma < 0.0:
+            raise ConfigError(f"master.gamma {self.gamma} must not be negative")
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {"brightness": self.brightness, "gamma": self.gamma}
+
+
+@dataclass
+class MidiConfig:
+    """Where the beat comes from.
+
+    Optional in every sense: leave it alone and the rig keeps its own time at
+    ``bpm``, which is what you want at a bench and a serviceable fallback on
+    stage. Must stay in step with MidiConfig in desktop/include/edmx/config.h.
+
+    The note numbers default to what Mixxx's MIDI-for-light mapping sends:
+    note 50 on each beat, note 52 carrying the tempo as velocity + 50. Setting
+    ``beat_note`` to -1 accepts *any* note as a beat, which is right for a
+    source that sends nothing else and very wrong for Mixxx, whose VU meters
+    are notes too.
+    """
+
+    enabled: bool = False
+    port: str = "auto"
+    #: Name fragments "auto" must never open, for the DJ controller on the same
+    #: machine: it is a MIDI input, often the only one, and its pads all send
+    #: notes. Naming ``port`` explicitly still overrides this.
+    ignore: List[str] = field(default_factory=list)
+    #: Name fragments of a pad controller: a port whose notes are for the
+    #: desk's map and never for the clock. On the sequencer both it and Mixxx
+    #: reach the one published port, and the executable tells them apart per
+    #: event by source; a Launchpad X sends note 52 for whichever pad sits
+    #: there, and 52 off Mixxx is the tempo. Stated, it replaces the default.
+    pads: List[str] = field(default_factory=lambda: ["Launchpad"])
+    clock: bool = True
+    notes: bool = True
+    beat_note: int = 50
+    bpm_note: int = 52
+    #: The three loudness signals, all read and kept apart so a look can pick
+    #: the one it wants. Mixxx's numbering: 64 instantaneous (every 40ms, peaks
+    #: on every kick), 68 averaged over two seconds (the loudness of the
+    #: track), 69 the first meter bar (quantised). -1 ignores one.
+    vu_instant_note: int = 64
+    vu_average_note: int = 68
+    vu_meter_note: int = 69
+    beat_channel: int = -1
+    bpm: float = 128.0
+    free_run: bool = True
+    #: How far ahead of the music the rig runs, in milliseconds, so a beat
+    #: lands on a lamp when it lands on the ear. Everything between the clock
+    #: and the fixture is a constant this pays back. Zero until measured;
+    #: `python -m eclipse_dmx calibrate` is the beep test that writes it.
+    latency_ms: float = 0.0
+
+    def ignores(self, name: str) -> bool:
+        """Whether `name` matches the ignore list, the way the executable does."""
+        lowered = name.lower()
+        return any(fragment.lower() in lowered for fragment in self.ignore if fragment)
+
+    def validate(self) -> None:
+        if not 30.0 <= self.bpm <= 300.0:
+            raise ConfigError(f"midi.bpm {self.bpm} is not a tempo; expected 30..300")
+
+        if not -LATENCY_LIMIT_MS <= self.latency_ms <= LATENCY_LIMIT_MS:
+            raise ConfigError(
+                f"midi.latency_ms {self.latency_ms} is not a rig's latency; expected "
+                f"-{LATENCY_LIMIT_MS:g}..{LATENCY_LIMIT_MS:g} (it is in milliseconds)")
+
+        for key in ("beat_note", "bpm_note",
+                    "vu_instant_note", "vu_average_note", "vu_meter_note"):
+            note = getattr(self, key)
+            if note != -1 and not 0 <= note <= 127:
+                raise ConfigError(f"midi.{key} {note} must be 0..127, or -1 to switch it off")
+
+        if self.beat_channel != -1 and not 1 <= self.beat_channel <= 16:
+            raise ConfigError(
+                f"midi.beat_channel {self.beat_channel} must be 1..16, or -1 for any"
+            )
+
+        if self.beat_note != -1 and self.beat_note == self.bpm_note:
+            raise ConfigError(
+                "midi.beat_note and midi.bpm_note are the same note, so the tempo message "
+                "would be taken as a beat"
+            )
+
+        for key in ("vu_instant_note", "vu_average_note", "vu_meter_note"):
+            if self.beat_note != -1 and self.beat_note == getattr(self, key):
+                raise ConfigError(
+                    f"midi.{key} is the same note as midi.beat_note, so the meter would be "
+                    "taken as a beat - dozens of times a second"
+                )
+
+        meters = [self.vu_instant_note, self.vu_average_note, self.vu_meter_note]
+        live = [note for note in meters if note != -1]
+        if len(set(live)) != len(live):
+            raise ConfigError(
+                f"two of midi.vu_*_note are the same note {live}; they carry different "
+                "signals and cannot share one"
+            )
+
+        if self.enabled and not self.clock and not self.notes:
+            raise ConfigError(
+                "midi is enabled but both clock and notes are off, so nothing would set the tempo"
+            )
+
+        # An explicit name wins over the ignore list in the executable, so this
+        # is not broken — but it is nobody's intent, and it reads as a config
+        # that has been edited twice in opposite directions.
+        if self.enabled and self.port != "auto" and self.ignores(self.port):
+            raise ConfigError(
+                f"midi.port '{self.port}' also matches midi.ignore {self.ignore}; "
+                "the explicit port would win, so one of the two is a mistake"
+            )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "enabled": self.enabled,
+            "port": self.port,
+            "ignore": list(self.ignore),
+            "pads": list(self.pads),
+            "clock": self.clock,
+            "notes": self.notes,
+            "beat_note": self.beat_note,
+            "bpm_note": self.bpm_note,
+            "vu_instant_note": self.vu_instant_note,
+            "vu_average_note": self.vu_average_note,
+            "vu_meter_note": self.vu_meter_note,
+            "beat_channel": self.beat_channel,
+            "bpm": self.bpm,
+            "free_run": self.free_run,
+            "latency_ms": self.latency_ms,
+        }
+
+
+#: The most a rig can be late or early, in milliseconds. Two seconds either
+#: way is past anything a chain of wires could be; beyond it is a unit mistake,
+#: and the executable clamps to the same figure - see BeatClock::setLatency.
+LATENCY_LIMIT_MS = 2000.0
+
+#: What can fill the bus.
+AUDIO_SOURCES = ("mixxx", "synesthesia", "none")
+
+
+@dataclass
+class AudioConfig:
+    """Where the numbers about the *sound* come from.
+
+    Separate from `midi`, which is where the *beat* comes from, because they
+    need not be the same cable and on this rig usually are not: Mixxx has the
+    beat grid, Synesthesia has the FFT. One setting rather than four, because
+    the failure it replaces is a set opening with a binding nobody remembered
+    to enable.
+
+    `source` is enforced at the far end rather than merely advised: on
+    "synesthesia" the executable stops wiring Mixxx's VU notes to the bus, and
+    with `bpm` on it stops wiring the MIDI cable to the beat clock too. One
+    source owns the music; the other is parsed and ignored, so `midi monitor`
+    still shows it and nothing has to be switched off at the Mixxx end.
+    """
+
+    source: str = "mixxx"
+
+    #: The port Synesthesia's OSC *output* is pointed at. Read by the CLI,
+    #: which opens it; the executable never sees a socket.
+    port: int = 7000
+
+    #: Take the beat from the visualiser too - syn_BPM for the tempo,
+    #: syn_OnBeat for the phase - and unwire the MIDI cable from the clock.
+    #: Only meaningful with source "synesthesia". Off is the one supported
+    #: split: analysis from the visualiser, beat from Mixxx's grid.
+    bpm: bool = True
+
+    #: Which OSC bindings fill the bus, relative to the config. Empty means
+    #: oscmaps/synesthesia.json beside it.
+    map: str = ""
+
+    @property
+    def is_synesthesia(self) -> bool:
+        return self.source == "synesthesia"
+
+    def validate(self) -> None:
+        if self.source not in AUDIO_SOURCES:
+            raise ConfigError(
+                f"audio.source '{self.source}'; expected one of {', '.join(AUDIO_SOURCES)}"
+            )
+        if not 1 <= self.port <= 65535:
+            raise ConfigError(f"audio.port {self.port} is not a port")
+
+    @property
+    def owns_the_beat(self) -> bool:
+        """Whether the visualiser, rather than the MIDI cable, is the clock."""
+        return self.is_synesthesia and self.bpm
+
+    def to_dict(self) -> Dict[str, Any]:
+        out: Dict[str, Any] = {"source": self.source, "port": self.port,
+                               "bpm": self.bpm}
+        if self.map:
+            out["map"] = self.map
+        return out
+
+
+@dataclass
+class PatternConfig:
+    """The look, and its parameters."""
+
+    name: str = "palette_wave"
+    speed: float = 0.25
+    width: float = 2.0
+    brightness: float = 1.0
+    palette: Union[str, List[Color]] = "p_bluemagic"
+    color: Color = "#ff2200"
+
+    # Which look a state machine pattern opens on. Empty means the machine's
+    # own first state, which for the jacket is digital_void - nearly black by
+    # design, and a poor opening frame on a rig.
+    state: str = ""
+
+    # Overrides for the coordinate frame a pattern renders in. None means
+    # "whatever the pattern itself asked for", which is almost always right: a
+    # relic look knows the space it was tuned in. The obelisk's looks want an
+    # 8 x 43 field from the origin; the jacket's want the monowire's line.
+    coord_origin_x: Optional[float] = None
+    coord_origin_y: Optional[float] = None
+    coord_span_x: Optional[float] = None
+    coord_span_y: Optional[float] = None
+
+    def validate(self) -> None:
+        if self.name not in PATTERN_NAMES:
+            raise ConfigError(f"pattern.name '{self.name}' is not one of {PATTERN_NAMES}")
+        if self.width <= 0:
+            raise ConfigError(f"pattern.width {self.width} must be positive")
+        if not 0.0 <= self.brightness <= 1.0:
+            raise ConfigError(f"pattern.brightness {self.brightness} must be between 0 and 1")
+
+        known_states = STATE_MACHINE_STATES.get(self.name)
+        if self.state and known_states is not None and self.state not in known_states:
+            raise ConfigError(
+                f"pattern.state '{self.state}' is not one of {self.name}'s looks {known_states}"
+            )
+
+        # A zero span collapses the rig onto one coordinate, which makes any
+        # spatial pattern render as flat colour. Easier to reject than to debug.
+        for key in ("coord_span_x", "coord_span_y"):
+            span = getattr(self, key)
+            if span is not None and span <= 0:
+                raise ConfigError(f"pattern.{key} must be positive, got {span}")
+
+        if isinstance(self.palette, str):
+            if self.palette not in BUILTIN_PALETTES:
+                raise ConfigError(
+                    f"pattern.palette '{self.palette}' is not a built-in; "
+                    f"either use one of {BUILTIN_PALETTES} or pass an explicit list of colours"
+                )
+        elif isinstance(self.palette, (list, tuple)):
+            if len(self.palette) < 2:
+                raise ConfigError("pattern.palette needs at least two stops")
+            for index, stop in enumerate(self.palette):
+                _check_color(stop, f"pattern.palette[{index}]")
+        else:
+            raise ConfigError("pattern.palette must be a built-in name or a list of colours")
+
+        _check_color(self.color, "pattern.color")
+
+    def to_dict(self) -> Dict[str, Any]:
+        out: Dict[str, Any] = {
+            "name": self.name,
+            "speed": self.speed,
+            "width": self.width,
+            "brightness": self.brightness,
+            "palette": list(self.palette) if isinstance(self.palette, (list, tuple)) else self.palette,
+            "color": self.color,
+        }
+        if self.state:
+            out["state"] = self.state
+        for key, value in (
+            ("coord_origin_x", self.coord_origin_x),
+            ("coord_origin_y", self.coord_origin_y),
+            ("coord_span_x", self.coord_span_x),
+            ("coord_span_y", self.coord_span_y),
+        ):
+            # Only written when set: an absent key means "whatever frame the
+            # pattern itself asked for", and writing a number here would pin it.
+            if value is not None:
+                out[key] = value
+        return out
+
+
+@dataclass
+class Fixture:
+    """One patched fixture.
+
+    ``start_channel`` is the address of the fixture's RED channel, which for a
+    plain 3-channel par is the fixture's own address, and for a par with a
+    dimmer in front of the colours is one past it. ``dimmer_channel`` and the
+    keys of ``static_channels`` are absolute channel numbers, not offsets.
+    """
+
+    name: str
+    start_channel: int
+    channels: str = "rgb"
+    dimmer_channel: int = 0
+    dimmer_value: int = 255
+    static_channels: Dict[int, int] = field(default_factory=dict)
+    position: Optional[Sequence[float]] = None
+    brightness: float = 1.0
+
+    # Set when a profile placed this fixture: explicit (r, g, b) offsets from
+    # start_channel, which lets a profile put the colour channels anywhere in
+    # its footprint rather than requiring three in a row. None means derive
+    # them from `channels`.
+    _offsets: Optional[Sequence[int]] = None
+
+    def offsets(self) -> Sequence[int]:
+        """(r, g, b) offsets from start_channel."""
+        if self._offsets is not None:
+            return self._offsets
+        order = self.channels.lower()
+        return (order.index("r"), order.index("g"), order.index("b"))
+
+    def validate(self, channel_limit: int = DMX_CHANNEL_COUNT) -> None:
+        """Raises on anything unusable.
+
+        `channel_limit` is how many channels the rig it belongs to actually
+        has: one universe for a DMX rig, the whole buffer for a pixel one. The
+        obelisk's last pixel sits at 1032 and that is not an error.
+        """
+        where = f"fixture '{self.name}'"
+
+        if self._offsets is None and sorted(self.channels.lower()) != ["b", "g", "r"]:
+            raise ConfigError(f"{where}: channels '{self.channels}' must be a permutation of r, g and b")
+
+        if not 1 <= self.start_channel <= channel_limit:
+            raise ConfigError(f"{where}: start_channel {self.start_channel} is outside 1..{channel_limit}")
+
+        if self.start_channel + max(self.offsets()) > channel_limit:
+            raise ConfigError(
+                f"{where}: start_channel {self.start_channel} leaves no room for its colour channels"
+            )
+
+        if self.dimmer_channel and not 1 <= self.dimmer_channel <= channel_limit:
+            raise ConfigError(f"{where}: dimmer_channel {self.dimmer_channel} is outside 1..{channel_limit}")
+
+        if not 0 <= self.dimmer_value <= 255:
+            raise ConfigError(f"{where}: dimmer_value {self.dimmer_value} is outside 0..255")
+
+        for channel, value in self.static_channels.items():
+            if not 1 <= int(channel) <= channel_limit:
+                raise ConfigError(f"{where}: static channel {channel} is outside 1..{channel_limit}")
+            if not 0 <= int(value) <= 255:
+                raise ConfigError(f"{where}: static channel {channel} value {value} is outside 0..255")
+
+        if not 0.0 <= self.brightness <= 1.0:
+            raise ConfigError(f"{where}: brightness {self.brightness} must be between 0 and 1")
+
+        if self.position is not None and len(self.position) < 1:
+            raise ConfigError(f"{where}: position must have at least an x value")
+
+    def used_channels(self) -> List[int]:
+        """Every channel this fixture writes, for collision checking."""
+        used = [self.start_channel + offset for offset in self.offsets()]
+        if self.dimmer_channel:
+            used.append(self.dimmer_channel)
+        used.extend(int(channel) for channel in self.static_channels)
+        return used
+
+    def to_dict(self) -> Dict[str, Any]:
+        # Profile-placed fixtures serialise to the fully explicit form, so the
+        # written config says exactly which channel does what and never depends
+        # on the executable resolving a profile the same way we did.
+        if self._offsets is not None:
+            r, g, b = self._offsets
+            base = min(r, g, b)
+            order = ["?"] * (max(r, g, b) - base + 1)
+            order[r - base] = "r"
+            order[g - base] = "g"
+            order[b - base] = "b"
+
+            if "?" not in order and len(order) == 3:
+                # contiguous colour channels: expressible as a plain order string
+                out: Dict[str, Any] = {
+                    "name": self.name,
+                    "start_channel": self.start_channel + base,
+                    "channels": "".join(order),
+                }
+            else:
+                raise ConfigError(
+                    f"fixture '{self.name}': its profile puts the colour channels at "
+                    f"offsets {self._offsets}, which the explicit config form cannot express. "
+                    f"Write this rig with a \"profiles\" block instead."
+                )
+        else:
+            out = {
+                "name": self.name,
+                "start_channel": self.start_channel,
+                "channels": self.channels,
+            }
+        if self.dimmer_channel:
+            out["dimmer_channel"] = self.dimmer_channel
+            out["dimmer_value"] = self.dimmer_value
+        if self.static_channels:
+            # JSON object keys must be strings; the executable parses them back
+            # to channel numbers.
+            out["static_channels"] = {str(k): int(v) for k, v in self.static_channels.items()}
+        if self.position is not None:
+            out["position"] = list(self.position)
+        if self.brightness != 1.0:
+            out["brightness"] = self.brightness
+        return out
+
+
+@dataclass
+class Placement:
+    """Where a device sits in the pattern's coordinate space.
+
+    `world = local * scale + offset`. `fit` states an extent instead of a
+    scale - "make this device one unit wide" - which is what you want when the
+    device's own units are its own business. See edmx::Placement.
+    """
+
+    offset: List[float] = field(default_factory=lambda: [0.0, 0.0])
+    scale: List[float] = field(default_factory=lambda: [1.0, 1.0])
+    fit: Optional[List[float]] = None
+
+    #: How big this device's panel is drawn, relative to an even share of the
+    #: window. Purely a view property: it does not touch a single coordinate the
+    #: pattern sees.
+    #:
+    #: Explicit rather than inferred from the geometry. A pillar and a truss
+    #: plainly want different panel shapes, but *how* different is a judgement
+    #: about the room and the screen - something you tune by looking at the
+    #: window, not something a fixture list can tell you.
+    view_scale: List[float] = field(default_factory=lambda: [1.0, 1.0])
+
+    def to_dict(self) -> Dict[str, Any]:
+        out: Dict[str, Any] = {}
+        if self.offset != [0.0, 0.0]:
+            out["offset"] = list(self.offset)
+        if self.scale != [1.0, 1.0]:
+            out["scale"] = list(self.scale)
+        if self.fit is not None:
+            out["fit"] = list(self.fit)
+        if self.view_scale != [1.0, 1.0]:
+            out["view_scale"] = list(self.view_scale)
+        return out
+
+
+@dataclass
+class Device:
+    """One physical thing the desk can light.
+
+    A device owns its geometry, how its numbers are read, and its own way onto a
+    wire. It does not own a pattern or a tempo - those belong to the show, and
+    every device in an environment shares them. Must stay in step with
+    edmx::Device in desktop/include/edmx/config.h.
+    """
+
+    name: str = "rig"
+    source: str = ""
+
+    output: DeviceConfig = field(default_factory=DeviceConfig)
+    fixtures: List[Fixture] = field(default_factory=list)
+    placement: Placement = field(default_factory=Placement)
+
+    addressing: str = "one"
+
+    #: What the `position` fields mean. "normalized" spreads the rig across
+    #: 0..1 and lets the pattern's coordinate frame stretch it; "literal" hands
+    #: the numbers to the pattern as written, which is what a relic describing
+    #: its own geometry wants. See edmx::CoordSpace.
+    coord_space: str = "normalized"
+
+    #: What the device *is* - "ring", "obelisk", "truss" - for a look that
+    #: treats it as itself rather than as part of the stage. The file's own
+    #: word, kept as written; "" when it never said. See eio::NodeSpace.
+    space: str = ""
+
+    brightness: float = 1.0
+
+    def display_channel(self, channel: int) -> int:
+        """A one-based internal channel, back in this device's own numbering."""
+        return channel - 1 if self.addressing == "zero" else channel
+
+    def highest_channel(self) -> int:
+        """The last channel this device touches: what sizes its frame buffer."""
+        return max((max(f.used_channels()) for f in self.fixtures), default=0)
+
+    def to_dict(self) -> Dict[str, Any]:
+        out = {
+            "name": self.name,
+            "addressing": "one",
+            "coord_space": self.coord_space,
+            "output": self.output.to_dict(),
+            "fixtures": [fixture.to_dict() for fixture in self.fixtures],
+        }
+        if self.space:
+            out["space"] = self.space
+        return out
+
+
+#: A control's value as the cue table writes it: a number, or three for a colour.
+ControlValue = Union[float, Tuple[float, float, float]]
+
+
+@dataclass
+class CuePad:
+    """One of a cue's own buttons - see Cue's note on `pads`."""
+
+    label: str = ""
+    params: Dict[str, float] = field(default_factory=dict)
+    controls: Dict[str, ControlValue] = field(default_factory=dict)
+    ramp: float = 0.0
+
+    @classmethod
+    def from_dict(cls, data: Any, where: str) -> "CuePad":
+        if not isinstance(data, dict):
+            raise ConfigError(f"{where} must be an object")
+        unknown = set(data) - {"label", "params", "controls", "ramp"}
+        if unknown:
+            raise ConfigError(f"{where}: unexpected keys {sorted(unknown)}; "
+                              f"expected label, params, controls, ramp")
+        label = str(data.get("label", "") or "").strip()
+        if not label:
+            raise ConfigError(f"{where}: a pad needs a label")
+        params_raw = data.get("params") or {}
+        if not isinstance(params_raw, dict):
+            raise ConfigError(f"{where}.params must be an object of knob -> value")
+        params: Dict[str, float] = {}
+        for name, value in params_raw.items():
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise ConfigError(f"{where}.params['{name}'] must be a number")
+            params[str(name)] = float(value)
+        ramp = data.get("ramp", 0.0)
+        if isinstance(ramp, bool) or not isinstance(ramp, (int, float)) or ramp < 0:
+            raise ConfigError(f"{where}.ramp must be seconds, 0 or more")
+        pad = cls(label=label, params=params,
+                  controls=Cue.parse_controls(data.get("controls"), where),
+                  ramp=float(ramp))
+        if not pad.params and not pad.controls:
+            raise ConfigError(f"{where}: a pad needs params or controls to set")
+        return pad
+
+    def to_dict(self) -> Dict[str, Any]:
+        out: Dict[str, Any] = {"label": self.label}
+        if self.params:
+            out["params"] = dict(self.params)
+        if self.controls:
+            out["controls"] = {name: (list(value) if isinstance(value, tuple) else value)
+                               for name, value in self.controls.items()}
+        if self.ramp:
+            out["ramp"] = self.ramp
+        return out
+
+
+@dataclass
+class Cue:
+    """What one state of the show asks of the rest of the room.
+
+    A state is a look on the rig and nothing else; this is the rest of the
+    cue - the visualiser's scene and media, and where each layer should be.
+    Assembled at the desk rather than in the executable because two of the
+    three are OSC to another machine, which the executable does not speak,
+    and the third is a protocol line it already takes.
+
+    `layers` is by layer name. A layer left out is left alone, which is the
+    difference between "this cue does not care about the UV" and "this cue
+    turns the UV off"; the show's own table names every layer on every cue
+    for exactly that reason.
+
+    `controls` is the scene's own knobs, by control name, sent after the
+    scene: the one or two a cue needs set for the look to be the look - a
+    toggle that puts the visual's beat flash on beside the rig's. A number
+    each, or three of them for a colour control - the churn's second colour
+    is `[r, g, b]`, 0..1, and goes out as one message of three floats the
+    way the probe's colour does. Not a preset, because a preset lives in
+    the app on one machine and a cue lives in this file on every machine
+    that opens it.
+
+    `pads` are the cue's own buttons on the surface, for a cue with a
+    control the operator flies by hand - the clouds' height and speed. Each
+    is a label, the look's knobs to set (`params`, by knob name) and the
+    scene's controls to send (`controls`, as above), and a `ramp` in
+    seconds over which those controls glide from wherever they were to the
+    new value - the look glides on its own (see Pattern_Mythos_CloudFlight's
+    `glide`), and the ramp is the scene's half of the same move. A pad's
+    knobs are aimed at the running look, so one pressed under another cue
+    is refused harmlessly.
+
+    `modes` is what the mode pad changes about the room, by mode number as a
+    string - "2", "3" - each the same four fields, applied over the cue when
+    the look is put in that mode: the rain's video off in 2 and 3, the
+    geode's white flash off in its blue 2. The look's own half of a mode is
+    in the executable (see ShowModes in desktop/include/edmx/mythos26.h);
+    this is the half the executable cannot reach. A mode with no entry
+    changes nothing but the look, and mode 1 is the cue itself.
+
+    `mode_ramp` is seconds the scene's controls a mode changes glide over,
+    the way a pad's `ramp` does - the clouds' modes are its heights, and
+    the scene's height should climb with the look's rather than snap. Only
+    a mode change ramps: a cue coming up sends its controls at once, its
+    scene being new and having nothing to glide from, and a mode that
+    re-sends the scene does the same for the same reason.
+    """
+
+    state: str = ""
+    scene: str = ""
+    media: str = ""
+    layers: Dict[str, str] = field(default_factory=dict)
+    controls: Dict[str, ControlValue] = field(default_factory=dict)
+    modes: Dict[int, "Cue"] = field(default_factory=dict)
+    pads: List["CuePad"] = field(default_factory=list)
+    mode_ramp: float = 0.0
+
+    #: The most modes any show look has. Every look has at least three
+    #: (ShowModes::kModeCount); the ones with a fourth - the churn, the nova:
+    #: three palettes and a rainbow - announce it as the knob's maximum, and
+    #: the pad reads that. This only bounds what the table may name.
+    MODE_COUNT = 4
+
+    @staticmethod
+    def parse_controls(data: Any, where: str) -> Dict[str, ControlValue]:
+        """`controls` as the file writes them: name -> number, or name ->
+        [r, g, b] for a colour. Checked here so a typo is the file's error
+        and not a packet the app drops without a word."""
+        if data is None:
+            return {}
+        if not isinstance(data, dict):
+            raise ConfigError(f"{where}.controls must be an object of control -> value")
+        controls: Dict[str, ControlValue] = {}
+        for name, value in data.items():
+            if not str(name).strip():
+                raise ConfigError(f"{where}.controls: a control needs a name")
+            if isinstance(value, (list, tuple)):
+                if len(value) != 3 or any(isinstance(v, bool) or not isinstance(v, (int, float))
+                                          for v in value):
+                    raise ConfigError(
+                        f"{where}.controls['{name}'] must be a number, or [r, g, b] for a colour")
+                controls[str(name)] = tuple(float(v) for v in value)
+                continue
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise ConfigError(
+                    f"{where}.controls['{name}'] must be a number (a toggle is 0 or 1), "
+                    f"or [r, g, b] for a colour")
+            controls[str(name)] = float(value)
+        return controls
+
+    @staticmethod
+    def control_action(name: str, value: ControlValue, ramp: float = 0.0) -> Dict[str, Any]:
+        """One control as the `syn_control` action a pad fires: low == high,
+        so the pad's own value has no say; a colour as `values`; a ramp in
+        seconds when the move should glide rather than snap."""
+        from .osc import control_address  # here, not at the top: osc is the wire, config the file
+        params: Dict[str, Any] = {"address": control_address(name)}
+        if isinstance(value, tuple):
+            params["values"] = list(value)
+        else:
+            params["low"] = value
+            params["high"] = value
+        if ramp > 0.0:
+            params["ramp"] = float(ramp)
+        return {"action": "syn_control", "params": params}
+
+    @classmethod
+    def from_dict(cls, state: str, data: Any, layer_names: Sequence[str],
+                  _where: str = "") -> "Cue":
+        where = _where or f"cues['{state}']"
+        if not isinstance(data, dict):
+            raise ConfigError(f"{where} must be an object")
+        allowed = {"scene", "media", "layers", "controls"} | (
+            {"modes", "pads", "mode_ramp"} if not _where else set())
+        unknown = set(data) - allowed
+        if unknown:
+            raise ConfigError(
+                f"{where}: unexpected keys {sorted(unknown)}; "
+                f"expected {', '.join(sorted(allowed))}")
+        layers_raw = data.get("layers") or {}
+        if not isinstance(layers_raw, dict):
+            raise ConfigError(f"{where}.layers must be an object of layer -> state")
+        layers: Dict[str, str] = {}
+        for layer, wanted in layers_raw.items():
+            if layer not in layer_names:
+                raise ConfigError(
+                    f"{where} names layer '{layer}', which this config does not declare"
+                    + (f" (have: {', '.join(layer_names)})" if layer_names else ""))
+            layers[str(layer)] = str(wanted)
+        controls = cls.parse_controls(data.get("controls"), where)
+        pads_raw = data.get("pads") or []
+        if not isinstance(pads_raw, list):
+            raise ConfigError(f"{where}.pads must be a list")
+        pads = [CuePad.from_dict(entry, f"{where}.pads[{index}]")
+                for index, entry in enumerate(pads_raw)]
+        mode_ramp = data.get("mode_ramp", 0.0)
+        if isinstance(mode_ramp, bool) or not isinstance(mode_ramp, (int, float)) or mode_ramp < 0:
+            raise ConfigError(f"{where}.mode_ramp must be seconds, 0 or more")
+        modes: Dict[int, "Cue"] = {}
+        modes_raw = data.get("modes") or {}
+        if not isinstance(modes_raw, dict):
+            raise ConfigError(f"{where}.modes must be an object of mode number -> overrides")
+        for key, entry in modes_raw.items():
+            try:
+                number = int(key)
+            except (TypeError, ValueError):
+                raise ConfigError(f"{where}.modes: '{key}' is not a mode number") from None
+            if not 2 <= number <= cls.MODE_COUNT:
+                raise ConfigError(
+                    f"{where}.modes: mode {number} is not one a look has "
+                    f"(2..{cls.MODE_COUNT}; 1 is the cue itself)")
+            modes[number] = cls.from_dict(state, entry, layer_names,
+                                          _where=f"{where}.modes['{key}']")
+        return cls(state=state,
+                   scene=str(data.get("scene", "") or ""),
+                   media=str(data.get("media", "") or ""),
+                   layers=layers,
+                   controls=controls,
+                   modes=modes,
+                   pads=pads,
+                   mode_ramp=float(mode_ramp))
+
+    def to_dict(self) -> Dict[str, Any]:
+        out: Dict[str, Any] = {}
+        if self.scene:
+            out["scene"] = self.scene
+        if self.media:
+            out["media"] = self.media
+        if self.layers:
+            out["layers"] = dict(self.layers)
+        if self.controls:
+            out["controls"] = {name: (list(value) if isinstance(value, tuple) else value)
+                               for name, value in self.controls.items()}
+        if self.modes:
+            out["modes"] = {str(number): mode.to_dict()
+                            for number, mode in sorted(self.modes.items())}
+        if self.mode_ramp:
+            out["mode_ramp"] = self.mode_ramp
+        if self.pads:
+            out["pads"] = [pad.to_dict() for pad in self.pads]
+        return out
+
+    def actions(self, pattern: str = "", ramp: float = 0.0) -> List[Dict[str, Any]]:
+        """The cue as the actions a pad fires, in the order they should run.
+
+        The same shape midi_map.Action.to_dict writes, so a map can carry a
+        cue verbatim and the viewer can run one through the same registry:
+        the machine, the state, each layer's state, then the visualiser -
+        the rig first, because a dead visualiser must not cost it the cue.
+        The scene's controls go last, after the scene they belong to.
+        """
+        out: List[Dict[str, Any]] = []
+        if pattern:
+            out.append({"action": "pattern", "params": {"name": pattern}})
+        if self.state:
+            out.append({"action": "state", "params": {"name": self.state}})
+        for layer, wanted in self.layers.items():
+            out.append({"action": "layer", "params": {"layer": layer, "name": wanted}})
+        if self.scene:
+            out.append({"action": "syn_scene", "params": {"scene": self.scene, "preset": ""}})
+        if self.media:
+            out.append({"action": "syn_media", "params": {"name": self.media}})
+        for name, value in self.controls.items():
+            out.append(self.control_action(name, value, ramp=ramp))
+        return out
+
+    def pad_actions(self, index: int) -> List[Dict[str, Any]]:
+        """The cue's pad `index` as the actions it fires: the look's knobs,
+        then the scene's controls, ramped if the pad says so. The rig first,
+        for the reason everything else here puts it first."""
+        pad = self.pads[index]
+        out: List[Dict[str, Any]] = []
+        for name, value in pad.params.items():
+            out.append({"action": "param", "params": {"name": name, "low": float(value),
+                                                      "high": float(value), "layer": ""}})
+        for name, value in pad.controls.items():
+            out.append(self.control_action(name, value, ramp=pad.ramp))
+        return out
+
+
+    def mode_actions(self, mode: int) -> List[Dict[str, Any]]:
+        """The cue's mode `mode` as the actions the mode pad fires: the
+        look's knob, then what this file says the room is in that mode.
+
+        The knob first, for the same reason the state goes first in
+        actions(): the rig is the cue, and a visualiser that is not there
+        must not cost it the mode. `param mode N` on the show's look, with
+        low and high both N so the pad's value has no say.
+
+        Then the room. Not only what this mode's entry says, but the cue's
+        own value for everything *any* mode touches: the rain's mode 1 has
+        no entry, and still has to put the video back that 2 took away, and
+        a pad that names 2 outright has to undo 3. So the fields the modes
+        reach are re-sent every time, at whatever this mode leaves them -
+        and nothing else is, because re-sending a scene restarts it. A cue
+        with no modes fires the knob alone.
+        """
+        out: List[Dict[str, Any]] = [
+            {"action": "param", "params": {"name": "mode", "low": float(mode),
+                                           "high": float(mode), "layer": ""}}]
+        if not self.modes:
+            return out
+
+        override = self.modes.get(mode) or Cue()
+        layers = {name for entry in self.modes.values() for name in entry.layers}
+        controls = {name for entry in self.modes.values() for name in entry.controls}
+        scene = any(entry.scene for entry in self.modes.values())
+        media = any(entry.media for entry in self.modes.values())
+
+        # the scene's controls ride with the scene: a scene re-sent comes up
+        # on its own defaults, so the cue's controls have to follow it again
+        scene_now = override.scene or (self.scene if scene else "")
+        if scene_now:
+            controls |= set(self.controls)
+
+        room = Cue(
+            scene=scene_now,
+            media=override.media or (self.media if media else ""),
+            layers={name: override.layers.get(name, self.layers.get(name, ""))
+                    for name in sorted(layers | set(override.layers))},
+            controls={name: override.controls.get(name, self.controls.get(name))
+                      for name in sorted(controls | set(override.controls))})
+        room.layers = {name: wanted for name, wanted in room.layers.items() if wanted}
+        room.controls = {name: value for name, value in room.controls.items()
+                         if value is not None}
+        # the controls glide over `mode_ramp` - unless the scene is being
+        # re-sent, which comes up fresh with nothing to glide from
+        out.extend(room.actions(ramp=0.0 if scene_now else self.mode_ramp))
+        return out
+
+
+def cue_actions(config: "Config", state: str) -> List[Dict[str, Any]]:
+    """The actions for `state` under `config`: its cue if it has one, else
+    the state alone. What the surface and the viewer both fire."""
+    cue = config.cues.get(state)
+    if cue is None:
+        cue = Cue(state=state)
+    return cue.actions(pattern=config.pattern.name)
+
+
+def cue_pad_actions(config: "Config", state: str, index: int) -> List[Dict[str, Any]]:
+    """The actions for pad `index` of `state`'s cue. What the surface and
+    the viewer's pad buttons both fire."""
+    cue = config.cues.get(state)
+    if cue is None or index >= len(cue.pads):
+        return []
+    return cue.pad_actions(index)
+
+
+def cue_mode_actions(config: "Config", state: str, mode: int) -> List[Dict[str, Any]]:
+    """The actions that put the running cue `state` in `mode`: the look's
+    knob, then the cue table's overrides for that mode if it has any. What
+    the mode pad and the viewer's mode button both fire."""
+    cue = config.cues.get(state)
+    if cue is None:
+        cue = Cue(state=state)
+    return cue.mode_actions(mode)
+
+
+@dataclass
+class Config:
+    """An environment: the devices in a room, and the show running on them.
+
+    Still called Config because it is what a config file loads into, and a file
+    describing one rig is an environment with one device in it - which is how
+    every config written before environments existed is read.
+
+    Channel numbers on `Fixture` are always one-based internally, whatever the
+    file said; a device's `addressing` records only how its file was *numbered*,
+    so anything printing channels back can speak the dialect the fixture
+    displays do.
+    """
+
+    master: MasterConfig = field(default_factory=MasterConfig)
+    midi: MidiConfig = field(default_factory=MidiConfig)
+    audio: AudioConfig = field(default_factory=AudioConfig)
+    pattern: PatternConfig = field(default_factory=PatternConfig)
+
+    devices: List[Device] = field(default_factory=lambda: [Device()])
+
+    #: Layers: a second pattern each on a few named fixtures, rendered over
+    #: the show - the UV par with its own off / flash / on machine. Kept as
+    #: the file's own dicts (name, fixtures, pattern, state); the executable
+    #: is the authority on what they mean. See LayerConfig in
+    #: desktop/include/edmx/config.h.
+    layers: List[Dict[str, Any]] = field(default_factory=list)
+
+    #: Knobs on the show's own look driven by the audio bus, as the file's own
+    #: dicts (param, channel, low, high, slew). The layers carry their own in
+    #: their entries. See ModConfig in desktop/include/edmx/config.h.
+    mods: List[Dict[str, Any]] = field(default_factory=list)
+
+    #: The cue table: what each state of the show asks of the rest of the
+    #: room, by state name - the Synesthesia scene and media, and the state
+    #: each layer takes. See `Cue`, and cue_actions() for how one becomes the
+    #: actions a pad or a button fires. The executable never reads this: a
+    #: state is a look on the rig, and the cue around it is the desk's.
+    cues: Dict[str, "Cue"] = field(default_factory=dict)
+
+    # -- the single-device view -------------------------------------------
+    #
+    # Most of this package, and every config written before environments, deals
+    # in one rig. These keep that reading working: `fixtures` is every device's
+    # in order - which is the order the pattern renders and the frame stream
+    # reports - and `device`, `addressing` and `coord_space` are the first
+    # device's, because with one device there is no other answer.
+
+    @property
+    def fixtures(self) -> List[Fixture]:
+        return [fixture for device in self.devices for fixture in device.fixtures]
+
+    @property
+    def device(self) -> DeviceConfig:
+        return self.devices[0].output
+
+    @property
+    def addressing(self) -> str:
+        return self.devices[0].addressing
+
+    @addressing.setter
+    def addressing(self, value: str) -> None:
+        self.devices[0].addressing = value
+
+    @property
+    def coord_space(self) -> str:
+        return self.devices[0].coord_space
+
+    @coord_space.setter
+    def coord_space(self, value: str) -> None:
+        self.devices[0].coord_space = value
+
+    def device_named(self, name: str) -> Optional[Device]:
+        for device in self.devices:
+            if device.name == name:
+                return device
+        return None
+
+    def display_channel(self, channel: int) -> int:
+        """A one-based internal channel, back in the config's own numbering."""
+        return channel - 1 if self.addressing == "zero" else channel
+
+    def highest_channel(self) -> int:
+        """The last channel any fixture touches: what sizes the frame buffer."""
+        return max((max(f.used_channels()) for f in self.fixtures), default=0)
+
+    # -- building ---------------------------------------------------------
+
+    def add_fixture(self, fixture: Fixture) -> Fixture:
+        """Adds to the first device, which is the only one a builder makes."""
+        self.devices[0].fixtures.append(fixture)
+        return fixture
+
+    def add_device(self, device: Device) -> Device:
+        """Adds a whole device. The first `Config()` already holds an empty one,
+        so a second call here is what turns a rig into an environment."""
+        if len(self.devices) == 1 and not self.devices[0].fixtures:
+            self.devices[0] = device
+        else:
+            self.devices.append(device)
+        return device
+
+    def add_bank(
+        self,
+        profile: Union[str, FixtureProfile],
+        count: int,
+        address: int = 1,
+        name_prefix: Optional[str] = None,
+        spacing: Optional[int] = None,
+        spread_positions: bool = True,
+    ) -> List[Fixture]:
+        """Patch `count` fixtures of one model, back to back from `address`.
+
+        The line you want for a rig of identical lights::
+
+            config.add_bank("uking_par36", count=10, address=1)
+
+        `address` is the fixture's own DMX address, the number set on its
+        display. `spacing` defaults to the profile's footprint, which is what
+        you want unless addresses were deliberately left with gaps.
+        """
+        if isinstance(profile, str):
+            if profile not in BUILTIN_PROFILES:
+                raise ConfigError(
+                    f"unknown profile '{profile}' (built-ins: {sorted(BUILTIN_PROFILES)}); "
+                    f"pass a FixtureProfile to define your own"
+                )
+            model = BUILTIN_PROFILES[profile]
+        else:
+            model = profile
+
+        model.validate()
+
+        if count < 1:
+            raise ConfigError("add_bank needs a count of at least 1")
+
+        step = model.footprint if spacing is None else spacing
+        prefix = name_prefix if name_prefix is not None else model.name
+
+        added: List[Fixture] = []
+        for index in range(count):
+            name = prefix if count == 1 else f"{prefix}_{index + 1}"
+            fixture = model.instantiate(name, address + (index * step))
+
+            if spread_positions and count > 1:
+                fixture.position = [index / (count - 1), 0.0]
+
+            added.append(self.add_fixture(fixture))
+
+        return added
+
+    def add_rgb_bank(
+        self,
+        count: int,
+        first_channel: int = 1,
+        channels_per_fixture: int = 3,
+        order: str = "rgb",
+        name_prefix: str = "fixture",
+        spread_positions: bool = True,
+    ) -> List[Fixture]:
+        """Patch `count` identical RGB fixtures back to back.
+
+        The common case: a row of pars at consecutive addresses. Positions are
+        spread evenly across 0..1 so the spatial patterns sweep along the row
+        in the order it is physically hung.
+        """
+        if count < 1:
+            raise ConfigError("add_rgb_bank needs a count of at least 1")
+        if channels_per_fixture < 3:
+            raise ConfigError("add_rgb_bank needs at least 3 channels per fixture")
+
+        added: List[Fixture] = []
+        for index in range(count):
+            position = None
+            if spread_positions:
+                x = 0.0 if count == 1 else index / (count - 1)
+                position = [x, 0.0]
+
+            fixture = Fixture(
+                name=f"{name_prefix}_{index + 1}",
+                start_channel=first_channel + (index * channels_per_fixture),
+                channels=order,
+                position=position,
+            )
+            added.append(self.add_fixture(fixture))
+
+        return added
+
+    # -- validating -------------------------------------------------------
+
+    def validate(self, strict_overlap: bool = True) -> List[str]:
+        """Raises ConfigError on anything unusable. Returns warnings.
+
+        With `strict_overlap` a channel claimed by two fixtures is an error;
+        turn it off if you are deliberately stacking fixtures on one address.
+        """
+        self.master.validate()
+        self.midi.validate()
+        self.pattern.validate()
+
+        # A cue names a state of the show's own machine. Checked only when the
+        # machine is one this package knows the states of; the executable is
+        # the authority on any other.
+        known_states = STATE_MACHINE_STATES.get(self.pattern.name)
+        if known_states is not None:
+            for state in self.cues:
+                if state not in known_states:
+                    raise ConfigError(
+                        f"cues: '{state}' is not a state of '{self.pattern.name}' "
+                        f"(have: {', '.join(known_states)})")
+        layer_states = {layer["name"]: STATE_MACHINE_STATES.get(layer["pattern"])
+                        for layer in self.layers}
+        for state, cue in self.cues.items():
+            for mode, entry in [(0, cue)] + sorted(cue.modes.items()):
+                for layer, wanted in entry.layers.items():
+                    known = layer_states.get(layer)
+                    if known is not None and wanted not in known:
+                        raise ConfigError(
+                            f"cues: '{state}'{f' mode {mode}' if mode else ''} puts layer "
+                            f"'{layer}' at '{wanted}', which is not a state of its "
+                            f"'{next(l['pattern'] for l in self.layers if l['name'] == layer)}' "
+                            f"(have: {', '.join(known)})")
+
+        if not self.devices:
+            raise ConfigError("an environment needs at least one device")
+        if not self.fixtures:
+            raise ConfigError("a config needs at least one fixture; there is nothing to light otherwise")
+
+        warnings: List[str] = []
+
+        for device in self.devices:
+            if device.addressing not in ADDRESSING_MODES:
+                raise ConfigError(
+                    f"[{device.name}] addressing '{device.addressing}' is not one of {ADDRESSING_MODES}")
+            if device.coord_space not in COORD_SPACES:
+                raise ConfigError(
+                    f"[{device.name}] coord_space '{device.coord_space}' is not one of {COORD_SPACES}")
+
+            device.output.validate()
+
+            # Channels are only claimed *within* a device: two rigs on two
+            # wires both start at 1 and are not fighting over anything. This is
+            # the difference between an environment and a bigger universe.
+            claimed: Dict[int, str] = {}
+
+            # Only a DMX wire has 512 slots. A pixel rig's buffer is however
+            # long its patch is, so the obelisk's 1032 channels are not
+            # overflow - they are the rig. Matches loadConfig() in
+            # desktop/src/config.cpp.
+            limit = DMX_CHANNEL_COUNT
+            if device.output.type not in DMX_WIRE_TYPES:
+                limit = max(limit, device.highest_channel())
+
+            prefix = f"[{device.name}] " if len(self.devices) > 1 else ""
+
+            for fixture in device.fixtures:
+                fixture.validate(limit)
+
+                for channel in fixture.used_channels():
+                    if channel > limit:
+                        warnings.append(
+                            f"{prefix}fixture '{fixture.name}' reaches channel {channel},"
+                            f" past the end of the rig ({limit})"
+                        )
+                        continue
+
+                    owner = claimed.get(channel)
+                    if owner is not None and owner != fixture.name:
+                        message = (f"{prefix}channel {channel} is claimed by both"
+                                   f" '{owner}' and '{fixture.name}'")
+                        if strict_overlap:
+                            raise ConfigError(message)
+                        warnings.append(message)
+                    else:
+                        claimed[channel] = fixture.name
+
+        return warnings
+
+    # -- serialising ------------------------------------------------------
+
+    def to_dict(self) -> Dict[str, Any]:
+        # Always written one-based, whatever the source file used, because the
+        # fixtures below carry resolved one-based channels. Saying so explicitly
+        # means a zero-based config that round-trips through here cannot come
+        # back out and get biased a second time.
+        show: Dict[str, Any] = {
+            "master": self.master.to_dict(),
+            "midi": self.midi.to_dict(),
+            "audio": self.audio.to_dict(),
+            "pattern": self.pattern.to_dict(),
+        }
+        if self.mods:
+            show["mods"] = [dict(mod) for mod in self.mods]
+        if self.layers:
+            show["layers"] = [dict(layer) for layer in self.layers]
+        if self.cues:
+            show["cues"] = {name: cue.to_dict() for name, cue in self.cues.items()}
+
+        # One device round-trips as the single-rig shape, because that is what
+        # it is and writing it as an environment would mean emitting a separate
+        # device file to point at. More than one has to be an environment, with
+        # each device written out in full rather than by reference - a
+        # round-tripped config must not depend on files it did not carry.
+        if len(self.devices) == 1:
+            device = self.devices[0]
+            show.update({
+                "addressing": "one",
+                # Unlike addressing, this is not resolved away on load - a
+                # literal position stays literal - so it has to survive.
+                "coord_space": device.coord_space,
+                "device": device.output.to_dict(),
+                "fixtures": [fixture.to_dict() for fixture in device.fixtures],
+            })
+            return show
+
+        show["devices"] = [
+            {**device.to_dict(), **device.placement.to_dict(),
+             **({"brightness": device.brightness} if device.brightness != 1.0 else {})}
+            for device in self.devices
+        ]
+        return show
+
+    def to_json(self, indent: int = 2) -> str:
+        return json.dumps(self.to_dict(), indent=indent)
+
+    def write(self, path: Union[str, Path]) -> Path:
+        """Writes the config to `path`, validating first."""
+        self.validate()
+        target = Path(path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(self.to_json(), encoding="utf-8")
+        return target
+
+    # -- loading ----------------------------------------------------------
+
+    # Plain @staticmethod, and not @classmethod stacked on one. Stacking them
+    # was allowed for two releases and removed in python 3.13, and where it is
+    # gone `cls` lands in `data` - so every config load through this wrapper
+    # died with "got multiple values for argument 'name'". Callers reach it as
+    # cls._device_from_dict(...), which a staticmethod answers to just as well.
+    @staticmethod
+    def _device_from_dict(data: Dict[str, Any], name: str = "rig", source: str = "") -> Device:
+        """Reads one device: how its numbers are read, where its frames go, and
+        what its fixtures are.
+
+        `data` is the object holding the device's keys - a whole device file, or
+        a whole legacy single-rig config, which is the same shape by
+        construction. Must stay in step with parseDevice() in
+        desktop/src/config.cpp.
+        """
+        device = Device(name=name, source=source)
+
+        # Read first: every channel number below is interpreted through it.
+        # Must stay in step with loadConfig() in desktop/src/config.cpp.
+        stated = str(data.get("addressing", "one")).lower()
+        if stated in ("zero", "zero-based", "0"):
+            device.addressing = "zero"
+            bias = 1  # a config address of 0 is DMX slot 1
+        elif stated in ("one", "one-based", "1"):
+            device.addressing = "one"
+            bias = 0
+        else:
+            raise ConfigError(f"addressing must be \"zero\" or \"one\", got '{stated}'")
+
+        # The other set of numbers in the file. Same shape of decision as
+        # addressing: it says what `position` means, and nothing else.
+        space = str(data.get("coord_space", "normalized")).lower()
+        if space in ("literal", "pattern"):
+            device.coord_space = "literal"
+        elif space in ("normalized", "normalised", "rig"):
+            device.coord_space = "normalized"
+        else:
+            raise ConfigError(f"coord_space must be \"normalized\" or \"literal\", got '{space}'")
+
+        # What it is, beside where its numbers sit. Free text, kept as written:
+        # the pattern side maps it and an unknown word is "the stage".
+        device.space = str(data.get("space", "") or "").lower()
+
+
+        # `output` is the name now; `device` is still read so every config written
+        # before environments existed keeps working.
+        block = data.get("output") or data.get("device") or {}
+        device.output = DeviceConfig(
+            type=block.get("type", device.output.type),
+            port=block.get("port", device.output.port),
+            baud=int(block.get("baud", device.output.baud)),
+            fps=float(block.get("fps", device.output.fps)),
+            console_channels=int(block.get("console_channels", device.output.console_channels)),
+        )
+
+        # A config's own profiles shadow the built-ins, matching the executable.
+        profiles = dict(BUILTIN_PROFILES)
+        for name, entry in (data.get("profiles") or {}).items():
+            profiles[name] = FixtureProfile(
+                name=name,
+                footprint=int(entry.get("footprint", 3)),
+                red=int(entry.get("red", 1)),
+                green=int(entry.get("green", 2)),
+                blue=int(entry.get("blue", 3)),
+                dimmer=int(entry.get("dimmer", 0)),
+                dimmer_value=int(entry.get("dimmer_value", 255)),
+                park={int(k): int(v) for k, v in (entry.get("park") or {}).items()},
+            )
+
+        for entry in data.get("fixtures", []):
+            profile_name = entry.get("profile")
+
+            if profile_name:
+                if profile_name not in profiles:
+                    raise ConfigError(
+                        f"unknown profile '{profile_name}' "
+                        f"(built-ins: {sorted(BUILTIN_PROFILES)}; or define it under \"profiles\")"
+                    )
+                model = profiles[profile_name]
+
+                address = entry.get("address", entry.get("start_channel"))
+                if address is None:
+                    raise ConfigError(
+                        f"a fixture entry uses profile '{profile_name}' but has no \"address\""
+                    )
+
+                count = max(1, int(entry.get("count", 1)))
+                step = int(entry.get("spacing", model.footprint))
+                prefix = entry.get("name", profile_name)
+                trim = float(entry.get("brightness", 1.0))
+                stated_position = entry.get("position")
+
+                # How far the bank moves per fixture, which is what turns one
+                # entry into a *run* rather than a point. A relic's geometry is
+                # made of these: the obelisk's eight vertical strips are eight
+                # of them. Matches loadConfig() in desktop/src/config.cpp.
+                stated_step = entry.get("position_step")
+                if stated_step is not None:
+                    step_x = float(stated_step[0]) if len(stated_step) >= 1 else 0.0
+                    step_y = float(stated_step[1]) if len(stated_step) >= 2 else 0.0
+                else:
+                    step_x = step_y = 0.0
+
+                base_x = base_y = 0.0
+                if stated_position is not None:
+                    base_x = float(stated_position[0]) if len(stated_position) >= 1 else 0.0
+                    base_y = float(stated_position[1]) if len(stated_position) >= 2 else 0.0
+
+                for index in range(count):
+                    name = prefix if count == 1 else f"{prefix}_{index + 1}"
+                    fixture = model.instantiate(name, int(address) + bias + (index * step))
+                    fixture.brightness = trim
+
+                    if stated_position is not None or stated_step is not None:
+                        fixture.position = [base_x + step_x * index, base_y + step_y * index]
+                    elif count > 1:
+                        fixture.position = [index / (count - 1), 0.0]
+
+                    device.fixtures.append(fixture)
+                continue
+
+            # An absent dimmer_channel means "this fixture has no dimmer" in
+            # either numbering, so it stays 0 rather than being biased into
+            # channel 1. An explicit 0 under zero-based addressing is a real
+            # dimmer, in the first slot.
+            stated_dimmer = entry.get("dimmer_channel")
+            dimmer_channel = 0 if stated_dimmer is None else int(stated_dimmer) + bias
+
+            device.fixtures.append(
+                Fixture(
+                    name=entry.get("name", f"fixture_{len(device.fixtures) + 1}"),
+                    start_channel=int(entry.get("start_channel", 1 - bias)) + bias,
+                    channels=entry.get("channels", "rgb"),
+                    dimmer_channel=dimmer_channel,
+                    dimmer_value=int(entry.get("dimmer_value", 255)),
+                    static_channels={
+                        int(k) + bias: int(v)
+                        for k, v in (entry.get("static_channels") or {}).items()
+                    },
+                    position=entry.get("position"),
+                    brightness=float(entry.get("brightness", 1.0)),
+                )
+            )
+
+
+        return device
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any], base_dir: Optional[Path] = None) -> "Config":
+        """Reads an environment, or a single rig read as one.
+
+        Which shape a file is depends on one thing: whether it has a `devices`
+        array. `base_dir` is where device references are resolved from, and
+        defaults to the working directory - `Config.load` passes the config's
+        own folder.
+        """
+        config = cls()
+
+
+        master = data.get("master", {})
+        config.master = MasterConfig(
+            brightness=float(master.get("brightness", config.master.brightness)),
+            gamma=float(master.get("gamma", config.master.gamma)),
+        )
+
+        # Naming a port counts as asking for MIDI, the same way the executable
+        # reads it - see loadConfig() in desktop/src/config.cpp.
+        midi = data.get("midi", {})
+
+        # A bare string is allowed for the common "just this one device" case,
+        # matching the executable.
+        stated_ignore = midi.get("ignore", [])
+        if isinstance(stated_ignore, str):
+            stated_ignore = [stated_ignore]
+        stated_pads = midi.get("pads", list(config.midi.pads))
+        if isinstance(stated_pads, str):
+            stated_pads = [stated_pads]
+
+        config.midi = MidiConfig(
+            enabled=bool(midi.get("enabled", "port" in midi)),
+            port=midi.get("port", config.midi.port),
+            ignore=[str(fragment) for fragment in stated_ignore if fragment],
+            pads=[str(fragment) for fragment in stated_pads if fragment],
+            clock=bool(midi.get("clock", config.midi.clock)),
+            notes=bool(midi.get("notes", config.midi.notes)),
+            beat_note=int(midi.get("beat_note", config.midi.beat_note)),
+            bpm_note=int(midi.get("bpm_note", config.midi.bpm_note)),
+            vu_instant_note=int(midi.get("vu_instant_note", config.midi.vu_instant_note)),
+            vu_average_note=int(midi.get("vu_average_note", config.midi.vu_average_note)),
+            vu_meter_note=int(midi.get("vu_meter_note", config.midi.vu_meter_note)),
+            beat_channel=int(midi.get("beat_channel", config.midi.beat_channel)),
+            bpm=float(midi.get("bpm", config.midi.bpm)),
+            free_run=bool(midi.get("free_run", config.midi.free_run)),
+            latency_ms=float(midi.get("latency_ms", config.midi.latency_ms)),
+        )
+
+        pattern = data.get("pattern", {})
+        config.pattern = PatternConfig(
+            name=pattern.get("name", config.pattern.name),
+            speed=float(pattern.get("speed", config.pattern.speed)),
+            width=float(pattern.get("width", config.pattern.width)),
+            brightness=float(pattern.get("brightness", config.pattern.brightness)),
+            palette=pattern.get("palette", config.pattern.palette),
+            color=pattern.get("color", config.pattern.color),
+            state=pattern.get("state", config.pattern.state),
+            # absent stays absent, so the pattern's own frame survives
+            coord_origin_x=_optional_float(pattern.get("coord_origin_x")),
+            coord_origin_y=_optional_float(pattern.get("coord_origin_y")),
+            coord_span_x=_optional_float(pattern.get("coord_span_x")),
+            coord_span_y=_optional_float(pattern.get("coord_span_y")),
+        )
+
+        # ---- audio ------------------------------------------------------
+        audio = data.get("audio") or {}
+        if not isinstance(audio, dict):
+            raise ConfigError("audio must be an object")
+        config.audio = AudioConfig(
+            source=str(audio.get("source", config.audio.source)),
+            port=int(audio.get("port", config.audio.port)),
+            bpm=bool(audio.get("bpm", config.audio.bpm)),
+            map=str(audio.get("map", "")),
+        )
+        config.audio.validate()
+
+        # The show's own mods, then each layer's.
+        config.mods = _read_mods(data, "show")
+
+        # Layers, checked for shape only - whether a fixture name resolves is
+        # the executable's call, with the devices in hand.
+        config.layers = []
+        for index, entry in enumerate(data.get("layers", []) or []):
+            if not isinstance(entry, dict):
+                raise ConfigError(f"layers[{index}] must be an object")
+            fixtures = entry.get("fixtures", [])
+            if isinstance(fixtures, str):
+                fixtures = [fixtures]
+            layer = {
+                "name": str(entry.get("name", f"layer_{index}")),
+                "fixtures": [str(name) for name in fixtures],
+                "pattern": str(entry.get("pattern", "")),
+                "state": str(entry.get("state", "")),
+                "blend": str(entry.get("blend", "over")),
+            }
+            if entry.get("color"):
+                layer["color"] = str(entry["color"])
+            mods = _read_mods(entry, f"layer '{layer['name']}'")
+            if mods:
+                layer["mods"] = mods
+
+            if not layer["pattern"]:
+                raise ConfigError(f"layer '{layer['name']}' names no pattern")
+            if not layer["fixtures"]:
+                raise ConfigError(f"layer '{layer['name']}' names no fixtures")
+            if layer["blend"] not in ("over", "add"):
+                raise ConfigError(
+                    f"layer '{layer['name']}' blends '{layer['blend']}'; "
+                    'expected "over" or "add"'
+                )
+            config.layers.append(layer)
+
+        # The cue table, checked against the layers above and, once the show
+        # is known, its states - see validate().
+        config.cues = {}
+        raw_cues = data.get("cues") or {}
+        if not isinstance(raw_cues, dict):
+            raise ConfigError("cues must be an object of state name -> cue")
+        layer_names = [layer["name"] for layer in config.layers]
+        for state, entry in raw_cues.items():
+            config.cues[str(state)] = Cue.from_dict(str(state), entry, layer_names)
+
+        # ---- devices ----------------------------------------------------
+        stated_devices = data.get("devices")
+
+        if isinstance(stated_devices, list) and stated_devices:
+            config.devices = []
+            for index, entry in enumerate(stated_devices):
+                reference = entry.get("device") or entry.get("use")
+
+                if isinstance(reference, str) and reference:
+                    # By name: a device described once, in its own file, and
+                    # referred to from every show it appears in.
+                    path = _resolve_device_path(base_dir, reference)
+                    if path is None:
+                        raise ConfigError(
+                            f"cannot find device '{reference}'"
+                            f" (looked beside the config and in devices/)")
+
+                    body = json.loads(_strip_line_comments(path.read_text(encoding="utf-8")))
+                    if isinstance(body.get("device"), dict):
+                        body = body["device"]
+                    source = str(path)
+
+                elif isinstance(reference, dict) or entry.get("fixtures"):
+                    # Spelled out in place. Round-tripping an environment writes
+                    # this form, because a config that came back out referring to
+                    # files it did not carry would not be the same config.
+                    body = reference if isinstance(reference, dict) else entry
+                    source = ""
+
+                else:
+                    raise ConfigError(
+                        f"devices entry {index} has neither a \"device\" naming one"
+                        f" nor \"fixtures\" spelling one out")
+
+                device = cls._device_from_dict(
+                    body,
+                    name=str(entry.get("name") or body.get("name")
+                             or (reference if isinstance(reference, str) else f"device_{index}")),
+                    source=source,
+                )
+
+                # ---- placement ------------------------------------------
+                offset = entry.get("offset")
+                if offset is not None:
+                    device.placement.offset = [float(offset[0]),
+                                               float(offset[1]) if len(offset) > 1 else 0.0]
+
+                scale = entry.get("scale")
+                if isinstance(scale, (int, float)):
+                    device.placement.scale = [float(scale), float(scale)]
+                elif scale is not None:
+                    device.placement.scale = [float(scale[0]),
+                                              float(scale[1]) if len(scale) > 1 else float(scale[0])]
+
+                # null on an axis means "leave this one alone" - see the note in
+                # loadConfig() in desktop/src/config.cpp for why that is the
+                # case that matters.
+                fit = entry.get("fit")
+                if isinstance(fit, (int, float)):
+                    device.placement.fit = [float(fit), float(fit)]
+                elif fit is not None:
+                    device.placement.fit = [
+                        None if value is None else float(value)
+                        for value in list(fit)[:2]
+                    ]
+
+                # A view property, not a mapping one - the panel's size on
+                # screen, and nothing the pattern ever sees.
+                view = entry.get("view_scale")
+                if view is None and isinstance(entry.get("view"), dict):
+                    view = entry["view"].get("scale")
+                if isinstance(view, (int, float)):
+                    device.placement.view_scale = [float(view), float(view)]
+                elif view is not None:
+                    device.placement.view_scale = [
+                        float(view[0]),
+                        float(view[1]) if len(view) > 1 else float(view[0]),
+                    ]
+
+                device.brightness = float(entry.get("brightness", 1.0))
+
+                # ---- overrides ------------------------------------------
+                # A device file says what a sculpture *is*; where it is plugged
+                # in this week belongs to the room, not to the sculpture.
+                override = entry.get("output")
+                if isinstance(override, dict):
+                    device.output = DeviceConfig(
+                        type=override.get("type", device.output.type),
+                        port=override.get("port", device.output.port),
+                        baud=int(override.get("baud", device.output.baud)),
+                        fps=float(override.get("fps", device.output.fps)),
+                        console_channels=int(override.get("console_channels",
+                                                          device.output.console_channels)),
+                    )
+                if isinstance(entry.get("port"), str):
+                    device.output.port = entry["port"]
+
+                space = str(entry.get("coord_space", "")).lower()
+                if space in ("literal", "pattern"):
+                    device.coord_space = "literal"
+                elif space in ("normalized", "normalised", "rig"):
+                    device.coord_space = "normalized"
+                elif space:
+                    raise ConfigError(
+                        f"devices entry {index} coord_space must be"
+                        f" \"normalized\" or \"literal\", got '{space}'")
+
+                config.devices.append(device)
+        else:
+            # One rig, described in place. The environment is implicit and holds
+            # a single device sitting at the origin.
+            config.devices = [cls._device_from_dict(data, name=str(data.get("name", "rig")))]
+
+        return config
+
+
+    @classmethod
+    def load(cls, path: Union[str, Path]) -> "Config":
+        """Reads a config file.
+
+        The executable tolerates ``//`` comments; python's json does not, so we
+        strip them here to keep the two readers interchangeable.
+        """
+        source = Path(path)
+        text = source.read_text(encoding="utf-8")
+        return cls.from_dict(json.loads(_strip_line_comments(text)), base_dir=source.parent)
+
+
+def _read_mods(data: Dict[str, Any], where: str) -> List[Dict[str, Any]]:
+    """A `mods` block, in either spelling, as a list of dicts.
+
+    Two spellings because the short one is what a hit layer wants:
+
+        "mods": { "level": "bass_hits" }
+        "mods": [ { "param": "level", "channel": "bass_hits",
+                    "low": 0, "high": 1, "slew": 0.1 } ]
+
+    The object form is the array form with every default taken. A rig of
+    one-line additive layers should not have to spell out five fields to say
+    the obvious thing, and the long form is there for the mod that needs a
+    range or a slew.
+
+    Whether the *param* exists is not checked here and cannot be: a state
+    machine has no knobs until it has rendered once, and a mod may well name a
+    knob that only some cues have. The channel is checked, because that is a
+    closed set and a typo in one is otherwise completely silent.
+    """
+    raw = data.get("mods")
+    if raw is None:
+        return []
+
+    entries: List[Dict[str, Any]] = []
+    if isinstance(raw, dict):
+        for param, channel in raw.items():
+            entries.append({"param": str(param), "channel": str(channel),
+                            "enabled": True})
+    elif isinstance(raw, list):
+        for index, entry in enumerate(raw):
+            if not isinstance(entry, dict):
+                raise ConfigError(f"{where}: mods[{index}] must be an object")
+            mod: Dict[str, Any] = {
+                "param": str(entry.get("param", "")),
+                "channel": str(entry.get("channel", "")),
+                "enabled": bool(entry.get("enabled", True)),
+            }
+            for key, default in (("low", 0.0), ("high", 1.0), ("slew", 0.0)):
+                if key in entry:
+                    mod[key] = float(entry[key])
+                else:
+                    mod[key] = default
+            entries.append(mod)
+    else:
+        raise ConfigError(f"{where}: mods must be an object or an array")
+
+    for mod in entries:
+        if not mod["param"]:
+            raise ConfigError(f"{where} has a mod with no param")
+        if mod["channel"] not in AUDIO_CHANNELS:
+            raise ConfigError(
+                f"{where} mod '{mod['param']}' reads '{mod['channel']}', which is not a "
+                f"channel on the audio bus; have: {', '.join(AUDIO_CHANNELS)}"
+            )
+        if mod.get("slew", 0.0) < 0.0:
+            raise ConfigError(f"{where} mod '{mod['param']}' has a negative slew")
+
+    return entries
+
+
+def _resolve_device_path(base_dir: Optional[Path], reference: str) -> Optional[Path]:
+    """Finds the file behind a ``"device": "obelisk"`` reference.
+
+    Beside the environment first, then in ``devices/`` next to it, so a show can
+    keep a one-off rig in its own folder while the sculptures that appear in
+    every show live together. A reference may also be a path, with or without
+    the .json. Must stay in step with resolveDevicePath() in
+    desktop/src/config.cpp.
+    """
+    directory = Path(base_dir) if base_dir is not None else Path(".")
+    name = reference if reference.endswith(".json") else reference + ".json"
+
+    candidates = []
+    if "/" not in reference and "\\" not in reference:
+        candidates.append(directory / "devices" / name)
+        candidates.append(directory.parent / "devices" / name)
+    candidates.append(directory / name)
+    candidates.append(Path(name))
+
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+#: A complete JSON string literal, or a ``//`` comment to the end of its line.
+#: Alternation order is what keeps a `//` inside a string safe: the string
+#: pattern is tried first at every position, so by the time the comment branch
+#: is reached the scanner is provably outside a literal.
+_STRING_OR_COMMENT = re.compile(r'"(?:\\.|[^"\\])*"|//[^\n]*')
+
+
+def _strip_line_comments(text: str) -> str:
+    """Removes ``//`` comments that are not inside a string literal.
+
+    Comments are not JSON, but a rig file that cannot say *why* a fixture is
+    patched where it is gets those reasons written somewhere nobody reads. So
+    they are stripped here and the rest is handed to a strict parser.
+    """
+    return _STRING_OR_COMMENT.sub(
+        lambda match: "" if match.group()[0] == "/" else match.group(), text)
+
+
+# ---------------------------------------------------------------------------
+# Writing one number back
+# ---------------------------------------------------------------------------
+
+#: A JSON number, as far as the calibration tool ever writes one.
+_NUMBER = re.compile(r"-?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?")
+
+
+def _skip_gap(text: str, index: int, end: int) -> int:
+    """Past whitespace and ``//`` comments from `index`, stopping at `end`."""
+    while index < end:
+        char = text[index]
+        if char.isspace():
+            index += 1
+        elif text.startswith("//", index):
+            newline = text.find("\n", index, end)
+            index = end if newline < 0 else newline + 1
+        else:
+            break
+    return index
+
+
+def _string_end(text: str, index: int) -> int:
+    """Index just past the string literal opening at `index`."""
+    match = _STRING_OR_COMMENT.match(text, index)
+    if match is None or match.group()[0] != '"':
+        raise ConfigError(f"unterminated string at offset {index}")
+    return match.end()
+
+
+def _value_end(text: str, index: int, end: int) -> int:
+    """Index just past the JSON value starting at `index`."""
+    char = text[index]
+    if char == '"':
+        return _string_end(text, index)
+    if char in "{[":
+        close = "}" if char == "{" else "]"
+        depth = 0
+        while index < end:
+            index = _skip_gap(text, index, end)
+            if index >= end:
+                break
+            char = text[index]
+            if char == '"':
+                index = _string_end(text, index)
+                continue
+            if char in "{[":
+                depth += 1
+            elif char in "}]":
+                depth -= 1
+                if depth == 0:
+                    if char != close:
+                        raise ConfigError(f"mismatched brackets at offset {index}")
+                    return index + 1
+            index += 1
+        raise ConfigError("unterminated object")
+    # a scalar: to the next delimiter
+    while index < end and text[index] not in ",}]" and not text[index].isspace() \
+            and not text.startswith("//", index):
+        index += 1
+    return index
+
+
+def _members(text: str, body_start: int, body_end: int):
+    """The members of the object whose body spans [body_start, body_end).
+
+    Yields ``(key, key_start, value_start, value_end)`` for each, comments and
+    whitespace stepped over and nested values stepped across, so a key one
+    level down is never mistaken for one at this level.
+    """
+    index = body_start
+    while True:
+        index = _skip_gap(text, index, body_end)
+        if index >= body_end:
+            return
+        if text[index] == ",":
+            index += 1
+            continue
+        if text[index] != '"':
+            raise ConfigError(f"expected a key at offset {index}")
+        key_start = index
+        key_end = _string_end(text, index)
+        key = json.loads(text[key_start:key_end])
+        index = _skip_gap(text, key_end, body_end)
+        if index >= body_end or text[index] != ":":
+            raise ConfigError(f"expected ':' after key {key!r}")
+        value_start = _skip_gap(text, index + 1, body_end)
+        value_end = _value_end(text, value_start, body_end)
+        yield key, key_start, value_start, value_end
+        index = value_end
+
+
+def _object_body(text: str, value_start: int) -> Tuple[int, int]:
+    """[body_start, body_end) of the object whose ``{`` is at `value_start`."""
+    if text[value_start] != "{":
+        raise ConfigError(f"expected an object at offset {value_start}")
+    return value_start + 1, _value_end(text, value_start, len(text)) - 1
+
+
+def _line_indent(text: str, index: int) -> str:
+    """The leading whitespace of the line `index` is on."""
+    line_start = text.rfind("\n", 0, index) + 1
+    line = text[line_start:]
+    return line[:len(line) - len(line.lstrip())]
+
+
+def format_latency_ms(latency_ms: float) -> str:
+    """``45``, ``-12``, ``45.5``: to a tenth, and no decimal point at all when
+    it is whole, which is how every other number in a config is written."""
+    rounded = round(float(latency_ms), 1)
+    return f"{int(rounded)}" if rounded == int(rounded) else f"{rounded:.1f}"
+
+
+def write_midi_latency(path: Union[str, Path], latency_ms: float) -> str:
+    """Sets ``midi.latency_ms`` in the file at `path`, leaving the rest as written.
+
+    A config file is commented, and the comments are where the reasons live,
+    so this is a text edit rather than a load-and-dump: the number is replaced
+    where it stands, or a line is added at the top of the ``midi`` block - or
+    a ``midi`` block at the top of the file - when there is none. The text is
+    parsed before and after the edit, and the number read back out of it, so
+    a file this cannot understand is left alone rather than half-edited.
+
+    Returns the member as written, e.g. ``"latency_ms": 45``.
+    """
+    target = Path(path)
+    text = target.read_text(encoding="utf-8")
+    if not isinstance(json.loads(_strip_line_comments(text)), dict):
+        raise ConfigError(f"{target} is not a config: expected an object at the top")
+
+    written = f'"latency_ms": {format_latency_ms(latency_ms)}'
+    note = "// how far ahead of the music the rig runs, in ms. Measured: " \
+           "python -m eclipse_dmx calibrate"
+
+    root = _skip_gap(text, 0, len(text))
+    body_start, body_end = _object_body(text, root)
+
+    midi = next((m for m in _members(text, body_start, body_end) if m[0] == "midi"), None)
+    if midi is None:
+        # No midi block: one with just this in it, first thing in the file.
+        # `enabled` is false by default, so it opens nothing.
+        first = next(iter(_members(text, body_start, body_end)), None)
+        indent = _line_indent(text, first[1]) if first else "  "
+        block = (f"\n{indent}{note}\n{indent}\"midi\": {{\n"
+                 f"{indent}  {written}\n{indent}}}{',' if first else ''}\n")
+        edited = text[:body_start] + block + text[body_start:]
+    else:
+        _, midi_key, midi_value, _ = midi
+        inner_start, inner_end = _object_body(text, midi_value)
+        existing = next((m for m in _members(text, inner_start, inner_end)
+                         if m[0] == "latency_ms"), None)
+        if existing is not None:
+            _, _, value_start, value_end = existing
+            if _NUMBER.fullmatch(text[value_start:value_end]) is None:
+                raise ConfigError(
+                    f"midi.latency_ms in {target} is not a number: "
+                    f"{text[value_start:value_end]!r}")
+            edited = text[:value_start] + format_latency_ms(latency_ms) + text[value_end:]
+        else:
+            first = next(iter(_members(text, inner_start, inner_end)), None)
+            indent = _line_indent(text, first[1]) if first else _line_indent(text, midi_key) + "  "
+            line = f"\n{indent}{note}\n{indent}{written}{',' if first else ''}\n"
+            edited = text[:inner_start] + line + text[inner_start:]
+
+    check = json.loads(_strip_line_comments(edited)).get("midi", {}).get("latency_ms")
+    if check is None or abs(float(check) - round(float(latency_ms), 1)) > 0.05:
+        raise ConfigError(f"editing {target} did not take; nothing written")
+    target.write_text(edited, encoding="utf-8")
+    return written
+

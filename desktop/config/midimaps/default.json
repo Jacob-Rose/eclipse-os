@@ -1,0 +1,45 @@
+{
+  "version": 2,
+  "opens_on": "",
+  "mappings": [
+    {
+      "label": "map 1",
+      "trigger": {
+        "kind": "note",
+        "channel": 1,
+        "number": 64
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "syn_scene",
+          "params": {
+            "scene": "rearranged",
+            "preset": ""
+          }
+        }
+      ],
+      "enabled": true,
+      "page": "",
+      "colour": 41
+    },
+    {
+      "label": "map 2",
+      "trigger": {
+        "kind": "note",
+        "channel": 0,
+        "number": 60
+      },
+      "mode": "press",
+      "actions": [
+        {
+          "action": "syn_scene",
+          "params": {}
+        }
+      ],
+      "enabled": true,
+      "page": "",
+      "colour": 41
+    }
+  ]
+}
