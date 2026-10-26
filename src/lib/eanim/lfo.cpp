@@ -19,9 +19,9 @@ LFO::LFO(float inSpeed, float inWidth) : speed(inSpeed), width(inWidth)
 
 }
 
-void LFO::reflectState(ecore::PropertyBag& bag, const std::string& prefix)
+void LFO::reflect(ecore::PropertyBag& bag)
 {
-    bag.addState((prefix + "offset").c_str(), currentOffset);
+    bag.addState("offset", currentOffset);
 }
 
 void LFO::tick(float deltaTime)

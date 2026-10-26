@@ -31,12 +31,12 @@ namespace scanner
     * whose take is to be cleansed, over the sculpture's own picture.
     *
     * Fire2012 on the stage - the ember bed along the foot, risers climbing
-    * through the ring and on up the runs - blended over the underlay (the
-    * obelisk's own look, shadowed on the desk; see eanim::Underlay) by its
-    * own heat. Where no flame is, the tower is the sculpture's own, and the
+    * through the ring and on up the runs - and, joining the tower
+    * (ObeliskMode::Join), blended over the sculpture's own look by its own
+    * heat. Where no flame is, the tower is the sculpture's own, and the
     * flames lick over it, the way scan_idle's scan line claims the tower
-    * only where it is. Without an underlay it is the fire over black, which
-    * is what it is on the ring.
+    * only where it is. Painting, it is the fire over black, which is what
+    * it is on the ring.
     *
     * The game douses it as the rock lands: `trigger scanner.cleanse.douse`
     * runs the emitter down to nothing over douseSeconds, and the game holds

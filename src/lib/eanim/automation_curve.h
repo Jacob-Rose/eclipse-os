@@ -95,63 +95,6 @@ namespace eanim
     };
 
 
-    /* @brief One named view onto a look's live AutomationCurve.
-    *
-    * Same contract as ecore::Property: it points *at* the curve rather than
-    * holding a copy, the look stays the owner, and the ref must not outlive
-    * it. onChanged is for a look that derives something from the shape;
-    * most read the curve fresh every frame and need nothing.
-    */
-    struct CurveRef
-    {
-        std::string name;
-        AutomationCurve* curve{nullptr};
-        std::function<void()> onChanged;
-    };
-
-    /* @brief The drawable shapes of one look, gathered on request.
-    *
-    * reflect(), for curves: where a PropertyBag hands out the knobs worth
-    * turning, this hands out the shapes worth drawing - an envelope, a
-    * swell - so a desk's curve editor can load the live shape and write an
-    * edited one back. Built fresh each time it is asked for, for the same
-    * lifetime reason as PropertyBag.
-    *
-    *     void MyLook::reflectCurves(eanim::CurveBag& bag)
-    *     {
-    *         bag.add("envelope", envelope.curve);
-    *     }
-    */
-    class CurveBag
-    {
-    public:
-        void add(const char* name, AutomationCurve& curve, std::function<void()> onChanged = {})
-        {
-            refs.push_back(CurveRef{name, &curve, std::move(onChanged)});
-        }
-
-        void clear() { refs.clear(); }
-        bool isEmpty() const { return refs.empty(); }
-
-        const std::vector<CurveRef>& all() const { return refs; }
-
-        CurveRef* find(const std::string& name)
-        {
-            for (CurveRef& ref : refs)
-            {
-                if (ref.name == name)
-                {
-                    return &ref;
-                }
-            }
-            return nullptr;
-        }
-
-    private:
-        std::vector<CurveRef> refs;
-    };
-
-
     /* @brief What a new impulse does to a curve that is still playing. */
     enum class RetriggerMode
     {

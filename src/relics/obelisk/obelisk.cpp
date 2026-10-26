@@ -374,7 +374,7 @@ bool obelisk::ObeliskCore::handleCommand(string msg)
     // and `sim <name> [k=v ...]` sets it: that look, at that state, with no
     // blend - the desk putting the sculpture where its own copy is. Either
     // way the answer is the state as it now stands. See
-    // GeneratorHSV::reflectState for what a look puts in it.
+    // ecore::Reflectable for what a look puts in it.
     if (msg == "sim" || msg.rfind("sim ", 0) == 0)
     {
         if (msg.size() > 4)
@@ -403,7 +403,7 @@ bool obelisk::ObeliskCore::handleCommand(string msg)
             if (!values.empty())
             {
                 ecore::PropertyBag bag;
-                it->second->reflectState(bag);
+                it->second->reflect(bag);
                 ecore::applyState(bag, values);
             }
         }
@@ -412,7 +412,7 @@ bool obelisk::ObeliskCore::handleCommand(string msg)
         ecore::PropertyBag bag;
         if (look)
         {
-            look->reflectState(bag);
+            look->reflect(bag);
         }
         const std::string state = ecore::serializeState(bag);
         say("EOSLINK sim " + activeLookName() + (state.empty() ? "" : " " + state));

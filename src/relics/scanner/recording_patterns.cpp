@@ -48,6 +48,11 @@ void Pattern_Scanner_CleanseFire::tick(float deltaTime)
 
 void Pattern_Scanner_CleanseFire::render(HSVStripNode* inNode, HSV& inOutColor) const
 {
+    if (leavesAlone(inNode))
+    {
+        return;
+    }
+    const HSV beneath = inOutColor; // the picture this look joins, see ObeliskMode
     HSV fire;
     Pattern_Generic_Fire2012::render(inNode, fire);
 
@@ -56,10 +61,9 @@ void Pattern_Scanner_CleanseFire::render(HSVStripNode* inNode, HSV& inOutColor) 
     const HSVStripNode_Space* spaced = eio::spaceOf(inNode);
     if (spaced != nullptr && spaced->space == NodeSpace::Obelisk)
     {
-        HSV under;
-        if (underlay != nullptr && underlay->sample(inNode, under))
+        if (joins(inNode))
         {
-            inOutColor = HSV::blend(under, fire, fire.getValFloat());
+            inOutColor = HSV::blend(beneath, fire, fire.getValFloat());
             return;
         }
     }

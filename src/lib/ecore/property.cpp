@@ -7,31 +7,24 @@
 
 #include <cstdio>
 #include <cstdlib>
-
 #include <algorithm>
+
+#include "logging.h"
 
 using namespace ecore;
 
 float Property::get() const
 {
-    if (type == Type::Bool)
+    switch (type)
     {
-        return (boolValue != nullptr && *boolValue) ? 1.0f : 0.0f;
+        case Type::Bool:  return (boolValue != nullptr && *boolValue) ? 1.0f : 0.0f;
+        case Type::Float: return (floatValue != nullptr) ? *floatValue : 0.0f;
+        default:          return 0.0f;
     }
-    if (type == Type::Color)
-    {
-        return 0.0f;
-    }
-    return (floatValue != nullptr) ? *floatValue : 0.0f;
 }
 
 void Property::set(float value)
 {
-    if (type == Type::Color)
-    {
-        return; // one number is not a colour; see setColor
-    }
-
     if (type == Type::Bool)
     {
         if (boolValue == nullptr)
@@ -40,23 +33,23 @@ void Property::set(float value)
         }
         *boolValue = (value != 0.0f);
     }
-    else
+    else if (type == Type::Float)
     {
         if (floatValue == nullptr)
         {
             return;
         }
-
         // Clamped rather than rejected. The range is what a slider spans, and
         // a value arriving from a text box slightly outside it is a request to
         // go to the end of the slider, not a mistake worth an error.
         *floatValue = std::min(std::max(value, minValue), maxValue);
     }
-
-    if (onChanged)
+    else
     {
-        onChanged();
+        return; // one number is not a colour or a shape
     }
+
+    changed();
 }
 
 HSV Property::getColor() const
@@ -70,9 +63,12 @@ void Property::setColor(const HSV& color)
     {
         return;
     }
-
     *colorValue = color;
+    changed();
+}
 
+void Property::changed() const
+{
     if (onChanged)
     {
         onChanged();
@@ -80,10 +76,125 @@ void Property::setColor(const HSV& color)
 }
 
 
+void PropertyBag::push(Property&& property)
+{
+    property.name = prefix + property.name;
+
+#if ERROR_CHECKING_ENABLED
+    if (find(property.name) != nullptr)
+    {
+        log::dbgLog("PropertyBag: '" + property.name + "' registered twice, second ignored",
+                    log::Verbosity::Error, log::Category::Library);
+        return;
+    }
+#endif
+
+    properties.push_back(std::move(property));
+}
+
+void PropertyBag::add(const char* name, float& value, float minValue, float maxValue,
+                      std::function<void()> onChanged)
+{
+    Property property;
+    property.name = name;
+    property.type = Property::Type::Float;
+    property.floatValue = &value;
+    property.minValue = minValue;
+    property.maxValue = maxValue;
+    property.onChanged = std::move(onChanged);
+    push(std::move(property));
+}
+
+void PropertyBag::add(const char* name, bool& value, std::function<void()> onChanged)
+{
+    Property property;
+    property.name = name;
+    property.type = Property::Type::Bool;
+    property.boolValue = &value;
+    property.onChanged = std::move(onChanged);
+    push(std::move(property));
+}
+
+void PropertyBag::add(const char* name, HSV& value, std::function<void()> onChanged)
+{
+    Property property;
+    property.name = name;
+    property.type = Property::Type::Color;
+    property.colorValue = &value;
+    property.onChanged = std::move(onChanged);
+    push(std::move(property));
+}
+
+void PropertyBag::add(const char* name, eanim::AutomationCurve& value, std::function<void()> onChanged)
+{
+    Property property;
+    property.name = name;
+    property.type = Property::Type::Curve;
+    property.curveValue = &value;
+    property.onChanged = std::move(onChanged);
+    push(std::move(property));
+}
+
 void PropertyBag::addState(const char* name, float& value, std::function<void()> onChanged)
 {
-    add(name, value, Property::STATE_MIN, Property::STATE_MAX, std::move(onChanged));
+    Property property;
+    property.name = name;
+    property.type = Property::Type::Float;
+    property.role = Property::Role::State;
+    property.floatValue = &value;
+    property.minValue = Property::STATE_MIN;
+    property.maxValue = Property::STATE_MAX;
+    property.onChanged = std::move(onChanged);
+    push(std::move(property));
 }
+
+void PropertyBag::reflect(const char* childName, Reflectable& child)
+{
+    const std::string outer = prefix;
+    prefix += childName;
+    prefix.push_back('.');
+    child.reflect(*this);
+    prefix = outer;
+}
+
+const Property* PropertyBag::find(const std::string& name) const
+{
+    for (const Property& property : properties)
+    {
+        if (property.name == name)
+        {
+            return &property;
+        }
+    }
+    return nullptr;
+}
+
+bool PropertyBag::set(const std::string& name, float value)
+{
+    for (Property& property : properties)
+    {
+        if (property.name == name)
+        {
+            property.set(value);
+            return true;
+        }
+    }
+    return false;
+}
+
+bool PropertyBag::setColor(const std::string& name, const HSV& color)
+{
+    for (Property& property : properties)
+    {
+        if (property.name == name && property.type == Property::Type::Color)
+        {
+            property.setColor(color);
+            return true;
+        }
+    }
+    return false;
+}
+
 
 std::string ecore::serializeState(const PropertyBag& bag)
 {
@@ -91,7 +202,7 @@ std::string ecore::serializeState(const PropertyBag& bag)
     char number[32];
     for (const Property& property : bag.all())
     {
-        if (property.type == Property::Type::Color)
+        if (!property.isState())
         {
             continue;
         }
@@ -142,82 +253,4 @@ int ecore::applyState(PropertyBag& bag, const std::string& text)
         at = end;
     }
     return applied;
-}
-
-void PropertyBag::add(const char* name, float& value, float minValue, float maxValue,
-                      std::function<void()> onChanged)
-{
-    Property property;
-    property.name = name;
-    property.type = Property::Type::Float;
-    property.floatValue = &value;
-    property.minValue = minValue;
-    property.maxValue = maxValue;
-    property.onChanged = std::move(onChanged);
-
-    properties.push_back(std::move(property));
-}
-
-void PropertyBag::add(const char* name, bool& value, std::function<void()> onChanged)
-{
-    Property property;
-    property.name = name;
-    property.type = Property::Type::Bool;
-    property.boolValue = &value;
-    property.minValue = 0.0f;
-    property.maxValue = 1.0f;
-    property.onChanged = std::move(onChanged);
-
-    properties.push_back(std::move(property));
-}
-
-void PropertyBag::add(const char* name, HSV& value, std::function<void()> onChanged)
-{
-    Property property;
-    property.name = name;
-    property.type = Property::Type::Color;
-    property.colorValue = &value;
-    property.minValue = 0.0f;
-    property.maxValue = 1.0f;
-    property.onChanged = std::move(onChanged);
-
-    properties.push_back(std::move(property));
-}
-
-const Property* PropertyBag::find(const std::string& name) const
-{
-    for (const Property& property : properties)
-    {
-        if (property.name == name)
-        {
-            return &property;
-        }
-    }
-    return nullptr;
-}
-
-bool PropertyBag::set(const std::string& name, float value)
-{
-    for (Property& property : properties)
-    {
-        if (property.name == name)
-        {
-            property.set(value);
-            return true;
-        }
-    }
-    return false;
-}
-
-bool PropertyBag::setColor(const std::string& name, const HSV& color)
-{
-    for (Property& property : properties)
-    {
-        if (property.name == name && property.type == Property::Type::Color)
-        {
-            property.setColor(color);
-            return true;
-        }
-    }
-    return false;
 }

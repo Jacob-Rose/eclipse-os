@@ -85,6 +85,19 @@ TEST(hsv_blend_takes_the_short_way_round)
 
     // a quarter of the way from 350 toward 10 is 355, not somewhere near 265
     CHECK_NEAR(HSV::blend(a, b, 0.25f).getHueFloat(), 355.0f, 0.1f);
+
+    // stops more than 180 degrees apart go the other way round: 0 -> 270
+    // through magenta at 315, not through green at 135
+    const HSV red(0.0f, 1.0f, 1.0f);
+    const HSV violet(270.0f, 1.0f, 1.0f);
+    CHECK_NEAR(HSV::blend(red, violet, 0.5f).getHueFloat(), 315.0f, 0.1f);
+    CHECK_NEAR(HSV::blend(violet, red, 0.5f).getHueFloat(), 315.0f, 0.1f);
+
+    // exactly opposite hues: either way is as short, and it must still
+    // land on the circle rather than somewhere off it
+    const HSV cyan(180.0f, 1.0f, 1.0f);
+    const float opposite = HSV::blend(red, cyan, 0.5f).getHueFloat();
+    CHECK(std::fabs(opposite - 90.0f) < 0.1f || std::fabs(opposite - 270.0f) < 0.1f);
 }
 
 TEST(hsv_blend_endpoints_and_channels)

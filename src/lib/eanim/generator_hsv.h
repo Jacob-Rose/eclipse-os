@@ -11,8 +11,8 @@
 
 #include "../ecore/core.h"
 #include "../ecore/hsv.h"
-#include "../ecore/gameplay_tag.h"
-#include "../ecore/property.h"
+#include "../ecore/name.h"
+#include "../ecore/reflectable.h"
 #include "../ecore/tickable.h"
 
 #include "../eio/strip_projection.h"
@@ -23,35 +23,18 @@ using namespace eio;
 
 namespace eanim
 {
-    /* @brief What is showing *underneath* a look, on an object something else
-    * is also lighting.
+    /* @brief The base of every look: a colour for a node, a clock, and a
+    * name for each of its knobs.
     *
-    * The case it exists for: a desk has taken a sculpture's pixels over its
-    * cable, and the sculpture's own look is still running - paused on the
-    * sculpture, simulated in step on the desk (see edmx::RelicShadow). A look
-    * that wants to *join* that picture rather than paint over it samples the
-    * underlay for a node and blends by how much of the node it claims. Null
-    * everywhere the question does not arise, which is every relic and every
-    * desk with nothing linked - so a look treats it as optional and renders
-    * exactly as before without one.
+    * render() is asked once per node per frame with a colour in hand -
+    * the node's last frame by default, black if the state running the
+    * look asks for it (State_GenericHSV::RenderBase), the layer below's
+    * output in a LayeredGeneratorHSV. A look paints over it, blends into
+    * it, or leaves it alone. tick() advances whatever the look keeps
+    * between frames. reflect() hands out the look's properties, and says
+    * nothing by default; see ecore::Reflectable.
     */
-    class Underlay
-    {
-    public:
-        virtual ~Underlay() = default;
-
-        /// The colour under `node`, or false when the underlay has nothing
-        /// for it (a node on an object the underlay is not simulating).
-        virtual bool sample(const HSVStripNode* node, HSV& outColor) const = 0;
-    };
-
-
-    /* @brief A Generator that can provide or process colors
-    * these can also handle alphas and blending between layers, but that is not required
-
-    * frankly, partially going toward deprecation, use GeneratorHSV_Cont and GeneratorHSV_Cont2D if possible
-    */
-    class GeneratorHSV : public Tickable
+    class GeneratorHSV : public Tickable, public ecore::Reflectable
     {
     public:
         // generate color for provided index
@@ -59,85 +42,13 @@ namespace eanim
         virtual void render(HSVStripNode* node, HSV& InOutColor) const = 0;
         virtual void tick(float /*deltaTime*/) {} // optional, if the generator needs to update any internal state
 
-        /* @brief Hand out the knobs worth turning while this look runs.
-        *
-        * Optional, and empty by default: a look that has nothing to tune says
-        * nothing. One line per property, and only the ones that actually change
-        * how the look reads - this is a tuning surface, not a dump of every
-        * member.
-        *
-        *     void MyLook::reflect(ecore::PropertyBag& bag)
-        *     {
-        *         bag.add("gain", gain, 0.0f, 2.0f);
-        *     }
-        *
-        * A virtual rather than anything cleverer because the library builds
-        * without RTTI on the microcontroller side, so there is nothing to cast
-        * to. @see ecore::PropertyBag
-        */
-        virtual void reflect(ecore::PropertyBag& /*bag*/) {}
-
-        /* @brief Hand out the shapes worth drawing while this look runs.
-        *
-        * reflect(), for AutomationCurves: an envelope or a swell a desk's
-        * curve editor can load live and write an edited shape back into.
-        * Same rules - optional, empty by default, one line per curve, and
-        * only the shapes that actually change how the look reads.
-        * @see eanim::CurveBag
-        */
-        virtual void reflectCurves(class CurveBag& /*bag*/) {}
-
-        /* @brief Hand out the clocks this look is running on.
-        *
-        * The fourth surface, and the one that lets a look run in two places
-        * at once. reflect() is the knobs; this is the *state* - a noise
-        * field's time, an LFO's phase, the seconds since a cue - registered
-        * with PropertyBag::addState so the same bag can be read out as
-        * `name=value` text (ecore::serializeState) and written back
-        * (ecore::applyState). A relic answers a desk's `sim` with it; the
-        * desk spawns the same look, applies the answer, and from then on
-        * has the sculpture's picture without a pixel crossing the cable.
-        *
-        * Optional, empty by default: a look with no clocks (a solid colour)
-        * has nothing to say and needs nothing to match. A look that has
-        * clocks and says nothing simply cannot be simulated - the desk
-        * falls back to blending from black.
-        *
-        *     void MyLook::reflectState(ecore::PropertyBag& bag)
-        *     {
-        *         noise.reflectState(bag, "noise.");
-        *         bag.addState("time", timeActive);
-        *     }
-        */
-        virtual void reflectState(ecore::PropertyBag& /*bag*/) {}
-
-        /* @brief The underlay, for a look that composes over one. Set by the
-        * desk while a relic is linked; null otherwise. @see eanim::Underlay */
-        void setUnderlay(const Underlay* inUnderlay) { underlay = inUnderlay; }
-        const Underlay* getUnderlay() const { return underlay; }
-
-        /* @brief Whether this look leaves `node` to the underlay entirely.
-        *
-        * The renderer samples the underlay in place of calling render() for
-        * such a node, so a look that has nothing to say about an object - a
-        * boot animation on the ring, a dark idle - shows what is underneath
-        * it rather than painting it black. It is what makes a takeover, or
-        * a cross-fade into such a look, invisible on the sculpture. Only
-        * consulted while an underlay is set; false by default, which is
-        * "this look paints everything it is given".
-        */
-        virtual bool leavesToUnderlay(const HSVStripNode* /*node*/) const { return false; }
-
-    protected:
-        const Underlay* underlay{nullptr};
-
-    public:
+        // Reflectable interface: nothing, until a look has knobs
+        virtual void reflect(ecore::PropertyBag& /*bag*/) override {}
 
         /* @brief Something happened, now - a sound played, a tag landed.
         *
-        * The third surface after the knobs and the shapes: an impulse, by
-        * tag. The desk sends `trigger <tag>` at the moment the game plays
-        * a sound, and a look that answers to that tag does its thing off
+        * An impulse, by tag. The desk sends `trigger <tag>` at the moment the
+        * game plays a sound, and a look that answers to that tag does its thing off
         * it - restarts an envelope, re-anchors a clock - so the light is
         * *tied* to the sound rather than running beside it on a clock of
         * its own that happens to agree. False, the default, means this look
@@ -160,45 +71,46 @@ namespace eanim
     };
 
 
-    /*
-    * Composite Generator supports a stack of effects
-    * unproven and untested, assumed overkill but leaving here for possible change in future
+    /* @brief A stack of looks rendered in order, bottom first.
+    *
+    * The one way looks combine. Each layer gets the colour the layer below
+    * left for the node and paints over it, blends into it, or leaves it;
+    * the bottom layer gets whatever the stack was handed. So a look never
+    * knows or cares whether it is stacked - a desk composing a sculpture's
+    * own look under a scanner's is two layers, and so is any other stack.
+    * Ticks every layer. Owns nothing it was not given.
     */
-   /*
-    class CompositeGeneratorHSV : public GeneratorHSV, public Tickable
+    class LayeredGeneratorHSV : public GeneratorHSV
     {
     public:
-        CompositeGeneratorHSV(uint16_t inLength);
-
-        virtual void tick(float deltaTime) override;
-
-        virtual HSV getPixelColor(int ledIdx);
-
-    private:
-        struct GeneratorLayerInfo
+        void addLayer(std::shared_ptr<GeneratorHSV> layer)
         {
-            int startOffset;
-            std::unique_ptr<GeneratorHSV> generator;
-        };
+            if (layer)
+            {
+                layers.push_back(std::move(layer));
+            }
+        }
 
-        std::vector<GeneratorLayerInfo> generatorLayers;
+        void clearLayers() { layers.clear(); }
+        const std::vector<std::shared_ptr<GeneratorHSV>>& getLayers() const { return layers; }
 
-        std::vector<HSV> pixelData;
-     };
+        virtual void render(HSVStripNode* node, HSV& inOutColor) const override
+        {
+            for (const std::shared_ptr<GeneratorHSV>& layer : layers)
+            {
+                layer->render(node, inOutColor);
+            }
+        }
 
-
-    class PatternHSV
-    {
-    public:
-        PatternHSV(uint16_t inLength);
-
-        uint16_t getLength() { return length; }
-        j::HSV getPixelColor(int ledIdx);
+        virtual void tick(float deltaTime) override
+        {
+            for (const std::shared_ptr<GeneratorHSV>& layer : layers)
+            {
+                layer->tick(deltaTime);
+            }
+        }
 
     private:
-        std::unique_ptr<CompositeGeneratorHSV> rootLayer;
-
-        uint16_t length;
+        std::vector<std::shared_ptr<GeneratorHSV>> layers;
     };
-    */
 }

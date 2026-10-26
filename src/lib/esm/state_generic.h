@@ -11,6 +11,8 @@
 
 #include "../ecore/core.h"
 #include "../ecore/delegate.h"
+#include "../ecore/property.h"
+#include "../ecore/reflectable.h"
 #include "../eio/relic.h"
 #include "../eanim/generator_hsv.h"
 
@@ -21,7 +23,7 @@ using namespace esm;
 /*
 * Just runs the provided pattern
 */
-class State_GenericHSV : public State
+class State_GenericHSV : public State, public ecore::Reflectable
 {
 public:
     State_GenericHSV(const char* InStateName, RelicIO* inIO) : State(InStateName), io(inIO) {}
@@ -29,9 +31,26 @@ public:
     void setGenerator(std::shared_ptr<GeneratorHSV> inGenerator) { generator = inGenerator; }
     std::shared_ptr<GeneratorHSV> getGenerator() const { return generator; }
 
-    /// The look's running state, by name - see GeneratorHSV::reflectState.
-    /// Empty for a state with no generator or a look with no clocks.
-    void reflectState(ecore::PropertyBag& bag) { if (generator) generator->reflectState(bag); }
+    /// Reflectable interface: the look's properties, or nothing for a state
+    /// with no generator.
+    virtual void reflect(ecore::PropertyBag& bag) override { if (generator) generator->reflect(bag); }
+
+    /* @brief What a node's colour is when the look is asked to render it.
+    *
+    * LastFrame, the default: the colour the strip is showing, so a look
+    * that only writes some nodes leaves the rest as they were, and one
+    * that reads before it writes can fade or trail its own last frame.
+    * Black: every node starts dark each frame, for a look that blends
+    * into what it is handed and must not feed back on itself.
+    */
+    enum class RenderBase
+    {
+        LastFrame,
+        Black,
+    };
+
+    void setRenderBase(RenderBase inBase) { renderBase = inBase; }
+    RenderBase getRenderBase() const { return renderBase; }
 
     /// Advances the look's clocks without drawing a pixel. For a relic whose
     /// pixels a desk owns: the look keeps time underneath the takeover, so
@@ -45,6 +64,7 @@ protected:
     virtual void tick(float deltaTime) override;
 
     std::shared_ptr<GeneratorHSV> generator;
+    RenderBase renderBase{RenderBase::LastFrame};
     RelicIO* io;
 };
 

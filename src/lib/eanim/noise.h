@@ -28,7 +28,7 @@ namespace eanim
 
     /* @brief Wrapper for FastNoiseLite to make it support float attributes
     */
-    class PerlinNoiseGenerator2D : public Generator2D, public Tickable
+    class PerlinNoiseGenerator2D : public Generator2D, public Tickable, public ecore::Reflectable
     {
     public:
         PerlinNoiseGenerator2D();
@@ -47,12 +47,12 @@ namespace eanim
 
         FastNoiseLite noise;
 
-        /// What makes this field this field: its seed, drawn at random when
-        /// it was built, and its clock - as `<prefix>seed` and `<prefix>time`,
-        /// so a copy of the look elsewhere can be put at the same picture.
-        /// The rest (frequency, type, scale) is the look's own constants and
-        /// travels in its code. @see eanim::GeneratorHSV::reflectState
-        void reflectState(ecore::PropertyBag& bag, const std::string& prefix);
+        /// Reflectable interface. What makes this field this field: its seed,
+        /// drawn at random when it was built, and its clock - as `seed` and
+        /// `time`, so a copy of the look elsewhere can be put at the same
+        /// picture. The rest (frequency, type, scale) is the look's own
+        /// constants and travels in its code.
+        virtual void reflect(ecore::PropertyBag& bag) override;
 
         void setSeed(int inSeed);
         int getSeed() const { return seed; }

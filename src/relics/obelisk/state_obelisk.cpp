@@ -51,10 +51,10 @@ void Pattern_Obelisk_FourSeasons::tick(float deltaTime)
     coreNoise.tick(deltaTime);
 }
 
-void Pattern_Obelisk_FourSeasons::reflectState(ecore::PropertyBag& bag)
+void Pattern_Obelisk_FourSeasons::reflect(ecore::PropertyBag& bag)
 {
     // The whole look is the field's clock: same time, same picture.
-    coreNoise.reflectState(bag, "noise.");
+    bag.reflect("noise", coreNoise);
 }
 
 void Pattern_Obelisk_FourSeasons::render(HSVStripNode* inNode, HSV& inOutColor) const
@@ -97,10 +97,10 @@ Pattern_Obelisk_Theater::Pattern_Obelisk_Theater()
 
 }
 
-void Pattern_Obelisk_Theater::reflectState(ecore::PropertyBag& bag)
+void Pattern_Obelisk_Theater::reflect(ecore::PropertyBag& bag)
 {
-    lfo.reflectState(bag, "lfo.");
-    paletteLFO.reflectState(bag, "palette.");
+    bag.reflect("lfo", lfo);
+    bag.reflect("palette", paletteLFO);
 }
 
 void Pattern_Obelisk_Theater::tick(float deltaTime)
@@ -147,11 +147,6 @@ Pattern_Obelisk_Blobs::Pattern_Obelisk_Blobs()
     noise.imageScaleY = 1.0f;
 }
 
-void Pattern_Obelisk_Blobs::reflectState(ecore::PropertyBag& bag)
-{
-    noise.reflectState(bag, "noise.");
-}
-
 void Pattern_Obelisk_Blobs::tick(float deltaTime)
 {
     noise.tick(deltaTime);
@@ -184,4 +179,5 @@ void Pattern_Obelisk_Blobs::reflect(ecore::PropertyBag& bag)
     bag.add("scale", scale, 0.01f, 0.3f, [this] { noise.noise.SetFrequency(scale); });
     bag.add("coverage", coverage, 0.0f, 1.0f);
     bag.add("softness", softness, 0.0f, 1.0f);
+    bag.reflect("noise", noise);
 }

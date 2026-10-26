@@ -12,6 +12,7 @@
 #include "../../lib/ecore/hsv.h"
 #include "../../lib/ecore/math.h"
 #include "../../lib/eanim/automation_curve.h"
+#include "../../lib/ecore/property.h"
 #include "../../lib/eanim/generator_hsv.h"
 #include "../../lib/esm/state_generic.h"
 
@@ -84,22 +85,46 @@ namespace scanner
         virtual void reset() { timeActive = 0.0f; }
         virtual void tick(float deltaTime) override { timeActive += deltaTime; }
 
-        /// Every scanner look runs on this one clock; a look with more
-        /// (particles, a pool) adds its own on top.
-        virtual void reflectState(ecore::PropertyBag& bag) override { bag.addState("time", timeActive); }
+        /// Reflectable interface. Every scanner look runs on this one clock;
+        /// a look with more to say calls this first from its own reflect().
+        virtual void reflect(ecore::PropertyBag& bag) override { bag.addState("time", timeActive); }
 
-        /// Set on the looks that have nothing to say about the obelisk - the
-        /// boot animations, the dark `none` - so over an underlay the tower
-        /// keeps its own picture through them instead of going black. See
-        /// GeneratorHSV::leavesToUnderlay.
-        bool leaveObeliskToUnderlay{false};
-
-        virtual bool leavesToUnderlay(const HSVStripNode* node) const override
+        /* @brief What this look does to the obelisk's nodes when it is stacked
+        * over the sculpture's own look (a LayeredGeneratorHSV on the desk).
+        *
+        * Paint, the default and all a relic ever does: the look draws the
+        * tower itself. Join: the look blends into the colour beneath by how
+        * much of the tower it claims - the scan line takes energy from the
+        * picture, the fire shows through where it is dark. Leave: the look
+        * has nothing to say about the tower - a boot animation on the ring,
+        * the dark `none` - and does not touch its nodes, so the picture
+        * beneath stays. Set by the desk per look; a mode, not a colour,
+        * because joining is a different picture from painting, not the
+        * same picture over a different base.
+        */
+        enum class ObeliskMode
         {
-            return leaveObeliskToUnderlay && eio::nodeSpace(node) == NodeSpace::Obelisk;
-        }
+            Paint,
+            Join,
+            Leave,
+        };
+
+        ObeliskMode obeliskMode{ObeliskMode::Paint};
 
     protected:
+        /// The first line of every scanner render(): true for a node this
+        /// look leaves to the picture beneath, and the render returns at once.
+        bool leavesAlone(const HSVStripNode* node) const
+        {
+            return obeliskMode == ObeliskMode::Leave && eio::nodeSpace(node) == NodeSpace::Obelisk;
+        }
+
+        /// True for a node this look blends into rather than paints.
+        bool joins(const HSVStripNode* node) const
+        {
+            return obeliskMode == ObeliskMode::Join && eio::nodeSpace(node) == NodeSpace::Obelisk;
+        }
+
         /* @brief Where this node sits along its strip, 0..1.
         *
         * The python looks indexed a 35 pixel ring; anything that used
@@ -171,7 +196,6 @@ namespace scanner
 
         virtual void render(HSVStripNode* inNode, HSV& inOutColor) const override;
         virtual void reflect(ecore::PropertyBag& bag) override;
-        virtual void reflectCurves(eanim::CurveBag& bag) override;
     };
 
 
@@ -230,13 +254,12 @@ namespace scanner
 
         /// how much of the tower this look *claims*, on the cycle clock: 1
         /// while the pulse is fresh, easing back to 0 as the next ping comes
-        /// due. A row only counts once the pulse has reached it. So over an
-        /// underlay (the obelisk's own look, simulated on the desk - see
-        /// eanim::Underlay) the scan line climbs the tower leaving darkness
-        /// behind it, as if it took the energy out of the sculpture's own
-        /// colour, which then slowly comes back - until the next ping. When
-        /// the pings stop the tower is the sculpture's own again. Without
-        /// an underlay it changes nothing: the look is over black.
+        /// due. A row only counts once the pulse has reached it. So joining
+        /// the tower (ObeliskMode::Join, stacked over the sculpture's own
+        /// look) the scan line climbs it leaving darkness behind, as if it
+        /// took the energy out of the sculpture's own colour, which then
+        /// slowly comes back - until the next ping. When the pings stop the
+        /// tower is the sculpture's own again. Painting, it changes nothing.
         eanim::AutomationCurve wakeCurve;
 
         /// how far into a cycle a row has been claimed by, once the pulse
@@ -271,7 +294,6 @@ namespace scanner
 
         virtual void render(HSVStripNode* inNode, HSV& inOutColor) const override;
         virtual void reflect(ecore::PropertyBag& bag) override;
-        virtual void reflectCurves(eanim::CurveBag& bag) override;
 
     private:
         /// a ping has landed since entry: the cycle is the game's, and it
@@ -443,8 +465,8 @@ namespace scanner
     *   void          purple from black, the empty stone's slow breath
     *   cleanse_done  a cool breath, the rock void again
     *
-    * Over an underlay (the obelisk's own look, shadowed on the desk; see
-    * eanim::Underlay) the pulse can give the tower back by height:
+    * Joining the tower (ObeliskMode::Join, stacked over the sculpture's own
+    * look) the pulse can give the tower back by height:
     * shadowFade 1 is the pulse whole at the foot fading out to the
     * sculpture's own picture at the tip, which is record_arm's setting. 0
     * paints the whole tower, and is what the others do.
@@ -510,9 +532,9 @@ namespace scanner
     * Each count fires an AutomationCurveTrigger whose curve is one quick
     * white pulse. On the tower a row's height delays its read into it - the
     * sweep scan_idle's pulse makes - so the count leaves the foot and runs
-    * to the tip in sweepSeconds. Over an underlay (the obelisk's own look,
-    * shadowed on the desk; see eanim::Underlay) the flash is blended over
-    * it by its own brightness: between counts the tower is the sculpture's
+    * to the tip in sweepSeconds. Joining the tower (ObeliskMode::Join) the
+    * flash is blended over the sculpture's own look by its own
+    * brightness: between counts the tower is the sculpture's
     * own picture and the flash lands on top of it, as scan_idle's scan line
     * does. Without one it is the flash over black, which it always was.
     */

@@ -26,7 +26,7 @@ namespace eanim
     /* @brief Spring will help round out values and give things that bounciness that UX designers love
     *
     */
-   class LFO : public Generator1D, public Tickable
+   class LFO : public Generator1D, public Tickable, public ecore::Reflectable
    {
    public:
        LFO();
@@ -40,8 +40,8 @@ namespace eanim
 
        float getCurrentOffset() const { return currentOffset; }
 
-       /// The phase, as `<prefix>offset`. @see eanim::GeneratorHSV::reflectState
-       void reflectState(ecore::PropertyBag& bag, const std::string& prefix);
+       // Reflectable interface: the phase, as `offset`
+       virtual void reflect(ecore::PropertyBag& bag) override;
 
        float speed = 1.0f;
        float width = 1.0f;

@@ -164,6 +164,10 @@ void Pattern_Generic_MatrixRain::tick(float deltaTime)
 
 void Pattern_Generic_MatrixRain::render(HSVStripNode* inNode, HSV& inOutColor) const
 {
+    if (leavesAlone(inNode))
+    {
+        return;
+    }
     renderAt(nodeCoord(inNode), inOutColor);
 }
 
@@ -254,6 +258,7 @@ void Pattern_Generic_MatrixRain::reflectStorm(ecore::PropertyBag& bag)
 
 void Pattern_Generic_MatrixRain::reflect(ecore::PropertyBag& bag)
 {
+    PatternScanner::reflect(bag);
     reflectStorm(bag);
     bag.add("hue_spread", hueSpread, 0.0f, 1.0f);
 }
@@ -332,6 +337,10 @@ void Pattern_Generic_Fire2012::tick(float deltaTime)
 
 void Pattern_Generic_Fire2012::render(HSVStripNode* inNode, HSV& inOutColor) const
 {
+    if (leavesAlone(inNode))
+    {
+        return;
+    }
     renderAt(nodeCoord(inNode), inOutColor);
 }
 
@@ -393,6 +402,7 @@ void Pattern_Generic_Fire2012::renderAt(const Coordinate& at, HSV& inOutColor) c
 
 void Pattern_Generic_Fire2012::reflect(ecore::PropertyBag& bag)
 {
+    PatternScanner::reflect(bag);
     bag.add("cooling", cooling, 10.0f, 100.0f);
     bag.add("sparking", sparking, 0.0f, 1.0f);
     bag.add("spread", spread, 0.0f, 0.5f);
@@ -406,6 +416,10 @@ void Pattern_Generic_Fire2012::reflect(ecore::PropertyBag& bag)
 
 void Pattern_Generic_Flow::render(HSVStripNode* inNode, HSV& inOutColor) const
 {
+    if (leavesAlone(inNode))
+    {
+        return;
+    }
     // WLED's zones, on the stage's height: each band carries the palette as
     // a gradient, every other band flipped, all of them scrolling - so
     // neighbouring bands stream against each other.
@@ -424,6 +438,7 @@ void Pattern_Generic_Flow::render(HSVStripNode* inNode, HSV& inOutColor) const
 
 void Pattern_Generic_Flow::reflect(ecore::PropertyBag& bag)
 {
+    PatternScanner::reflect(bag);
     bag.add("speed", flowSpeed, 0.02f, 2.0f);
     bag.add("zones", zoneCount, 1.0f, 8.0f);
 }
@@ -434,6 +449,10 @@ void Pattern_Generic_Flow::reflect(ecore::PropertyBag& bag)
 
 void Pattern_Generic_Lake::render(HSVStripNode* inNode, HSV& inOutColor) const
 {
+    if (leavesAlone(inNode))
+    {
+        return;
+    }
     const Coordinate at = nodeCoord(inNode);
 
     // two waves at different scales, drifting against each other. Diagonal
@@ -461,6 +480,7 @@ void Pattern_Generic_Lake::render(HSVStripNode* inNode, HSV& inOutColor) const
 
 void Pattern_Generic_Lake::reflect(ecore::PropertyBag& bag)
 {
+    PatternScanner::reflect(bag);
     bag.add("speed", waveSpeed, 0.1f, 3.0f);
 }
 
@@ -470,6 +490,10 @@ void Pattern_Generic_Lake::reflect(ecore::PropertyBag& bag)
 
 void Pattern_Generic_Pacifica::render(HSVStripNode* inNode, HSV& inOutColor) const
 {
+    if (leavesAlone(inNode))
+    {
+        return;
+    }
     const Coordinate at = nodeCoord(inNode);
 
     // Four layers of swell, each its own spatial scale, speed and direction
@@ -507,6 +531,7 @@ void Pattern_Generic_Pacifica::render(HSVStripNode* inNode, HSV& inOutColor) con
 
 void Pattern_Generic_Pacifica::reflect(ecore::PropertyBag& bag)
 {
+    PatternScanner::reflect(bag);
     bag.add("speed", waveSpeed, 0.1f, 3.0f);
     bag.add("caps", capLevel, 0.4f, 1.0f);
 }
@@ -517,6 +542,10 @@ void Pattern_Generic_Pacifica::reflect(ecore::PropertyBag& bag)
 
 void Pattern_Generic_Phased::render(HSVStripNode* inNode, HSV& inOutColor) const
 {
+    if (leavesAlone(inNode))
+    {
+        return;
+    }
     const Coordinate at = nodeCoord(inNode);
 
     // the breathing: the spatial frequency itself rides a slower sine, so
@@ -537,6 +566,7 @@ void Pattern_Generic_Phased::render(HSVStripNode* inNode, HSV& inOutColor) const
 
 void Pattern_Generic_Phased::reflect(ecore::PropertyBag& bag)
 {
+    PatternScanner::reflect(bag);
     bag.add("speed", waveSpeed, 0.1f, 3.0f);
     bag.add("density", density, 0.1f, 2.0f);
     bag.add("color", waveColor);
@@ -548,6 +578,10 @@ void Pattern_Generic_Phased::reflect(ecore::PropertyBag& bag)
 
 void Pattern_Generic_Saw::render(HSVStripNode* inNode, HSV& inOutColor) const
 {
+    if (leavesAlone(inNode))
+    {
+        return;
+    }
     const float ramp = frac(stageAlpha(inNode) * std::max(teeth, 0.1f)
         - timeActive * sawSpeed);
 
@@ -557,6 +591,7 @@ void Pattern_Generic_Saw::render(HSVStripNode* inNode, HSV& inOutColor) const
 
 void Pattern_Generic_Saw::reflect(ecore::PropertyBag& bag)
 {
+    PatternScanner::reflect(bag);
     bag.add("speed", sawSpeed, 0.05f, 3.0f);
     bag.add("teeth", teeth, 0.5f, 8.0f);
     bag.add("color", sawColor);
@@ -568,6 +603,10 @@ void Pattern_Generic_Saw::reflect(ecore::PropertyBag& bag)
 
 void Pattern_Generic_SpotsFade::render(HSVStripNode* inNode, HSV& inOutColor) const
 {
+    if (leavesAlone(inNode))
+    {
+        return;
+    }
     const Coordinate at = nodeCoord(inNode);
 
     float brightness = 0.0f;
@@ -617,6 +656,7 @@ void Pattern_Generic_SpotsFade::render(HSVStripNode* inNode, HSV& inOutColor) co
 
 void Pattern_Generic_SpotsFade::reflect(ecore::PropertyBag& bag)
 {
+    PatternScanner::reflect(bag);
     bag.add("spots", spotCount, 1.0f, 16.0f);
     bag.add("radius", radius, 1.0f, 12.0f);
     bag.add("fade", fadeSeconds, 0.5f, 10.0f);
@@ -629,6 +669,10 @@ void Pattern_Generic_SpotsFade::reflect(ecore::PropertyBag& bag)
 
 void Pattern_Generic_TwinkleUp::render(HSVStripNode* inNode, HSV& inOutColor) const
 {
+    if (leavesAlone(inNode))
+    {
+        return;
+    }
     const Coordinate at = nodeCoord(inNode);
 
     // a star per half-unit patch of the stage: identity comes from where
@@ -661,6 +705,7 @@ void Pattern_Generic_TwinkleUp::render(HSVStripNode* inNode, HSV& inOutColor) co
 
 void Pattern_Generic_TwinkleUp::reflect(ecore::PropertyBag& bag)
 {
+    PatternScanner::reflect(bag);
     bag.add("speed", twinkleSpeed, 0.1f, 4.0f);
     bag.add("density", density, 0.05f, 1.0f);
     bag.add("color", starColor);
@@ -672,6 +717,10 @@ void Pattern_Generic_TwinkleUp::reflect(ecore::PropertyBag& bag)
 
 void Pattern_Generic_Waterfall::render(HSVStripNode* inNode, HSV& inOutColor) const
 {
+    if (leavesAlone(inNode))
+    {
+        return;
+    }
     const Coordinate at = nodeCoord(inNode);
 
     // two octaves of value noise scrolled downward: the sheets. Sampling at
@@ -692,6 +741,7 @@ void Pattern_Generic_Waterfall::render(HSVStripNode* inNode, HSV& inOutColor) co
 
 void Pattern_Generic_Waterfall::reflect(ecore::PropertyBag& bag)
 {
+    PatternScanner::reflect(bag);
     bag.add("speed", fallSpeed, 2.0f, 30.0f);
     bag.add("color", waterColor);
 }
@@ -702,6 +752,10 @@ void Pattern_Generic_Waterfall::reflect(ecore::PropertyBag& bag)
 
 void Pattern_Generic_ColorClouds::render(HSVStripNode* inNode, HSV& inOutColor) const
 {
+    if (leavesAlone(inNode))
+    {
+        return;
+    }
     const Coordinate at = nodeCoord(inNode);
 
     const float t = timeActive * 0.08f * driftSpeed;
@@ -726,6 +780,7 @@ void Pattern_Generic_ColorClouds::render(HSVStripNode* inNode, HSV& inOutColor) 
 
 void Pattern_Generic_ColorClouds::reflect(ecore::PropertyBag& bag)
 {
+    PatternScanner::reflect(bag);
     bag.add("speed", driftSpeed, 0.1f, 4.0f);
     bag.add("scale", cloudScale, 0.3f, 3.0f);
 }
@@ -736,6 +791,10 @@ void Pattern_Generic_ColorClouds::reflect(ecore::PropertyBag& bag)
 
 void Pattern_Generic_Rainbow::render(HSVStripNode* inNode, HSV& inOutColor) const
 {
+    if (leavesAlone(inNode))
+    {
+        return;
+    }
     const float hueAlpha = frac(stageAlpha(inNode) * wheelCount
         + timeActive * wheelSpeed);
 
@@ -744,6 +803,7 @@ void Pattern_Generic_Rainbow::render(HSVStripNode* inNode, HSV& inOutColor) cons
 
 void Pattern_Generic_Rainbow::reflect(ecore::PropertyBag& bag)
 {
+    PatternScanner::reflect(bag);
     bag.add("speed", wheelSpeed, 0.02f, 1.0f);
     bag.add("wheels", wheelCount, 0.25f, 4.0f);
 }
@@ -754,6 +814,10 @@ void Pattern_Generic_Rainbow::reflect(ecore::PropertyBag& bag)
 
 void Pattern_Generic_Chase::render(HSVStripNode* inNode, HSV& inOutColor) const
 {
+    if (leavesAlone(inNode))
+    {
+        return;
+    }
     const float head = frac(timeActive * lapSpeed);
 
     // how far below the head this node sits, wrapped over the stage
@@ -768,6 +832,7 @@ void Pattern_Generic_Chase::render(HSVStripNode* inNode, HSV& inOutColor) const
 
 void Pattern_Generic_Chase::reflect(ecore::PropertyBag& bag)
 {
+    PatternScanner::reflect(bag);
     bag.add("speed", lapSpeed, 0.05f, 3.0f);
     bag.add("tail", tailFraction, 0.05f, 1.0f);
     bag.add("color", chaseColor);

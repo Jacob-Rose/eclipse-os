@@ -56,6 +56,10 @@ float PatternScanner::stageAlpha(const HSVStripNode* node)
 
 void Pattern_Scanner_PowerUp::render(HSVStripNode* inNode, HSV& inOutColor) const
 {
+    if (leavesAlone(inNode))
+    {
+        return;
+    }
     // Every pixel gets a fixed slot in 0..1; it stays dark until boot progress
     // passes its slot, then holds green at that brightness - the python's
     // pixel_cache, made deterministic.
@@ -74,6 +78,7 @@ void Pattern_Scanner_PowerUp::render(HSVStripNode* inNode, HSV& inOutColor) cons
 
 void Pattern_Scanner_PowerUp::reflect(ecore::PropertyBag& bag)
 {
+    PatternScanner::reflect(bag);
     bag.add("boot_time", bootTime, 0.5f, 10.0f);
 }
 
@@ -105,6 +110,10 @@ Pattern_Scanner_Boot::Pattern_Scanner_Boot()
 
 void Pattern_Scanner_Boot::render(HSVStripNode* inNode, HSV& inOutColor) const
 {
+    if (leavesAlone(inNode))
+    {
+        return;
+    }
     (void)inNode;
 
     const float bootAlpha = clamp01(timeActive / bootTime);
@@ -120,16 +129,13 @@ void Pattern_Scanner_Boot::render(HSVStripNode* inNode, HSV& inOutColor) const
 
 void Pattern_Scanner_Boot::reflect(ecore::PropertyBag& bag)
 {
+    PatternScanner::reflect(bag);
     // Two independent handles on the one swell: how long it takes, and how
     // hard the noise chews on it. Each is a curve target on its own.
     bag.add("boot_time", bootTime, 1.0f, 15.0f);
     bag.add("noise", noiseGain, 0.0f, 2.0f);
-}
-
-void Pattern_Scanner_Boot::reflectCurves(eanim::CurveBag& bag)
-{
     bag.add("brightness", brightnessCurve);
-    bag.add("noise", noiseCurve);
+    bag.add("noise_curve", noiseCurve);
 }
 
 Pattern_Scanner_ScanIdle::Pattern_Scanner_ScanIdle()
@@ -182,6 +188,11 @@ bool Pattern_Scanner_ScanIdle::onTrigger(const GameplayTag& tag)
 
 void Pattern_Scanner_ScanIdle::render(HSVStripNode* inNode, HSV& inOutColor) const
 {
+    if (leavesAlone(inNode))
+    {
+        return;
+    }
+    const HSV beneath = inOutColor; // the picture this look joins, see ObeliskMode
     // One clock for the whole look, counted in breath cycles: the ring rides
     // the front of it and everything else is a delay behind it. Once a ping
     // has cued it the cycle stops just short of wrapping - dark, the pulse
@@ -220,7 +231,7 @@ void Pattern_Scanner_ScanIdle::render(HSVStripNode* inNode, HSV& inOutColor) con
         const float delay = spaced->v * riseCycles;
         brightness = std::max(floorLevel * breath, pulseCurve.evaluate(sinceFlash - delay));
 
-        // Over an underlay the scan takes energy from the tower: the line
+        // Joining the tower, the scan takes energy from it: the line
         // itself is the bright band, and where it has passed the row goes
         // dark - no idle floor here, that is the tower's own colour's job -
         // then the claim eases off (wake curve) and the sculpture's own
@@ -228,8 +239,7 @@ void Pattern_Scanner_ScanIdle::render(HSVStripNode* inNode, HSV& inOutColor) con
         // `arrived` is the band reaching this row (0 before, 1 wakeRise
         // cycles after); the product with the wake is how much of the row
         // is ours, blended in the colour space the looks cross-fade in.
-        HSV under;
-        if (underlay != nullptr && underlay->sample(inNode, under))
+        if (joins(inNode))
         {
             // Nothing until a ping has actually landed: before the first cue
             // the clock free-runs and the pulse climbs on its own, and a
@@ -240,7 +250,7 @@ void Pattern_Scanner_ScanIdle::render(HSVStripNode* inNode, HSV& inOutColor) con
 
             HSV look = scanColor;
             look.setBrightnessAlpha(scanColor.getValFloat() * pulseCurve.evaluate(sinceFlash - delay));
-            inOutColor = HSV::blend(under, look, claim);
+            inOutColor = HSV::blend(beneath, look, claim);
             return;
         }
     }
@@ -265,6 +275,7 @@ void Pattern_Scanner_ScanIdle::render(HSVStripNode* inNode, HSV& inOutColor) con
 
 void Pattern_Scanner_ScanIdle::reflect(ecore::PropertyBag& bag)
 {
+    PatternScanner::reflect(bag);
     bag.add("cycle_time", cycleTime, 0.5f, 8.0f);
     bag.add("flash_phase", flashPhase, 0.0f, 1.0f);
     bag.add("rise", riseCycles, 0.05f, 1.0f);
@@ -273,10 +284,6 @@ void Pattern_Scanner_ScanIdle::reflect(ecore::PropertyBag& bag)
     bag.add("sweep_rate", sweepRate, 0.0f, 3.0f);
     bag.add("sweep_width", sweepWidth, 0.05f, 1.0f);
     bag.add("floor", floorLevel, 0.0f, 1.0f);
-}
-
-void Pattern_Scanner_ScanIdle::reflectCurves(eanim::CurveBag& bag)
-{
     bag.add("breath", breathCurve);
     bag.add("pulse", pulseCurve);
     bag.add("wake", wakeCurve);
@@ -284,6 +291,10 @@ void Pattern_Scanner_ScanIdle::reflectCurves(eanim::CurveBag& bag)
 
 void Pattern_Scanner_Emergency::render(HSVStripNode* inNode, HSV& inOutColor) const
 {
+    if (leavesAlone(inNode))
+    {
+        return;
+    }
     (void)inNode;
 
     // sin goes negative half the time; the python fed that to fancy.mix which
@@ -295,11 +306,16 @@ void Pattern_Scanner_Emergency::render(HSVStripNode* inNode, HSV& inOutColor) co
 
 void Pattern_Scanner_Emergency::reflect(ecore::PropertyBag& bag)
 {
+    PatternScanner::reflect(bag);
     bag.add("throb_rate", throbRate, 0.2f, 8.0f);
 }
 
 void Pattern_Scanner_DetectedWave::render(HSVStripNode* inNode, HSV& inOutColor) const
 {
+    if (leavesAlone(inNode))
+    {
+        return;
+    }
     // mix(waveColor, black, sin(y - t * 3)) - the negative half of the sine
     // pins to full color, so the wave is wide crests of color with narrow
     // dark troughs. The sign on time makes them rise: y - 3t crests move
@@ -313,6 +329,7 @@ void Pattern_Scanner_DetectedWave::render(HSVStripNode* inNode, HSV& inOutColor)
 
 void Pattern_Scanner_DetectedWave::reflect(ecore::PropertyBag& bag)
 {
+    PatternScanner::reflect(bag);
     // The wave's two dimensions, deliberately uncoupled: wave_scale is how
     // tight the crests pack on the stage, rise_speed how fast they climb it.
     bag.add("wave_scale", radiansPerUnit, 0.1f, 4.0f);
@@ -321,6 +338,10 @@ void Pattern_Scanner_DetectedWave::reflect(ecore::PropertyBag& bag)
 
 void Pattern_Scanner_DetectedShimmer::render(HSVStripNode* inNode, HSV& inOutColor) const
 {
+    if (leavesAlone(inNode))
+    {
+        return;
+    }
     (void)inNode;
 
     // rgb(x, x, x + 20) out of 255, x swinging 0..51.
@@ -331,11 +352,16 @@ void Pattern_Scanner_DetectedShimmer::render(HSVStripNode* inNode, HSV& inOutCol
 
 void Pattern_Scanner_DetectedShimmer::reflect(ecore::PropertyBag& bag)
 {
+    PatternScanner::reflect(bag);
     bag.add("shimmer_rate", shimmerRate, 0.5f, 12.0f);
 }
 
 void Pattern_Scanner_DetectedMushroom::render(HSVStripNode* inNode, HSV& inOutColor) const
 {
+    if (leavesAlone(inNode))
+    {
+        return;
+    }
     (void)inNode;
 
     const float blendAlpha = std::fmod(timeActive * blendRate, 1.0f);
@@ -345,11 +371,16 @@ void Pattern_Scanner_DetectedMushroom::render(HSVStripNode* inNode, HSV& inOutCo
 
 void Pattern_Scanner_DetectedMushroom::reflect(ecore::PropertyBag& bag)
 {
+    PatternScanner::reflect(bag);
     bag.add("blend_rate", blendRate, 0.1f, 8.0f);
 }
 
 void Pattern_Scanner_DetectedMushroomNew::render(HSVStripNode* inNode, HSV& inOutColor) const
 {
+    if (leavesAlone(inNode))
+    {
+        return;
+    }
     (void)inNode;
 
     const float hueAlpha = std::fmod(timeActive * hueRate, 1.0f);
@@ -360,11 +391,16 @@ void Pattern_Scanner_DetectedMushroomNew::render(HSVStripNode* inNode, HSV& inOu
 
 void Pattern_Scanner_DetectedMushroomNew::reflect(ecore::PropertyBag& bag)
 {
+    PatternScanner::reflect(bag);
     bag.add("hue_rate", hueRate, 0.05f, 2.0f);
 }
 
 void Pattern_Scanner_SuccessMushroom::render(HSVStripNode* inNode, HSV& inOutColor) const
 {
+    if (leavesAlone(inNode))
+    {
+        return;
+    }
     // the ripple's phase is the node's place on the stage, not its place in
     // the wiring: x + y runs the ripple diagonally across the obelisk's face
     // and around the ring's circle below
@@ -382,12 +418,17 @@ void Pattern_Scanner_SuccessMushroom::render(HSVStripNode* inNode, HSV& inOutCol
 
 void Pattern_Scanner_SuccessMushroom::reflect(ecore::PropertyBag& bag)
 {
+    PatternScanner::reflect(bag);
     bag.add("drift_rate", driftRate, 0.1f, 4.0f);
     bag.add("ripple", rippleScale, 0.0f, 4.0f);
 }
 
 void Pattern_Scanner_PlaybackMushroom::render(HSVStripNode* inNode, HSV& inOutColor) const
 {
+    if (leavesAlone(inNode))
+    {
+        return;
+    }
     // the wheel spans the stage's height - ring at one end, obelisk top at
     // the other - so both rigs are slices of the one rainbow
     const float timeSinAlpha = std::fmod((std::sin(timeActive * rockRate) + 1.0f) * 0.5f, 1.0f);
@@ -398,11 +439,16 @@ void Pattern_Scanner_PlaybackMushroom::render(HSVStripNode* inNode, HSV& inOutCo
 
 void Pattern_Scanner_PlaybackMushroom::reflect(ecore::PropertyBag& bag)
 {
+    PatternScanner::reflect(bag);
     bag.add("rock_rate", rockRate, 0.1f, 4.0f);
 }
 
 void Pattern_Scanner_PlaybackGeneric::render(HSVStripNode* inNode, HSV& inOutColor) const
 {
+    if (leavesAlone(inNode))
+    {
+        return;
+    }
     const float rampAlpha = std::fmod(timeActive * scrollRate + stripAlpha(inNode), 1.0f);
 
     inOutColor = rampPalette.getColor(rampAlpha);
@@ -410,11 +456,17 @@ void Pattern_Scanner_PlaybackGeneric::render(HSVStripNode* inNode, HSV& inOutCol
 
 void Pattern_Scanner_PlaybackGeneric::reflect(ecore::PropertyBag& bag)
 {
+    PatternScanner::reflect(bag);
     bag.add("scroll_rate", scrollRate, 0.1f, 4.0f);
 }
 
 void Pattern_Scanner_SinePulse::render(HSVStripNode* inNode, HSV& inOutColor) const
 {
+    if (leavesAlone(inNode))
+    {
+        return;
+    }
+    const HSV beneath = inOutColor; // the picture this look joins, see ObeliskMode
     const float pulse = (std::sin(timeActive * rate) + 1.0f) * 0.5f;
 
     inOutColor = color;
@@ -427,11 +479,10 @@ void Pattern_Scanner_SinePulse::render(HSVStripNode* inNode, HSV& inOutColor) co
         const HSVStripNode_Space* spaced = eio::spaceOf(inNode);
         if (spaced != nullptr && spaced->space == NodeSpace::Obelisk)
         {
-            HSV under;
-            if (underlay != nullptr && underlay->sample(inNode, under))
+            if (joins(inNode))
             {
                 const float claim = 1.0f - clamp01(spaced->v * shadowFade);
-                inOutColor = HSV::blend(under, inOutColor, claim);
+                inOutColor = HSV::blend(beneath, inOutColor, claim);
             }
         }
     }
@@ -439,6 +490,7 @@ void Pattern_Scanner_SinePulse::render(HSVStripNode* inNode, HSV& inOutColor) co
 
 void Pattern_Scanner_SinePulse::reflect(ecore::PropertyBag& bag)
 {
+    PatternScanner::reflect(bag);
     // The breath's independent handles - the states that share this class
     // (record_arm, record_saved, void, cleanse_done) differ only in these
     // numbers and the colour, so the knobs *are* the state's identity,
@@ -451,6 +503,10 @@ void Pattern_Scanner_SinePulse::reflect(ecore::PropertyBag& bag)
 
 void Pattern_Scanner_RecordComet::render(HSVStripNode* inNode, HSV& inOutColor) const
 {
+    if (leavesAlone(inNode))
+    {
+        return;
+    }
     const float headAlpha = std::fmod(timeActive * revsPerSecond, 1.0f);
     const Coordinate at = nodeCoord(inNode);
 
@@ -491,6 +547,7 @@ void Pattern_Scanner_RecordComet::render(HSVStripNode* inNode, HSV& inOutColor) 
 
 void Pattern_Scanner_RecordComet::reflect(ecore::PropertyBag& bag)
 {
+    PatternScanner::reflect(bag);
     bag.add("orbit_rate", revsPerSecond, 0.05f, 2.0f);
     bag.add("tail", tailFraction, 0.02f, 1.0f);
 }
@@ -545,6 +602,11 @@ float Pattern_Scanner_RecordCountdown::ringAlpha(const HSVStripNode* node)
 
 void Pattern_Scanner_RecordCountdown::render(HSVStripNode* inNode, HSV& inOutColor) const
 {
+    if (leavesAlone(inNode))
+    {
+        return;
+    }
+    const HSV beneath = inOutColor; // the picture this look joins, see ObeliskMode
     // the ring, and a bare strip standing in for it: the fill. The stage's
     // objects - the tower, the truss - get the flash below.
     const HSVStripNode_Space* spaced = eio::spaceOf(inNode);
@@ -574,10 +636,9 @@ void Pattern_Scanner_RecordCountdown::render(HSVStripNode* inNode, HSV& inOutCol
 
     // over the sculpture's own picture where there is one, by the flash's
     // own brightness: none of it between counts, all of it at the peak
-    HSV under;
-    if (underlay != nullptr && underlay->sample(inNode, under))
+    if (joins(inNode))
     {
-        inOutColor = HSV::blend(under, HSV(0.0f, 0.0f, 1.0f), flash);
+        inOutColor = HSV::blend(beneath, HSV(0.0f, 0.0f, 1.0f), flash);
         return;
     }
 
@@ -586,6 +647,7 @@ void Pattern_Scanner_RecordCountdown::render(HSVStripNode* inNode, HSV& inOutCol
 
 void Pattern_Scanner_RecordCountdown::reflect(ecore::PropertyBag& bag)
 {
+    PatternScanner::reflect(bag);
     // the shapes, not the count: its timing belongs to the game - see the
     // header on secondsPerCount
     bag.add("sweep", sweepSeconds, 0.0f, 1.0f);
@@ -595,6 +657,10 @@ void Pattern_Scanner_RecordCountdown::reflect(ecore::PropertyBag& bag)
 
 void Pattern_Scanner_Solid::render(HSVStripNode* inNode, HSV& inOutColor) const
 {
+    if (leavesAlone(inNode))
+    {
+        return;
+    }
     (void)inNode;
 
     inOutColor = color;

@@ -11,6 +11,7 @@
 #include "../../lib/eanim/lfo.h"
 #include "../../lib/eanim/noise.h"
 #include "../../lib/ecore/hsv.h"
+#include "../../lib/ecore/property.h"
 #include "../../lib/eanim/generator_hsv.h"
 
 #include "../../kits/effects.h"
@@ -63,7 +64,7 @@ public:
 
     virtual void tick(float deltaTime) override;
     virtual void render(HSVStripNode* inNode, HSV& inOutColor) const override;
-    virtual void reflectState(ecore::PropertyBag& bag) override;
+    virtual void reflect(ecore::PropertyBag& bag) override;
 };
 
 
@@ -105,10 +106,9 @@ public:
     virtual void tick(float deltaTime) override;
     virtual void render(HSVStripNode* inNode, HSV& inOutColor) const override;
     virtual void reflect(ecore::PropertyBag& bag) override;
-    virtual void reflectState(ecore::PropertyBag& bag) override;
 };
 
-class Pattern_Obelisk_Theater : public GeneratorHSV 
+class Pattern_Obelisk_Theater : public GeneratorHSV
 {
 public:
     LFO lfo;
@@ -121,5 +121,5 @@ public:
 
     virtual void tick(float deltaTIme) override;
     virtual void render(HSVStripNode* inNode, HSV& inOutColor) const override;
-    virtual void reflectState(ecore::PropertyBag& bag) override;
+    virtual void reflect(ecore::PropertyBag& bag) override;
 };
