@@ -38,6 +38,13 @@ bool WiFiManager::connect(int maxAttempts)
     dbgLog("Connecting to WiFi...", Verbosity::Display, Category::IO);
 
     WiFi.mode(WIFI_STA);
+
+    // The radio's power save naps between beacons and drops what arrives
+    // while it is asleep; on a Pico W that is an MQTT command taking fifteen
+    // seconds of TCP retransmits to land, one time in three. A sculpture on
+    // mains has no battery to save. Before begin(), which is where the
+    // driver reads it.
+    WiFi.noLowPowerMode();
     WiFi.begin(ssid, password);
     
     int attempts = 0;

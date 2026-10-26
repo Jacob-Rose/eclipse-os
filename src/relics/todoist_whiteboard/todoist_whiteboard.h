@@ -10,6 +10,7 @@
 #include "../../lib/esm/state.h"
 #include "../../lib/esm/state_generic.h"
 #include "../../lib/eio/relic.h"
+#include "../wiring.h"
 #include "../../lib/emqtt/mqtt_client.h"
 #include "../../lib/emqtt/mqtt_handler.h"
 #include "../../lib/emqtt/ha_discovery.h"
@@ -35,9 +36,6 @@ namespace todoist_whiteboard
     public:
         WhiteboardIO();
         virtual void init() override;
-
-        uint16_t stripLEDPin = 13;
-        uint16_t stripLength = 60;
     };
 
     class WhiteboardCore : public RelicCore
@@ -55,7 +53,9 @@ namespace todoist_whiteboard
 
     private:
         void setupMQTT();
+        void subscribeTopics();
         void publishDiscovery();
+        const char* patternName() const;
         void onPatternCommand(const std::string& payload);
         void onBrightnessCommand(const std::string& payload);
         void onPowerCommand(const std::string& payload);
@@ -80,5 +80,6 @@ namespace todoist_whiteboard
         bool bPowerOn;
         bool bDiscoveryPublished;
         bool bHasHAConfig;
+        bool bWasConnected{false};
     };
 }

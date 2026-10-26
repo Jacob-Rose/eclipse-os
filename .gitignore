@@ -7,5 +7,16 @@ build
 secrets.h
 
 opencodetmp/*
+
+# firmware build (tools/build-firmware.sh)
+build-firmware/
+
+# desktop build
+desktop/tools/toolchain.env
+desktop/tools/toolchain.env.ps1
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
 # host library tests (tests/run.sh)
 build-tests/

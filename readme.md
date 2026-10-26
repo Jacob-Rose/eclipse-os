@@ -52,6 +52,12 @@ simple wrapper layers for:
 ### esm
 a simple generic state machine. additional layer for hsv blending between states.
 
+### elink
+the wire between a desktop and a relic. one frame format, compiled into both
+ends, so a laptop can stream a relic's pixels for a show or just name the look
+it should run - and the relic takes its own pixels back the moment the stream
+stops. see [desktop/readme.md](desktop/readme.md#over-usb).
+
 ### ewifi (experimental)
 easy to understand wifi manager. easy way to hide secrets.
 
@@ -106,19 +112,85 @@ You need the [arduino-cli](https://arduino.github.io/arduino-cli/), the RP2040 c
 
    (Adafruit GFX + BusIO come along as dependencies.)
 
-3. Create your secrets file from the template (compile fails without it):
+3. Create your secrets file from the template — only needed for a relic that
+   talks to Home Assistant (see **Which relic** below); the obelisk builds
+   without one:
 
    ```sh
    cp secrets.h.example secrets.h
    ```
 
-4. Apply the library patches below (see **Library Patches**) — currently still required.
+4. Apply the remaining library patch (see **Library Patches**):
+
+   ```sh
+   tools/patch-libraries.sh
+   ```
+
+#### Which relic
+
+A board is flashed for exactly one sculpture, and the build scripts say which:
+
+```sh
+./upload.sh whiteboard deploy    # the string lights on the wall, for a month
+./upload.sh                      # the obelisk, dev - the same as no words ever meant
+```
+
+The words (`obelisk`/`whiteboard`, `deploy`/`dev`, `-p PORT`) are the same for
+`compile.sh`, `upload.sh`, `monitor.sh` and `tools/build-firmware.sh`, in any
+order - `./compile.sh --help` lists them. They become `-D`s on the whole build
+(`tools/firmware-env.sh`), and the `#define`s at the top of `eclipse-os.ino`
+are only the defaults behind them. Everything else follows from the relic: the
+obelisk has no network and needs no `secrets.h`; the whiteboard cannot work
+without both, and the scripts say so before the compiler does.
+
+Where a sculpture's pixels are plugged in - pin, length, colour order - is one
+line per relic in `src/relics/wiring.h`, and nowhere else. The scripts print
+that line before every build (`wiring: GP5 x 300, NEO_BGR + NEO_KHZ800`) and a
+dev build prints it in its boot banner, because a board built for the wrong
+strip is a dark strip with nothing in the log.
+
+**After every flash of a relic that talks to Home Assistant, run
+`tools/check-ha.py`.** It does from your machine what HA does: logs into the
+broker with `secrets.h`, reads the device's discovery configs, drives every
+command they advertise and expects the relic to echo the state back. `HA
+CHECK PASS` means HA can see *and reach* it; anything less names the broken
+thing. `--tidy` clears discovery left behind by an older build of the same
+board (a renamed device id), which otherwise makes HA reject the new one as a
+duplicate. Neither failure shows up in the serial monitor, which is why this
+exists: the light entity was unreachable for months while its Mode select
+worked, and nothing said so.
+
+```sh
+./upload.sh whiteboard deploy && tools/check-ha.py
+```
+
+`deploy` is `DEPLOYMENT 1` - the tighter loop - and, new, `DEBUG_LOGGING_ENABLED
+0` for the library too. The sketch's own define never reached `src/lib`, so a
+deploy build used to log from everything but the sketch.
+
+`USE_RELIC_LINK`, just below it, is the desk's cable — see
+[desktop/readme.md](desktop/readme.md#over-usb). Leave it on: a laptop can then
+take the sculpture's pixels for a show and hand them back, and typing commands
+into a serial monitor still works exactly as before. It is deliberately not
+gated on `DEPLOYMENT`, unlike the raw serial input it replaced.
 
 #### Build / upload / monitor
 
-1. compile.sh -> compile for raspberry pico w (use as reference, easy to change per chipset)
-2. upload.sh -> upload compiled project to first found device
-3. monitor.sh -> view serial out of first found device
+1. `tools/build-firmware.sh` -> compile and leave a `.uf2` in `build-firmware/`,
+   named for what it is: `eclipse-os.whiteboard.deploy.uf2`
+2. compile.sh -> compile for raspberry pico w (use as reference, easy to change per chipset)
+3. upload.sh -> compile *and* upload to the first found device (or `-p PORT`). One
+   step, because a bare `arduino-cli upload` sends whatever the build cache last
+   held, which may be the other sculpture
+4. monitor.sh -> view serial out of first found device
+
+To get the `.uf2` onto the board, either drop it on the `RPI-RP2` drive, or -
+if the board is already running a build with the link in it - put it into its
+bootloader from the desk without touching the BOOTSEL button:
+
+```sh
+desktop/build/eclipse-dmx --reboot-bootsel
+```
 
 ### Windows
 
@@ -131,22 +203,37 @@ I would recommend just running this in WSL for these tools.
    >  [Arduino-Pico GitHub w/ Install Instructions](https://github.com/earlephilhower/arduino-pico) 
 3. Get Adafruit GC9A01 and AnimatedGif libraries in Arduino IDE
    > Can be downloaded + auto-setup in Arduino IDE Library Manager
-4. Apply the patches in **Library Patches** below.
+4. Apply the remaining patch in **Library Patches** below.
 
 ## Library Patches (IMPORTANT)
 
-These are hand-edits to installed core/library files (not in this repo, so they don't survive a core/lib reinstall). They're still required as of the versions noted in the setup above — try without them first in case upstream has fixed it.
+One patch left, and it is scripted now:
 
-- **SPI** (`rp2040` core, `.../libraries/SPI/src/`) — `byte` collides with `std::byte` once the project drags `using namespace std;` into scope:
-   - `SPI.h` line ~50: change `byte transfer(uint8_t data)` to `uint8_t transfer(uint8_t data)`
-   - `SPIHelper.h` line 6: add `#pragma once`
-- **AnimatedGIF** (`.../libraries/AnimatedGIF/src/AnimatedGIF.h`) — the current arduino-pico core defines `PICO_BUILD`, so the header skips its `#include <Arduino.h>` while `AnimatedGIF.cpp` still calls `millis()`/`delay()` (`'millis' was not declared in this scope`). Force the include back in by adding, right after the `#else / #include <Arduino.h> / #endif` block near the top:
+```sh
+tools/patch-libraries.sh
+```
 
-   ```cpp
-   #if defined( ARDUINO )
-   #include <Arduino.h>
-   #endif
-   ```
+It is idempotent, keeps a `.bak` beside anything it edits, and tells you which
+patches were already unnecessary — so you find out when upstream has fixed one
+instead of carrying it forever. It still has to be re-run after a library
+reinstall, because these are edits to files outside this repo.
+
+- **AnimatedGIF** (`.../libraries/AnimatedGIF/src/AnimatedGIF.h`) — the core
+  defines `PICO_BUILD`, so the header takes a non-Arduino branch and skips
+  `#include <Arduino.h>` while `AnimatedGIF.cpp` goes on calling `millis()` and
+  `delay()`. Symptom: `'millis' was not declared in this scope`. Still needed as
+  of AnimatedGIF 2.2.0.
+
+**The SPI patches are gone**, and it is worth knowing why rather than just
+deleting them. They existed because `eio/relic.h` did `using namespace std;` at
+global scope, which put `std::byte` in scope for every translation unit that
+included it — and then Arduino's own `byte` was ambiguous, with the error
+appearing deep inside `SPI.h` where nothing looked wrong.
+
+That got much worse with core 6.0.0, which builds at **`-std=gnu++23`**: `std`
+now also has `lerp`, and `makeWord` in `Common.h` broke the same way. Patching a
+C++23 core's headers is a losing game, so the headers here no longer open `std`
+at all. See the note in `src/lib/ecore/name.h`.
 
 ### Raspberry Pico / This software Programming Tips
 

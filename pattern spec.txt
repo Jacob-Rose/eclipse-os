@@ -1,0 +1,159 @@
+16 patterns, config is mythos-show.json.
+each state triggers its synesthesia scene (and media) as well.
+optional / additive layers for bpm flashes and uv (or any others) have a gui hookup, easy to customize per usage.
+
+each pattern has a "mode" button instead of low / medium / high intensity. one button, cycles 1 -> 2 -> 3 -> 1.
+mode 1 is the pattern as written, 2 and 3 are that pattern's own variations. hitting the cue again is mode 1.
+a pattern can have a mode 4 (e-churn and e-nova do: three palettes and a rainbow), the button cycles round however many it has.
+four more buttons beside it name a mode outright (1 2 3 4) - the palette buttons. on a three-mode pattern, 4 does what 3 does.
+numbers here are the pad numbers on the surface. colours are hue / sat / val unless written as rgb.
+
+the probe: the synesthesia scenes that take the rig's colour (e-churn, e-nova) get the pattern's palette colour A, not a sampled point.
+a second colour (colour B) goes to the scene from the cue table, one per palette.
+
+1. neuron
+pattern - simple blue green noise matching the cyan to dark blue in the scene. good.
+palette - cyan (170 / 0.90 / 1.00) into deep blue (232 / 1.00 / 0.40), drifting, not following the music.
+mode 2 - same field slowed and widened (speed 0.35, scale 1.6)
+mode 3 - quick and busy (speed 2.5, scale 0.7)
+synesthesia - Neuron Proximitors
+media - none
+
+2. geode
+pattern - one parameter reacts to the music, with optional bpm flash on midi.
+param - (mixxx vu instant, note 64 - the meter that peaks on every kick, the cable's bass; "Enable VU mono current" in the mapping's settings) -> red background layer (clamp to 0.2 alpha lowest)
+palette - red (0 / 1.00 / 1.00) riding mixxx's vu, floor 0.2
+additional layer - bpm matched flash with curve and bpm trigger system, ability to set color. flash layer off by default; the pad is there.
+mode 2 - the scene shifts to blue sometimes, so this goes blue: blue (228 / 1.00 / 1.00) on the same vu, floor 0.3, grained (texture 0.7), a paler blue (200 / 0.55 / 1.00) landing on the kick
+mode 3 - red with blue (225 / 1.00 / 1.00) on the kick
+uv - off
+synesthesia - Voronoi Geode
+media - none
+
+3. rain
+pattern - matrix rain effect, multicolored rain. no noise on the trails.
+mode 2 - video on (alien-message.mp4)
+mode 3 - green, downpour (one hue, 80 drops, fall speed 18) - the colour glides in over a second rather than cutting
+mode 4 - the same downpour gone white
+uv - cycle pattern between rgb rainbow so its fluctuating but always on
+par lights read horizontal through the rain, at the 5th row of the obelisk from the bottom (same as fire)
+synesthesia - VideoFX_1 (an empty scene)
+media - black by default, the video is the mode toggle
+
+4. fire
+pattern - fire 2012 effect. par lights read horizontal, like the 5th row of the obelisk from the bottom (they were mostly off climbing beside it)
+mode 2 - embers: a few risers, dying young (sparking 0.15, cooling 60)
+mode 3 - the whole bed alight, climbing fast (sparking 0.85, cooling 20, rise 18)
+uv - off
+synesthesia - Dynamical Flame
+media - black (the flame renders its media through itself)
+
+5. glitch
+pattern - on kick hit change color. good. re-deals on the beat (syn_OnBeat), which is what the scene re-deals its background on.
+torn - five bands up the stage, re-cut on every deal, half of them the complement of the deal's hue (split 0.5): re-dealt in slices like the scene, not one colour with a shimmer. rig floor 0.65.
+pars - their own floor (0.3) so the beat is seen on them, and each deal climbs the truss bottom to top over 0.15s - a ripple, not a flash.
+mode 2 - one colour across the whole rig (no scatter, no split)
+mode 3 - darker between hits (floor 0.2, pars 0.1), torn further apart on each (scatter 0.3, decay 0.2)
+synesthesia - Glitch
+media - alien-message.mp4
+
+6. tunnel
+pattern - simple pink / purple noise (match shader aesthetic). follows mixxx's presence-equivalent meter - vu average, note 68, the level against its two-second window - slewed over half a second so it breathes rather than pumps.
+palette - pink (325 / 0.85 / 1.00) into purple (275 / 1.00 / 0.55), riding mixxx's vu average, floor 0.3
+additional layer - white flash on bpm, off by default; the pad is there
+mode 2 / 3 - same as neuron (slow and wide / quick and busy)
+synesthesia - Fire Tunnel
+media - black
+
+7. blown
+pattern - pink base throughout on presence, min 0.65 (was 0.3 and too dark until it popped). kick pops it to pink, green afterglow. (match shader aesthetic)
+more pinks, green the accent: the base drifts in slow patches between hot pink and a paler rose (338 / 0.65 / 1.00, blend 0.8); the green afterglow lands in patches over about a third of the rig (accent 0.35), the rest of the kick the pink pop alone.
+palette - pink (315 / 0.95 / 1.00) riding the mids, floor 0.65; the kick pops it to full pink then green (120 / 1.00 / 1.00) afterglow, decay 0.45
+mode 2 - brighter base (floor 0.85)
+mode 3 - the old cue, dark until the pop (floor 0.25)
+uv - off
+synesthesia - Filter Blown v2
+media - 275593_medium.mp4
+
+8. reaction
+pattern - rainbow when presence is high, slow moving hue shift among par lights. low white noise when no presence.
+palette - the wheel spread across the stage (0.6 of a wheel side to side, so the pars step through it a hue apart) turning at 0.04 wheels a second; under it a white grain at floor 0.3. the presence blends the rainbow in: from 0.08, all of it by 0.8, slewed over 0.6s so it swells rather than switches.
+mode 2 - the rainbow whatever the music
+mode 3 - quick: two wheels across the stage, turning at 0.3 a second
+uv - off
+synesthesia - Reaction-Confusion
+media - 87841-602894456.mp4
+
+9. punk
+pattern - punk purple / honey orange gradient, reactive, pretty bright (match shader aesthetic). the drop goes dark, not white: the scene's smoke inverts lightness on the beat.
+palette - punk purple (280 / 0.95 / 1.00) into honey orange (32 / 0.90 / 1.00), scrolling slowly (0.12 cycles a second - faster and the scroll is a second pulse off the beat), dropping toward navy (228 / 1.00 / 0.22) as far as mixxx's vu average says (note 68), slewed 0.05s - the drop blends on the meter, not on the bpm
+pars - move like the scene's smoke rather than strobing: the bass hits (syn_BassHits, peak-followed - up 0.04s, down 0.35s) swirl each par along the gradient (swirl 0.3, each par its own direction) and lift it from 0.45 to full; on the beat the pars flip toward the other end of the gradient (truss_invert 0.6, easing back over 0.3s). colour moving on lamps that stay lit.
+additional layer - none. the flash layer is off: white added over the drop whited it out (and, blended in hsv, came out cyan). uv off.
+mode 2 - the beat strobe instead, half time (the drop on the beat, back over 0.22s)
+mode 3 - the beat strobe, double time
+uv - off
+synesthesia - Milk, Honey, Smoke, Bile (with its own beat strobe "smoke" on)
+
+10. canyon
+pattern - cycling wave gradients moving top down with canyon orange browns greens and blues as we fly through the area. gradients and blending seamless: the bands eased into each other (a straight blend had a corner at every colour, six lines down the obelisk), and half the loop on the rig at once (waves 0.5 - at 1 the six bands were seven rows each and under two pars, stripes).
+palette - canyon orange (22 / 0.95 / 1.00), rust (12 / 0.90 / 0.55), brown (30 / 0.80 / 0.35), floor green (100 / 0.75 / 0.65), sky (205 / 0.80 / 0.90), deep blue (228 / 0.90 / 0.50), looping, blended round the short side of the hue wheel (in rgb the bands met in grey)
+param - on bpm hit the colours turn toward a rainbow and back (attack 0.12, decay 0.45, held over a beat that lands mid-fall): each band's hue swings up to a quarter wheel, one way or the other by height, so the bands fan round the wheel. the bands keep their own brightness, lifted 0.35 of the way to full - a colour pulse, not a light pulse; the cross-fade to a full-bright wheel was a strobe. the pars get 0.4 of the hit (truss_rainbow): a half-wheel swing on a par lamp every beat was a colour strobe, and blending toward a wheel hue the short way flipped sides mid-pulse wherever that hue sat opposite a band.
+mode 2 - slow fly (speed 0.05, the whole loop on the rig), the rainbow once a bar
+mode 3 - fast (speed 0.30), the rainbow in double time
+synesthesia - Vibe Thresholds
+media - 361331_medium.mp4
+
+11. scaffold
+pattern - mostly dark, with red/orange and cyan blue emerging and hiding in time with the bpm - no flashing.
+palette - a near-black ground (200 / 0.90 / 0.05); a cyan glint (190 / 0.85 / 0.75) where a slow field peaks; red-orange (18 / 0.95 / 1.00) in patches. both come out on the beat (attack 0.06) and hide over the fall (decay 0.38), gone before the next beat at a club tempo.
+additional layer - none. flash layer off: the pattern is the beat.
+mode 2 - lit: the ground up (0.14), twice the glint, the pattern lingering (decay 0.6)
+mode 3 - hard: the ground black, the ember wide open, less glint, the pattern in double time and quick (decay 0.18)
+uv - off
+synesthesia - Scaffold Fractal
+media - none
+
+12. e-churn
+pattern - the noise field in the churn's two colours, busier than neuron (speed 1.6, scale 0.8), pushed by the level like the paint is (follow 0.6, floor 0.35). contrast 0.7: the mix curved toward whichever colour a patch leans, so it is red or blue far more often than the purple between - still a blend, in a narrower band.
+music - the level speeds the field up the way it pushes the scene's paint (push 1.5: a full level runs it two and a half times as fast), and the bass hits punch it toward full (kick 0.45, up over 0.02s, falling over 0.3s).
+pars - a touch gentler than the rig: most of the kick (truss_kick 0.7) and the contrast eased to 0.5, so a lamp leans between the colours rather than flipping on every pass.
+three colour palette buttons and one that cycles rainbow colors, matched across synesthesia and eclipse-os: colour A is the probe, colour B is sent to the scene per palette.
+mode 1 - red (0 / 0.95 / 1.00) and blue (237 / 0.95 / 0.85) - the scene's own pair. scene rig_color_2 = rgb 0.05 0.10 1.00
+mode 2 - magenta (300 / 0.90 / 1.00) and cyan (185 / 0.95 / 0.90). scene rig_color_2 = rgb 0.05 0.85 0.90
+mode 3 - orange (28 / 0.95 / 1.00) and violet (268 / 0.90 / 0.80). scene rig_color_2 = rgb 0.40 0.08 0.80
+mode 4 - rainbow: the red / blue pair turned through the hue wheel (0.08 wheels a second); the scene's paint job off (rig_amount 0, stock churning's own rainbow) with color_phasing on
+scene controls - rig_amount 1, rig_contrast 0.6, color_phasing 0
+uv - off
+synesthesia - Eclipse Churn
+media - black (the churn mixes a little of its media in)
+
+13. e-nova
+pattern - galaxies on a wash over a dark ground: a slow large field lit only where it peaks (the galaxies, swelling with the bass presence like the scene's do), a finer field of the wash colour in the dark between them, on the ground colour.
+matches e-churn's colour options: three palettes and a rainbow. the probe sends the galaxy colour; the wash colour goes to the scene as rig_color_2 with auto_second off.
+mode 1 - by hand: cyan galaxies (182 / 0.90 / 1.00), yellow wash (48 / 0.90 / 1.00), dark blue ground (225 / 1.00 / 0.22). scene rig_color_2 = rgb 1.00 0.85 0.15, base_amount 0.35
+mode 2 - nova's regime 1: orange galaxies (37 / 0.80 / 1.00), sky blue wash (207 / 0.55 / 1.00), deep blue ground (240 / 0.75 / 0.30). scene rig_color_2 = rgb 0.45 0.75 1.00, base_amount 1.0
+mode 3 - nova's regime 2: violet galaxies (263 / 0.90 / 1.00), azure wash (216 / 0.75 / 1.00), near-black ground (250 / 0.80 / 0.08), less wash. scene rig_color_2 = rgb 0.25 0.55 1.00, base_amount 0
+mode 4 - rainbow: the hand palette turned through the wheel (0.06 wheels a second); the scene derives its own second colour again (auto_second on)
+music - as the scene does: the field turns faster on the bass (push 2, slewed 0.3s, like syn_BassTime), and on every beat a ring of light leaves the middle of the stage and runs out to both ends over the beat (pulse 0.75, width 0.12), lifting what it passes. each ring eases in over the first quarter of the beat and is gone over the last third, so one hands to the next through dark - no cut at the ends and pop in the middle as the beat turns over. on the pars the ring is wider (0.22) and eases in over the first quarter of the beat, so a lamp swells and lets go rather than flicking. and the wash pulses on the beat, scaled by the bass presence (wash_pulse 0.8, up over 0.04s, down over 0.35s): brighter where it is and spread over the ground, so in the hand palette the yellow lights up with the track - a glimmer when it is thin, full when it is heavy, nothing in silence.
+scene controls - color_by_hand 0, auto_second 0
+uv - off
+synesthesia - Eclipse Nova
+media - none
+
+14. clouds
+pattern - flying through sky, yellow and pink sunset sky with dark shadow clouds underneath, and more cloud: wisps of it in the sky too. sky is a gradient down the stage, yellow overhead (48 / 0.85 / 1.00) into pink at the horizon (330 / 0.70 / 1.00); below the horizon the cloud deck (270 / 0.60 / 0.16) with its own noise streaming past, the tops catching the pink (glow 0.45); a `clouds` knob (0.6) lights more of the tops and streams pale wisps through the sky above the horizon.
+param - flight height is the modes (below); the look lerps to it over 2s instead of snapping, and the scene's manual_height is ramped over the same 2s (mode_ramp), with its auto height turned off for good.
+param - flight speed with two buttons (slower 0.08 / faster 0.70), lerped the same way, the scene's speed ramped with it. a mode leaves the speed where the pads put it.
+pars - the height sets their level, not the stretch of stage each one reads: the sky's colour at the flight's height (pink toward yellow the higher it is), brightness 0.25 down in the deck up to 1.0 above it, gliding with the height. the deck's clouds still pass over that light (truss_clouds 0.6): thin cloud shades a par, a peak turns it pale. and a sunset along the line of pars, pink at one end to yellow at the other (truss_spread 0.6), warming toward yellow as the flight climbs.
+mode 1 - low: height 0.25, the deck over three quarters of the rig. the cue opens here.
+mode 2 - cruising: height 0.5
+mode 3 - high: height 0.85, the deck fallen away to a strip
+uv - off
+synesthesia - Cloud Ten (CHECK: the scene name and its height / speed / auto_height control names are a guess from the spec; the scene is not in the checkout. fix them in the cue table.)
+media - white.mp4. the scene multiplies by its media (col *= _loadMediaAsMask().r), so black.mp4 erased it; white is a mask of one. there is no "no media" message. made at 128x72 - see the readme.
+
+15. white - idle post show
+pattern - the house lights: white at 50%. flash and uv off.
+
+16. blackout - idle pre show
+pattern - everything off, the layers with it.
