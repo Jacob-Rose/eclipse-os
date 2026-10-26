@@ -11,6 +11,7 @@ silent no-op on a rig full of lights.
 
 from __future__ import annotations
 
+import atexit
 import os
 import queue
 import shlex
@@ -19,6 +20,7 @@ import sys
 import tempfile
 import threading
 import time
+import weakref
 from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
@@ -27,6 +29,7 @@ from typing import Callable, List, Optional, Sequence, Tuple, Union
 from .binary import find_executable
 from .config import Config, ConfigError
 from .curves import EASING_NAMES
+from .process import spawn
 
 Color = Union[str, Sequence[float]]
 
@@ -362,6 +365,24 @@ def _parse_frame(line: str) -> Optional[Frame]:
     return frame
 
 
+#: Every controller with a show running, weakly. The exit hook stops them,
+#: so an interpreter leaving by an exception or a plain sys.exit takes its
+#: shows with it. An abort skips this - that is what eclipse_dmx.process
+#: is for.
+_live: "weakref.WeakSet[ShowController]" = weakref.WeakSet()
+
+
+def _stop_live_shows() -> None:
+    for show in list(_live):
+        try:
+            show.stop(timeout=2.0)
+        except Exception:
+            pass
+
+
+atexit.register(_stop_live_shows)
+
+
 class ShowController:
     """Starts eclipse-dmx and drives it.
 
@@ -678,7 +699,9 @@ class ShowController:
             detach = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
         else:
             detach = {"start_new_session": True}
-        self._process = subprocess.Popen(
+        # spawn, not Popen: the show dies with this process however this
+        # process dies - see eclipse_dmx.process.
+        self._process = spawn(
             self._build_args(),
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
@@ -700,6 +723,7 @@ class ShowController:
 
         self._start_reader(self._process.stdout, self._handle_stdout)
         self._start_reader(self._process.stderr, self._handle_stderr)
+        _live.add(self)
 
         # Wait for READY (or an early ERR) so callers can assume the rig is
         # live the moment the constructor returns.
@@ -754,15 +778,28 @@ class ShowController:
         return None if failure is None else failure[len("ERR "):].strip()
 
     def _start_reader(self, stream, handler: Callable[[str], None]) -> None:
-        thread = threading.Thread(target=self._pump, args=(stream, handler), daemon=True)
+        # The thread holds its handler weakly, so it is never the last owner
+        # of this controller - nor, through on_frame and the like, of a
+        # viewer and its tk interpreter. Whatever a thread owns last is
+        # finalised on that thread, and tk aborts the whole process when
+        # one of its objects goes down off the thread that made it
+        # (Tcl_AsyncDelete). The owner is whoever holds the controller; when
+        # they let go, the reader finds nothing to call and ends.
+        weak = weakref.WeakMethod(handler)
+        thread = threading.Thread(target=self._pump, args=(stream, weak),
+                                  daemon=True, name="eclipse-dmx reader")
         thread.start()
         self._reader_threads.append(thread)
 
     @staticmethod
-    def _pump(stream, handler: Callable[[str], None]) -> None:
+    def _pump(stream, weak: "weakref.WeakMethod") -> None:
         try:
             for line in stream:
+                handler = weak()
+                if handler is None:
+                    break
                 handler(line.rstrip("\r\n"))
+                del handler
         except (ValueError, OSError):
             # stream closed under us during shutdown; nothing to do
             pass
@@ -1054,8 +1091,16 @@ class ShowController:
                 except (OSError, ValueError):
                     pass
 
+        # The readers end once the pipes close; wait for them, bounded, so
+        # a stop is a stop and not two threads still winding down into the
+        # next thing the caller does.
+        for thread in self._reader_threads:
+            thread.join(timeout=2.0)
+        self._reader_threads = [thread for thread in self._reader_threads if thread.is_alive()]
+
         returncode = process.returncode
         self._process = None
+        _live.discard(self)
         self._cleanup_temp_config()
         return returncode
 

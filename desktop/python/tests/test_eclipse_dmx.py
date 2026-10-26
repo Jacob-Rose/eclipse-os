@@ -6219,7 +6219,7 @@ class TheCurveProtocol(ShowTest):
         show.set_state("boot")
         time.sleep(1.2)
         self.assertIn("brightness", show.curves)
-        self.assertIn("noise", show.curves)
+        self.assertIn("noise_curve", show.curves)  # the knob is "noise"; the shape is named apart from it
 
         show.set_curve("brightness", [(0.0, 0.0, None), (1.0, 0.0, None)])
         time.sleep(0.3)

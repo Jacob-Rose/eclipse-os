@@ -3594,9 +3594,9 @@ namespace
             // the same as a real switch, so a UI re-syncs either way.
             if (show.pattern && show.config.pattern.name == words[1])
             {
-                emit("OK pattern " + words[1]);
                 emitStates(show);
                 emitParams(show);
+                emit("OK pattern " + words[1]);
                 return;
             }
 
@@ -3632,9 +3632,13 @@ namespace
             // A new pattern brings its own coordinate space and, if it is a
             // state machine, its own set of states.
             applyCoordFrame(show);
-            emit("OK pattern " + next.name);
+            // The announcements first and the reply last, here and for
+            // `state`: the OK is then the line that closes the PARAMS block,
+            // so a client that waits on the reply and then reads the knobs
+            // reads the new look's, not whatever was announced before.
             emitStates(show);
             emitParams(show);
+            emit("OK pattern " + next.name);
             return;
         }
 
@@ -3705,9 +3709,9 @@ namespace
             }
 
             show.lastCue = line;
-            emit("OK state " + words[1]);
             emit("STATE " + machine->currentStateName());
             emitParams(show);
+            emit("OK state " + words[1]);
             applyCueLayers(show, machine->currentStateName());
             return;
         }

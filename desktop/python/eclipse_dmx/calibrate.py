@@ -39,10 +39,12 @@ import subprocess
 import sys
 import threading
 import time
+from collections import deque
 from pathlib import Path
 from typing import Callable, List, Optional, Sequence, Tuple, Union
 
 from .config import ConfigError, LATENCY_LIMIT_MS, format_latency_ms, write_midi_latency
+from . import tkgc
 from .controller import FrameForwarder, ShowController, ShowError
 
 #: The tempo the test runs at. Anything would do; 120 makes a beat a round
@@ -376,6 +378,8 @@ class CalibrationApp:
         self._closing = False
         self._pump_id = None
         self._messages: List[str] = []
+        #: lines said off the tk thread, shown from the pump - see _say
+        self._pending_say: "deque[str]" = deque()
 
         # -- the show ---------------------------------------------------------
         self._sink: Optional[FrameForwarder] = None
@@ -432,6 +436,7 @@ class CalibrationApp:
     def _build_window(self, tk) -> None:
         from .viewer import BUTTON_BG, PANEL, TEXT, TEXT_DIM, TEXT_WARN
 
+        tkgc.hold()  # tk objects die on this thread only - see tkgc
         self.root = tk.Tk(className=os.environ.get("ECLIPSE_DMX_WM_CLASS", WM_CLASS))
         where = f"  ->  {self.client_host}" if self.client_host else ""
         self.root.title(f"eclipse-dmx  -  calibrate  -  {self.config_path.name}{where}")
@@ -491,6 +496,12 @@ class CalibrationApp:
         self.root.protocol("WM_DELETE_WINDOW", self._quit)
 
     def _say(self, line: str) -> None:
+        # The show's log lines arrive on its reader thread, and a label is
+        # tk's: touched off its thread it is a finaliser waiting to run on
+        # the wrong one (see tkgc). Queued, and said from the pump.
+        if threading.current_thread() is not threading.main_thread():
+            self._pending_say.append(line)
+            return
         self._messages.append(line)
         print(line, file=sys.stderr)
         label = getattr(self, "message", None)
@@ -623,6 +634,9 @@ class CalibrationApp:
     def _pump(self) -> None:
         if self._closing:
             return
+        tkgc.collect_sometimes()
+        while self._pending_say:
+            self._say(self._pending_say.popleft())
         if not self.show.is_running:
             self._say("the show stopped")
             self._quit()
@@ -651,6 +665,8 @@ class CalibrationApp:
             self.root.destroy()
         except Exception:
             pass
+        tkgc.join_workers(tkgc.WORKER_NAMES)
+        tkgc.release()
 
     def _release(self) -> None:
         if self.click is not None:

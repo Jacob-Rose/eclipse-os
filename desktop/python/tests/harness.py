@@ -50,6 +50,8 @@ sys.path.insert(0, str(DESKTOP / "python"))
 
 from eclipse_dmx.binary import BinaryNotFoundError, find_executable  # noqa: E402
 from eclipse_dmx.controller import ShowController  # noqa: E402
+from eclipse_dmx.process import spawn  # noqa: E402
+from eclipse_dmx import tkgc  # noqa: E402
 
 #: The WM class a test run's windows carry. tkinter title-cases it, so a
 #: compositor matches on "Eclipse-dmx-tests". Set before any window is built,
@@ -92,12 +94,15 @@ def display_or_skip():
         except ImportError as error:
             _display = f"no tkinter: {error}"
         else:
+            tkgc.hold()
             try:
                 tkinter.Tk(className=WM_CLASS).destroy()
             except Exception as error:
                 _display = f"no display: {error}"
             else:
                 _display = ""
+            finally:
+                tkgc.release()
     if _display:
         raise unittest.SkipTest(_display)
 
@@ -125,13 +130,20 @@ def run_show(script, frames=ANSWER_FRAMES, config=None, timeout=60):
     and wrong for anything a frame has to run to produce - for that, ask for
     the frames explicitly, or use a paced run that leaves gaps between lines.
     """
-    result = subprocess.run(
+    # spawn rather than subprocess.run: the show dies with this process
+    # however this process dies - see eclipse_dmx.process.
+    process = spawn(
         [str(executable_or_skip()), "--config", str(config), "--dry-run",
          "--midi", "", "--frames", str(frames)],
-        input="\n".join(script) + "\n",
-        capture_output=True, text=True, timeout=timeout,
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
     )
-    return result.stdout.splitlines()
+    try:
+        out, _ = process.communicate(input="\n".join(script) + "\n", timeout=timeout)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.communicate()
+        raise
+    return out.splitlines()
 
 
 def run_show_paced(script, pause=0.05, config=None, timeout=30):
@@ -142,7 +154,7 @@ def run_show_paced(script, pause=0.05, config=None, timeout=30):
     anything asking what the bus did has to leave room for one, which piping
     the whole script in at once does not.
     """
-    process = subprocess.Popen(
+    process = spawn(
         [str(executable_or_skip()), "--config", str(config), "--dry-run",
          "--midi", "", "--frames", "0"],
         stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
@@ -299,8 +311,13 @@ class GuiTest(ShowTest):
         try:
             return super().run(result)
         finally:
-            # The window is closed by now; drop the test's own reference to
-            # it too, or the interpreter it holds outlives this test.
-            vars(self).pop("app", None)
+            # The window is closed by now; drop everything the test itself
+            # holds - the app, and any panel or widget it kept a name for -
+            # or the interpreter outlives this test and is collected later,
+            # on whichever thread the collector happens to run on. unittest's
+            # own fields are the underscored ones and stay.
+            for name in [key for key in vars(self) if not key.startswith("_")]:
+                vars(self).pop(name, None)
+            tkgc.join_workers(tkgc.WORKER_NAMES)
             import gc
             gc.collect()

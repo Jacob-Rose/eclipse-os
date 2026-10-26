@@ -32,6 +32,7 @@ from tkinter import colorchooser, simpledialog
 from typing import Dict, List, Optional, Sequence, Tuple, Union
 
 from . import look_presets
+from . import tkgc
 from .config import RELIC_TYPES, Config, cue_actions, cue_pad_actions
 from .controller import Frame, FrameForwarder, ShowController, ShowError
 from .curve_editor import CurveEditor
@@ -1085,6 +1086,7 @@ class ViewerApp:
         # overrides the name so a run's windows can be parked out of the way
         # instead of landing on whatever workspace is in front - see
         # tests/harness.py, and "Tests" in the readme.
+        tkgc.hold()  # tk objects die on this thread only - see tkgc
         self.root = tk.Tk(className=os.environ.get("ECLIPSE_DMX_WM_CLASS", WM_CLASS))
         where = f"  @ {self.host}" if self.host else ""
         self.root.title(f"eclipse-dmx  -  {self.config_path.name}{where}")
@@ -2602,6 +2604,10 @@ class ViewerApp:
         if self._closing:
             return
 
+        # The collector runs from here, on tk's thread, and nowhere else
+        # while this window is up - see tkgc.
+        tkgc.collect_sometimes()
+
         # A Ctrl-C or a kill, noticed here rather than in the handler that
         # took it - see _install_signal_handlers.
         if self._bail_requested:
@@ -2903,6 +2909,12 @@ class ViewerApp:
         except Exception:
             pass
         self.root.destroy()
+
+        # Whatever this window still owns dies here, on this thread: the
+        # workers are waited for so none of them is the last to hold it,
+        # then the collector runs once and is handed back - see tkgc.
+        tkgc.join_workers(tkgc.WORKER_NAMES)
+        tkgc.release()
 
     # -- client mode ---------------------------------------------------------
 
