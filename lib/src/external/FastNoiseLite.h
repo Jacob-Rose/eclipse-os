@@ -50,6 +50,15 @@
 #ifndef FASTNOISELITE_H
 #define FASTNOISELITE_H
 
+// eclipse-os: the hashes below rely on signed int wraparound (xPrimed * PrimeX
+// and friends overflow on purpose). That is undefined in C++, and GCC uses it to
+// cut the cellular loops short (-Waggressive-loop-optimizations), so this header
+// is compiled with wrapping arithmetic. The source itself is unchanged.
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC push_options
+#pragma GCC optimize ("wrapv")
+#endif
+
 #define FNL_JAKEMODS true
 
 #include <cmath>
@@ -2586,5 +2595,9 @@ const T FastNoiseLite::Lookup<T>::RandVecs3D[] =
     0.2178065647f, -0.9698322841f, -0.1094789531f, 0, -0.1518031304f, -0.7788918132f, -0.6085091231f, 0, -0.2600384876f, -0.4755398075f, -0.8403819825f, 0, 0.572313509f, -0.7474340931f, -0.3373418503f, 0, -0.7174141009f, 0.1699017182f, -0.6756111411f, 0, -0.684180784f, 0.02145707593f, -0.7289967412f, 0, -0.2007447902f, 0.06555605789f, -0.9774476623f, 0, -0.1148803697f, -0.8044887315f, 0.5827524187f, 0,
     -0.7870349638f, 0.03447489231f, 0.6159443543f, 0, -0.2015596421f, 0.6859872284f, 0.6991389226f, 0, -0.08581082512f, -0.10920836f, -0.9903080513f, 0, 0.5532693395f, 0.7325250401f, -0.396610771f, 0, -0.1842489331f, -0.9777375055f, -0.1004076743f, 0, 0.0775473789f, -0.9111505856f, 0.4047110257f, 0, 0.1399838409f, 0.7601631212f, -0.6344734459f, 0, 0.4484419361f, -0.845289248f, 0.2904925424f, 0
 };
+
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC pop_options
+#endif
 
 #endif
