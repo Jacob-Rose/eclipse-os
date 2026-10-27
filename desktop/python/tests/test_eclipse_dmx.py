@@ -2284,7 +2284,7 @@ class SharedBeatTriggers(ShowTest):
     actually broken: a look entered off the beat joins the grid instead of
     starting one of its own.
     """
-    def _uv_hits(self, enter_offset, bpm=120.0, settle=2.0):
+    def _uv_hits(self, enter_offset, bpm=120.0, settle=2.4):
         """UV hit instants, and the moment `flash` was asked for.
 
         The offset puts the entry deliberately off the beat, which is the whole
@@ -2303,7 +2303,24 @@ class SharedBeatTriggers(ShowTest):
 
         uv = show.layers["uv"].fixtures[0]
         levels = [(t, f[uv][0]) for t, f in frames if len(f) > uv]
-        hits = [t for (t, v), (_pt, pv) in zip(levels[1:], levels) if v > pv + 40]
+        # A hit is the frame the level crosses from dark to lit, once per
+        # flash. This used to be any rise of 40 between two frames, which
+        # counted a flash twice whenever its 20ms attack straddled a frame
+        # boundary - and on a beat grid the beat lands at the same point in
+        # every frame, so it did that on every flash of a run or on none,
+        # by where the run happened to start. Hysteresis: lit above 100 -
+        # low enough to count a flash landing inside the 150ms fade into the
+        # look - re-armed below 50, which the 300ms decay reaches well
+        # before the next beat. The settle is four beats and a bit, so a
+        # first flash the fade dims still leaves three whole ones.
+        hits = []
+        armed = True
+        for t, v in levels:
+            if armed and v > 100:
+                hits.append(t)
+                armed = False
+            elif v < 50:
+                armed = True
         return entered, [h for h in hits if h >= entered]
 
     def test_the_uv_hits_on_the_beat(self):
