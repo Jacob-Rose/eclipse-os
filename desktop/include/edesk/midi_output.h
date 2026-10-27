@@ -6,9 +6,12 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <mutex>
 #include <string>
 #include <vector>
+
+#include <emidi/transport.h>
 
 ///
 /// MIDI out, for lamps.
@@ -50,7 +53,7 @@ namespace edesk
         std::string address;  ///< "hw:1,0,1" - also accepted verbatim as a spec
     };
 
-    class MidiOutput
+    class MidiOutput : public emidi::Transport
     {
     public:
         MidiOutput() = default;
@@ -96,6 +99,11 @@ namespace edesk
 
         /// `port="Launchpad X LPX MIDI Out" hw:1,0,1 sent=42`
         std::string describe() const;
+
+        /// As a library Transport, so an emidi::MidiPort can send messages
+        /// down it. Write-only: readByte() never has anything.
+        int readByte() override { return -1; }
+        bool write(const uint8_t* data, size_t length) override;
 
     private:
         /// snd_rawmidi_t*, opaque in alsa's own headers too.

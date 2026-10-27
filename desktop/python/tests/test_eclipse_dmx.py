@@ -104,36 +104,29 @@ class FrameParsing(unittest.TestCase):
         self.assertIsNone(_parse_frame("F gggggg"))
 
 
-class OscEncoding(unittest.TestCase):
-    """The packet format, checked byte for byte.
+def osc_packet(address: str, *values) -> bytes:
+    """A hand-rolled OSC message, for the tests that send one at the
+    executable. The real encoder is the library's (eosc); this is the twenty
+    lines of spec needed to prove it from outside."""
+    def pad(block: bytes) -> bytes:
+        block += b"\0"
+        return block + b"\0" * (-len(block) % 4)
+    tags, body = ",", b""
+    for value in values:
+        if isinstance(value, str):
+            tags += "s"
+            body += pad(value.encode("utf-8"))
+        elif isinstance(value, bool) or not isinstance(value, int):
+            tags += "f"
+            body += struct.pack(">f", float(value))
+        else:
+            tags += "i"
+            body += struct.pack(">i", value)
+    return pad(address.encode("ascii")) + pad(tags.encode("ascii")) + body
 
-    Worth pinning down here rather than against the app: OSC is unacknowledged,
-    so a malformed packet is not rejected, it is ignored - and a control that
-    does not move looks exactly the same as a visualiser that was never running.
-    These tests are the only place the format gets to be wrong out loud.
-    """
-    def test_padding_and_layout(self):
-        packet = osc.encode("/controls/global/color/1", 1.0, 0.5, 0.0)
 
-        # Address (24 chars + null -> 28), tags ",fff" + null -> 8, 3 floats.
-        self.assertEqual(len(packet), 48)
-        self.assertEqual(packet[:24], b"/controls/global/color/1")
-        self.assertEqual(packet[24:28], b"\0\0\0\0")
-        self.assertEqual(packet[28:36], b",fff\0\0\0\0")
-
-    def test_floats_are_big_endian(self):
-        packet = osc.encode("/x", 1.0)
-        self.assertEqual(packet[-4:], b"\x3f\x80\x00\x00")
-
-    def test_every_block_is_four_byte_aligned(self):
-        # The address lengths either side of a boundary are where an off-by-one
-        # in the padding shows up, so walk a range rather than picking one.
-        for length in range(1, 12):
-            packet = osc.encode("/" + "a" * length, 0.25)
-            self.assertEqual(len(packet) % 4, 0, f"address of {length + 1} chars")
-
-    def test_no_arguments_still_valid(self):
-        self.assertEqual(osc.encode("/bang"), b"/bang\0\0\0,\0\0\0")
+class OscEndpoints(unittest.TestCase):
+    """How an endpoint is spelled. The packet itself is the library's now."""
 
     def test_endpoint_parsing(self):
         self.assertEqual(osc.parse_endpoint("127.0.0.1:8000"), ("127.0.0.1", 8000))
@@ -142,8 +135,6 @@ class OscEncoding(unittest.TestCase):
             osc.parse_endpoint("127.0.0.1:nope")
 
     def test_a_name_is_an_endpoint(self):
-        # The whole point of naming a machine rather than an address: the
-        # port is still the last colon, and a bare name still gets the default.
         self.assertEqual(osc.parse_endpoint("mac-mini.local:6000"),
                          ("mac-mini.local", 6000))
         self.assertEqual(osc.parse_endpoint("mac-mini.local"),
@@ -152,8 +143,6 @@ class OscEncoding(unittest.TestCase):
                          ("mac-mini.local", 9000))
 
     def test_ipv6_needs_its_brackets(self):
-        # An IPv6 literal is full of colons, so the last one is not a port
-        # separator. Bracketed, it can be; bare, the whole thing is the host.
         self.assertEqual(osc.parse_endpoint("[::1]:6000"), ("::1", 6000))
         self.assertEqual(osc.parse_endpoint("[fe80::1%wlan0]"), ("fe80::1%wlan0", 6000))
         self.assertEqual(osc.parse_endpoint("::1"), ("::1", 6000))
@@ -161,338 +150,89 @@ class OscEncoding(unittest.TestCase):
             osc.parse_endpoint("[::1:6000")
 
     def test_a_literal_is_told_from_a_name(self):
-        # What decides whether anything is looked up again while running.
         self.assertTrue(osc.is_literal("127.0.0.1"))
         self.assertTrue(osc.is_literal("::1"))
         self.assertFalse(osc.is_literal("mac-mini.local"))
         self.assertFalse(osc.is_literal("localhost"))
 
+    def test_a_status_line_reads_back(self):
+        fields = osc.parse_status(
+            'OSC-OUT-STATUS open=yes endpoint=mac-mini.local:6000 address=- sent=3 error="cannot resolve"')
+        self.assertEqual(fields["endpoint"], "mac-mini.local:6000")
+        self.assertEqual(fields["sent"], "3")
+        self.assertEqual(fields["error"], "cannot resolve")
 
-class OscColour(unittest.TestCase):
-    """What actually goes out for a given frame byte."""
+    def test_arguments_are_spelled_for_the_executable(self):
+        self.assertEqual(osc.format_argument(1.0), "1.0")
+        self.assertEqual(osc.format_argument(3), "3")
+        self.assertEqual(osc.format_argument(True), "true")
+        self.assertEqual(osc.format_argument("Neon Grid"), '"Neon Grid"')
+        self.assertEqual(osc.format_argument('say "hi"'), '"say \\"hi\\""')
 
-    def setUp(self):
-        self.sent = []
 
-    def link(self, **kwargs):
-        made = osc.SynesthesiaLink("127.0.0.1:1", **kwargs)
-        # No socket involved. _send takes the address rather than a finished
-        # packet - one place that knows *what* is going out, which is what
-        # on_send and the osc panel need - so the encode moves in here to keep
-        # these assertions about the bytes on the wire.
-        made._send = lambda address, *values: self.sent.append(
-            osc.encode(address, *values))
-        return made
+class OscLinkCommands(unittest.TestCase):
+    """What the link asks the executable to do, against a show that only
+    records. The sending itself is the executable's and is proved over a real
+    socket in OscOutputEndToEnd."""
 
-    def test_normalised_from_bytes(self):
-        with self.link() as link:
-            link.send_color([255, 128, 0])
-        self.assertEqual(len(self.sent), 1)
-        self.assertEqual(self.sent[0][:24], b"/controls/global/color/1")
+    class FakeShow:
+        def __init__(self):
+            self.lines = []
+        def command(self, line, expect_reply=True):
+            self.lines.append(line)
+            return ("OK osc out open=yes endpoint=127.0.0.1:9 address=127.0.0.1:9 "
+                    "control=/controls/global/color/1 form=rgb gamma=0 tap=-1 sent=0 dropped=0")
+        def query(self, line, prefix):
+            self.lines.append(line)
+            return ["OSC-OUT-STATUS open=yes endpoint=127.0.0.1:9 address=127.0.0.1:9 "
+                    "control=/controls/global/color/1 form=rgb gamma=0 tap=-1 sent=4 dropped=1"]
 
-    def test_separate_sends_three_messages(self):
-        with self.link(separate=True) as link:
-            link.send_color([255, 128, 0])
-        self.assertEqual(len(self.sent), 3)
-        for packet, suffix in zip(self.sent, (b"/r", b"/g", b"/b")):
-            self.assertTrue(packet.startswith(b"/controls/global/color/1" + suffix))
-
-    def test_gamma_is_undone_not_applied(self):
-        # 128 is mid-grey after a 2.2 gamma, so undoing it must move *up*
-        # towards linear. Getting the exponent the wrong way round would send
-        # 0.22 instead of 0.73, which reads as "the visuals went dark".
-        link = self.link(gamma=2.2)
-        self.assertAlmostEqual(link._normalize(128), 0.7312, places=3)
+    def test_the_link_tells_the_executable_what_to_send(self):
+        show = self.FakeShow()
+        link = osc.SynesthesiaLink(show, "127.0.0.1:9", gamma=2.2, fixture=3)
+        link.send_color((255, 0, 0))
+        link.send_scene("Neon Grid", "Soft")
+        link.send_favslot(3)
+        link.tap(device="probe")
         link.close()
+        self.assertEqual(show.lines, [
+            "osc out 127.0.0.1:9 control=/controls/global/color/1 separate=off gamma=2.2 resolve=15 fixture=3",
+            "osc color 255 0 0",
+            'osc send /scenes/neongrid "Soft"',
+            "osc send /favslots/3",
+            "osc tap probe",
+            "osc out off",
+        ])
 
-    def test_out_of_range_is_clamped(self):
-        link = self.link()
-        self.assertEqual(link._normalize(-5), 0.0)
-        self.assertEqual(link._normalize(300), 1.0)
-        link.close()
-
-
-class OscResolution(unittest.TestCase):
-    """Naming a machine instead of an address, on a network that reassigns them.
-
-    The failure this is all for is silent: UDP to an address nobody is at looks
-    exactly like UDP to a visualiser that is running, so a link that resolved
-    once at startup and never again would spend the rest of a set sending into
-    a hole with a clean report at the end of it.
-
-    `osc.resolve` is patched throughout rather than anything real being looked
-    up - a test suite that needs a name on the network is a test suite that
-    fails on the build machine.
-    """
-    def setUp(self):
-        self.real_resolve = osc.resolve
-        self.receivers = []
-
-    def tearDown(self):
-        osc.resolve = self.real_resolve
-        for receiver in self.receivers:
-            receiver.close()
-
-    def receiver(self):
-        """A bound UDP socket to be resolved *to*, and read back off."""
-        import socket
-
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        sock.bind(("127.0.0.1", 0))
-        sock.settimeout(2.0)
-        self.receivers.append(sock)
-        return sock
-
-    def answer(self, sock):
-        import socket
-
-        return (socket.AF_INET, sock.getsockname())
-
-    def wait_for(self, predicate, seconds=3.0):
-        deadline = time.monotonic() + seconds
-        while time.monotonic() < deadline:
-            if predicate():
-                return True
-            time.sleep(0.01)
-        return False
-
-    def test_a_name_that_moves_is_followed(self):
-        first, second = self.receiver(), self.receiver()
-        answers = [self.answer(first)]
-        osc.resolve = lambda host, port: answers[-1]
-
-        moved = []
-        link = osc.SynesthesiaLink("mac-mini.local:6000", resolve_every=0.05,
-                                   on_resolve=moved.append)
-        try:
-            link.send_color([255, 0, 0])
-            self.assertEqual(len(first.recv(512)), 48)
-
-            # The machine comes back on a different address.
-            answers.append(self.answer(second))
-            self.assertTrue(self.wait_for(lambda: link.rebinds == 1),
-                            "the link never followed the name")
-
-            link.send_color([0, 255, 0])
-            self.assertEqual(len(second.recv(512)), 48)
-        finally:
-            link.close()
-
-        self.assertEqual(moved, [link.address])
-
-    def test_a_failed_lookup_keeps_the_address_it_had(self):
-        # A wifi hiccup is a far more common reason for one failed look-up than
-        # a machine that moved, and going dark over it would turn a blip into a
-        # visualiser that stays unlit for the rest of the set.
-        first = self.receiver()
-
-        def fails_after_the_first(host, port):
-            osc.resolve = broken
-            return self.answer(first)
-
-        def broken(host, port):
-            raise OSError("temporary failure in name resolution")
-
-        osc.resolve = fails_after_the_first
-
-        link = osc.SynesthesiaLink("mac-mini.local:6000", resolve_every=0.05)
-        try:
-            self.assertTrue(self.wait_for(lambda: link.lookups_failed >= 1))
-            link.send_color([255, 0, 0])
-            self.assertEqual(len(first.recv(512)), 48)
-            self.assertEqual(link.rebinds, 0)
-        finally:
-            link.close()
-
-    def test_a_name_that_never_resolves_does_not_stop_a_show(self):
-        # The mac mini being asleep at soundcheck is not a reason to refuse to
-        # run the rig. The link comes up with nowhere to send and keeps asking.
-        osc.resolve = lambda host, port: (_ for _ in ()).throw(OSError("nope"))
-
-        link = osc.SynesthesiaLink("mac-mini.local:6000", resolve_every=0.05)
-        try:
-            self.assertIsNone(link.address)
-            link.send_color([255, 0, 0])          # must not raise
-            self.assertEqual(link.sent, 0)
-            self.assertEqual(link.dropped, 1)
-            self.assertIn("mac-mini.local", link.describe())
-        finally:
-            link.close()
-
-    def test_an_address_is_never_looked_up_again(self):
-        # Nothing to look up, so no thread and no interval - and the reported
-        # form of a literal stays exactly what it always was.
-        link = osc.SynesthesiaLink("127.0.0.1:6000")
-        try:
-            self.assertFalse(link.is_name)
-            self.assertIsNone(link._watcher)
-            self.assertTrue(link.describe().startswith("127.0.0.1:6000 "))
-        finally:
-            link.close()
-
-    def test_ipv4_wins_when_a_name_answers_with_both(self):
-        # A visualiser's OSC input is usually bound to 0.0.0.0, which cannot be
-        # reached over v6 at all - and being sent to the wrong family is the
-        # invisible failure this whole feature is trying not to have.
-        import socket
-
-        both = [
-            (socket.AF_INET6, socket.SOCK_DGRAM, 0, "", ("::1", 6000, 0, 0)),
-            (socket.AF_INET, socket.SOCK_DGRAM, 0, "", ("127.0.0.1", 6000)),
-        ]
-        real = socket.getaddrinfo
-        socket.getaddrinfo = lambda *a, **k: both
-        try:
-            self.assertEqual(self.real_resolve("mac-mini.local", 6000),
-                             (socket.AF_INET, ("127.0.0.1", 6000)))
-        finally:
-            socket.getaddrinfo = real
-
-    def test_a_v6_only_name_still_resolves(self):
-        # Preference, not a filter.
-        import socket
-
-        only_v6 = [(socket.AF_INET6, socket.SOCK_DGRAM, 0, "", ("::1", 6000, 0, 0))]
-        real = socket.getaddrinfo
-        socket.getaddrinfo = lambda *a, **k: only_v6
-        try:
-            family, sockaddr = self.real_resolve("mac-mini.local", 6000)
-            self.assertEqual(family, socket.AF_INET6)
-            self.assertEqual(sockaddr[0], "::1")
-        finally:
-            socket.getaddrinfo = real
-
-    def test_a_local_name_says_what_to_check(self):
-        # The two failures behind a dead '.local' are fixed in completely
-        # different places, and the message has to separate them.
-        message = osc.explain_failure("mac-mini.local", OSError("no"))
-        self.assertIn("mDNS", message)
-        self.assertIn("avahi-resolve-host-name -4 mac-mini.local", message)
-        self.assertEqual(osc.explain_failure("elsewhere.example", OSError("no")),
-                         "cannot resolve 'elsewhere.example': no")
-
-
-class OscDecoding(unittest.TestCase):
-    """The other direction of the format, checked against our own encoder.
-
-    Round trips rather than hand-built bytes for the ordinary cases - the
-    encoder is already pinned byte for byte above, so agreeing with it is
-    agreeing with OSC 1.0 - and hand-built bytes for the things the encoder
-    never produces: bundles, and damage.
-    """
-    def test_round_trip(self):
-        packet = osc.encode("/controls/global/color/1", 1.0, 0.5, 0.0)
-        (address, arguments), = osc.decode(packet)
-        self.assertEqual(address, "/controls/global/color/1")
-        self.assertEqual([round(v, 3) for v in arguments], [1.0, 0.5, 0.0])
-
-    def test_every_address_length_across_the_padding_boundary(self):
-        for length in range(1, 12):
-            address = "/" + "a" * length
-            self.assertEqual(osc.decode(osc.encode(address, 0.25, "x", 7)),
-                             [(address, [0.25, "x", 7])], f"address of {length + 1}")
-
-    def test_no_arguments(self):
-        self.assertEqual(osc.decode(osc.encode("/bang")), [("/bang", [])])
-
-    def test_a_bundle_unpacks_to_its_messages(self):
-        # Synesthesia is free to send one of these and the app's docs do not
-        # say whether it does, so it has to be read either way.
-        inner = [osc.encode("/a", 1.0), osc.encode("/b", 2.0)]
-        bundle = (b"#bundle\0" + struct.pack(">q", 1)
-                  + b"".join(struct.pack(">i", len(m)) + m for m in inner))
-        self.assertEqual(osc.decode(bundle), [("/a", [1.0]), ("/b", [2.0])])
-
-    def test_damage_returns_what_it_could_read(self):
-        # Anything on the network can write to this port. A listener that
-        # raises on a stray packet is a listener a stray packet can stop.
-        self.assertEqual(osc.decode(b"garbage"), [])
-        self.assertEqual(osc.decode(b""), [])
-        self.assertEqual(osc.decode(osc.encode("/a", 1.0)[:-2]), [("/a", [])])
-        self.assertEqual(osc.decode(b"#bundle\0" + b"\0" * 8 + b"\xff\xff\xff\xff"), [])
-
-    def test_true_and_false_carry_no_argument_bytes(self):
-        packet = osc.encode("/switch") [:-4] + b",T\0\0"
-        self.assertEqual(osc.decode(packet), [("/switch", [True])])
+    def test_the_counts_come_from_status(self):
+        show = self.FakeShow()
+        link = osc.SynesthesiaLink(show, "127.0.0.1:9")
+        link.refresh()
+        self.assertEqual((link.sent, link.dropped, link.address), (4, 1, "127.0.0.1:9"))
+        self.assertTrue(link.describe().startswith("127.0.0.1:9 /controls/global/color/1"))
 
 
 class OscInputBindings(unittest.TestCase):
-    """What a binding fires on, and - mostly - what it refuses to fire on."""
+    """A binding as the file carries it. What it fires on is the executable's
+    (ecore::BindingRule, tests/test_binding.cpp); the glob is mirrored here so
+    a map can be checked without a show."""
 
     def binding(self, **kwargs):
         return osc_input.Binding(**kwargs)
 
     def test_a_glob_survives_the_app_renaming_around_it(self):
-        # The addresses these arrive on are not documented and changed once
-        # already, which is the whole reason a binding is a pattern.
         bound = self.binding(pattern="*bass*level*")
         for address in ("/syn/BassLevel", "/audio/bass/level", "/SYN/BASSLEVEL"):
             self.assertTrue(bound.matches(address), address)
         self.assertFalse(bound.matches("/syn/MidLevel"))
 
     def test_exclude_keeps_the_bands_out_of_the_whole_spectrum(self):
-        # Without this, one knob is driven by four sources at once.
         bound = self.binding(pattern="*level*", exclude=["*bass*", "*mid*", "*high*"])
         self.assertTrue(bound.matches("/syn/Level"))
         for band in ("/syn/BassLevel", "/syn/MidLevel", "/syn/MidHighLevel", "/syn/HighLevel"):
             self.assertFalse(bound.matches(band), band)
 
-    def test_a_range_maps_onto_zero_to_one(self):
-        # syn_BPM arrives at 50..220 and every action speaks 0..1.
-        bound = self.binding(low=50.0, high=220.0)
-        self.assertAlmostEqual(bound.scale(50.0), 0.0)
-        self.assertAlmostEqual(bound.scale(135.0), 0.5)
-        self.assertAlmostEqual(bound.scale(220.0), 1.0)
-        self.assertAlmostEqual(bound.scale(500.0), 1.0)      # clamped, not wrapped
-        self.assertAlmostEqual(bound.scale(0.0), 0.0)
-
-    def test_a_level_that_holds_still_says_little(self):
-        """Sixty identical values a second down the pipe the cues use - but
-        not *nothing*, which is what this used to assert and what shipped.
-
-        The far end fades a channel nobody has restated in 0.8s, as a
-        dead-man's switch, so a binding that went permanently silent on a held
-        value deleted it. See max_interval and TheBindingKeepsTheBusAlive.
-        """
-        bound = self.binding(min_interval=0.0, min_change=0.01)
-        self.assertIsNotNone(bound.fires_on(0.5, 0.0))
-
-        # Inside the keepalive window an unchanged value still says nothing,
-        # which is the saving this exists for.
-        self.assertIsNone(bound.fires_on(0.505, 0.05))
-
-        # Past it, it restates itself rather than letting the value die.
-        self.assertIsNotNone(bound.fires_on(0.505, 1.0))
-
-        # And a real change is never delayed by any of it.
-        self.assertIsNotNone(bound.fires_on(0.7, 1.01))
-
-    def test_the_rate_limit_is_a_rate_limit(self):
-        bound = self.binding(min_interval=0.1, min_change=0.0)
-        self.assertIsNotNone(bound.fires_on(0.1, 10.0))
-        self.assertIsNone(bound.fires_on(0.9, 10.05))
-        self.assertIsNotNone(bound.fires_on(0.9, 10.2))
-
-    def test_a_trigger_is_an_edge_and_is_never_dropped(self):
-        # A beat arrives as a spike to 1.0 that stays up for a frame or two.
-        # Firing on the level would fire every frame it is up; rate-limiting
-        # it would drop beats, which is the one thing this mode cannot do.
-        bound = self.binding(mode="trigger", threshold=0.5, min_interval=99.0)
-        self.assertEqual(bound.fires_on(1.0, 0.0), 1.0)      # up: fires
-        self.assertIsNone(bound.fires_on(1.0, 0.01))         # still up: silent
-        self.assertIsNone(bound.fires_on(0.0, 0.02))         # down: silent
-        self.assertEqual(bound.fires_on(1.0, 0.03), 1.0)     # up again, at once
-
-    def test_a_message_with_no_number_is_not_a_zero(self):
-        # A zero would be a value - a level of nothing, sent to a knob.
-        self.assertIsNone(osc_input._number(["text"], 0))
-        self.assertIsNone(osc_input._number([], 0))
-        self.assertEqual(osc_input._number([0.25], 0), 0.25)
-        self.assertEqual(osc_input._number([True], 0), 1.0)
-
     def test_a_file_round_trips(self):
-        import tempfile
-
         original = osc_input.BindingSet([
             osc_input.Binding(label="bass", pattern="*bass*", exclude=["*mid*"],
                               mode="value", action="master",
@@ -502,11 +242,21 @@ class OscInputBindings(unittest.TestCase):
             path = Path(folder) / "map.json"
             original.save(path)
             loaded = osc_input.BindingSet.load(path)
-
         self.assertEqual(len(loaded.bindings), 1)
         self.assertEqual(loaded.bindings[0].pattern, "*bass*")
         self.assertEqual(loaded.bindings[0].exclude, ["*mid*"])
         self.assertEqual(loaded.bindings[0].params["high"], 1.0)
+        self.assertIs(loaded.find("bass"), loaded.bindings[0])
+        self.assertIsNone(loaded.find("treble"))
+
+    def test_the_executables_lines_parse(self):
+        event = osc_input.parse_line('OSC-IN /syn/BassLevel [0.75, "x", true]')
+        self.assertEqual((event.kind, event.address, event.arguments), ("in", "/syn/BassLevel", [0.75, "x", True]))
+        fired = osc_input.parse_line('OSC-FIRE "the bass" 0.5')
+        self.assertEqual((fired.kind, fired.label, fired.value), ("fire", "the bass", 0.5))
+        self.assertEqual(osc_input.parse_line("OSC-OUT resolved mac 1.2.3.4:6000").kind, "out")
+        self.assertEqual(osc_input.parse_line("OSC-IN dropped 3").kind, "dropped")
+        self.assertIsNone(osc_input.parse_line("BEAT 1 120"))
 
 
 class OscInputActions(unittest.TestCase):
@@ -594,60 +344,108 @@ class OscInputActions(unittest.TestCase):
         self.assertFalse(expect_reply)
 
 
-class OscInputListening(unittest.TestCase):
-    """The socket, the decode and the dispatch, end to end over real UDP."""
+class OscInputListening(ShowTest):
+    """The socket, the decode and the map, end to end over real UDP - in the
+    executable, which is where they live now."""
 
     def test_a_packet_becomes_an_action(self):
-        fired = []
+        show = self.running_show(DESKTOP / "config" / "synesthesia_test.json", midi="")
         bindings = osc_input.BindingSet([
-            osc_input.Binding(label="bass", pattern="*bass*", min_interval=0.0,
+            osc_input.Binding(label="bass", pattern="*bass*", min_interval=0.0, min_change=0.0,
                               action="command", params={"line": "x"}),
         ])
-        context = midi_map.ActionContext(show=None)
-        dispatcher = osc_input.Dispatcher(bindings, context)
-
-        listener = osc_input.OscListener(
-            0, host="127.0.0.1",
-            on_message=lambda address, arguments: fired.append(
-                (address, arguments, dispatcher.handle(address, arguments))))
+        dispatcher = osc_input.Dispatcher(bindings, midi_map.ActionContext(show=None))
+        fired = []
+        show.on_osc = lambda line: fired.append((line, dispatcher.handle_line(line)))
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "map.json"
+            bindings.save(path)
+            listener = osc_input.OscListener(show, 0, host="127.0.0.1", map_path=path)
+        self.assertEqual((listener.bindings_loaded, listener.native), (1, 0))
+        sender = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         try:
-            port = listener._socket.getsockname()[1]
-            sender = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            sender.sendto(osc.encode("/syn/BassLevel", 0.75), ("127.0.0.1", port))
-
-            deadline = time.monotonic() + 3.0
-            while not fired and time.monotonic() < deadline:
-                time.sleep(0.01)
-            sender.close()
+            sender.sendto(osc_packet("/syn/BassLevel", 0.75), ("127.0.0.1", listener.port))
+            self.settle_until(lambda: fired, message="nothing fired off the listener")
         finally:
+            sender.close()
             listener.close()
-
-        self.assertTrue(fired, "nothing arrived on the listener")
-        address, arguments, said = fired[0]
-        self.assertEqual(address, "/syn/BassLevel")
-        self.assertAlmostEqual(arguments[0], 0.75, places=5)
-        # "command: no show" - it reached the action, which is the point here.
+        line, said = fired[0]
+        self.assertTrue(line.startswith('OSC-FIRE "bass" 0.75'), line)
         self.assertTrue(said)
 
-    def test_a_stray_packet_does_not_stop_the_port(self):
-        seen = []
-        listener = osc_input.OscListener(0, host="127.0.0.1",
-                                         on_message=lambda a, v: seen.append(a))
+    def test_an_audio_binding_fills_the_bus_without_a_line(self):
+        show = self.running_show(DESKTOP / "config" / "synesthesia_test.json", midi="")
+        lines = []
+        show.on_osc = lines.append
+        listener = osc_input.OscListener(
+            show, 0, host="127.0.0.1", map_path=DESKTOP / "config" / "oscmaps" / "synesthesia.json")
+        self.assertGreater(listener.native, 0)
+        sender = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         try:
-            port = listener._socket.getsockname()[1]
-            sender = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            sender.sendto(b"not osc at all", ("127.0.0.1", port))
-            sender.sendto(osc.encode("/after", 1.0), ("127.0.0.1", port))
-
-            deadline = time.monotonic() + 3.0
-            while not seen and time.monotonic() < deadline:
-                time.sleep(0.01)
-            sender.close()
+            sender.sendto(osc_packet("/audio/level/bass", 0.75), ("127.0.0.1", listener.port))
+            self.settle_until(lambda: listener.refresh() and listener.fires >= 1,
+                              message="the bass binding never fired")
+            channels = {line.split()[1]: float(line.split()[2])
+                        for line in show.query("channels", "CHANNEL ")}
         finally:
+            sender.close()
             listener.close()
+        self.assertAlmostEqual(channels["bass"], 0.75, places=2)
+        self.assertEqual(lines, [])
 
-        self.assertEqual(seen, ["/after"])
+    def test_a_stray_packet_does_not_stop_the_port(self):
+        show = self.running_show(DESKTOP / "config" / "synesthesia_test.json", midi="")
+        seen = []
+        show.on_osc = lambda line: seen.append(osc_input.parse_line(line))
+        listener = osc_input.OscListener(show, 0, host="127.0.0.1")
+        listener.watch(True)
+        sender = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            sender.sendto(b"not osc at all", ("127.0.0.1", listener.port))
+            sender.sendto(osc_packet("/after", 1.0), ("127.0.0.1", listener.port))
+            self.settle_until(lambda: any(e is not None and e.kind == "in" for e in seen),
+                              message="nothing arrived after the stray packet")
+            listener.refresh()
+        finally:
+            sender.close()
+            listener.close()
+        self.assertEqual([e.address for e in seen if e is not None and e.kind == "in"], ["/after"])
         self.assertEqual(listener.undecodable, 1)
+
+
+class OscOutputEndToEnd(ShowTest):
+    """The executable's output, read back off a real socket."""
+
+    def test_the_tap_streams_a_fixture_and_a_scene_goes_out_whole(self):
+        receiver = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        receiver.bind(("127.0.0.1", 0))
+        receiver.settimeout(PATIENCE)
+        show = self.running_show(DESKTOP / "config" / "synesthesia_test.json", midi="")
+        try:
+            link = osc.SynesthesiaLink(show, f"127.0.0.1:{receiver.getsockname()[1]}",
+                                       gamma=2.2, fixture=0)
+            packet, _ = receiver.recvfrom(512)
+            self.assertEqual(len(packet), 48)
+            self.assertEqual(packet[:24], b"/controls/global/color/1")
+            self.assertEqual(packet[28:36], b",fff\0\0\0\0")
+            link.tap()                              # off: the scene is the next thing through
+            time.sleep(0.2)
+            while True:
+                try:
+                    receiver.recvfrom(512)
+                except socket.timeout:
+                    break
+                receiver.settimeout(0.1)
+            receiver.settimeout(PATIENCE)
+            link.send_scene("Neon Grid", "Soft Blue")
+            packet, _ = receiver.recvfrom(512)
+            self.assertEqual(packet[:16], b"/scenes/neongrid")
+            self.assertIn(b"Soft Blue", packet)
+            link.refresh()
+            self.assertGreater(link.sent, 1)
+            link.close()
+        finally:
+            receiver.close()
 
 
 class OscInputDispatch(unittest.TestCase):
@@ -661,34 +459,34 @@ class OscInputDispatch(unittest.TestCase):
             bindings, midi_map.ActionContext(show=None, say=self.said.append))
 
     def test_a_refusal_is_said_once(self):
-        # "no show" here, but at a venue it is a knob the cued look lacks, and
-        # the audio arrives at frame rate either way.
         dispatcher = self.dispatcher(action="master")
-        lines = [dispatcher.handle("/syn/Level", [i / 20]) for i in range(20)]
+        lines = [dispatcher.handle_fire("one", i / 20) for i in range(20)]
         self.assertEqual(sum(len(one) for one in lines), 1)
         self.assertIn("master", dispatcher.last_said["one"])
 
     def test_it_speaks_again_when_it_has_something_new_to_say(self):
         dispatcher = self.dispatcher(action="param", params={"name": ""})
-        first = dispatcher.handle("/syn/Level", [0.5])
+        first = dispatcher.handle_fire("one", 0.5)
         dispatcher.bindings.bindings[0].params = {"name": "x"}
-        second = dispatcher.handle("/syn/Level", [0.6])
+        second = dispatcher.handle_fire("one", 0.6)
         self.assertTrue(first)
         self.assertTrue(second)
         self.assertNotEqual(first, second)
 
     def test_a_binding_that_says_nothing_is_forgotten(self):
-        # An action that returns None succeeded silently - a streamed knob -
-        # and the memo has to clear, or the next thing it does have to say
-        # would be swallowed as a repeat.
         dispatcher = self.dispatcher(action="param", params={"name": ""})
-        self.assertTrue(dispatcher.handle("/x", [0.5]))          # no knob named
+        self.assertTrue(dispatcher.handle_fire("one", 0.5))          # no knob named
         self.assertIn("one", dispatcher.last_said)
-
         dispatcher.context.show = OscInputActions.FakeShow()
         dispatcher.bindings.bindings[0].params = {"name": "floor"}
-        self.assertEqual(dispatcher.handle("/x", [0.6]), [])     # streamed, silent
+        self.assertEqual(dispatcher.handle_fire("one", 0.6), [])     # streamed, silent
         self.assertNotIn("one", dispatcher.last_said)
+
+    def test_a_label_nobody_has_is_nothing(self):
+        dispatcher = self.dispatcher(action="master")
+        self.assertEqual(dispatcher.handle_fire("two", 0.5), [])
+        self.assertEqual(dispatcher.handle_line("OSC-IN /scenes/x []"), [])
+        self.assertEqual(dispatcher.context.syn.heard_scene, "/scenes/x")
 
 
 class TheShippedOscMap(unittest.TestCase):
@@ -1586,7 +1384,7 @@ class TheAudioBus(ShowTest):
             DESKTOP / "config" / "oscmaps" / "synesthesia.json").bindings
             if b.action == "audio" and b.params["channel"] == "bpm")
         self.assertEqual((binding.low, binding.high), (50.0, 220.0))
-        self.assertAlmostEqual(binding.scale(135.0), (135.0 - 50.0) / 170.0)
+        # the scaling itself is the executable's: ecore::BindingRule, tests/test_binding.cpp
 
     def test_the_audio_action_streams_a_channel_and_a_value(self):
         """It does not touch a knob: it writes a number onto the bus, and
@@ -1769,67 +1567,22 @@ class TheAudioBus(ShowTest):
 class TheBindingKeepsTheBusAlive(unittest.TestCase):
     """The regression that shipped: a steady value vanishing off the bus.
 
-    Two mechanisms, each right on its own. A binding suppresses an unchanged
-    value - "a level holding still says nothing" - which was correct when a
-    binding drove a *knob*, because a knob that has been set stays set. The bus
-    instead fades any channel nobody has restated in 0.8s, which is a
-    dead-man's switch: without it a dropped link leaves the rig lit at whatever
-    the music was doing when it went.
-
-    Together, with no keepalive, they delete the value. The channel is
-    suppressed at this end, goes stale at the other, and the look driven from
-    it fades to nothing while the music is still playing.
-
-    It got through because the end-to-end test fed the bus with `show.command`
-    directly, which is not the path a set uses - so the binding's rate limiting
-    was never in the loop. These go through the binding.
+    A binding suppresses an unchanged value, and the bus fades any channel
+    nobody has restated in 0.8s. Together, with no keepalive, they delete the
+    value. The keepalive itself now runs in the executable (ecore::BindingRule,
+    pinned in tests/test_binding.cpp); what the file has to do is ask for one
+    short enough, on every channel it fills, and that is checked here.
     """
-    def binding(self, channel="bass_hits"):
-        return next(b for b in osc_input.BindingSet.load(
-            DESKTOP / "config" / "oscmaps" / "synesthesia.json").bindings
-            if b.action == "audio" and b.params["channel"] == channel)
 
-    def test_a_steady_value_is_still_restated(self):
-        binding = self.binding()
-        now = time.monotonic()
-        fired = [step for step in range(40)
-                 if binding.fires_on(1.0, now + step * 0.05) is not None]
-
-        self.assertGreater(len(fired), 1, "a held value was sent once and never again")
-
-        # and the gaps stay inside the bus's hold, so it never begins to decay
-        from eclipse_dmx.osc_input import Binding
-        gaps = [(b - a) * 0.05 for a, b in zip(fired, fired[1:])]
-        self.assertTrue(gaps)
-        self.assertLessEqual(max(gaps), 0.35,
-                             "a gap longer than AudioLevel::kHoldFor lets the value sag")
-
-    def test_it_still_says_far_less_than_it_hears(self):
-        """The saving the suppression exists for is not given up: sixty
-        messages a second become five, not sixty."""
-        binding = self.binding()
-        now = time.monotonic()
-        heard = 120                       # two seconds at 60/s
-        fired = [step for step in range(heard)
-                 if binding.fires_on(0.42, now + step / 60.0) is not None]
-        self.assertLess(len(fired), heard / 4)
-
-    def test_a_changing_value_is_not_delayed_by_the_keepalive(self):
-        """The keepalive is a floor on how often it speaks, never a ceiling."""
-        binding = self.binding()
-        now = time.monotonic()
-        sent = [binding.fires_on(step / 20.0, now + step * 0.05) for step in range(20)]
-        self.assertEqual(len([one for one in sent if one is not None]), 20)
-
-    def test_a_trigger_has_no_keepalive_to_give(self):
-        """A trigger is an edge, not a held value: there is nothing to restate,
-        and restating one would be a second beat."""
+    def test_every_audio_binding_asks_for_a_keepalive_the_bus_can_live_with(self):
         for binding in osc_input.BindingSet.load(
                 DESKTOP / "config" / "oscmaps" / "synesthesia.json").bindings:
-            if binding.mode == "trigger":
-                self.assertEqual(binding.max_interval, 0.0, binding.label)
+            if binding.action != "audio":
+                continue
+            self.assertGreater(binding.max_interval, 0.0, binding.label)
+            self.assertLess(binding.max_interval, 0.8, binding.label)
 
-    def test_it_survives_the_file(self):
+    def test_the_keepalive_survives_the_file(self):
         binding = osc_input.Binding(max_interval=0.4)
         again = osc_input.Binding.from_dict(binding.to_dict())
         self.assertEqual(again.max_interval, 0.4)
@@ -2235,38 +1988,32 @@ class TheOscPanel(unittest.TestCase):
         self.assertEqual(len(state["in"]), traffic.max_rows)
         self.assertEqual(state["overflowed"], 20)
 
-    def test_the_link_tells_it_what_went_out(self):
-        """SynesthesiaLink.on_send, which is why _send takes an address rather
-        than a finished packet: one place that knows *what* is being sent as
-        well as that something is."""
-        from eclipse_dmx.osc import SynesthesiaLink
-        seen = []
-        link = SynesthesiaLink("127.0.0.1:9", on_send=lambda a, v, ok: seen.append((a, v)))
-        try:
-            link.send_color((255, 0, 0))
-            link.send_scene("NeonGrid")
-            link.send_favslot(3)
-        finally:
-            link.close()
-
-        self.assertEqual([address for address, _ in seen],
-                         ["/controls/global/color/1", "/scenes/neongrid", "/favslots/3"])
-        self.assertEqual(seen[0][1], (1.0, 0.0, 0.0))
-
-    def test_an_observer_that_throws_cannot_stop_a_send(self):
-        """It is a diagnostic hanging off the side of a link that is itself
-        decoration hanging off the side of a show."""
-        from eclipse_dmx.osc import SynesthesiaLink
-
-        def explode(*_args):
-            raise RuntimeError("no")
-
-        link = SynesthesiaLink("127.0.0.1:9", on_send=explode)
-        try:
-            link.send_color((255, 0, 0))      # must not raise
-            self.assertEqual(link.sent, 1)
-        finally:
-            link.close()
+    def test_a_pull_fills_the_tables_from_the_executable(self):
+        """The forty uniforms a frame never cross the pipe; the panel asks
+        the executable for its summary instead."""
+        class FakeShow:
+            def query(self, line, prefix):
+                if line == "osc status":
+                    return ["OSC-STATUS listening=yes host=0.0.0.0 port=7000 map=- bindings=0 "
+                            "live=0 native=0 packets=9 messages=40 undecodable=0 fires=0 "
+                            "addresses=2 heard=0.1s watch=off",
+                            "OSC-OUT-STATUS open=yes endpoint=127.0.0.1:6000 address=127.0.0.1:6000 "
+                            "control=/c form=rgb gamma=0 tap=0 sent=12 dropped=1"]
+                return ["OSC-SEEN in /audio/level/bass 30 0 0.9 0.0 [0.5]",
+                        "OSC-SEEN in /scenes/neongrid 1 - - 2.0 []",
+                        "OSC-SEEN out /c 12 0 1 0.0 [1, 0, 0]"]
+        traffic = self.traffic()
+        traffic.pull(FakeShow())
+        state = traffic.snapshot()
+        # oldest first: the scene was heard two seconds before the level
+        self.assertEqual([row[0] for row in state["in"]], ["/scenes/neongrid", "/audio/level/bass"])
+        self.assertEqual(state["in"][1][1], 30)
+        self.assertEqual(state["in"][1][2], (0.5,))
+        self.assertEqual([row[0] for row in state["out"]], ["/c"])
+        self.assertEqual((state["sends"], state["send_failures"]), (12, 1))
+        self.assertEqual(state["messages_in"], 40)
+        self.assertEqual(state["scene"], "/scenes/neongrid")
+        self.assertIsNotNone(state["last_in_at"])
 
 
 class SharedBeatTriggers(ShowTest):
@@ -2647,13 +2394,20 @@ class PatternRegistry(unittest.TestCase):
         for expected in ("obelisk_seasons", "obelisk_theater", "obelisk_mono"):
             self.assertIn(expected, names)
 
-    def test_static_list_matches_the_executable(self):
-        """config.PATTERN_NAMES is duplicated from pattern.cpp; catch the drift."""
+    def test_the_live_list_is_the_executables(self):
+        """The names a config is checked against come from the executable's
+        registry, so a look registered in src/relics/registry.cpp needs
+        nothing edited here. The fallback tuple only has to stay a subset."""
         executable_or_skip()
-        from eclipse_dmx.config import PATTERN_NAMES
+        from eclipse_dmx.config import FALLBACK_PATTERN_NAMES, pattern_names
         from eclipse_dmx.patterns import list_patterns
 
-        self.assertEqual(sorted(list_patterns()), sorted(PATTERN_NAMES))
+        live = list_patterns()
+        self.assertEqual(sorted(pattern_names()), sorted(live))
+        self.assertTrue(set(FALLBACK_PATTERN_NAMES) <= set(live),
+                        set(FALLBACK_PATTERN_NAMES) - set(live))
+        for expected in ("mythos_house", "generic_rainbow", "audio_meter"):
+            self.assertIn(expected, live)
 
 
 class FrameStream(ShowTest):
@@ -6431,31 +6185,27 @@ class TheEasingPort(unittest.TestCase):
 
 
 class OscBeyondFloats(unittest.TestCase):
-    """The routes that carry names and slots, not colours."""
+    """The routes that carry names and slots, not colours. The wire form is
+    the library's (tests/test_eosc.cpp); what python decides is how each
+    argument is spelled for the executable, which types it from that."""
 
-    def test_strings_are_tagged_and_padded(self):
-        packet = osc.encode("/presets", "Deep")
-        # address, then ",s", then the string, every block 4-aligned
-        self.assertIn(b"/presets\0", packet)
-        self.assertIn(b",s\0", packet)
-        self.assertTrue(packet.endswith(b"Deep\0\0\0\0"))
-        self.assertEqual(len(packet) % 4, 0)
-
-    def test_ints_are_big_endian_int32(self):
-        packet = osc.encode("/x", 3)
-        self.assertIn(b",i\0", packet)
-        self.assertTrue(packet.endswith(b"\x00\x00\x00\x03"))
-
-    def test_floats_still_floats(self):
-        packet = osc.encode("/x", 0.5)
-        self.assertIn(b",f\0", packet)
+    def test_strings_are_quoted_and_numbers_are_bare(self):
+        self.assertEqual(osc.format_argument("Deep"), '"Deep"')
+        self.assertEqual(osc.format_argument(3), "3")
+        self.assertEqual(osc.format_argument(0.5), "0.5")
 
     def test_mixed_arguments_keep_their_order(self):
-        packet = osc.encode("/x", 1, "a", 0.5)
-        self.assertIn(b",isf\0", packet)
+        class Recorder:
+            def __init__(self):
+                self.lines = []
+            def command(self, line, expect_reply=True):
+                self.lines.append(line)
+                return "OK osc out open=yes"
+        show = Recorder()
+        osc.SynesthesiaLink(show, "127.0.0.1:9").send_raw("/x", 1, "a", 0.5)
+        self.assertEqual(show.lines[-1], 'osc send /x 1 "a" 0.5')
 
     def test_scene_address_folds_the_name(self):
-        # lowercase, and spaces/underscores/hyphens removed - the app's rule
         self.assertEqual(osc.scene_address("Neon Grid"), "/scenes/neongrid")
         self.assertEqual(osc.scene_address("mecha_wave-2"), "/scenes/mechawave2")
 
@@ -7265,10 +7015,10 @@ class TheSynesthesiaState(unittest.TestCase):
             osc_input.BindingSet(),
             midi_map.ActionContext(show=None, syn=syn))
 
-        dispatcher.handle("/syn_BassLevel", [0.4])
+        dispatcher.handle_line("OSC-IN /syn_BassLevel [0.4]")
         self.assertEqual(syn.heard_scene, "")
 
-        dispatcher.handle("/scenes/neongrid", ["Neon Grid"])
+        dispatcher.handle_line('OSC-IN /scenes/neongrid ["Neon Grid"]')
         self.assertEqual(syn.heard_scene, "/scenes/neongrid")
         self.assertIs(syn.scene_is("Neon Grid"), True)
 

@@ -13,16 +13,17 @@
 
 // The relic's own pattern source, compiled for the host. Not a copy: this is
 // the same file the obelisk runs, and it needed no changes to get here.
-#include "relics/obelisk/state_obelisk.h"
-#include "relics/scanner/generic_patterns.h"
-#include "relics/scanner/scanner_patterns.h"
+#include <eanim/registry.h>
+#include <ebeat/shared.h>
+
+#include "relics/registry.h"
 
 #include "edesk/audio_meter.h"
-#include "edesk/beat_clock.h"
 #include "edesk/mythos26.h"
 #include "edesk/state_machine.h"
 
 using namespace edesk;
+using namespace ebeat;
 
 namespace
 {
@@ -469,70 +470,6 @@ namespace
         };
 
         // --- relic patterns, unmodified -------------------------------------
-        table["obelisk_seasons"] = []() {
-            return std::unique_ptr<Pattern>(new GeneratorPattern(
-                "obelisk_seasons", std::make_shared<Pattern_Obelisk_FourSeasons>()));
-        };
-        table["obelisk_theater"] = []() {
-            return std::unique_ptr<Pattern>(new GeneratorPattern(
-                "obelisk_theater", std::make_shared<Pattern_Obelisk_Theater>()));
-        };
-        table["obelisk_mono"] = []() {
-            return std::unique_ptr<Pattern>(new GeneratorPattern(
-                "obelisk_mono", std::make_shared<Pattern_Obelisk_Monocolor>()));
-        };
-
-        // --- the scanner's looks (afterglow), unmodified --------------------
-        // The solids are left out; `solid` and `off` already cover them.
-        table["scanner_power_up"] = []() {
-            return std::unique_ptr<Pattern>(new GeneratorPattern(
-                "scanner_power_up", std::make_shared<scanner::Pattern_Scanner_PowerUp>()));
-        };
-        table["scanner_boot"] = []() {
-            return std::unique_ptr<Pattern>(new GeneratorPattern(
-                "scanner_boot", std::make_shared<scanner::Pattern_Scanner_Boot>()));
-        };
-        table["scanner_idle"] = []() {
-            return std::unique_ptr<Pattern>(new GeneratorPattern(
-                "scanner_idle", std::make_shared<scanner::Pattern_Scanner_ScanIdle>()));
-        };
-        table["scanner_emergency"] = []() {
-            return std::unique_ptr<Pattern>(new GeneratorPattern(
-                "scanner_emergency", std::make_shared<scanner::Pattern_Scanner_Emergency>()));
-        };
-        table["scanner_detected"] = []() {
-            return std::unique_ptr<Pattern>(new GeneratorPattern(
-                "scanner_detected", std::make_shared<scanner::Pattern_Scanner_DetectedWave>()));
-        };
-        table["scanner_shimmer"] = []() {
-            return std::unique_ptr<Pattern>(new GeneratorPattern(
-                "scanner_shimmer", std::make_shared<scanner::Pattern_Scanner_DetectedShimmer>()));
-        };
-        table["scanner_mushroom"] = []() {
-            return std::unique_ptr<Pattern>(new GeneratorPattern(
-                "scanner_mushroom", std::make_shared<scanner::Pattern_Scanner_DetectedMushroom>()));
-        };
-        table["scanner_mushroom_new"] = []() {
-            return std::unique_ptr<Pattern>(new GeneratorPattern(
-                "scanner_mushroom_new", std::make_shared<scanner::Pattern_Scanner_DetectedMushroomNew>()));
-        };
-        table["scanner_success_mushroom"] = []() {
-            return std::unique_ptr<Pattern>(new GeneratorPattern(
-                "scanner_success_mushroom", std::make_shared<scanner::Pattern_Scanner_SuccessMushroom>()));
-        };
-        table["scanner_playback_mushroom"] = []() {
-            return std::unique_ptr<Pattern>(new GeneratorPattern(
-                "scanner_playback_mushroom", std::make_shared<scanner::Pattern_Scanner_PlaybackMushroom>()));
-        };
-        table["scanner_playback_generic"] = []() {
-            return std::unique_ptr<Pattern>(new GeneratorPattern(
-                "scanner_playback_generic", std::make_shared<scanner::Pattern_Scanner_PlaybackGeneric>()));
-        };
-        // --- the generic looks: one machine, each look a cue ---------------
-        // Free-standing stage patterns with no game state, most recreated
-        // from WLED - see src/relics/scanner/generic_patterns.h. Grouped
-        // like mythos26 rather than registered one by one, so the desk gets
-        // a cue list and real cross-fades between the looks.
         table["generic"] = []() {
             return std::unique_ptr<Pattern>(makeGenericStateMachine().release());
         };
@@ -565,10 +502,18 @@ namespace
         // and the hit layers want this without a cue list wrapped round it.
         // `color` and `level` are its whole surface; a mod on `level` is what
         // makes it a hit.
-        table["solid"] = []() {
-            return std::unique_ptr<Pattern>(new GeneratorPattern(
-                "solid", std::make_shared<Pattern_Mythos_Solid>()));
-        };
+        // Every look the relics ship, by the name the registry gives it. A
+        // registered name shadows a desk pattern above: `solid` is the
+        // mythos26 one.
+        eanim::GeneratorRegistry& looks = eanim::GeneratorRegistry::shared();
+        registerRelicGenerators(looks);
+        for (const std::string& look : looks.names())
+        {
+            table[look] = [look]() {
+                return std::unique_ptr<Pattern>(new GeneratorPattern(
+                    look.c_str(), eanim::GeneratorRegistry::shared().make(look)));
+            };
+        }
     }
 }
 

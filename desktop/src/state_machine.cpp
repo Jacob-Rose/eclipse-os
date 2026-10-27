@@ -42,54 +42,6 @@
 using namespace edesk;
 
 // ============================================================================
-// HostRelicIO
-// ============================================================================
-
-void HostRelicIO::build(const PatternContext& context, uint8_t segmentId)
-{
-    const size_t count = context.fixtureCount;
-
-    strip_segments.clear();
-    strips.clear();
-    nodes.clear();
-
-    strip.reset(new eio::HSVStrip(static_cast<uint16_t>(count), 0));
-
-    auto segment = std::make_unique<eio::HSVStripSegment>(strip.get(), segmentId);
-
-    for (size_t idx = 0; idx < count; ++idx)
-    {
-        // The same node GeneratorPattern builds - spaced when the rig said
-        // what each node is part of - so a scanner look asking which object
-        // it is lighting gets the same answer in a machine as bare.
-        auto node = edesk::makeStripNode(context, segment.get(), idx);
-
-        if (idx < context.nodeCoords.size())
-        {
-            // The rig knows where its nodes are. Most scanner looks read the
-            // strip index and never notice, but a look that reads height
-            // (the record countdown's bottom-to-top sweep) gets the
-            // obelisk's real geometry instead of a straight run.
-            node->coord = context.nodeCoords[idx];
-        }
-        else
-        {
-            const float position = (idx < context.positions.size()) ? context.positions[idx] : 0.0f;
-            node->coord = context.coords.at(position);
-        }
-
-        nodes.push_back(node);
-        segment->addNode(node);
-    }
-
-    strip_segments.emplace(segmentId, std::move(segment));
-
-    // Full brightness here; the rig's own master and gamma are applied further
-    // down the chain, and dimming twice would just cost resolution.
-    setGlobalBrightness(eio::EBrightness::MAX);
-}
-
-// ============================================================================
 // StateMachinePattern
 // ============================================================================
 
@@ -109,8 +61,23 @@ void StateMachinePattern::ensureBuilt(const PatternContext& context)
     }
     builtFor = context.fixtureCount;
 
-    io.reset(new HostRelicIO());
-    io->build(context, segmentId);
+    io.reset(new eio::HostRelicIO());
+    // the same node GeneratorPattern builds, placed where the rig says it is,
+    // so a look that reads height sees the obelisk's geometry and not a run
+    io->build(static_cast<uint16_t>(context.fixtureCount), segmentId,
+              [&context](eio::HSVStripSegment* segment, size_t idx) {
+                  auto node = edesk::makeStripNode(context, segment, idx);
+                  if (idx < context.nodeCoords.size())
+                  {
+                      node->coord = context.nodeCoords[idx];
+                  }
+                  else
+                  {
+                      const float position = (idx < context.positions.size()) ? context.positions[idx] : 0.0f;
+                      node->coord = context.coords.at(position);
+                  }
+                  return node;
+              });
 
     manager.reset(new esm::StateManager());
     machine.reset(new StateMachine_GenericHSV());

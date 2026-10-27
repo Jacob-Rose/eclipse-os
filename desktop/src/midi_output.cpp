@@ -389,3 +389,9 @@ std::string MidiOutput::describe() const
     return "port=\"" + portName + "\" " + portAddress
          + " sent=" + std::to_string(sent);
 }
+
+bool MidiOutput::write(const uint8_t* data, size_t length)
+{
+    std::string error;
+    return send(data, length, error);
+}

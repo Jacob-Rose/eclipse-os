@@ -9,8 +9,10 @@
 #include <cctype>
 #include <cstdio>
 #include <cstring>
+#include <ebeat/beat_clock.h>
+#include <ebeat/level_bus.h>
+#include <ebeat/shared.h>
 
-#include "edesk/beat_clock.h"
 
 #if defined(_WIN32)
 #  include <windows.h>
@@ -26,6 +28,7 @@
 #endif
 
 using namespace edesk;
+using namespace ebeat;
 
 namespace
 {
@@ -316,30 +319,9 @@ std::vector<MidiPortInfo> MidiInput::enumeratePorts()
 
 #endif
 
-bool MidiInput::isClockNote(unsigned char status, unsigned char data1) const
+bool MidiInput::isClockNote(const emidi::Message& message) const
 {
-    if ((status & 0xF0) != 0x90 || !followNotes.load())
-    {
-        return false;
-    }
-    const int wantedChannel = beatChannel.load();
-    if (wantedChannel >= 0 && static_cast<int>(status & 0x0F) + 1 != wantedChannel)
-    {
-        return false;
-    }
-    const int note = static_cast<int>(data1);
-    if (note == bpmNote.load() || note == beatNote.load())
-    {
-        return true;
-    }
-    for (int index = 0; index < kVuSourceCount; ++index)
-    {
-        if (vuNotes[index].load() == note)
-        {
-            return true;
-        }
-    }
-    return false;
+    return followNotes.load() && notes.claims(message);
 }
 
 bool MidiInput::markPads(const std::string& name, bool wholeDevice)
@@ -572,14 +554,16 @@ void MidiInput::onBeat(double when, bool fromNote)
     beatsSeen.fetch_add(1);
 }
 
+static_assert(kVuSourceCount == emidi::BeatNotes::kLevelSlots, "a VuSource is a BeatNotes level slot");
+
 void MidiInput::setVuNote(VuSource source, int note)
 {
-    vuNotes[static_cast<int>(source)].store(note);
+    notes.setLevelNote(static_cast<int>(source), note);
 }
 
 int MidiInput::getVuNote(VuSource source) const
 {
-    return vuNotes[static_cast<int>(source)].load();
+    return notes.getLevelNote(static_cast<int>(source));
 }
 
 void MidiInput::setMonitor(bool enable)
@@ -625,48 +609,38 @@ std::vector<MidiMessage> MidiInput::drainMonitor(unsigned long long& outDropped)
 void MidiInput::handleMessage(unsigned char status, unsigned char data1, unsigned char data2,
                               double when, bool fromPads)
 {
-    // ---- the monitor -----------------------------------------------------
-    // Channel messages only. Clock ticks arrive 24 times a beat and would bury
-    // the one note you are trying to find; `midi status` counts them instead.
-    if (monitoring.load() && status < 0xF0 && status >= 0x80)
+    handleMessage(emidi::Message(status, data1, data2), when, fromPads);
+}
+
+void MidiInput::handleMessage(const emidi::Message& message, double when, bool fromPads)
+{
+    // the monitor sees every channel message, pads included, with its origin
+    if (monitoring.load() && message.isChannel())
     {
-        // The origin rides in the top byte, so the desk can keep Mixxx's
-        // notes out of its map: with a pad controller on this input, a
-        // message that is not the controller's is the beat's - and with
-        // none, a note the clock is about to take (the tempo, the beat, a
-        // VU level, on the beat channel) is the beat's whoever sent it.
-        // Mixxx says 52 on every beat, and 52 is also the flash pad.
         const bool pads = fromPads || allPads.load();
         unsigned int origin = pads ? 1u : (padsClient.load() >= 0 ? 2u : 0u);
-        if (origin == 0u && isClockNote(status, data1))
+        if (origin == 0u && isClockNote(message))
         {
             origin = 2u;
         }
-        const unsigned int packed = static_cast<unsigned int>(status)
-                                  | (static_cast<unsigned int>(data1) << 8)
-                                  | (static_cast<unsigned int>(data2) << 16)
+        const unsigned int packed = static_cast<unsigned int>(message.status)
+                                  | (static_cast<unsigned int>(message.data1) << 8)
+                                  | (static_cast<unsigned int>(message.data2) << 16)
                                   | (origin << 24);
-
         const unsigned long long slot = monitorWrites.load();
         monitorRing[slot % kMonitorSlots].store(packed);
         monitorWrites.store(slot + 1);
     }
 
-    // ---- the pads --------------------------------------------------------
-    // A pad controller's message stops here. The monitor above is how the
-    // desk's map sees it, and that is all it is for: a note off a Launchpad
-    // is a button, whatever number the grid gave it, and the flash pad
-    // landing on Mixxx's tempo note must not set the rig to 177bpm.
+    // a pad is for the desk's map, never for the clock
     if (fromPads || allPads.load())
     {
         return;
     }
 
-    // ---- system realtime and song position --------------------------------
-    // Counted by the library's follower; its beats and tempo reach the
-    // BeatClock through the relay, which applies the desk's rules. Stop is
-    // ignored there too: the clock free-runs through a track change.
-    if (status >= 0xF8 || status == 0xF2)
+    // the 0xF8 stream and song position: the library follows it, the relay
+    // applies the desk's rule that a recent note beat holds the clock off
+    if (message.isRealtime() || message.status == emidi::status::SongPosition)
     {
         if (alignRequested.exchange(false))
         {
@@ -676,82 +650,44 @@ void MidiInput::handleMessage(unsigned char status, unsigned char data1, unsigne
             && !(lastNoteBeat > 0.0 && (when - lastNoteBeat) < kNoteHoldsOffClock);
         ClockRelay relay(*this, driving);
         follower.setBpmRange(BeatClock::kMinBpm, BeatClock::kMaxBpm);
-        follower.handle(emidi::Message(status, data1, data2), when, relay);
+        follower.handle(message, when, relay);
         clockTicks.store(follower.getTicks());
         return;
     }
 
-    const unsigned char kind = status & 0xF0;
-    const int channel = (status & 0x0F) + 1;
-
-    // ---- note on ---------------------------------------------------------
-    if (kind == 0x90 && data2 > 0)
+    // notes: the beat, the tempo and the levels, by the configured numbering
+    if (!followNotes.load())
     {
-        if (!followNotes.load())
-        {
-            return;
-        }
-
-        const int wantedChannel = beatChannel.load();
-        if (wantedChannel >= 0 && channel != wantedChannel)
-        {
-            return;
-        }
-
-        const int note = static_cast<int>(data1);
-
-        // The tempo, stated rather than measured. Mixxx sends this on the same
-        // beat as the beat note, so by the time the beat lands the period is
-        // already right - which matters most at exactly the moment it is
-        // hardest to measure, the first beat after a track change.
-        const int tempoNote = bpmNote.load();
-        if (tempoNote >= 0 && note == tempoNote)
-        {
+        return;
+    }
+    const emidi::BeatNotes::Event event = notes.decode(message);
+    switch (event.kind)
+    {
+        case emidi::BeatNotes::Kind::Tempo:
             if (clock != nullptr)
             {
-                // velocity + 50, the encoding the mapping uses to fit a usable
-                // tempo range into MIDI's 0..127. A velocity of 0 means "below
-                // the range", not 50bpm, so it is not worth acting on.
-                const float bpm = static_cast<float>(data2) + 50.0f;
-                if (data2 > 0)
-                {
-                    clock->setBpm(bpm, BeatSource::MidiNote, when);
-                }
+                clock->setBpm(event.bpm, BeatSource::MidiNote, when);
             }
             return;
-        }
 
-        // The VU meters. Checked before the beat so that a rig configured with
-        // beat_note -1 - "any note is a beat" - still does not take one for a
-        // beat, since between them they arrive dozens of times a second.
-        for (int index = 0; index < kVuSourceCount; ++index)
-        {
-            if (vuNotes[index].load() != note)
-            {
-                continue;
-            }
+        case emidi::BeatNotes::Kind::Level:
             if (audioLevel != nullptr)
             {
-                const VuSource source = static_cast<VuSource>(index);
-                const float level = static_cast<float>(data2) / 127.0f;
-                audioLevel->set(source, level, when);
-                // the average is `level` too when the cable owns the bus -
-                // the slot the churn reads, and syn_Level's when it does not
+                const VuSource source = static_cast<VuSource>(event.level);
+                audioLevel->set(source, event.value, when);
                 if (source == VuSource::Average && vuFillsLevel.load())
                 {
-                    audioLevel->set(AudioChannel::Level, level, when);
+                    audioLevel->set(AudioChannel::Level, event.value, when);
                 }
             }
             return;
-        }
 
-        const int wantedNote = beatNote.load();
-        if (wantedNote >= 0 && note != wantedNote)
-        {
+        case emidi::BeatNotes::Kind::Beat:
+            onBeat(when, true);
             return;
-        }
 
-        onBeat(when, true);
+        case emidi::BeatNotes::Kind::None:
+            return;
     }
 }
 
@@ -765,7 +701,7 @@ namespace
         IntoHandleMessage(MidiInput& inInput, bool inFromPads) : input(inInput), fromPads(inFromPads) {}
         void onMessage(const emidi::Message& message, double when) override
         {
-            input.handleMessage(message.status, message.data1, message.data2, when, fromPads);
+            input.handleMessage(message, when, fromPads);
         }
     };
 }
@@ -793,11 +729,11 @@ std::string MidiInput::describe() const
                   padsName.empty() ? "" : " pads=yes",
                   followClock.load() ? "on" : "off",
                   followNotes.load() ? "on" : "off",
-                  beatNote.load(), bpmNote.load(),
+                  notes.getBeatNote(), notes.getTempoNote(),
                   getVuNote(VuSource::Instant),
                   getVuNote(VuSource::Average),
                   getVuNote(VuSource::Meter),
-                  beatChannel.load(), getClockTicks(), getBeats());
+                  notes.getChannel(), getClockTicks(), getBeats());
     return std::string(text);
 }
 

@@ -415,6 +415,7 @@ class ShowController:
         on_frame: Optional[Callable[[Frame], None]] = None,
         on_beat: Optional[Callable[[int, float], None]] = None,
         on_midi: Optional[Callable[[str], None]] = None,
+        on_osc: Optional[Callable[[str], None]] = None,
         emit_frames: bool = False,
         emit_rate: float = 30.0,
         midi: Optional[str] = None,
@@ -472,6 +473,9 @@ class ShowController:
         self.on_frame = on_frame
         self.on_beat = on_beat
         self.on_midi = on_midi
+        #: Every `OSC-IN`, `OSC-FIRE` and `OSC-OUT` line, on the reader thread.
+        self.on_osc = on_osc
+        self.osc_seen: "deque[str]" = deque(maxlen=400)
 
         #: The last few `midi monitor` lines. Bounded, because a chatty mapping
         #: sends hundreds a second and a monitor left on is a monitor forgotten.
@@ -881,6 +885,11 @@ class ShowController:
             if self.on_midi is not None:
                 self.on_midi(payload)
             return
+        if line.startswith("OSC-IN ") or line.startswith("OSC-FIRE ") or line.startswith("OSC-OUT "):
+            self.osc_seen.append(line)
+            if self.on_osc is not None:
+                self.on_osc(line)
+            return
 
         # OFFLINE <device>: <reason>
         #
@@ -1201,6 +1210,38 @@ class ShowController:
         if reply.startswith("ERR"):
             raise ShowError(reply[4:].strip())
         return reply
+
+    def query(self, line: str, prefix: str) -> List[str]:
+        """Sends a command and returns the announcement lines it produced.
+
+        For the commands that answer with a list - `osc seen`, `osc status`,
+        `channels` - where the OK is the end of the list rather than the
+        answer. Lines starting with `prefix` that arrived between the send and
+        the reply are the answer; anything else streaming past is not.
+        """
+        with self._command_lock:
+            while True:
+                try:
+                    self._replies.get_nowait()
+                except queue.Empty:
+                    break
+            seen = len(self._events)
+            self._write_line(line)
+            deadline = time.monotonic() + self.command_timeout
+            while True:
+                # a streamed command's OK can land after the drain above; the
+                # answer to *this* line echoes its words, so wait for that one
+                try:
+                    reply = self._replies.get(timeout=max(0.0, deadline - time.monotonic()))
+                except queue.Empty as error:
+                    raise ShowError(f"no reply to '{line}' within {self.command_timeout}s") from error
+                words = line.split()[:2]
+                if reply.startswith("ERR") or all(word in reply for word in words):
+                    break
+            lines = [event for event in self._events[seen:] if event.startswith(prefix)]
+        if reply.startswith("ERR"):
+            raise ShowError(reply[4:].strip())
+        return lines
 
     def set_pattern(self, name: str) -> None:
         """Switches the look. Speed/width/brightness carry across."""

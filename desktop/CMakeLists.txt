@@ -37,12 +37,24 @@ set(ECLIPSE_CORE_SOURCES
     ${ECLIPSE_LIB}/edmx/binding.cpp
     ${ECLIPSE_LIB}/edmx/fixture.cpp
     ${ECLIPSE_LIB}/emidi/binding.cpp
+    ${ECLIPSE_LIB}/enet/host_udp.cpp
+    ${ECLIPSE_LIB}/eosc/address.cpp
+    ${ECLIPSE_LIB}/eosc/binding.cpp
+    ${ECLIPSE_LIB}/eosc/packet.cpp
+    ${ECLIPSE_LIB}/emidi/beat_notes.cpp
+    ${ECLIPSE_LIB}/ebeat/beat_clock.cpp
+    ${ECLIPSE_LIB}/ebeat/beat_trigger.cpp
+    ${ECLIPSE_LIB}/ebeat/level_bus.cpp
+    ${ECLIPSE_LIB}/eanim/registry.cpp
+    ${ECLIPSE_LIB}/eio/host_relic.cpp
+    ${ECLIPSE_LIB}/ebeat/shared.cpp
     ${ECLIPSE_LIB}/emidi/clock.cpp
     ${ECLIPSE_LIB}/emidi/parser.cpp
     ${ECLIPSE_LIB}/ecore/coord.cpp
     ${ECLIPSE_LIB}/ecore/hsv.cpp
     ${ECLIPSE_LIB}/ecore/logging.cpp
     ${ECLIPSE_LIB}/ecore/math.cpp
+    ${ECLIPSE_LIB}/ecore/binding.cpp
     ${ECLIPSE_LIB}/ecore/property.cpp
     ${ECLIPSE_LIB}/ecore/range.cpp
     ${ECLIPSE_LIB}/ecore/tickable.cpp
@@ -104,6 +116,9 @@ set(ECLIPSE_RELIC_SOURCES
     # The recording flow's looks that build on a generic one (cleanse_arm is
     # the fire, with a cue to answer and a picture to sit over).
     ${ECLIPSE_SRC}/relics/scanner/recording_patterns.cpp
+    ${ECLIPSE_SRC}/relics/mythos26/mythos26_looks.cpp
+    ${ECLIPSE_SRC}/relics/generic/audio_meter.cpp
+    ${ECLIPSE_SRC}/relics/registry.cpp
 
     # The jacket's looks. Its State_* wrappers reach into JacketIO for physical
     # buttons, so the desktop drives the Pattern_* generators inside them
@@ -138,6 +153,9 @@ list(APPEND ECLIPSE_CORE_SOURCES ${ECLIPSE_RELIC_SOURCES})
 #                       USE_SCREEN is 0, which is what lets eio::Relic build.
 
 add_library(eclipse_core STATIC ${ECLIPSE_CORE_SOURCES})
+if(WIN32)
+    target_link_libraries(eclipse_core PUBLIC ws2_32)   # enet::HostUdp
+endif()
 
 # ---------------------------------------------------------------------------
 # The relic's *device* layer, built for the host.
@@ -182,8 +200,6 @@ target_compile_definitions(eclipse_core PUBLIC
 # edesk: the show runner's own code (its namespace, too)
 # ---------------------------------------------------------------------------
 add_library(edesk STATIC
-    src/beat_clock.cpp
-    src/beat_trigger.cpp
     src/config.cpp
     src/dmx_output.cpp
     src/relic_shadow.cpp
@@ -191,6 +207,7 @@ add_library(edesk STATIC
     src/json.cpp
     src/midi_input.cpp
     src/midi_output.cpp
+    src/osc_link.cpp
     src/audio_meter.cpp
     src/mythos26.cpp
     src/pattern.cpp

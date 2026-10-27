@@ -44,7 +44,12 @@ DEVICE_TYPES = (
 #: in desktop/include/edesk/config.h.
 COORD_SPACES = ("normalized", "literal")
 
-PATTERN_NAMES = (
+#: The looks a config may name when no executable is around to ask - a
+#: laptop validating a file it will run elsewhere. The live list is the
+#: executable's registry (`pattern_names()`), which is the one that counts:
+#: a look registered in src/relics/registry.cpp is known here the moment it
+#: is, with nothing to edit on this side.
+FALLBACK_PATTERN_NAMES = (
     # built-ins
     "solid",
     "palette_wave",
@@ -91,6 +96,30 @@ PATTERN_NAMES = (
     # See edmx/audio_meter.h and AUDIO_STATES.
     "audio",
 )
+
+_pattern_names: Optional[Tuple[str, ...]] = None
+
+
+def pattern_names() -> Tuple[str, ...]:
+    """Every look the executable registers, asked once per process.
+
+    Falls back to FALLBACK_PATTERN_NAMES when there is no executable to ask,
+    so a config can still be validated without one.
+    """
+    global _pattern_names
+    if _pattern_names is None:
+        names: Tuple[str, ...] = ()
+        try:
+            from .patterns import list_patterns
+            names = tuple(list_patterns())
+        except Exception:
+            names = ()
+        _pattern_names = names or FALLBACK_PATTERN_NAMES
+    return _pattern_names
+
+
+#: Kept for callers that import it; the live list is pattern_names().
+PATTERN_NAMES = FALLBACK_PATTERN_NAMES
 
 #: The jacket's looks, in the order its state machine lists them. Must stay in
 #: step with makeJacketStateMachine() in desktop/src/state_machine.cpp. The
@@ -637,8 +666,9 @@ class PatternConfig:
     coord_span_y: Optional[float] = None
 
     def validate(self) -> None:
-        if self.name not in PATTERN_NAMES:
-            raise ConfigError(f"pattern.name '{self.name}' is not one of {PATTERN_NAMES}")
+        known = pattern_names()
+        if self.name not in known:
+            raise ConfigError(f"pattern.name '{self.name}' is not one of {', '.join(known)}")
         if self.width <= 0:
             raise ConfigError(f"pattern.width {self.width} must be positive")
         if not 0.0 <= self.brightness <= 1.0:

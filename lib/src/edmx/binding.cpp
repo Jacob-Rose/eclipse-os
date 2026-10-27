@@ -5,6 +5,8 @@
 
 #include "binding.h"
 
+#include <ecore/binding.h>
+
 using namespace edmx;
 
 void ChannelBinding::bindChannel(int channel, const char* property)
@@ -36,29 +38,8 @@ int ChannelBinding::apply(const ChannelBuffer& channels, ecore::PropertyBag& bag
     int landed = 0;
     for (const Entry& entry : bound)
     {
-        const ecore::Property* property = bag.find(entry.property);
-        if (property == nullptr)
-        {
-            continue;
-        }
-
-        const uint8_t raw = channels.getChannel(entry.channel);
-        float value = 0.0f;
-        if (property->type == ecore::Property::Type::Float)
-        {
-            const float unit = static_cast<float>(raw) / 255.0f;
-            value = property->minValue + unit * (property->maxValue - property->minValue);
-        }
-        else if (property->type == ecore::Property::Type::Bool)
-        {
-            value = raw >= 128 ? 1.0f : 0.0f;
-        }
-        else
-        {
-            continue; // a colour or a curve is not one channel
-        }
-
-        if (bag.set(entry.property, value))
+        const float unit = static_cast<float>(channels.getChannel(entry.channel)) / 255.0f;
+        if (ecore::landUnit(bag, entry.property, unit))
         {
             ++landed;
         }

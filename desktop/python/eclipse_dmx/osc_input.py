@@ -1,8 +1,8 @@
 """OSC in: Synesthesia's audio engine, driving this rig's knobs.
 
 The other direction of `osc.py`. That one sends the rig's colour to the
-visualiser; this one takes the visualiser's *analysis* back — bass, mids,
-highs, transients, presence, its beat detector and its BPM — and binds it to
+visualiser; this one takes the visualiser's *analysis* back - bass, mids,
+highs, transients, presence, its beat detector and its BPM - and binds it to
 whatever the running look exposes.
 
 Why take audio from a visualiser at all
@@ -11,29 +11,27 @@ Because it is already being computed, by something with a better view of the
 music than this program has. eclipse-dmx hears nothing: its beat arrives as
 MIDI notes from Mixxx (see `midi` in a config), which is a beat grid and a VU
 meter and nothing else. Synesthesia is doing a real FFT on the same music and
-publishing forty-odd derived values a frame — "how loud are the highs right
+publishing forty-odd derived values a frame - "how loud are the highs right
 now", "did the bass just hit", "how confident is the tempo". Those are exactly
 the numbers a look wants and the ones this rig has no way to compute.
 
-So the wire goes both ways over the same protocol: colour out, analysis in,
-neither end knowing what the other is for.
+Where the work happens
+----------------------
+In the executable. The socket, the packet decoder and the bindings are the
+library's (`enet`, `eosc`), and the map file below is loaded there: a binding
+whose action is `audio` fills the bus in process, sixty times a second, with
+no pipe in the way. Everything else that fires comes back as one line,
+``OSC-FIRE "label" value``, and the `Dispatcher` here runs the action the map
+named - the same registry as the MIDI mappings, on purpose. A pad and a bass
+drum should be able to do the same things.
 
 What arrives, and the one thing to check
 ----------------------------------------
 Synesthesia Pro's **Settings > OSC > Output Audio Variables** sends its
-`syn_*` uniforms — `syn_BassLevel`, `syn_Hits`, `syn_OnBeat`, `syn_BPM` and
-the rest — to an address and port of your choosing.
-
-**The OSC addresses those arrive on are not in Synesthesia's documentation**,
-and they changed in v1.20 ("more nested and readable"). So the bindings below
-match on a *pattern* rather than an exact address, and `osc-watch` prints what
-this build of the app actually sends:
-
-    python -m eclipse_dmx osc-watch --port 7000
-
-That is the same move `midi-watch` makes for Mixxx's notes, for the same
-reason: every step of wiring this up is verifiable except the last one, and
-guessing at it is how a set opens with a look bound to nothing.
+`syn_*` uniforms to an address and port of your choosing. The OSC addresses
+they arrive on are not in Synesthesia's documentation, and they changed in
+v1.20. So a binding matches on a *glob* rather than an exact address, and
+`osc-watch` prints what this build of the app actually sends.
 
 The shape of a binding
 ----------------------
@@ -42,145 +40,116 @@ A `Binding` is a pattern, a mode, and an action:
     pattern   which addresses it listens for - a glob, so `*BassLevel*`
               catches the address whatever the app nests it under
     exclude   globs that veto a match, because the useful patterns overlap:
-              "the whole spectrum's level" is `*level*` minus the four bands,
-              and a glob cannot say "not" on its own
+              "the whole spectrum's level" is `*level*` minus the four bands
     argument  which of the message's arguments carries the number
-    mode      value    run on every message, carrying the scaled 0..1
-              trigger  run once when it crosses up through `threshold`,
-                       which is what a beat spike is
+    mode      value    acts on every message, carrying the scaled 0..1
+              trigger  acts once when it crosses up through `threshold`
     action    a key into midi_map.ACTIONS, plus that action's parameters
 
-Actions are shared with the MIDI mappings on purpose — the same registry, the
-same `ActionContext`, the same files-are-presets shape. A pad and a bass drum
-should be able to do the same things, and nothing in either dispatcher knows
-what the other exists for.
-
-Rate, and why it is not a detail
---------------------------------
-Audio uniforms arrive at frame rate: sixty a second, per uniform, forever.
-Every one of them turned into a protocol line would be thousands of lines a
-minute down a pipe the desk also uses for cues. So a value binding is limited
-two ways — a minimum interval between sends and a minimum change worth
-sending — and both are per binding, because a level wants smoothing and a beat
-must never be dropped.
+A value binding is limited two ways - a minimum interval between acts and a
+minimum change worth acting on - with a keepalive so a held value is still
+restated, because the bus fades a channel nobody has restated. Both are per
+binding, because a level wants smoothing and a beat must never be dropped.
+The limiting runs in the executable (ecore::BindingRule); the numbers live in
+the file.
 """
 
 from __future__ import annotations
 
 import fnmatch
 import json
-import socket
-import threading
-import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Sequence, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union
 
+from .controller import ShowError
 from .midi_map import ACTIONS, ActionContext, coerce_params
-from .osc import decode
+from .osc import parse_status
 
-#: Where Synesthesia is pointed, unless its settings say otherwise.
-#:
-#: Its OSC panel has an input port and an output port and they are different
-#: settings; this is the *output* one - what the app sends, what we listen to.
-#: 7000 is this rig's convention rather than the app's default, and it is what
-#: `launch-mythos-set.sh` and the docs use. The app must be told the same
-#: number; nothing here can tell whether it was.
 DEFAULT_INPUT_PORT = 7000
-
-#: Bind address. Everything, rather than loopback: the show's own visualiser
-#: runs on this machine now, but one on the machine next door - a mac sending
-#: to the laptop running the rig - is still a setup this has to take, and
-#: loopback would refuse it in silence.
 DEFAULT_BIND = "0.0.0.0"
-
 MODES = ("value", "trigger")
 
 
-# ---------------------------------------------------------------------------
-# the socket
-# ---------------------------------------------------------------------------
-
 class OscListener:
-    """A UDP port, decoded, on its own thread.
+    """The executable's OSC input, opened on a port with a map loaded.
 
-    Every error is swallowed and counted, for the reason the sender swallows
-    its own: this is analysis driving decoration, and a malformed packet from
-    something else on the network must not be able to interrupt a rig.
+    Every error on the wire is swallowed and counted there, for the reason the
+    sender swallows its own: this is analysis driving decoration, and a
+    malformed packet from something else on the network must not be able to
+    interrupt a rig. A port that cannot be opened is the one failure that is
+    raised, as OSError, since nothing will ever arrive.
     """
 
     def __init__(
         self,
+        show,
         port: int = DEFAULT_INPUT_PORT,
         host: str = DEFAULT_BIND,
-        on_message: Optional[Callable[[str, List[object]], None]] = None,
+        map_path: Optional[Union[str, Path]] = None,
     ) -> None:
-        self.port = port
+        self.show = show
         self.host = host
-        self.on_message = on_message
-
-        #: Packets in, messages out of them, and packets that decoded to
-        #: nothing. The third is the interesting one: it is what a sender
-        #: speaking something other than OSC 1.0 looks like from here.
+        self.port = port
+        self.bindings_loaded = 0
+        self.native = 0
         self.packets = 0
         self.messages = 0
         self.undecodable = 0
+        self.fires = 0
+        self.heard_ago: Optional[float] = None
         self.last_error: Optional[str] = None
-
-        self._socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self._socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
-            self._socket.bind((host, port))
-        except OSError:
-            self._socket.close()
-            raise
+            reply = show.command(f"osc listen {host}:{int(port)}")
+        except ShowError as error:
+            raise OSError(str(error)) from None
+        # `OK osc listen 0.0.0.0:7000`: the port actually bound, for port 0
+        try:
+            self.port = int(reply.rsplit(":", 1)[1])
+        except (IndexError, ValueError):
+            pass
+        if map_path is not None:
+            self.load_map(map_path)
 
-        self._stop = threading.Event()
-        self._thread = threading.Thread(target=self._read, name="osc-in", daemon=True)
-        self._thread.start()
+    def load_map(self, path: Union[str, Path]) -> Tuple[int, int]:
+        """Loads a map file in the executable. Returns (bindings, native)."""
+        reply = self.show.command(f"osc map {path}")
+        words = reply.split()
+        try:
+            self.bindings_loaded = int(words[3])
+            self.native = int(words[5])
+        except (IndexError, ValueError):
+            pass
+        return self.bindings_loaded, self.native
 
-    def _read(self) -> None:
-        # A timeout rather than a blocking read, so close() is not waiting on
-        # the next packet from a visualiser that may already be shut.
-        self._socket.settimeout(0.25)
-        while not self._stop.is_set():
-            try:
-                packet, _sender = self._socket.recvfrom(65535)
-            except socket.timeout:
-                continue
-            except OSError as error:
-                if self._stop.is_set():
-                    return
-                self.last_error = str(error)
-                continue
+    def announce(self, glob: str) -> None:
+        """Have every message matching `glob` reported as an OSC-IN line,
+        whatever the watch setting - a scene announcement, say."""
+        self.show.command(f"osc announce {glob}")
 
-            self.packets += 1
-            try:
-                messages = decode(packet)
-            except Exception as error:      # decode() is written not to raise:
-                self.undecodable += 1       # this is the belt to that brace
-                self.last_error = str(error)
-                continue
+    def watch(self, enable: bool = True) -> None:
+        """Report every message as an OSC-IN line. Forty uniforms a frame:
+        for looking, not for leaving on."""
+        self.show.command(f"osc watch {'on' if enable else 'off'}")
 
-            if not messages:
-                self.undecodable += 1
-                continue
-
-            for address, arguments in messages:
-                self.messages += 1
-                if self.on_message is not None:
-                    try:
-                        self.on_message(address, arguments)
-                    except Exception as error:
-                        # A binding that throws must not stop the port. The
-                        # dispatcher fences each action itself; this catches
-                        # whatever it could not.
-                        self.last_error = f"{address}: {error}"
+    def refresh(self) -> Dict[str, str]:
+        """Counts and the last-heard age from `osc status`."""
+        for line in self.show.query("osc status", "OSC-STATUS"):
+            fields = parse_status(line)
+            self.packets = int(fields.get("packets", 0) or 0)
+            self.messages = int(fields.get("messages", 0) or 0)
+            self.undecodable = int(fields.get("undecodable", 0) or 0)
+            self.fires = int(fields.get("fires", 0) or 0)
+            heard = fields.get("heard", "never")
+            self.heard_ago = None if heard == "never" else float(heard.rstrip("s"))
+            return fields
+        return {}
 
     def close(self) -> None:
-        self._stop.set()
-        self._socket.close()
-        self._thread.join(timeout=0.5)
+        try:
+            self.show.command("osc listen off")
+        except (ShowError, OSError):
+            pass
 
     def __enter__(self) -> "OscListener":
         return self
@@ -193,14 +162,52 @@ class OscListener:
         return f"listening on {where}:{self.port}"
 
 
-# ---------------------------------------------------------------------------
-# the binding
-# ---------------------------------------------------------------------------
+@dataclass
+class OscEvent:
+    """One OSC line off the executable, parsed.
+
+    `kind` is ``in`` (a message, with its address and arguments), ``fire``
+    (a binding acted: its label and the 0..1 value) or ``out`` (a note from
+    the output side, such as a name resolving).
+    """
+    kind: str
+    address: str = ""
+    arguments: List[object] = field(default_factory=list)
+    label: str = ""
+    value: float = 0.0
+    text: str = ""
+
+
+def parse_line(line: str) -> Optional[OscEvent]:
+    """``OSC-IN /addr [0.5]`` / ``OSC-FIRE "label" 0.5`` / ``OSC-OUT ...``."""
+    if line.startswith("OSC-IN "):
+        payload = line[len("OSC-IN "):]
+        if payload.startswith("dropped"):
+            return OscEvent(kind="dropped", text=payload)
+        address, _, rest = payload.partition(" ")
+        try:
+            arguments = json.loads(rest) if rest.strip() else []
+        except ValueError:
+            arguments = []
+        return OscEvent(kind="in", address=address, arguments=list(arguments))
+    if line.startswith("OSC-FIRE "):
+        payload = line[len("OSC-FIRE "):]
+        decoder = json.JSONDecoder()
+        try:
+            label, end = decoder.raw_decode(payload)
+            value = float(payload[end:].strip() or 0.0)
+        except ValueError:
+            return None
+        return OscEvent(kind="fire", label=str(label), value=value)
+    if line.startswith("OSC-OUT "):
+        return OscEvent(kind="out", text=line[len("OSC-OUT "):])
+    return None
+
 
 @dataclass
 class Binding:
-    """One incoming address, bound to one action."""
-
+    """One incoming address, bound to one action. The file's shape; the
+    executable runs it (eosc::Binding)."""
     label: str = "binding"
     pattern: str = "*"          # glob against the OSC address
     exclude: List[str] = field(default_factory=list)   # globs that veto a match
@@ -211,111 +218,22 @@ class Binding:
     threshold: float = 0.5      # trigger mode: what counts as "up"
     min_interval: float = 1 / 30.0
     min_change: float = 0.01
-    #: Restate an unchanged value at least this often. 0 never restates.
-    #:
-    #: This exists because `min_change` and the audio bus's staleness decay
-    #: are each right on their own and wrong together. The binding says "a
-    #: level holding still says nothing", which was correct when a binding
-    #: drove a *knob* - a knob that has been set stays set. The bus instead
-    #: treats a channel nobody has restated in 0.8s as dead and fades it out,
-    #: which is a dead-man's switch: without it a dropped link would leave the
-    #: rig lit at whatever the music was doing when it went.
-    #:
-    #: Together, with no keepalive, they delete any value that holds still -
-    #: the channel is suppressed here, goes stale there, and the look driven
-    #: from it fades to nothing while the music is still playing.
-    #:
-    #: 0.2s against AudioLevel::kHoldFor of 0.35s leaves room for one keepalive
-    #: to be lost - which matters, because this arrives over UDP and nothing
-    #: retransmits. A still channel costs five lines a second instead of thirty.
     max_interval: float = 0.2
     action: str = "param"
     params: Dict[str, object] = field(default_factory=dict)
     enabled: bool = True
 
-    # Runtime, not saved: the last value sent and when, which is what makes
-    # the rate limit a rate limit and the trigger an edge rather than a level.
-    _last_sent: float = field(default=-1.0, repr=False, compare=False)
-    _last_at: float = field(default=0.0, repr=False, compare=False)
-    _was_up: bool = field(default=False, repr=False, compare=False)
-
-    # -- matching ----------------------------------------------------------
-
     def matches(self, address: str) -> bool:
         """Glob, case-insensitively, minus anything `exclude` claims.
 
-        Case-insensitive because the one thing known about these addresses is
-        that they are derived from names like `syn_BassLevel` and that the
-        derivation changed once already. A binding that works until the app
-        lowercases a segment is a binding that fails at a venue.
-
-        `exclude` is there because the useful patterns overlap: the whole
-        spectrum's level is "the one with 'level' in it that is not a band",
-        and a glob cannot say "not" on its own. Without it, a binding meant for
-        `syn_Level` quietly also takes `syn_BassLevel`, `syn_MidLevel` and
-        `syn_HighLevel`, and one knob is driven by four sources at once.
+        A mirror of the executable's eosc::matchAddress, kept here so the
+        panel can say which bindings take an address and a map can be checked
+        without a show running. `*` crosses slashes on both sides.
         """
         folded = address.lower()
         if not fnmatch.fnmatch(folded, self.pattern.lower()):
             return False
         return not any(fnmatch.fnmatch(folded, veto.lower()) for veto in self.exclude)
-
-    def scale(self, raw: float) -> float:
-        """The incoming number, as 0..1 across [low, high], clamped.
-
-        `low`/`high` are how a uniform with its own range - `syn_BPM` runs
-        50..220 - reaches an action that speaks 0..1, without every action
-        having to know about tempo.
-        """
-        span = self.high - self.low
-        if span == 0:
-            return 0.0
-        return max(0.0, min(1.0, (raw - self.low) / span))
-
-    def fires_on(self, raw: float, now: float) -> Optional[float]:
-        """The value to run with, or None if this message should be dropped.
-
-        Everything that decides *not* to act lives here: the rate limit, the
-        change threshold, and the rising edge. The dispatcher just runs what
-        this returns.
-        """
-        value = self.scale(raw)
-
-        if self.mode == "trigger":
-            up = value >= self.threshold
-            fired = up and not self._was_up
-            self._was_up = up
-            if not fired:
-                return None
-            # A beat is never rate-limited or deduplicated: dropping one is
-            # the whole failure this mode exists to avoid.
-            self._last_sent = value
-            self._last_at = now
-            return 1.0
-
-        if now - self._last_at < self.min_interval:
-            return None
-
-        overdue = (self.max_interval > 0.0
-                   and (now - self._last_at) >= self.max_interval)
-
-        if (self._last_sent >= 0.0
-                and abs(value - self._last_sent) < self.min_change
-                and not overdue):
-            # Not a rate limit but a silence limit: a level that is holding
-            # still says nothing rather than restating itself thirty times a
-            # second, which is what leaves the pipe clear for cues.
-            #
-            # `overdue` is what keeps that from deleting the value entirely -
-            # see max_interval. A channel that says nothing for long enough
-            # reads, at the far end, exactly like a channel nobody is filling.
-            return None
-
-        self._last_sent = value
-        self._last_at = now
-        return value
-
-    # -- the file ----------------------------------------------------------
 
     def to_dict(self) -> Dict[str, object]:
         return {
@@ -336,7 +254,6 @@ class Binding:
         trigger = data.get("trigger", {})
         span = data.get("range", {})
         limit = data.get("limit", {})
-
         binding = cls(
             label=str(data.get("label", "binding")),
             pattern=str(trigger.get("pattern", "*")),
@@ -388,13 +305,15 @@ class BindingSet:
     def load(cls, path: Union[str, Path]) -> "BindingSet":
         return cls.from_dict(json.loads(Path(path).read_text(encoding="utf-8")))
 
+    def find(self, label: str) -> Optional[Binding]:
+        for binding in self.bindings:
+            if binding.label == label:
+                return binding
+        return None
 
-# ---------------------------------------------------------------------------
-# firing
-# ---------------------------------------------------------------------------
 
 class Dispatcher:
-    """Messages in, actions out. The OSC twin of midi_map.Dispatcher.
+    """Fired bindings in, actions out. The OSC twin of midi_map.Dispatcher.
 
     Fenced the same way and for the same reason: one binding aimed at a knob
     the running look does not have must not stop the binding after it, and the
@@ -404,80 +323,44 @@ class Dispatcher:
     def __init__(self, bindings: BindingSet, context: ActionContext) -> None:
         self.bindings = bindings
         self.context = context
-
-        #: The last line each binding said, which is what keeps it from
-        #: saying it again. Audio arrives at frame rate, so anything a binding
-        #: has to say - a refusal, or a cue it just fired - it would otherwise
-        #: say sixty times a second. A UI can read this as "what is each
-        #: binding up to"; an entry that is a refusal is a binding aimed at
-        #: nothing, which is the state worth being able to see.
         self.last_said: Dict[str, str] = {}
 
-    def handle(self, address: str, arguments: Sequence[object]) -> List[str]:
-        """Runs every enabled binding this message fires."""
-        now = time.monotonic()
-        said: List[str] = []
+    def hear(self, address: str) -> bool:
+        """A message the executable reported: the one thing to learn from it
+        is whether the app announced a scene."""
+        return self.context.syn.hear(address)
 
-        # Before the bindings, and regardless of whether any of them wants
-        # this address: Synesthesia announces `/scenes/{name}` when a scene is
-        # launched, and that is the one thing the app tells us about itself
-        # rather than about the music. It is what makes a scene pad's lamp
-        # true instead of hopeful - and it catches a scene changed in the
-        # app's own window, which nothing else here can see.
-        self.context.syn.hear(address)
+    def handle_fire(self, label: str, value: float) -> List[str]:
+        """Runs the action of the binding that fired. Returns what it said,
+        once per change of what it says."""
+        binding = self.bindings.find(label)
+        if binding is None or not binding.enabled:
+            return []
+        spec = ACTIONS.get(binding.action)
+        if spec is None:
+            self.last_said[binding.label] = f"unknown action '{binding.action}'"
+            return []
+        try:
+            line = spec.run(self.context, coerce_params(spec, binding.params), value)
+        except Exception as error:
+            self.last_said[binding.label] = str(error)
+            return []
+        if not line:
+            self.last_said.pop(binding.label, None)
+            return []
+        if self.last_said.get(binding.label) != line:
+            self.last_said[binding.label] = line
+            return [line]
+        return []
 
-        for binding in self.bindings.bindings:
-            if not binding.enabled or not binding.matches(address):
-                continue
-
-            raw = _number(arguments, binding.argument)
-            if raw is None:
-                continue
-
-            value = binding.fires_on(raw, now)
-            if value is None:
-                continue
-
-            spec = ACTIONS.get(binding.action)
-            if spec is None:
-                self.last_said[binding.label] = f"unknown action '{binding.action}'"
-                continue
-
-            try:
-                line = spec.run(self.context, coerce_params(spec, binding.params), value)
-            except Exception as error:
-                self.last_said[binding.label] = str(error)
-                continue
-
-            if not line:
-                self.last_said.pop(binding.label, None)
-                continue
-
-            # Said once, not thirty times a second. Whatever a binding has to
-            # say repeats at the rate the audio arrives - a knob the running
-            # look does not have is not news on every bass note - so a binding
-            # saying what it said last time says nothing. It speaks again the
-            # moment it has something different to say, including coming back
-            # to working.
-            if self.last_said.get(binding.label) != line:
-                self.last_said[binding.label] = line
-                said.append(line)
-
-        return said
-
-
-def _number(arguments: Sequence[object], index: int) -> Optional[float]:
-    """The argument at `index` as a float, or None if there is no number there.
-
-    A message whose argument is a string or is simply absent is not an error
-    and not a zero: it is a message this binding has nothing to do with, and
-    zero would be a value - a level of nothing, sent to a knob.
-    """
-    if index < 0 or index >= len(arguments):
-        return None
-    value = arguments[index]
-    if isinstance(value, bool):
-        return 1.0 if value else 0.0
-    if isinstance(value, (int, float)):
-        return float(value)
-    return None
+    def handle_line(self, line: str) -> List[str]:
+        """One OSC line off the executable, whatever kind."""
+        event = parse_line(line)
+        if event is None:
+            return []
+        if event.kind == "in":
+            self.hear(event.address)
+            return []
+        if event.kind == "fire":
+            return self.handle_fire(event.label, event.value)
+        return []

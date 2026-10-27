@@ -1345,7 +1345,7 @@ which a beam on a rotation of its own never did.
 
 The plumbing is `PatternContext::nodeMappings`, filled beside `nodeCoords`
 from each device's locals before placement, and `edesk::makeStripNode`, which
-both `GeneratorPattern` and the state machine's `HostRelicIO` build their
+both `GeneratorPattern` and the state machine's `eio::HostRelicIO` build their
 nodes through — so a look gets the same answer bare or in a machine.
 
 #### layers: a light with its own job
@@ -1609,7 +1609,7 @@ over the same way a pad's `ramp` does. Only a mode change ramps: the cue
 coming up sends its controls at once, its scene being new, and so does a
 mode that re-sends the scene.
 
-Writing a cue for real is a `GeneratorHSV` in `mythos26.h`/`.cpp` and a
+Writing a cue for real is a `GeneratorHSV` in `src/relics/mythos26/mythos26_looks.h`/`.cpp` and a
 changed line in `makeMythos26StateMachine()`; nothing in the runner, the
 protocol or the viewer needs to know. If you rename a slot, rename it in
 three places — there, `MYTHOS26_STATES` in `python/eclipse_dmx/config.py`,
@@ -1744,7 +1744,7 @@ dead-channel blink; everything else still works.
 
 `tv_static_mono` and `tv_static`, which are cues on the `generic` machine now
 rather than on the show's list — a look with no beat and no game under it
-belongs in the free-standing pile. The class is still `mythos26.h`'s, because
+belongs in the free-standing pile. The class is still `mythos26_looks.h`'s, because
 it was written for this rig rather than borrowed from a relic.
 
 Every fixture a new random value every frame, in greys or in hue. No smoothing
@@ -1901,7 +1901,7 @@ print(show.dump_params())      # {"attack": 0.15, "decay": 0.9, ...}
 
 ### the beat
 
-Beat-driven looks read `edesk::BeatClock`, one per process. Something upstream
+Beat-driven looks read the library's `ebeat::BeatClock` through `edesk::sharedBeatClock()`, one per process. Something upstream
 says "beat now" and how fast; patterns ask how far into the beat it is, every
 frame.
 
@@ -3211,7 +3211,7 @@ desktop/
   devices/         one file per physical thing: the obelisk, the truss of pars
   config/          environments — rooms with devices in them, and the show
   scenes/          Synesthesia scenes that take their colour from the rig
-  python/          the wrapper package, the viewer, and the OSC sender
+  python/          the wrapper package and the viewer; OSC rides the executable
   python/tests/    the suite; harness.py is the shared scaffolding
   test.sh          run it, all of it or one name's worth
   tools/           toolchain setup, one script per platform

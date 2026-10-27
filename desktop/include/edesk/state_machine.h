@@ -11,6 +11,7 @@
 #include <vector>
 
 #include <eanim/generator_hsv.h>
+#include <eio/host_relic.h>
 #include <eio/relic.h>
 #include <eio/strip_projection.h>
 #include <esm/state.h>
@@ -20,31 +21,6 @@
 
 namespace edesk
 {
-    /// A RelicIO with nothing behind it.
-    ///
-    /// The relic states render through whatever strip segments their IO holds,
-    /// so to run them here we only have to hold some. There is no screen and
-    /// there are no buttons: getScreenDrawer() stays null, which every state
-    /// already guards for, and input arrives over the control protocol instead.
-    class HostRelicIO : public eio::RelicIO
-    {
-    public:
-        /// Builds one segment of `count` nodes, tagged with `segmentId`.
-        ///
-        /// The id matters more than it looks. Relic patterns branch on which
-        /// segment a node belongs to — the jacket's looks render differently on
-        /// a sleeve ring than on the monowire — so the id we claim here decides
-        /// which branch a rig gets. See JACKET_SEGMENT_ID.
-        void build(const PatternContext& context, uint8_t segmentId);
-
-        eio::HSVStrip* getStrip() const { return strip.get(); }
-
-    private:
-        std::unique_ptr<eio::HSVStrip> strip;
-        std::vector<std::shared_ptr<eio::HSVStripNode_Mapped2D>> nodes;
-    };
-
-
     /// One entry in a state machine's table of looks.
     ///
     /// `make` builds the generator. `applyInput` is optional and forwards the
@@ -156,7 +132,7 @@ namespace edesk
         /// the rig's shape is known, and only render() is handed that.
         float pendingDelta{0.0f};
 
-        std::unique_ptr<HostRelicIO> io;
+        std::unique_ptr<eio::HostRelicIO> io;
         // StateMachine_GenericHSV and State_GenericHSV sit in the global
         // namespace, unlike the rest of esm.
         std::unique_ptr<StateMachine_GenericHSV> machine;

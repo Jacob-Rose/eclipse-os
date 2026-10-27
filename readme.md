@@ -13,6 +13,10 @@ This aint complex code, read it, learn about it. I write code like its made to n
 
 I see this as a generic abstract layer to handle modules for these microcontrollers without overhead. An all in one system for these microcontroller devices.
 
+## Where it sits
+
+Eclipse OS is a middleman. Upstream of it sit the tools a show is already run from - TouchDesigner, DJ software, a visualiser, a lighting desk - and it speaks their languages: DMX in and out, MIDI notes and beat clock, OSC levels, a USB link. Downstream sit the lamps. What it adds in between is the thing none of those tools do well: procedural, generative patterns running on a cheap microcontroller, with their knobs reflected out so the upstream tool can turn them. TouchDesigner can drive a relic's looks and read its state; a relic can equally run on its own, with no computer in the room, from the same code.
+
 # The Library
 
 The library is an Arduino library at `lib/` (sources under `lib/src`), and everything in it is a module: a relic takes the ones it needs and the rest never compile into it. Every module depends on `ecore` and nothing depends on a module above it in this table, so you can stop at any row. A sketch includes `<eclipse-os.h>` once, which puts the library on the include path, and then names modules directly: `<ecore/hsv.h>`, `<eanim/generator_hsv.h>`, `<edmx/fixture.h>`.
@@ -25,7 +29,10 @@ The library is an Arduino library at `lib/` (sources under `lib/src`), and every
 | `esm` | state machines with blends between looks | ecore, eio, eanim | no |
 | `elink` | the USB wire between a desk and a relic | ecore, eio | the serial transport only |
 | `edmx` | DMX universes, fixtures, output and input | ecore | the UART transports only |
-| `emidi` | MIDI messages, clock, bindings | ecore | the UART and USB transports only |
+| `ebeat` | the beat grid and the hits off it | ecore | no |
+| `emidi` | MIDI messages, clock, bindings | ecore, ebeat | the UART and USB transports only |
+| `enet` | datagram transports: any Arduino UDP, a host socket | ecore | the Arduino UDP wrapper only |
+| `eosc` | OSC messages, packets, address globs, bindings | ecore, enet | no |
 | `ewifi` | a WiFi manager (experimental) | ecore | yes |
 | `emqtt` | Home Assistant over MQTT (experimental) | ecore | yes |
 | `external` | vendored third-party code | - | - |
@@ -36,6 +43,8 @@ The library is an Arduino library at `lib/` (sources under `lib/src`), and every
 The foundation, with no dependencies of its own.
 - **HSV colour** in fixed point (`fp.h`, `hsv.h`): a 2^14 scale so per-pixel math is shifts and multiplies on a chip with no FPU, with blends that take the short way round the hue circle.
 - **Properties and reflection** (`property.h`, `reflectable.h`): anything with knobs implements one `reflect()` and hands out floats, bools, colours and curves by name, with a role for the clocks a desk uses to run a copy of a look in step.
+- **Colour mixing in float** (`color_mix.h`): RGB and HSV blends the way a lamp mixes, for cross-fading whole frames on a desk or a look with the budget; `HSV::blend` stays the fixed-point per-pixel one.
+- **Bindings** (`binding.h`): the half every wire shares. `landUnit` puts a 0..1 value on a property in that property's own range, and `BindingRule` decides when a stream of numbers acts: every change, rate-limited with a keepalive, or once on a rising edge. MIDI, DMX and OSC bindings all end in the same place.
 - **Names** (`name.h`): hashed strings that are the same number on the host and the relic, with a dotted hierarchy for trigger tags.
 - Logging, coordinates, ranges, timers, the `Tickable` interface, a small math library, and a host shim so all of it builds without Arduino.
 
@@ -44,6 +53,7 @@ How a look is made.
 - `GeneratorHSV` is the base of every look: a colour per node, a clock, and its knobs. `LayeredGeneratorHSV` stacks looks, bottom first, as the one way looks combine.
 - `AutomationCurve` and its trigger play a keyframed shape from an impulse, so a hit on the beat has an envelope rather than a number.
 - Noise fields (FastNoiseLite), LFOs, float processors (spring, momentum) and a fixed-pool particle system, all of which reflect their clocks so a desk can match them.
+- `GeneratorRegistry` (`registry.h`): looks by name. Content registers what it ships (`src/relics/registry.cpp` does it for every relic look), a desk lists and makes them, a relic can pick one by name off a wire.
 
 ### esm
 A state machine where each state runs a look, and the machine cross-fades between them with a named blend: `cut`, `crossfade`, `rgb`, `dip`, `wipe`. A state can be cued mid-fade and the picture never snaps back.
@@ -57,8 +67,17 @@ The wire between a desk and a relic over the relic's own USB cable. One frame fo
 ### edmx
 DMX for both the desk and a relic. A `ChannelBuffer` (a `DmxUniverse` is the 512-channel case), the `DmxOutput` interface a transport implements, and the fixture model: profiles, the patch, and rendering HSV into channels with dimmer, parked channels and gamma. `ChannelBinding` drives a look's reflected properties from incoming DMX, so a conventional lighting desk can turn its knobs. On the RP2040, `UartDmxOutput` sends a universe from a UART by DMA and `UartDmxInput` receives one, through an RS-485 transceiver whose pins go in `relics/wiring.h`. The desk's USB widgets implement the same interface.
 
+### ebeat
+The beat, whatever says where it is. `BeatClock` is the grid everything pulses to: it predicts between beats, free-runs through a dropout, counts beats rather than messages (a dropped message moves the count by two, a duplicate by none), and can be led by a latency so the light lands on the music. `TriggerRack` turns it into four hits per beat - bar, half, beat, double - decided once a frame for every look, so two looks on the same rate hit on the same frame. MIDI clock, MIDI notes, an OSC detector and a tap all feed the same clock. `AudioLevel` (`level_bus.h`) is the audio bus beside it: named 0..1 channels an analyser or a VU note fills and a look reads, each holding briefly and then fading so a dropped link goes dark. `shared.h` holds the one clock, rack and bus a process has, and `nowSeconds()` to read them against. The desk's beat clock, triggers and bus are these classes.
+
 ### emidi
-MIDI for both. The message model, a byte-stream `Parser` (running status, interleaved realtime), a `ClockFollower` for beat clock, and `Binding` to land controllers on reflected properties and notes on trigger tags. `MidiPort` pumps a `Transport` each tick; on the RP2040 that is `UartMidiTransport` (DIN, 31250 baud) or `UsbMidiTransport` (a class-compliant USB MIDI device, needs the TinyUSB stack). The desk's MIDI input frames and follows clock through the same code.
+MIDI for both. The message model, a byte-stream `Parser` (running status, interleaved realtime), a `ClockFollower` for 0xF8 beat clock, `BeatNotes` for the beat, tempo and level notes DJ software sends (Mixxx's numbering by default), and `Binding` to land controllers on reflected properties and notes on trigger tags. `MidiPort` pumps a `Transport` each tick; on the RP2040 that is `UartMidiTransport` (DIN, 31250 baud) or `UsbMidiTransport` (a class-compliant USB MIDI device, needs the TinyUSB stack). The desk's MIDI input is these classes with a platform port underneath.
+
+### enet
+The network as the library sees it: a `DatagramTransport` that a protocol module pumps, and the sockets behind it. `ArduinoUdp` wraps any Arduino `UDP` - a `WiFiUDP` on a Pico W today, an `EthernetUDP` on a wired board tomorrow, the same code - and `HostUdp` is a BSD or winsock socket for a desk. Joining a network is a different job and stays with `ewifi`.
+
+### eosc
+Open Sound Control for both. A message model, a packet codec (bundles unpacked, malformed input tolerated), address matching as a glob (`*BassLevel*` finds the band wherever a visualiser nests it), and `Binding` on the shared `ecore::BindingRule`: a value or a rising edge, rate-limited, landed on a reflected property or fired as a trigger tag. `OscPort` pumps any `enet` transport. On a Pico W that is TouchDesigner or a visualiser driving a relic's knobs over WiFi with no desk in the room; the desk's own OSC in and out are these classes behind its `osc` commands.
 
 ### ewifi and emqtt (experimental)
 A WiFi manager that keeps secrets out of the tree, and a Home Assistant integration over MQTT that advertises a relic's controls by discovery. Only the whiteboard uses them today; `tools/check-ha.py` proves the integration from your machine after a flash.
@@ -70,13 +89,15 @@ Vendored third-party code, each with its licence beside it: FastNoiseLite, an ea
 
 A relic is one sculpture's program: its wiring, its IO layer, its state machine and its looks, under `src/relics`. The obelisk and the whiteboard are the ones built and flashed today; the jacket, pendant and gloves are earlier builds kept in the tree. Where a sculpture's pixels, DMX port or MIDI jacks are plugged in is one line per relic in `src/relics/wiring.h`, and nowhere else.
 
+Looks that are content rather than a sculpture live here too: `src/relics/mythos26` is the mythos26 show's looks, `src/relics/generic` the audio meter, and `src/relics/registry.cpp` puts every relic look into the library's registry by name. The desk builds its pattern list from that registry, so a look added there is on the desk, in its python tools and on any relic that asks for it by name, with nothing else edited.
+
 ## Kits
 
 Content rather than machinery: palettes, effects and pattern presets made as generically as possible, so they work from a 1d strip on a ceiling to a 2d sculpture depending on the underlying kit.
 
 ## The desk: eclipse-dmx
 
-`desktop/` is a show runner that renders the same looks onto a DMX rig through a USB widget, drives a relic over `elink`, follows a beat from MIDI or audio, and has a viewer, pads and a curve editor in python. Its own code is the `edesk` namespace; everything it shares with the relics is the library above. See [desktop/readme.md](desktop/readme.md).
+`desktop/` is a show runner that renders the same looks onto a DMX rig through a USB widget, drives a relic over `elink`, follows a beat from MIDI or audio, and has a viewer, pads and a curve editor in python. It is the middleman in practice: TouchDesigner, Mixxx or a visualiser on one side, relics and fixtures on the other. Its own code is the `edesk` namespace; everything it shares with the relics is the library above. See [desktop/readme.md](desktop/readme.md).
 
 ## Tests
 

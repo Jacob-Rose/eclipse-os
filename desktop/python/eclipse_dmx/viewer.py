@@ -38,7 +38,8 @@ from .controller import Frame, FrameForwarder, ShowController, ShowError
 from .curve_editor import CurveEditor
 from .midi_map import (ACTIONS, Action, ActionContext, Dispatcher, MappingSet,
                        SynesthesiaState, coerce_params, parse_midi_line)
-from .osc_input import DEFAULT_INPUT_PORT
+from .osc import DEFAULT_CONTROL, RESOLVE_INTERVAL
+from .osc_input import DEFAULT_INPUT_PORT, parse_line as parse_osc_line
 from .launchpad import LampPainter, programmer_mode, clear as lamp_clear
 from .midi_panel import MidiMapPanel
 from .osc_panel import OscPanel, OscTraffic
@@ -813,6 +814,9 @@ class ViewerApp:
         osc=None,
         osc_device: Optional[str] = None,
         osc_fixture: int = 0,
+        osc_control: str = DEFAULT_CONTROL,
+        osc_gamma: float = 0.0,
+        osc_resolve_every: float = RESOLVE_INTERVAL,
         midimap: Optional[Union[str, Path]] = None,
         midi_out: Optional[str] = None,
         client: Optional[str] = None,
@@ -919,7 +923,14 @@ class ViewerApp:
         #
         # Optional and fire-and-forget: no link, no cost, and a link that
         # cannot send never reaches the window. See eclipse_dmx/osc.py.
-        self._osc = osc
+        # `osc` is an endpoint; the link itself is made once the show runs,
+        # because it is the executable's output - see _open_osc_out.
+        self._osc_endpoint = osc
+        self._osc = None
+        self._osc_control = osc_control
+        self._osc_gamma = osc_gamma
+        self._osc_resolve_every = osc_resolve_every
+        self._osc_pulled_at = 0.0
         self._osc_device = osc_device
         self._osc_fixture = osc_fixture
         self._osc_resolved = False
@@ -982,6 +993,7 @@ class ViewerApp:
             dry_run=not live,
             on_frame=self._on_frame,
             on_midi=self._on_midi_line,
+            on_osc=self._on_osc_line,
             emit_rate=emit_rate,
             midi=midi,
             bpm=bpm,
@@ -1070,6 +1082,8 @@ class ViewerApp:
             self._open_sink(self._client_host)
         if self._midi_out_wanted:
             self._open_lamps(self._midi_out_wanted)
+        if self._osc_endpoint:
+            self._open_osc_out()
         if self._oscmap_wanted:
             self._start_osc_input()
 
@@ -1191,8 +1205,6 @@ class ViewerApp:
         # Everything this desk sends, seen. --osc's link if there is one; the
         # map's lazily-built one is hooked in _map_osc, because it may not
         # exist until a pad is pressed.
-        if self._osc is not None:
-            self._osc.on_send = self.osc_traffic.saw_out
 
         # Every single-key binding steps aside while an Entry has the focus:
         # the mapping editor and the knobs are full of text fields, and a
@@ -2566,32 +2578,11 @@ class ViewerApp:
             self._latest = frame
             self._frames_seen += 1
 
-        if self._osc is not None:
-            self._send_osc(frame)
-
         # And on to the wires, when they are somebody else's. Same thread and
         # the same frame the OSC sender gets: this is one picture going to
         # three places - the screen, the visualiser, and the rig.
         if self._sink is not None:
             self._sink.send(frame)
-
-    def _send_osc(self, frame: Frame) -> None:
-        """One fixture of this frame, out to the visualiser.
-
-        On the reader thread, and deliberately not handed to the tk loop first:
-        the window redraws at whatever rate it manages and the link should not
-        inherit that. Touches no widget, for the same reason.
-        """
-        if not self._osc_resolved:
-            self._osc_resolved = True
-            if self._osc_device:
-                span = next((d for d in self.show.devices
-                             if d.name == self._osc_device), None)
-                if span is not None:
-                    self._osc_fixture = span.first
-
-        if self._osc_fixture < len(frame):
-            self._osc.send_color(frame[self._osc_fixture])
 
     def _current_frame(self) -> Optional[Frame]:
         with self._lock:
@@ -2607,6 +2598,14 @@ class ViewerApp:
         # The collector runs from here, on tk's thread, and nowhere else
         # while this window is up - see tkgc.
         tkgc.collect_sometimes()
+
+        # The OSC side lives in the executable; its counts come over once a
+        # second, which is as often as the panel and the silence check need.
+        if self._osc_listener is not None or self._osc is not None:
+            pulled = time.monotonic()
+            if pulled - self._osc_pulled_at >= 1.0:
+                self._osc_pulled_at = pulled
+                self._pull_osc()
 
         # A Ctrl-C or a kill, noticed here rather than in the handler that
         # took it - see _install_signal_handlers.
@@ -2776,6 +2775,30 @@ class ViewerApp:
 
     # -- controls ----------------------------------------------------------
 
+    def _open_osc_out(self) -> None:
+        """Points the executable's OSC output at --osc and taps the fixture."""
+        from .osc import SynesthesiaLink
+        try:
+            self._osc = SynesthesiaLink(
+                self.show, self._osc_endpoint, self._osc_control,
+                gamma=self._osc_gamma, resolve_every=self._osc_resolve_every,
+                fixture=self._osc_fixture, device=self._osc_device)
+        except (OSError, ValueError) as error:
+            self._say(f"osc out: {error}")
+            return
+        self._say(f"osc out: {self._osc.describe()}")
+        if self._osc.is_name and self._osc.address is None and self._osc.last_error:
+            self._say(f"osc out: {self._osc.last_error}")
+
+    def _pull_osc(self) -> None:
+        """One round of `osc status` (and `osc seen` when the panel is up)."""
+        try:
+            self.osc_traffic.pull(self.show, seen=self._oscpanel_shown)
+            if self._osc is not None:
+                self._osc.refresh()
+        except Exception:
+            pass
+
     def _map_osc(self):
         """The mapping actions' link to the visualiser.
 
@@ -2788,7 +2811,7 @@ class ViewerApp:
             return self._osc
         if self._map_link is None:
             from .osc import SynesthesiaLink
-            self._map_link = SynesthesiaLink(on_send=self.osc_traffic.saw_out)
+            self._map_link = SynesthesiaLink(self.show)
         return self._map_link
 
     def _guard(self, action, describe: str) -> None:
@@ -3059,9 +3082,14 @@ class ViewerApp:
 
         port = self._osc_in_port or DEFAULT_INPUT_PORT
         try:
-            self._osc_listener = OscListener(port, on_message=self._on_osc_in)
-        except OSError as error:
+            self._osc_listener = OscListener(
+                self.show, port,
+                map_path=self._oscmap_path if self._oscmap_path.exists() else None)
+            # the app announcing a scene is the one message worth a line each
+            self._osc_listener.announce("/scenes/*")
+        except (OSError, ShowError) as error:
             self._say(f"osc in: cannot listen on {port}: {error}")
+            self._osc_listener = None
             return
 
         live = sum(1 for one in bindings.bindings if one.enabled)
@@ -3074,21 +3102,25 @@ class ViewerApp:
         for note in osc_input_hints(port):
             self._say(note)
 
-    def _on_osc_in(self, address: str, arguments) -> None:
-        """Called on the listener's thread. Touches no widget.
+    def _on_osc_line(self, line: str) -> None:
+        """Called on the reader thread. Touches no widget.
 
-        `_say` is the one thing it does reach for, and that is already what
-        the reader thread uses for the same reason - see _send_osc.
+        `OSC-IN` is an address the executable reports (watched, or announced
+        like a scene); `OSC-FIRE` is a binding that acted and wants its
+        action run here. `_say` is the one thing it reaches for, and that is
+        already what the reader thread uses for the same reason.
         """
-        # Recorded before it is dispatched, and whether or not any binding
-        # wants it: an address nothing takes is precisely what the panel is
-        # for, and one filtered out here would be invisible there.
-        self.osc_traffic.saw_in(address, arguments)
-
-        if self._osc_dispatcher is None:
+        event = parse_osc_line(line)
+        if event is None:
             return
-        for line in self._osc_dispatcher.handle(address, arguments):
-            self._say(line)
+        if event.kind == "in":
+            self.osc_traffic.saw_in(event.address, event.arguments)
+            if self._osc_dispatcher is not None:
+                self._osc_dispatcher.hear(event.address)
+            return
+        if event.kind == "fire" and self._osc_dispatcher is not None:
+            for said in self._osc_dispatcher.handle_fire(event.label, event.value):
+                self._say(said)
 
     def _install_signal_handlers(self) -> None:
         """Ctrl-C and a plain `kill` end the set the same way the window does.
@@ -3190,6 +3222,9 @@ def view(
     osc=None,
     osc_device: Optional[str] = None,
     osc_fixture: int = 0,
+    osc_control: str = DEFAULT_CONTROL,
+    osc_gamma: float = 0.0,
+    osc_resolve_every: float = RESOLVE_INTERVAL,
     midimap: Optional[Union[str, Path]] = None,
     midi_out: Optional[str] = None,
     client: Optional[str] = None,
@@ -3211,6 +3246,9 @@ def view(
         osc=osc,
         osc_device=osc_device,
         osc_fixture=osc_fixture,
+        osc_control=osc_control,
+        osc_gamma=osc_gamma,
+        osc_resolve_every=osc_resolve_every,
         midimap=midimap,
         midi_out=midi_out,
         client=client,

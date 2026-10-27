@@ -9,8 +9,8 @@
 #include <chrono>
 #include <cstdio>
 #include <thread>
+#include <ebeat/shared.h>
 
-#include "edesk/beat_clock.h"   // nowSeconds
 
 #if !defined(_WIN32)
 #  include "edesk/ftdi_dmx.h"
@@ -40,6 +40,7 @@ namespace
 }
 
 using namespace edesk;
+using namespace ebeat;
 
 namespace
 {

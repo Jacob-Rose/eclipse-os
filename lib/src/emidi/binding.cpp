@@ -5,6 +5,8 @@
 
 #include "binding.h"
 
+#include <ecore/binding.h>
+
 using namespace emidi;
 
 void Binding::bindControl(int channel, int controller, const char* property)
@@ -76,30 +78,10 @@ bool Binding::apply(const Message& message, ecore::PropertyBag& bag)
         {
             continue;
         }
-
-        const ecore::Property* property = bag.find(control.property);
-        if (property == nullptr)
+        if (ecore::landUnit(bag, control.property, static_cast<float>(message.value()) / 127.0f))
         {
-            continue;
+            took = true;
         }
-
-        const float unit = static_cast<float>(message.value()) / 127.0f;
-        float value = unit;
-        if (property->type == ecore::Property::Type::Float)
-        {
-            value = property->minValue + unit * (property->maxValue - property->minValue);
-        }
-        else if (property->type == ecore::Property::Type::Bool)
-        {
-            value = message.value() >= 64 ? 1.0f : 0.0f;
-        }
-        else
-        {
-            continue; // a colour or a curve is not one number
-        }
-
-        bag.set(control.property, value);
-        took = true;
     }
     return took;
 }

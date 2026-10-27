@@ -12,13 +12,14 @@
 #include <stdexcept>
 #include <string>
 #include <utility>
+#include <ebeat/level_bus.h>
 
-#include "edesk/beat_clock.h"
 #include "edesk/json.h"
 
 #include "kits/palettes.h"
 
 using namespace edesk;
+using namespace ebeat;
 
 namespace
 {

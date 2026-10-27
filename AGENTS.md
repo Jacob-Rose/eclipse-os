@@ -22,7 +22,8 @@
 - **Comments**: headers document how to use the thing, not why it was built that way. A `/* @brief ... */` block on each class, struct and enum, with a short usage note or a code example when the signature does not say enough; `///` one-liners on members; `@see` for cross-references; `@param`/`@return` only where the signature is ambiguous. Design rationale belongs in the commit message or the readme. Inline comments in .cpp files stay minimal and say "why"
 
 ## Architecture
-- **Structure**: `/lib/` is the library (an Arduino library; sources under `/lib/src/<module>/`), `/src/relics/` is device-specific code, `/src/kits/` is content. The scripts hand `lib/` to arduino-cli by path (`--library`), `sketch.yaml` carries a profile for the IDE and for anyone without the scripts
+- **Structure**: `/lib/` is the library (an Arduino library; sources under `/lib/src/<module>/`), `/src/relics/` is device-specific code and the looks that are content (`mythos26/`, `generic/`), `/src/kits/` is content. The scripts hand `lib/` to arduino-cli by path (`--library`), `sketch.yaml` carries a profile for the IDE and for anyone without the scripts
+- **Looks by name**: a new look is registered once in `src/relics/registry.cpp`; the desk's pattern table, `--list-patterns` and the python `pattern_names()` all read the library registry, so nothing else is edited. The desk keeps only the looks that are desk-specific (`desktop/src/pattern.cpp`) and the state machines built from content
 - **State pattern**: Inherit from State base classes, implement tick() and init() methods
 - **IO abstraction**: Use RelicIO base classes for hardware interaction
 - **Patterns**: Factory pattern for state creation, observer pattern for transitions

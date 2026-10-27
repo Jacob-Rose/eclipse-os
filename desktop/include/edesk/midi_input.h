@@ -11,10 +11,13 @@
 #include <thread>
 #include <vector>
 
+#include <emidi/beat_notes.h>
 #include <emidi/clock.h>
+#include <emidi/message.h>
 #include <emidi/parser.h>
+#include <ebeat/beat_clock.h>
+#include <ebeat/level_bus.h>
 
-#include "edesk/beat_clock.h"
 
 ///
 /// MIDI in, for tempo.
@@ -104,12 +107,10 @@ namespace edesk
         std::string address() const;
     };
 
-    /// One channel message, as the monitor reports it.
-    struct MidiMessage
+    /// One channel message, as the monitor reports it: the library's
+    /// message plus where it came from.
+    struct MidiMessage : public emidi::Message
     {
-        unsigned char status{0};
-        unsigned char data1{0};
-        unsigned char data2{0};
 
         /// Where it came from, when the input can tell: `Pads` is the pad
         /// controller, `Beat` is any other source while a pad controller is
@@ -120,9 +121,6 @@ namespace edesk
         /// share the number must not fire with it.
         enum class Origin : unsigned char { Unknown = 0, Pads = 1, Beat = 2 };
         Origin origin{Origin::Unknown};
-
-        int channel() const { return (status & 0x0F) + 1; }
-        int kind() const { return status & 0xF0; }
     };
 
     class MidiInput
@@ -182,7 +180,7 @@ namespace edesk
         /// Naming a source still connects to it, and a rawmidi device node
         /// ("/dev/snd/midiC1D0") is always opened as one, sequencer or no.
         bool open(const std::string& spec, const std::vector<std::string>& ignore,
-                  BeatClock* clock, std::string& outError);
+                  ebeat::BeatClock* clock, std::string& outError);
         void close();
 
         bool isOpen() const { return opened.load(); }
@@ -193,13 +191,13 @@ namespace edesk
 
         /// Where beats go. open() sets this; the self-test sets it directly so
         /// the message handling can be exercised with no device present.
-        void setBeatClock(BeatClock* inClock) { clock = inClock; }
+        void setBeatClock(ebeat::BeatClock* inClock) { clock = inClock; }
 
         /// Where VU readings go. Optional — leave it null and they are parsed
         /// and dropped. Each lands on its own slot - `level_instant`,
         /// `level_average`, `level_meter` - so a cue that wants Mixxx's
         /// meter by name has it whatever else is filling the bus.
-        void setAudioLevel(AudioLevel* inLevel) { audioLevel = inLevel; }
+        void setAudioLevel(ebeat::AudioLevel* inLevel) { audioLevel = inLevel; }
 
         /// Whether the average also lands on `level`, the slot Synesthesia's
         /// syn_Level fills. On when Mixxx is the source - the looks reading
@@ -215,11 +213,11 @@ namespace edesk
 
         /// Which note number is a beat. -1 takes any note-on, which is only
         /// safe on a source that sends nothing else — see the table above.
-        void setBeatNote(int note) { beatNote.store(note); }
+        void setBeatNote(int note) { notes.setBeatNote(note); }
 
         /// Which note number carries the tempo, as velocity + 50. -1 to ignore
         /// it and infer the tempo from the gaps between beats instead.
-        void setBpmNote(int note) { bpmNote.store(note); }
+        void setBpmNote(int note) { notes.setTempoNote(note); }
 
         /// Which note carries which loudness signal, as velocity 0..127.
         /// -1 on any of them ignores that one.
@@ -227,12 +225,12 @@ namespace edesk
         /// All three are read at once and kept separately, because they behave
         /// differently and a look should be able to pick: 64 instantaneous,
         /// 68 the level against its two-second window, 69 a meter bar. See
-        /// VuSource.
-        void setVuNote(VuSource source, int note);
-        int getVuNote(VuSource source) const;
+        /// ebeat::VuSource.
+        void setVuNote(ebeat::VuSource source, int note);
+        int getVuNote(ebeat::VuSource source) const;
 
         /// Only take beats from this channel (1..16), or -1 for any.
-        void setBeatChannel(int channel) { beatChannel.store(channel); }
+        void setBeatChannel(int channel) { notes.setChannel(channel); }
 
         /// Declare that now is a downbeat: realigns the clock-tick counter so
         /// the next beat lands here. For a source that sends 0xF8 and nothing
@@ -265,6 +263,9 @@ namespace edesk
         void handleMessage(unsigned char status, unsigned char data1, unsigned char data2, double when,
                            bool fromPads = false);
 
+        /// The same, as a library message.
+        void handleMessage(const emidi::Message& message, double when, bool fromPads = false);
+
         /// A run of raw bytes, with running status and realtime bytes possibly
         /// interleaved mid-message.
         void handleBytes(const unsigned char* data, size_t length, double when,
@@ -288,7 +289,7 @@ namespace edesk
         /// a VU note on the beat channel. For the monitor's origin, so a
         /// desk with no pad controller to tell Mixxx from still keeps
         /// Mixxx's notes out of its map.
-        bool isClockNote(unsigned char status, unsigned char data1) const;
+        bool isClockNote(const emidi::Message& message) const;
 
         /// Whether `name` is a pad controller - see setPads - and if so
         /// remembers it: as the whole device when the backend opened it
@@ -297,11 +298,11 @@ namespace edesk
 
 #if !defined(_WIN32)
         /// A device node, read as a byte stream.
-        bool openRawMidi(const MidiPortInfo& port, BeatClock* clock, std::string& outError);
+        bool openRawMidi(const MidiPortInfo& port, ebeat::BeatClock* clock, std::string& outError);
 
         /// Publishes `eclipse-dmx IN` on the sequencer, and subscribes it to
         /// `source` when there is one. Null means publish and wait.
-        bool openAlsaSeq(const MidiPortInfo* source, BeatClock* clock,
+        bool openAlsaSeq(const MidiPortInfo* source, ebeat::BeatClock* clock,
                          std::string& outError);
 
         /// The sequencer's reader thread: poll, decode back to bytes, feed
@@ -309,8 +310,8 @@ namespace edesk
         void readAlsaSeq();
 #endif
 
-        BeatClock* clock{nullptr};
-        AudioLevel* audioLevel{nullptr};
+        ebeat::BeatClock* clock{nullptr};
+        ebeat::AudioLevel* audioLevel{nullptr};
         std::atomic<bool> vuFillsLevel{true};
         std::string portName;
         std::atomic<bool> opened{false};
@@ -326,14 +327,9 @@ namespace edesk
         std::atomic<bool> followClock{true};
         std::atomic<bool> followNotes{true};
 
-        // Mixxx's numbering, because that is what this rig is driven by. Both
-        // are settable for anything that is not Mixxx.
-        std::atomic<int> beatNote{50};
-        std::atomic<int> bpmNote{52};
-        std::atomic<int> beatChannel{-1};
-
-        /// Indexed by VuSource: instantaneous, two-second average, meter bar.
-        std::atomic<int> vuNotes[kVuSourceCount] = {{64}, {68}, {69}};
+        /// Which notes are the beat, the tempo and the levels, Mixxx's
+        /// numbering by default. Level slots are indexed by ebeat::VuSource.
+        emidi::BeatNotes notes;
 
         std::atomic<unsigned long long> clockTicks{0};
         std::atomic<unsigned long long> beatsSeen{0};
@@ -345,7 +341,7 @@ namespace edesk
         /// The 0xF8 stream: beats, tempo and phase. MIDI-thread only.
         emidi::ClockFollower follower;
 
-        /// How the follower's beats, tempo and restarts reach the BeatClock,
+        /// How the follower's beats, tempo and restarts reach the ebeat::BeatClock,
         /// under the desk's rules (followClock, notes holding clock off).
         class ClockRelay;
         friend class ClockRelay;

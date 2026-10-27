@@ -6,7 +6,6 @@ Thin on purpose. This is the "does my rig work" tool, not a console.
 from __future__ import annotations
 
 import argparse
-import errno
 import json
 import sys
 import time
@@ -16,9 +15,9 @@ from typing import List, Optional
 
 from .binary import BinaryNotFoundError, find_executable
 from .calibrate import DEFAULT_BPM as DEFAULT_CALIBRATION_BPM
-from .config import BUILTIN_PALETTES, BUILTIN_PROFILES, PATTERN_NAMES, Config, ConfigError
+from .config import BUILTIN_PALETTES, BUILTIN_PROFILES, pattern_names, Config, ConfigError
 from .controller import FrameForwarder, ShowController, ShowError
-from .osc import DEFAULT_ADDRESS, DEFAULT_CONTROL, RESOLVE_INTERVAL
+from .osc import DEFAULT_ADDRESS, DEFAULT_CONTROL, RESOLVE_INTERVAL, parse_endpoint
 from .osc_input import DEFAULT_BIND, DEFAULT_INPUT_PORT
 from .ports import list_midi_ports, list_ports
 
@@ -157,22 +156,30 @@ def _cmd_osc_watch(args: argparse.Namespace) -> int:
         if args.verbose:
             print(f"{address} {list(arguments)}")
 
-    try:
-        listener = OscListener(args.port, args.bind, on_message=message)
-    except OSError as error:
-        print(f"error: cannot listen on {args.bind}:{args.port}: {error}", file=sys.stderr)
-        if getattr(error, "errno", None) == errno.EADDRINUSE:
-            # Worth naming: the show itself binds this port when it is running
-            # with --osc-in, and one port has one owner.
+    from .osc_input import parse_line
+    show = _headless_show(args)
+    if show is None:
+        return 1
+    with show:
+        def on_line(line: str) -> None:
+            event = parse_line(line)
+            if event is not None and event.kind == "in":
+                message(event.address, event.arguments)
+        show.on_osc = on_line
+        try:
+            listener = OscListener(show, args.port, args.bind)
+        except OSError as error:
+            print(f"error: cannot listen on {args.bind}:{args.port}: {error}", file=sys.stderr)
             print("  something already has that port - a running show with "
                   "--osc-in, or another copy of this.", file=sys.stderr)
-        return 1
-
-    with listener:
-        print(f"{listener.describe()}; play something for {args.seconds:.0f}s...",
-              file=sys.stderr)
-        _wait_out(args.seconds)
-        packets, undecodable = listener.packets, listener.undecodable
+            return 1
+        with listener:
+            listener.watch(True)
+            print(f"{listener.describe()}; play something for {args.seconds:.0f}s...",
+                  file=sys.stderr)
+            _wait_out(args.seconds)
+            listener.refresh()
+            packets, undecodable = listener.packets, listener.undecodable
 
     print()
     if not seen:
@@ -385,6 +392,23 @@ def _wait_out(seconds: float) -> None:
         time.sleep(min(0.2, deadline - time.monotonic()))
 
 
+#: A show with one probe and no wire, for the commands that need the
+#: executable but no rig: `osc-watch` and `osc --test`.
+HEADLESS_CONFIG = Path(__file__).resolve().parents[2] / "config" / "synesthesia_test.json"
+
+
+def _headless_show(args):
+    """Starts the executable on HEADLESS_CONFIG, dry-run, or says why not."""
+    from .controller import ShowController, ShowError
+    from .config import ConfigError
+    try:
+        return ShowController(HEADLESS_CONFIG, executable=getattr(args, "executable", None),
+                              dry_run=True, midi="", on_frame=lambda frame: None)
+    except (ShowError, ConfigError, OSError) as error:
+        print(f"error: {error}", file=sys.stderr)
+        return None
+
+
 def _add_osc_input_args(parser: argparse.ArgumentParser) -> None:
     """--osc-in and --oscmap, on every subcommand that runs a show."""
     parser.add_argument("--osc-in", nargs="?", type=int, const=DEFAULT_INPUT_PORT,
@@ -485,13 +509,11 @@ def _osc_input_for(args, show, say=None):
         bindings = BindingSet()
 
     dispatcher = OscDispatcher(bindings, ActionContext(show=show, say=say))
-
+    show.on_osc = lambda line: [say(said) for said in dispatcher.handle_line(line)]
     try:
-        listener = OscListener(port, on_message=lambda address, arguments: [
-            say(line) for line in dispatcher.handle(address, arguments)])
+        listener = OscListener(show, port, map_path=path if path.exists() else None)
+        listener.announce("/scenes/*")
     except OSError as error:
-        # Not fatal. The rig is the show; the audio bindings are a layer on
-        # top of it, and a port already taken must not cost a set.
         say(f"osc in: cannot listen on {port}: {error}")
         return None
 
@@ -676,15 +698,21 @@ def _cmd_run(args: argparse.Namespace) -> int:
 def _cmd_osc(args: argparse.Namespace) -> int:
     """Runs a show and sends one fixture's colour out as OSC.
 
-    The bridge to a visualiser — Synesthesia, or anything else with an OSC
-    colour control. See eclipse_dmx/osc.py for why this reads the frame stream
-    rather than living in the executable.
+    The bridge to a visualiser - Synesthesia, or anything else with an OSC
+    colour control. The executable does the sending from its frame loop; this
+    points it, watches it, and reports.
     """
-    from .osc import SynesthesiaLink
+    from .controller import ShowController, ShowError
+    from .osc import SynesthesiaLink, parse_endpoint
 
     if not args.test and not args.config:
         print("error: osc needs a config, or --test to send without a show",
               file=sys.stderr)
+        return 1
+    try:
+        parse_endpoint(args.address)
+    except ValueError as error:
+        print(f"error: cannot send to '{args.address}': {error}", file=sys.stderr)
         return 1
 
     # The frame carries master.gamma already applied, for LEDs that need it.
@@ -693,146 +721,91 @@ def _cmd_osc(args: argparse.Namespace) -> int:
     ungamma = args.ungamma
     if ungamma is None:
         ungamma = Config.load(args.config).master.gamma if args.config else 0.0
+    if args.no_ungamma:
+        ungamma = 0.0
 
-    def resolved(address: str) -> None:
-        # Said out loud because it is the one thing that changes where a whole
-        # set is being sent, and it happens with no other symptom.
-        print(f"{args.address} now resolves to {address}", file=sys.stderr)
-
+    held_link = []
+    pads = None if args.test else _pads_for(
+        args, args.config, say=lambda line: print(line, file=sys.stderr),
+        osc_factory=lambda: held_link[0])
+    client = None if args.test else _client_for(args, args.config)
     try:
-        link = SynesthesiaLink(
-            args.address,
-            args.control,
-            separate=args.separate,
-            gamma=0.0 if args.no_ungamma else ungamma,
-            resolve_every=args.resolve_every,
-            on_resolve=resolved,
-        )
-    except (OSError, ValueError) as error:
-        # ValueError is a host:port that is not one; OSError is now only an
-        # *address* that cannot be connected to, which is a typo — a name that
-        # does not resolve is tolerated and retried inside the link. Between
-        # them they are the only send-side failure that gets reported at all —
-        # see the note at the end of osc.py — so they are worth a sentence each
-        # rather than a traceback.
-        print(f"error: cannot send to '{args.address}': {error}", file=sys.stderr)
-        return 1
-
-    with link:
-        print(f"sending to {link.describe()}", file=sys.stderr)
-        if link.is_name and link.address is None:
-            print(f"warning: {link.last_error}", file=sys.stderr)
-            print("the show runs anyway; the name is looked up again every "
-                  f"{args.resolve_every:g}s.", file=sys.stderr)
-
-        if args.test:
-            return _osc_test(link, args)
-
-        # Which fixture is the rig's colour. An index into the flat run of
-        # fixtures across every device, which is exactly what a frame is; or
-        # the first fixture of a named device, resolved once the executable has
-        # announced its devices.
-        chosen = [args.fixture]
-        announced = [False]
-        complained = [False]
-        client = _client_for(args, args.config)
-
-        def frame(colors) -> None:
-            # One picture going two places: the fixture below to the
-            # visualiser, the whole of it to the rig when the rig is
-            # somebody else's.
-            if client is not None:
-                client.send(colors)
-            if not announced[0]:
-                announced[0] = True
-                if args.device:
-                    span = next((d for d in show.devices if d.name == args.device), None)
-                    if span is None:
-                        names = ", ".join(d.name for d in show.devices) or "none"
-                        print(f"warning: no device '{args.device}' (have: {names}),"
-                              f" sampling fixture {chosen[0]}", file=sys.stderr)
-                    else:
-                        chosen[0] = span.first
-                index = chosen[0]
-                name = show.fixture_names[index] if index < len(show.fixture_names) else "?"
-                print(f"sampling fixture {index} ('{name}') of {len(colors)}",
-                      file=sys.stderr)
-
-            index = chosen[0]
-            if index < len(colors):
-                link.send_color(colors[index])
-            elif not complained[0]:
-                # Said once, and out loud, while the show is still running.
-                # Otherwise the only sign is a count of zero at the end, which
-                # is what a show producing no frames at all also looks like.
-                complained[0] = True
-                print(f"warning: fixture {index} is past the end of a "
-                      f"{len(colors)}-fixture frame; nothing is being sent",
-                      file=sys.stderr)
-
-        # The pads, when a map was named. Their scene bindings go down the
-        # same link as the colour, so the app sees one peer.
-        pads = _pads_for(args, args.config,
-                         say=lambda line: print(line, file=sys.stderr),
-                         osc_factory=lambda: link)
-
-        # autostart=False so `show` is bound before any frame can arrive: the
-        # callback above reads it, and the reader thread starts inside start().
         show = ShowController(
-            args.config,
+            args.config if args.config else HEADLESS_CONFIG,
             executable=args.executable,
-            dry_run=args.dry_run,
-            midi=args.midi,
+            dry_run=args.dry_run or args.test,
+            midi=args.midi if not args.test else "",
             bpm=args.bpm,
-            on_frame=frame,
+            on_frame=client.send if client is not None else None,
             on_midi=pads.on_midi if pads is not None else None,
             emit_rate=args.rate,
             on_log=(lambda line: print(line, file=sys.stderr)) if args.verbose else None,
             autostart=False,
         )
         show.start()
+    except ShowError as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 1
 
-        # The report is in a finally because without --seconds this runs until
-        # Ctrl-C, which is the normal way to use it — and a diagnostic that
-        # only prints on the exit nobody takes is not a diagnostic. main()
-        # catches the KeyboardInterrupt after this has had its say.
-        try:
-            with show:
-                for warning in show.warnings:
-                    print(f"warning: {warning}", file=sys.stderr)
-                for name, why in show.offline_devices:
-                    print(f"warning: device '{name}' is offline: {why}", file=sys.stderr)
-                if client is not None:
-                    client.open()
+    link = None
+    try:
+        with show:
+            try:
+                link = SynesthesiaLink(
+                    show, args.address, args.control,
+                    separate=args.separate, gamma=ungamma,
+                    resolve_every=args.resolve_every,
+                    fixture=None if args.test else args.fixture,
+                    device=None if args.test else args.device)
+            except (OSError, ValueError) as error:
+                print(f"error: cannot send to '{args.address}': {error}", file=sys.stderr)
+                return 1
+            held_link.append(link)
+            print(f"sending to {link.describe()}", file=sys.stderr)
+            if link.is_name and link.address is None:
+                print(f"warning: {link.last_error}", file=sys.stderr)
+                print("the show runs anyway; the name is looked up again every "
+                      f"{args.resolve_every:g}s.", file=sys.stderr)
 
-                # The cue matters here in a way it does not for `run`: what is
-                # being sent is a *colour*, and a monochrome look sends grey.
-                # mythos26 opens on beat_pulse, which is white on every hit for
-                # good reasons of its own, and a scene keyed on grey has nothing
-                # to key. So the same overrides `run` has, for the same reason
-                # it has them - to open on the look you meant.
-                if args.pattern:
-                    show.set_pattern(args.pattern)
-                if args.state:
-                    show.set_state(args.state)
+            if args.test:
+                return _osc_test(link, args)
 
-                listener = _osc_input_for(args, show)
+            for warning in show.warnings:
+                print(f"warning: {warning}", file=sys.stderr)
+            for name, why in show.offline_devices:
+                print(f"warning: device '{name}' is offline: {why}", file=sys.stderr)
+            if args.device and link.tapped < 0:
+                names = ", ".join(d.name for d in show.devices) or "none"
+                print(f"warning: no device '{args.device}' (have: {names}); nothing is tapped",
+                      file=sys.stderr)
+            else:
+                index = link.tapped
+                name = show.fixture_names[index] if 0 <= index < len(show.fixture_names) else "?"
+                print(f"sampling fixture {index} ('{name}') of {len(show.fixture_names)}",
+                      file=sys.stderr)
+            if client is not None:
+                client.open()
+            if args.pattern:
+                show.set_pattern(args.pattern)
+            if args.state:
+                show.set_state(args.state)
+            listener = _osc_input_for(args, show)
+            if pads is not None:
+                pads.attach(show).open()
+            try:
+                print(f"running: {show.status()}", file=sys.stderr)
+                code = show.wait(args.seconds)
+            finally:
                 if pads is not None:
-                    pads.attach(show).open()
-                try:
-                    print(f"running: {show.status()}", file=sys.stderr)
-                    code = show.wait(args.seconds)
-                finally:
-                    if pads is not None:
-                        pads.close()
-                    if listener is not None:
-                        listener.close()
-                    if client is not None:
-                        client.close()
-        finally:
+                    pads.close()
+                if listener is not None:
+                    listener.close()
+                if client is not None:
+                    client.close()
+            return 0 if code is None else code
+    finally:
+        if link is not None:
             _osc_report(link)
-
-        return 0 if code is None else code
 
 
 def _osc_test(link, args: argparse.Namespace) -> int:
@@ -868,12 +841,14 @@ def _osc_report(link) -> None:
 
     Carefully worded, because the honest answer is "we do not know". UDP is
     unacknowledged, and a closed port on loopback does not even come back as an
-    error — so a clean run against nothing at all looks exactly like a clean run
+    error - so a clean run against nothing at all looks exactly like a clean run
     against a listening visualiser. Saying "88 sent, 0 dropped" and stopping
     would read as confirmation of the one thing this cannot confirm.
     """
-    # One line of it, because the full version was printed when the link was
-    # made and a report that repeats it buries the counts it exists to give.
+    try:
+        link.refresh()
+    except Exception:
+        pass
     lines = (link.last_error or "").splitlines()
     reason = lines[0] if lines else ""
 
@@ -885,44 +860,14 @@ def _osc_report(link) -> None:
           + (f", {link.dropped} refused" if link.dropped else ""), file=sys.stderr)
 
     if link.is_name and link.address is None:
-        # Nothing was sent and nothing could have been. Said here and returned,
-        # rather than letting the advice below send them into Synesthesia's
-        # settings for a problem that never got off this machine.
         print(f"  '{link.host}' never resolved, so there was nowhere to send.\n"
               f"  {reason}", file=sys.stderr)
         return
-
-    if link.rebinds:
-        # A machine that moved is the ordinary reason and no cause for alarm -
-        # but a laptop hopping between wifi and ethernet mid-set is not, and
-        # neither is two machines answering to one name. Worth a line either way.
-        print(f"  '{link.host}' moved {link.rebinds} time(s); "
-              f"now {link.address}", file=sys.stderr)
-    if link.lookups_failed:
-        print(f"  {link.lookups_failed} look-up(s) of '{link.host}' failed; "
-              "the address in hand was kept", file=sys.stderr)
     if link.dropped:
         print(f"  last error: {reason}", file=sys.stderr)
-
-    if not link.sent:
-        print("  nothing was sent - either no frame arrived, or the fixture "
-              "being sampled is not in it.", file=sys.stderr)
-        return
-
-    print(
-        "\n  UDP is unacknowledged: sending is not evidence anything received it.\n"
-        "  If the control did not move, in the order worth checking:\n"
-        "    - is OSC *input* switched on in Synesthesia's settings? It ships\n"
-        f"      off, and off looks exactly like every other failure here.\n"
-        f"    - does that panel say port {link.port}? Both ends have to agree,\n"
-        "      and neither will complain if they do not.\n"
-        "    - OSC input is a Synesthesia Pro feature; on other licences the\n"
-        "      fallback is MIDI, which this does not speak.\n"
-        "    - does the running scene actually have a colour control? The\n"
-        "      default address is positional - the *first* one, if there is one.\n"
-        "    - if it has one and it still sits still, try --separate.",
-        file=sys.stderr,
-    )
+    print("  a socket that accepts a send proves nothing about the far end; "
+          "if the control did not move, run --test and check the app's port.",
+          file=sys.stderr)
 
 
 def _cmd_view(args: argparse.Namespace) -> int:
@@ -939,30 +884,14 @@ def _cmd_view(args: argparse.Namespace) -> int:
 
     # The window and the visualiser off one show, rather than two copies of it
     # running side by side with their own beat clocks. See ViewerApp._send_osc.
-    link = None
+    osc_gamma = 0.0
     if args.osc:
-        from .osc import SynesthesiaLink
-
         try:
-            link = SynesthesiaLink(
-                args.osc,
-                args.osc_control,
-                gamma=Config.load(args.config).master.gamma,
-                resolve_every=args.osc_resolve_every,
-                on_resolve=lambda address: print(
-                    f"{args.osc} now resolves to {address}", file=sys.stderr),
-            )
-        except (OSError, ValueError) as error:
+            parse_endpoint(args.osc)
+        except ValueError as error:
             print(f"error: cannot send to '{args.osc}': {error}", file=sys.stderr)
             return 1
-
-        print(f"sending to {link.describe()}", file=sys.stderr)
-        if link.is_name and link.address is None:
-            # Not fatal: the window opens, the rig runs, and the name is looked
-            # up again on its interval. A visualiser that is not up yet must not
-            # be able to stop a show from starting.
-            print(f"warning: {link.last_error}", file=sys.stderr)
-
+        osc_gamma = Config.load(args.config).master.gamma
     return view(
         args.config,
         executable=args.executable,
@@ -972,9 +901,12 @@ def _cmd_view(args: argparse.Namespace) -> int:
         emit_rate=args.emit_rate,
         midi=args.midi,
         bpm=args.bpm,
-        osc=link,
+        osc=args.osc,
         osc_device=args.osc_device,
         osc_fixture=args.osc_fixture,
+        osc_control=args.osc_control,
+        osc_gamma=osc_gamma,
+        osc_resolve_every=args.osc_resolve_every,
         midimap=args.midimap,
         midi_out=args.midi_out,
         client=args.client,
@@ -1023,7 +955,7 @@ def _cmd_calibrate(args: argparse.Namespace) -> int:
 
 def _cmd_list(args: argparse.Namespace) -> int:
     print("patterns:")
-    for name in PATTERN_NAMES:
+    for name in pattern_names():
         print(f"  {name}")
     print()
     print("palettes:")
@@ -1097,16 +1029,21 @@ def _pads_for(args, config_path, say, osc_factory=None):
     except Exception as error:  # the map still fires; only the mode pad reads the table
         say(f"pads: cue table not read: {error}")
         config = None
+    made = []
     if osc_factory is None:
         held = []
-
         def osc_factory():
             if not held:
                 from .osc import SynesthesiaLink
-                held.append(SynesthesiaLink())
+                show = made[0].context.show if made else None
+                if show is None:
+                    raise RuntimeError("no show to send OSC from yet")
+                held.append(SynesthesiaLink(show))
             return held[0]
-    return HeadlessPads(midimap, config=config, osc_factory=osc_factory, say=say,
+    pads = HeadlessPads(midimap, config=config, osc_factory=osc_factory, say=say,
                         midi_out=getattr(args, "midi_out", "") or "")
+    made.append(pads)
+    return pads
 
 
 def _add_tempo_args(parser: argparse.ArgumentParser) -> None:
@@ -1196,7 +1133,8 @@ def build_parser() -> argparse.ArgumentParser:
     generate.add_argument("--device", default="enttec_pro",
                           help="enttec_pro, enttec_open, console or preview")
     generate.add_argument("--port", default="auto")
-    generate.add_argument("--pattern", default="palette_wave", choices=PATTERN_NAMES)
+    generate.add_argument("--pattern", default="palette_wave",
+                          help="a look the executable registers; `list` shows them")
     generate.add_argument("--output", "-o", default="-", help="output path, or - for stdout")
     generate.set_defaults(func=_cmd_generate)
 
@@ -1205,7 +1143,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--seconds", type=float, help="stop after this long (default: run until interrupted)")
     run.add_argument("--frames", type=int, default=0, help="stop after this many frames")
     run.add_argument("--dry-run", action="store_true", help="print frames instead of driving hardware")
-    run.add_argument("--pattern", choices=PATTERN_NAMES, help="override the config's pattern")
+    run.add_argument("--pattern", help="override the config's pattern (`list` shows the looks)")
     run.add_argument("--state", help="for a state machine pattern, the look to open on")
     run.add_argument("--brightness", type=float, help="override master brightness (0..1)")
     run.add_argument("--verbose", "-v", action="store_true", help="echo the executable's logs")
@@ -1237,7 +1175,7 @@ def build_parser() -> argparse.ArgumentParser:
                           "device in patch order (default 0)")
     osc.add_argument("--device", metavar="NAME",
                      help="sample that device's first fixture instead of --fixture")
-    osc.add_argument("--pattern", choices=PATTERN_NAMES, help="override the config's pattern")
+    osc.add_argument("--pattern", help="override the config's pattern (`list` shows the looks)")
     osc.add_argument("--state", help="for a state machine pattern, the look to open on")
     osc.add_argument("--separate", action="store_true",
                      help="send r, g and b as three messages instead of one with "

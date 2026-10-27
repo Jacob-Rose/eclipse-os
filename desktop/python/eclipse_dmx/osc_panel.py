@@ -42,6 +42,7 @@ the one a single "connected" lamp would have hidden.
 
 from __future__ import annotations
 
+import json
 import threading
 import time
 import tkinter as tk
@@ -108,6 +109,9 @@ class OscTraffic:
         #: message it sends about itself rather than about the music.
         self.scene: Optional[str] = None
         self.scene_at: Optional[float] = None
+        #: The executable's `OSC-STATUS` and `OSC-OUT-STATUS` fields, from pull().
+        self.in_status: Dict[str, str] = {}
+        self.out_status: Dict[str, str] = {}
 
         #: Addresses dropped because the table was full, so the panel can say
         #: so rather than quietly showing a partial picture.
@@ -168,6 +172,75 @@ class OscTraffic:
                 "scene_at": self.scene_at,
                 "overflowed": self.overflowed,
             }
+
+    def pull(self, show, seen: bool = True) -> None:
+        """Reads the executable's view: `osc status` for the counts and how
+        long ago anything arrived, and with `seen` the per-address tables.
+
+        The executable owns the socket now, so the forty uniforms a frame
+        never cross the pipe; this asks for the summary instead, once a
+        second from the viewer's pump. `saw_in` still records the few lines
+        the executable does report - announcements and anything watched.
+        """
+        from .osc import parse_status
+        now = time.monotonic()
+        try:
+            status = show.query("osc status", "OSC-")
+            rows = show.query("osc seen", "OSC-SEEN") if seen else None
+        except Exception:
+            return
+        with self._lock:
+            for line in status:
+                fields = parse_status(line)
+                if line.startswith("OSC-STATUS"):
+                    self.in_status = fields
+                    self.messages_in = int(fields.get("messages", 0) or 0)
+                    heard = fields.get("heard", "never")
+                    if heard != "never":
+                        try:
+                            self.last_in_at = now - float(heard.rstrip("s"))
+                        except ValueError:
+                            pass
+                elif line.startswith("OSC-OUT-STATUS"):
+                    self.out_status = fields
+                    sends = int(fields.get("sent", 0) or 0)
+                    if sends > self.sends:
+                        self.last_out_at = now
+                    self.sends = sends
+                    self.send_failures = int(fields.get("dropped", 0) or 0)
+            if rows is None:
+                return
+            fresh_in: Dict[str, list] = {}
+            fresh_out: Dict[str, list] = {}
+            for line in rows:
+                parts = line.split(None, 7)
+                if len(parts) < 8:
+                    continue
+                _, direction, address, count, _low, _high, age, args = parts
+                try:
+                    values = tuple(json.loads(args))
+                    at = now - float(age) if float(age) >= 0.0 else now
+                    total = int(count)
+                except ValueError:
+                    continue
+                table = fresh_in if direction == "in" else fresh_out
+                table[address] = [total, values, at, at]
+                if direction == "in" and address.lower().startswith("/scenes/"):
+                    if self.scene != address:
+                        self.scene = address
+                        self.scene_at = at
+            # keep the order addresses were first seen here; new ones follow
+            for fresh, table in ((fresh_in, self._in), (fresh_out, self._out)):
+                for address in list(table.keys()):
+                    if address not in fresh:
+                        del table[address]
+                for address, entry in fresh.items():
+                    if address in table:
+                        table[address][0] = entry[0]
+                        table[address][1] = entry[1]
+                        table[address][2] = entry[2]
+                    elif len(table) < self.max_rows:
+                        table[address] = entry
 
     def clear(self) -> None:
         """Forget every address, keeping the counters.

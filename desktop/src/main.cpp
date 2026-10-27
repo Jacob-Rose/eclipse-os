@@ -39,15 +39,17 @@
 #include <eio/hsv_strip.h>
 #include <eio/relic.h>
 #include <elink/relic_link.h>
+#include <ebeat/beat_clock.h>
+#include <ebeat/beat_trigger.h>
+#include <ebeat/level_bus.h>
+#include <ebeat/shared.h>
+#include <ecore/color_mix.h>
 
 // The relic's own device layer, built for the host so --link-selftest can drive
 // the code the sculpture actually runs. Nothing else here touches it.
 #include "relics/obelisk/obelisk.h"
 #include "relics/obelisk/state_obelisk.h"
 
-#include "edesk/beat_clock.h"
-#include "edesk/beat_trigger.h"
-#include "edesk/color_mix.h"
 #include "edesk/config.h"
 #include "edesk/dmx_output.h"
 #include "edesk/relic_shadow.h"
@@ -59,9 +61,11 @@
 #include "edesk/mythos26.h"
 #include "edesk/pattern.h"
 #include "edesk/serial_port.h"
+#include "edesk/osc_link.h"
 #include "edesk/state_machine.h"
 
 using namespace edesk;
+using namespace ebeat;
 
 namespace
 {
@@ -325,7 +329,7 @@ namespace
     /// gives for free.
     ecore::HSV addOver(const ecore::HSV& base, const ecore::HSV& over)
     {
-        return addRgb(base, over);
+        return ecore::addRgb(base, over);
     }
 
     /// Drives the relic's end of the link with a synthesised desk and checks
@@ -900,7 +904,7 @@ namespace
             check("underlay: the obelisk has nodes", spacedNodes > 0 ? 1 : 0, 1);
 
             // A desk-built rig with spaced nodes is what the machine sees;
-            // build one the way HostRelicIO does, minimally: one segment of
+            // build one the way eio::HostRelicIO does, minimally: one segment of
             // spaced nodes on a fresh strip.
             eio::RelicIO rig;
             std::unique_ptr<eio::HSVStrip> strip(new eio::HSVStrip(8, 0));
@@ -2132,6 +2136,8 @@ namespace
         /// because they are usually not the same port and a controller with no
         /// lamps must not cost us the beat.
         MidiOutput midiOut;
+        OscInput osc;
+        OscOutput oscOut;
 
         /// The last accepted `state ...` line, verbatim - blend seconds and
         /// all. Replayed to a cue-mode relic the moment it comes online, so a
@@ -3254,6 +3260,49 @@ namespace
     }
 
     /// Every device's output, for a status line.
+    /// The directory a config lives in, with a trailing separator, or empty.
+    std::string directoryOf(const std::string& path)
+    {
+        const size_t slash = path.find_last_of("/\\");
+        return slash == std::string::npos ? std::string() : path.substr(0, slash + 1);
+    }
+
+    /// With audio.source "synesthesia", the OSC input opens on audio.port
+    /// with the map the config names (or oscmaps/synesthesia.json beside
+    /// it), the way the python side used to open it. Nothing fatal: a port
+    /// in use or a missing map is said and the show runs without.
+    void applyOscConfig(ShowState& show, const std::string& configPath)
+    {
+        if (!show.config.audio.isSynesthesia())
+        {
+            return;
+        }
+        const std::string beside = directoryOf(configPath);
+        const std::string mapPath = show.config.audio.map.empty()
+            ? beside + "oscmaps/synesthesia.json"
+            : beside + show.config.audio.map;
+        std::string error;
+        int loaded = 0;
+        int native = 0;
+        if (show.osc.loadMap(mapPath, error, loaded, native))
+        {
+            logLine("osc map: " + mapPath + ", " + std::to_string(loaded) + " bindings, "
+                    + std::to_string(native) + " on the audio bus");
+        }
+        else
+        {
+            logLine("osc map: " + error + "; listening with no bindings");
+        }
+        if (show.osc.listen("0.0.0.0", show.config.audio.port, error))
+        {
+            logLine("osc in: listening on port " + std::to_string(show.osc.getPort()));
+        }
+        else
+        {
+            logLine("osc in: " + error);
+        }
+    }
+
     std::string describeOutputs(const ShowState& show)
     {
         std::string out;
@@ -4172,7 +4221,7 @@ namespace
                 return;
             }
 
-            sharedBeatClock().setBpm(value, BeatSource::Internal);
+            sharedBeatClock().setBpm(value, BeatSource::Internal, nowSeconds());
             emit("OK bpm " + words[1]);
             return;
         }
@@ -4259,6 +4308,279 @@ namespace
             return;
         }
 
+        if (command == "osc")
+        {
+            const std::string action = (words.size() >= 2) ? words[1] : "status";
+            const double oscNow = nowSeconds();
+            if (action == "status")
+            {
+                emit("OSC-STATUS " + show.osc.describe(oscNow));
+                emit("OSC-OUT-STATUS " + show.oscOut.describe());
+                emit("OK osc status");
+                return;
+            }
+            if (action == "listen")
+            {
+                if (words.size() < 3)
+                {
+                    emit("ERR osc listen needs a port, a host:port, or off");
+                    return;
+                }
+                if (words[2] == "off")
+                {
+                    show.osc.close();
+                    emit("OK osc listen off");
+                    return;
+                }
+                std::string host = "0.0.0.0";
+                int port = 0;
+                std::string error;
+                if (words[2].find(':') == std::string::npos && words[2].find_first_not_of("0123456789") == std::string::npos)
+                {
+                    port = std::stoi(words[2]);
+                }
+                else if (!parseOscEndpoint(words[2], 7000, host, port, error))
+                {
+                    emit("ERR osc listen: " + error);
+                    return;
+                }
+                if (!show.osc.listen(host, port, error))
+                {
+                    emit("ERR osc listen: " + error);
+                    return;
+                }
+                emit("OK osc listen " + host + ":" + std::to_string(show.osc.getPort()));
+                return;
+            }
+            if (action == "map")
+            {
+                if (words.size() < 3)
+                {
+                    emit("ERR osc map needs a file, or clear");
+                    return;
+                }
+                if (words[2] == "clear")
+                {
+                    show.osc.clearMap();
+                    emit("OK osc map clear");
+                    return;
+                }
+                std::string error;
+                int loaded = 0;
+                int native = 0;
+                if (!show.osc.loadMap(words[2], error, loaded, native))
+                {
+                    emit("ERR osc map: " + error);
+                    return;
+                }
+                emit("OK osc map " + std::to_string(loaded) + " bindings, " + std::to_string(native) + " on the audio bus");
+                return;
+            }
+            if (action == "watch")
+            {
+                const bool enable = (words.size() < 3) || (words[2] == "on" || words[2] == "1" || words[2] == "true");
+                show.osc.setWatch(enable);
+                emit(std::string("OK osc watch ") + (enable ? "on" : "off"));
+                return;
+            }
+            if (action == "announce")
+            {
+                if (words.size() < 3)
+                {
+                    emit("ERR osc announce needs a glob, or clear");
+                    return;
+                }
+                if (words[2] == "clear")
+                {
+                    show.osc.clearAnnounce();
+                    emit("OK osc announce clear");
+                    return;
+                }
+                show.osc.addAnnounce(words[2]);
+                emit("OK osc announce " + words[2]);
+                return;
+            }
+            if (action == "seen")
+            {
+                int rows = 0;
+                for (const OscSeen& one : show.osc.seen())
+                {
+                    std::ostringstream line;
+                    line << "OSC-SEEN in " << one.address << " " << one.count << " ";
+                    if (one.numeric) line << one.low << " " << one.high; else line << "- -";
+                    line.setf(std::ios::fixed);
+                    line.precision(1);
+                    line << " " << (one.lastAt < 0.0 ? -1.0 : oscNow - one.lastAt) << " " << one.lastArgs;
+                    emit(line.str());
+                    ++rows;
+                }
+                for (const OscSeen& one : show.oscOut.sent())
+                {
+                    std::ostringstream line;
+                    line << "OSC-SEEN out " << one.address << " " << one.count << " ";
+                    if (one.numeric) line << one.low << " " << one.high; else line << "- -";
+                    line.setf(std::ios::fixed);
+                    line.precision(1);
+                    line << " " << (one.lastAt < 0.0 ? -1.0 : oscNow - one.lastAt) << " " << one.lastArgs;
+                    emit(line.str());
+                    ++rows;
+                }
+                emit("OK osc seen " + std::to_string(rows));
+                return;
+            }
+            if (action == "forget")
+            {
+                show.osc.forget();
+                show.oscOut.forget();
+                emit("OK osc forget");
+                return;
+            }
+            if (action == "out")
+            {
+                if (words.size() < 3)
+                {
+                    emit("ERR osc out needs host:port [control=/addr] [separate=on] [gamma=g] [fixture=n|device=name] [resolve=s], or off");
+                    return;
+                }
+                if (words[2] == "off")
+                {
+                    show.oscOut.close();
+                    show.oscOut.setTapFixture(-1);
+                    emit("OK osc out off");
+                    return;
+                }
+                double resolveEvery = 15.0;
+                std::string control;
+                int tap = show.oscOut.getTapFixture();
+                bool separate = show.oscOut.getSeparate();
+                float gamma = show.oscOut.getGamma();
+                for (size_t i = 3; i < words.size(); ++i)
+                {
+                    const size_t eq = words[i].find('=');
+                    if (eq == std::string::npos)
+                    {
+                        emit("ERR osc out: '" + words[i] + "' is not key=value");
+                        return;
+                    }
+                    const std::string key = words[i].substr(0, eq);
+                    const std::string value = words[i].substr(eq + 1);
+                    float asFloat = 0.0f;
+                    if (key == "control") control = value;
+                    else if (key == "separate") separate = (value == "on" || value == "1" || value == "true");
+                    else if (key == "gamma" && parseFloatArg(value, asFloat)) gamma = asFloat;
+                    else if (key == "resolve" && parseFloatArg(value, asFloat)) resolveEvery = asFloat;
+                    else if (key == "fixture" && parseFloatArg(value, asFloat)) tap = static_cast<int>(asFloat);
+                    else if (key == "device")
+                    {
+                        bool found = false;
+                        for (const DeviceRuntime& device : show.devices)
+                        {
+                            if (device.name() == value)
+                            {
+                                tap = static_cast<int>(device.firstFixture);
+                                found = true;
+                            }
+                        }
+                        if (!found)
+                        {
+                            emit("ERR osc out: no device '" + value + "'");
+                            return;
+                        }
+                    }
+                    else
+                    {
+                        emit("ERR osc out: unknown option '" + key + "'");
+                        return;
+                    }
+                }
+                std::string error;
+                if (!show.oscOut.open(words[2], error, resolveEvery))
+                {
+                    emit("ERR osc out: " + error);
+                    return;
+                }
+                if (!control.empty()) show.oscOut.setControl(control);
+                show.oscOut.setSeparate(separate);
+                show.oscOut.setGamma(gamma);
+                show.oscOut.setTapFixture(tap);
+                emit("OK osc out " + show.oscOut.describe());
+                return;
+            }
+            if (action == "tap")
+            {
+                if (words.size() < 3)
+                {
+                    emit("ERR osc tap needs a fixture index, a device name, or off");
+                    return;
+                }
+                if (words[2] == "off")
+                {
+                    show.oscOut.setTapFixture(-1);
+                    emit("OK osc tap off");
+                    return;
+                }
+                float asFloat = 0.0f;
+                if (parseFloatArg(words[2], asFloat))
+                {
+                    show.oscOut.setTapFixture(static_cast<int>(asFloat));
+                    emit("OK osc tap " + std::to_string(show.oscOut.getTapFixture()));
+                    return;
+                }
+                for (const DeviceRuntime& device : show.devices)
+                {
+                    if (device.name() == words[2])
+                    {
+                        show.oscOut.setTapFixture(static_cast<int>(device.firstFixture));
+                        emit("OK osc tap " + std::to_string(show.oscOut.getTapFixture()) + " (" + words[2] + ")");
+                        return;
+                    }
+                }
+                emit("ERR osc tap: no device '" + words[2] + "'");
+                return;
+            }
+            if (action == "send")
+            {
+                if (words.size() < 3 || words[2].empty() || words[2][0] != '/')
+                {
+                    emit("ERR osc send needs an /address and arguments");
+                    return;
+                }
+                if (!show.oscOut.isOpen())
+                {
+                    emit("ERR osc send: no output; `osc out host:port` first");
+                    return;
+                }
+                eosc::Message message(words[2]);
+                oscArgsFromText(joinFrom(words, 3), message);
+                if (!show.oscOut.send(message))
+                {
+                    emit("ERR osc send: " + show.oscOut.getLastError());
+                    return;
+                }
+                emit("OK osc send " + words[2]);
+                return;
+            }
+            if (action == "color")
+            {
+                float rgb[3] = {0.0f, 0.0f, 0.0f};
+                if (words.size() < 5 || !parseFloatArg(words[2], rgb[0]) || !parseFloatArg(words[3], rgb[1])
+                    || !parseFloatArg(words[4], rgb[2]))
+                {
+                    emit("ERR osc color needs r g b, 0..255");
+                    return;
+                }
+                if (!show.oscOut.isOpen())
+                {
+                    emit("ERR osc color: no output; `osc out host:port` first");
+                    return;
+                }
+                show.oscOut.sendColor(static_cast<int>(rgb[0]), static_cast<int>(rgb[1]), static_cast<int>(rgb[2]));
+                emit("OK osc color");
+                return;
+            }
+            emit("ERR osc: unknown action '" + action + "'; status, listen, map, watch, announce, seen, forget, out, tap, send, color");
+            return;
+        }
         if (command == "midi")
         {
             const std::string action = (words.size() >= 2) ? words[1] : "status";
@@ -5084,9 +5406,11 @@ int main(int argc, char** argv)
     // clock free-runs, so a beat-driven look pulses at the configured tempo on
     // a bench with nothing plugged in, and locks to the music when there is
     // some. See edesk/beat_clock.h.
-    sharedBeatClock().setBpm(show.config.midi.bpm, BeatSource::Internal);
+    sharedBeatClock().setBpm(show.config.midi.bpm, BeatSource::Internal, nowSeconds());
     sharedBeatClock().setFreeRun(show.config.midi.freeRun);
     sharedBeatClock().setLatency(static_cast<double>(show.config.midi.latencyMs) / 1000.0);
+
+    applyOscConfig(show, configPath);
 
     if (show.config.midi.enabled)
     {
@@ -5658,11 +5982,31 @@ int main(int argc, char** argv)
                 emit("MIDI-IN dropped " + std::to_string(dropped));
             }
         }
+        for (const std::string& line : show.osc.drain()) emit(line);
+        for (const std::string& line : show.oscOut.drain()) emit(line);
 
         // A line per beat, for a UI that wants to show the tempo it is locked
         // to. Deliberately outside the frame rate limit below: a beat marker
         // that arrives whenever the next throttled frame happens to be due is
         // not a beat marker.
+        if (show.oscOut.isOpen() && show.oscOut.getTapFixture() >= 0)
+        {
+            // one fixture's rendered colour, to the visualiser, every frame
+            int index = show.oscOut.getTapFixture();
+            for (const DeviceRuntime& device : show.devices)
+            {
+                const auto& fixtures = device.config->fixtures.all();
+                if (index < static_cast<int>(fixtures.size()))
+                {
+                    const Fixture& fixture = fixtures[static_cast<size_t>(index)];
+                    show.oscOut.sendColor(device.universe.getChannel(fixture.startChannel + fixture.offsetR),
+                                          device.universe.getChannel(fixture.startChannel + fixture.offsetG),
+                                          device.universe.getChannel(fixture.startChannel + fixture.offsetB));
+                    break;
+                }
+                index -= static_cast<int>(fixtures.size());
+            }
+        }
         if (emitFrames)
         {
             BeatClock& beat = sharedBeatClock();
