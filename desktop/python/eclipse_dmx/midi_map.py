@@ -1012,6 +1012,11 @@ class Action:
         return action
 
 
+#: Actions that set up around a cue rather than say which cue it is: a pad's
+#: layers and its visualiser. See Mapping.is_live.
+ACCOMPANIMENT = frozenset({"layer", "syn_scene", "syn_preset", "syn_favslot", "syn_media", "syn_control"})
+
+
 @dataclass
 class Mapping:
     """One trigger, and the list of things it does."""
@@ -1183,12 +1188,19 @@ class Mapping:
         which can never answer - vetoed, that pad could never be live and the
         one thing this is for would not work.
 
+        The layers and the visualiser a cue sets up are its setting, not the
+        cue (ACCOMPANIMENT): beside anything else that answers they do not
+        vote, so a mythos cue stays lit when its UV is moved by hand, and the
+        pad still says which cue is up. A pad of only those - a UV mode pad -
+        is judged on them.
+
         Returns None when *nothing* could answer, which is a different thing
         from False and is why this is not a bool. A row of pure Synesthesia
         actions has no answer available, and a surface that pulsed one anyway
         would be inventing it.
         """
         opinions: List[bool] = []
+        setting: List[bool] = []
         for action in self.actions:
             spec = action.spec
             if spec is None or spec.check is None:
@@ -1200,8 +1212,10 @@ class Mapping:
                 # throws must cost this pad its lamp, not the whole repaint.
                 verdict = None
             if verdict is not None:
-                opinions.append(bool(verdict))
+                (setting if action.key in ACCOMPANIMENT else opinions).append(bool(verdict))
 
+        if not opinions:
+            opinions = setting
         if not opinions:
             return None
         return all(opinions)

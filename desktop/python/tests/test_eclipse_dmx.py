@@ -3628,15 +3628,25 @@ class TheLayerAction(unittest.TestCase):
         self.assertIsNone(check(midi_map.ActionContext(show=self._rig()),
                                 {"layer": "uv", "name": "kick"}))
 
-    def test_a_cue_pad_is_live_only_when_its_layers_are_where_it_put_them(self):
-        """The whole cue or nothing: a cue whose UV has since been moved by
-        hand is not the cue that is up, and the pad says so."""
+    def test_a_cue_pad_stays_live_when_its_layers_are_moved_by_hand(self):
+        """The cue is its state: moving the UV by hand afterwards leaves the
+        pad lit, so the surface still says which cue is up."""
         config = Config.load(CUES)
         pad = midi_map.Mapping(kind="note", number=11, actions=[
             midi_map.Action.from_dict(entry) for entry in cue_actions(config, "rain")
             if entry["action"] not in ("syn_scene", "syn_media")])
         rig = self._rig(flash=_FakeLayer("off"), uv=_FakeLayer("rainbow"))
         rig.current_state = "rain"
+        self.assertIs(pad.is_live(midi_map.ActionContext(show=rig)), True)
+        rig.layers["uv"].current_state = "off"
+        self.assertIs(pad.is_live(midi_map.ActionContext(show=rig)), True)
+        rig.current_state = "nova"
+        self.assertIs(pad.is_live(midi_map.ActionContext(show=rig)), False)
+
+    def test_a_pad_of_only_layers_is_judged_on_them(self):
+        pad = midi_map.Mapping(kind="note", number=61, actions=[
+            midi_map.Action("layer", {"layer": "uv", "name": "kick"})])
+        rig = self._rig(uv=_FakeLayer("kick"))
         self.assertIs(pad.is_live(midi_map.ActionContext(show=rig)), True)
         rig.layers["uv"].current_state = "off"
         self.assertIs(pad.is_live(midi_map.ActionContext(show=rig)), False)
