@@ -14,7 +14,7 @@
 #endif
 
 #if USE_SCREEN
-#include <AnimatedGIF.h>
+#include "../external/AnimatedGIF/AnimatedGIF.h"
 
 #include <Adafruit_GC9A01A.h>
 #else

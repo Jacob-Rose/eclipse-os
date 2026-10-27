@@ -11,7 +11,7 @@
 
 #include "../../lib/j/janim.h"
 
-#include <AnimatedGIF.h>
+#include "../../../lib/external/AnimatedGIF/AnimatedGIF.h"
 
 class State_Emote_Heart : public State
 {

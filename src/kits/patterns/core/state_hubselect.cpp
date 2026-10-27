@@ -9,7 +9,7 @@
 #include "../../lib/j/jmath.h"
 #include "../../gm.h"
 
-#include <AnimatedGIF.h>
+#include "../../../lib/external/AnimatedGIF/AnimatedGIF.h"
 
 #include "../../imgs/eclipse.h"
 

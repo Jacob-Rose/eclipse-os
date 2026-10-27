@@ -9,8 +9,8 @@
 # eclipse-os.whiteboard.deploy.uf2 - so two builds in one folder cannot be
 # mistaken for each other.
 #
-# Prerequisites, once per machine: arduino-cli, the rp2040 core, the libraries,
-# and tools/patch-libraries.sh. See the root readme.
+# Prerequisites, once per machine: arduino-cli, the rp2040 core and the
+# libraries. See the root readme.
 #
 # On Windows this wants to run inside WSL - the toolchain is a Linux one and the
 # repo is reachable at /mnt/c/... from there.
@@ -44,8 +44,7 @@ status=$?
 
 if [ $status -ne 0 ]; then
     echo
-    echo "Build failed. Two things account for most of it:" >&2
-    echo "  * 'millis' not declared      -> run tools/patch-libraries.sh" >&2
+    echo "Build failed. The usual cause:" >&2
     echo "  * 'byte'/'lerp' is ambiguous -> a header has opened std at global" >&2
     echo "                                  scope again; see src/lib/ecore/name.h" >&2
     exit $status

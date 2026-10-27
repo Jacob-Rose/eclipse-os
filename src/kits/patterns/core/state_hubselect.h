@@ -14,7 +14,7 @@
 
 #include "../../lib/j/jpalettes.h"
 
-#include <AnimatedGIF.h>
+#include "../../../lib/external/AnimatedGIF/AnimatedGIF.h"
 
 // outfit should pulse a light pastel purple/pink
 // lfo on necklace with lfo on speed, moves like an inchworm

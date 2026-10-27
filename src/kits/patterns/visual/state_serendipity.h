@@ -9,7 +9,7 @@
 
 #include "../state_base.h"
 
-#include <AnimatedGIF.h>
+#include "../../../lib/external/AnimatedGIF/AnimatedGIF.h"
 
 class State_Serendipidy : public State
 {
