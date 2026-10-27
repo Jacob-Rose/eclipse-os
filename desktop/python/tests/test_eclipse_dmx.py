@@ -393,6 +393,27 @@ class OscInputListening(ShowTest):
         self.assertAlmostEqual(channels["bass"], 0.75, places=2)
         self.assertEqual(lines, [])
 
+    def test_a_param_binding_lands_on_the_look_without_a_line(self):
+        # afterglow's map: the host's colours are knobs on the osc looks, set
+        # in the executable - nothing comes back for python to run
+        show = self.running_show(DESKTOP / "config" / "scanner.json")
+        lines = []
+        show.on_osc = lines.append
+        show.command("state osc_wash 0")
+        listener = osc_input.OscListener(
+            show, 0, host="127.0.0.1", map_path=DESKTOP / "config" / "oscmaps" / "afterglow.json")
+        self.assertEqual(listener.native, listener.bindings_loaded)
+        sender = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            sender.sendto(osc_packet("/syncswim/color/primary/hue", 200.0), ("127.0.0.1", listener.port))
+            self.settle_until(lambda: any(line.startswith("PARAM hue_a f 200 ")
+                                          for line in show.query("params", "PARAM")),
+                              message="hue_a never landed")
+        finally:
+            sender.close()
+            listener.close()
+        self.assertEqual(lines, [])
+
     def test_a_stray_packet_does_not_stop_the_port(self):
         show = self.running_show(DESKTOP / "config" / "synesthesia_test.json", midi="")
         seen = []
@@ -487,6 +508,52 @@ class OscInputDispatch(unittest.TestCase):
         self.assertEqual(dispatcher.handle_fire("two", 0.5), [])
         self.assertEqual(dispatcher.handle_line("OSC-IN /scenes/x []"), [])
         self.assertEqual(dispatcher.context.syn.heard_scene, "/scenes/x")
+
+
+class TheReplyToACommand(unittest.TestCase):
+    """command() waits for its own OK, not one still owed to a line sent
+    without waiting (a `state` the game fires and forgets)."""
+
+    def controller(self, *replies):
+        import queue
+        from collections import deque
+        show = ShowController.__new__(ShowController)
+        show._replies = queue.Queue()
+        show._unawaited = deque(maxlen=64)
+        show.command_timeout = 0.5
+        for reply in replies:
+            show._replies.put(reply)
+        return show
+
+    def test_an_ok_owed_to_a_fire_and_forget_line_is_skipped(self):
+        show = self.controller("OK state osc_wash", "OK osc listen 0.0.0.0:7000")
+        show._unawaited.append("state")
+        self.assertEqual(show._await_reply("osc listen 0.0.0.0:7000"), "OK osc listen 0.0.0.0:7000")
+        self.assertEqual(list(show._unawaited), [])
+
+    def test_an_ok_that_does_not_name_its_command_is_still_an_answer(self):
+        # `layers` answers `OK 3 layers`: nothing owed, so it is the reply
+        show = self.controller("OK 3 layers")
+        show._unawaited.append("state")
+        self.assertEqual(show._await_reply("layers"), "OK 3 layers")
+
+    def test_an_err_is_never_skipped(self):
+        show = self.controller("ERR no state 'nowhere'")
+        show._unawaited.append("state")
+        self.assertEqual(show._await_reply("osc map x.json"), "ERR no state 'nowhere'")
+
+
+class TheShippedAfterglowOscMap(unittest.TestCase):
+    """afterglow's map runs whole in the executable: every binding native."""
+    MAP = DESKTOP / "config" / "oscmaps" / "afterglow.json"
+
+    def test_every_binding_is_audio_or_a_named_knob(self):
+        for binding in osc_input.BindingSet.load(self.MAP).bindings:
+            if binding.action == "audio":
+                self.assertIn(binding.params.get("channel"), AUDIO_CHANNELS, binding.label)
+            else:
+                self.assertEqual(binding.action, "param", binding.label)
+                self.assertTrue(binding.params.get("name"), binding.label)
 
 
 class TheShippedOscMap(unittest.TestCase):

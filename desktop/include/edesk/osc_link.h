@@ -49,11 +49,27 @@ namespace edesk
         eosc::Binding binding;
         std::string action;
         std::map<std::string, std::string> params;
-        /// `audio` with a channel the bus has: filled in process, never a line.
+        /// `audio` with a channel the bus has, or `param` with a knob named:
+        /// run in process, never a line.
         bool native{false};
         ebeat::AudioChannel channel{ebeat::AudioChannel::Level};
+        /// The knob a native `param` lands on, and the layer whose look has
+        /// it (empty for the show's own); `channel` is unused then.
+        std::string property;
+        std::string layer;
         float low{0.0f};
         float high{1.0f};
+    };
+
+    /* @brief A knob a native `param` binding has set, waiting for the frame
+    * loop to land it on the look. The value is in the knob's own units: the
+    * map's `low`..`high`.
+    */
+    struct OscPropertySet
+    {
+        std::string layer;
+        std::string property;
+        float value{0.0f};
     };
 
     class OscInput
@@ -89,6 +105,10 @@ namespace edesk
         /// Lines for the protocol, oldest first: `OSC-IN`, `OSC-FIRE`, and a
         /// drop count. Called from the frame loop.
         std::vector<std::string> drain();
+
+        /// The knobs native `param` bindings have set since the last call,
+        /// oldest first. Called from the frame loop, which owns the looks.
+        std::vector<OscPropertySet> takePropertySets();
 
         /// Every address seen since the port opened, or since forget().
         std::vector<OscSeen> seen() const;
@@ -126,6 +146,7 @@ namespace edesk
         std::string mapPath;
         std::vector<std::string> announce;
         std::vector<std::string> lines;
+        std::vector<OscPropertySet> propertySets;
         unsigned long long dropped{0};
         std::map<std::string, OscSeen> seenByAddress;
         unsigned long long seenOverflow{0};

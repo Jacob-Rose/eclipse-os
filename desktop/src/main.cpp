@@ -2600,6 +2600,26 @@ namespace
         return nullptr;
     }
 
+    /// A native OSC `param` onto the running look, or a layer's. Quiet when
+    /// the look has no such knob: a map is written for a family of looks, and
+    /// the rest of the show is not wrong for lacking one.
+    void landOscProperty(ShowState& show, const OscPropertySet& set)
+    {
+        Pattern* pattern = show.pattern.get();
+        if (!set.layer.empty())
+        {
+            ShowState::Layer* layer = findLayer(show, set.layer);
+            pattern = layer ? layer->pattern.get() : nullptr;
+        }
+        if (pattern == nullptr)
+        {
+            return;
+        }
+        ecore::PropertyBag bag;
+        pattern->reflect(bag);
+        bag.set(set.property, set.value);
+    }
+
     /// Resolves the coordinate frame for whatever pattern is running.
     ///
     /// Re-run on every pattern switch, not just at startup: an obelisk look and
@@ -3430,7 +3450,7 @@ namespace
         if (show.osc.loadMap(mapPath, error, loaded, native))
         {
             logLine("osc map: " + mapPath + ", " + std::to_string(loaded) + " bindings, "
-                    + std::to_string(native) + " on the audio bus");
+                    + std::to_string(native) + " in process");
         }
         else
         {
@@ -4712,7 +4732,7 @@ namespace
                     emit("ERR osc map: " + error);
                     return;
                 }
-                emit("OK osc map " + std::to_string(loaded) + " bindings, " + std::to_string(native) + " on the audio bus");
+                emit("OK osc map " + std::to_string(loaded) + " bindings, " + std::to_string(native) + " in process");
                 return;
             }
             if (action == "watch")
@@ -6375,6 +6395,7 @@ int main(int argc, char** argv)
                 emit("MIDI-IN dropped " + std::to_string(dropped));
             }
         }
+        for (const OscPropertySet& set : show.osc.takePropertySets()) landOscProperty(show, set);
         for (const std::string& line : show.osc.drain()) emit(line);
         for (const std::string& line : show.oscOut.drain()) emit(line);
 

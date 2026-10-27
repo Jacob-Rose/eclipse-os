@@ -458,6 +458,9 @@ class ShowController:
         #: on the audio meter.
         #: One command at a time waits for a reply. See command().
         self._command_lock = threading.Lock()
+        #: First words of the recent fire-and-forget lines, whose OKs may
+        #: still be on their way. See command().
+        self._unawaited: deque = deque(maxlen=64)
 
         self.start_pattern = pattern
         self.start_state = state
@@ -1180,6 +1183,9 @@ class ShowController:
             # Nothing to wait for and nothing to protect: writes are atomic
             # enough at this size, and taking the lock here would put the whole
             # audio stream behind whatever command is currently in flight.
+            words = line.split()
+            if words:
+                self._unawaited.append(words[0])
             self._write_line(line)
             return ""
 
@@ -1195,7 +1201,7 @@ class ShowController:
             self._write_line(line)
 
             try:
-                reply = self._replies.get(timeout=self.command_timeout)
+                reply = self._await_reply(line)
             except queue.Empty as error:
                 # A silence and a corpse look the same from the queue, and
                 # they are not the same problem: say which, and what the
@@ -1210,6 +1216,28 @@ class ShowController:
         if reply.startswith("ERR"):
             raise ShowError(reply[4:].strip())
         return reply
+
+    def _await_reply(self, line: str) -> str:
+        """The reply to `line`, past any OK still owed to a fire-and-forget line.
+
+        A `state` sent without waiting answers whenever the executable gets to
+        it, which can be after the next command's drain; its `OK state ...`
+        is then not this command's answer. An OK naming a command that is not
+        this one, and that was recently sent unawaited, is skipped. Raises
+        queue.Empty at the timeout.
+        """
+        deadline = time.monotonic() + self.command_timeout
+        mine = (line.split() or [""])[0]
+        while True:
+            reply = self._replies.get(timeout=max(0.0, deadline - time.monotonic()))
+            words = reply.split()
+            if len(words) >= 2 and words[0] == "OK" and words[1] != mine:
+                try:
+                    self._unawaited.remove(words[1])
+                    continue
+                except ValueError:
+                    pass
+            return reply
 
     def query(self, line: str, prefix: str) -> List[str]:
         """Sends a command and returns the announcement lines it produced.

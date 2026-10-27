@@ -333,11 +333,26 @@ void OscInput::handleMessage(const eosc::Message& message, double when)
         fires.fetch_add(1);
         if (entry.native)
         {
-            sharedAudioLevel().set(entry.channel, entry.low + (entry.high - entry.low) * value, when);
+            const float scaled = entry.low + (entry.high - entry.low) * value;
+            if (!entry.property.empty())
+            {
+                if (propertySets.size() < kMaxLines) propertySets.push_back({entry.layer, entry.property, scaled});
+                else ++dropped;
+                continue;
+            }
+            sharedAudioLevel().set(entry.channel, scaled, when);
             continue;
         }
         push("OSC-FIRE " + jsonString(entry.binding.label) + " " + number(value));
     }
+}
+
+std::vector<OscPropertySet> OscInput::takePropertySets()
+{
+    std::lock_guard<std::mutex> guard(lock);
+    std::vector<OscPropertySet> out;
+    out.swap(propertySets);
+    return out;
 }
 
 std::vector<std::string> OscInput::drain()
@@ -471,6 +486,15 @@ bool OscInput::loadMap(const std::string& path, std::string& outError, int& outL
                 entry.high = params["high"].asFloat(1.0f);
                 ++outNative;
             }
+        }
+        else if (entry.action == "param" && !params["name"].asString("").empty())
+        {
+            entry.native = true;
+            entry.property = params["name"].asString("");
+            entry.layer = params["layer"].asString("");
+            entry.low = params["low"].asFloat(0.0f);
+            entry.high = params["high"].asFloat(1.0f);
+            ++outNative;
         }
         loaded.push_back(entry);
     }
