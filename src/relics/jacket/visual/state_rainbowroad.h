@@ -4,9 +4,9 @@
 // See readme.md for full license details.
 #pragma once
 
-#include "../../../lib/eanim/lfo.h"
-#include "../../../lib/eanim/generator_hsv.h"
-#include "../../../lib/eanim/processor_float.h"
+#include <eanim/lfo.h>
+#include <eanim/generator_hsv.h>
+#include <eanim/processor_float.h>
 
 #include "../../pendant/pendant_generic_state.h"
 

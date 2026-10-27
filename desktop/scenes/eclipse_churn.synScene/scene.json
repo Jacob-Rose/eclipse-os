@@ -1,0 +1,92 @@
+{
+ "CREDIT": "Victor S. (Churning) - recoloured for eclipse-os",
+ "TITLE": "Eclipse Churn",
+ "IMAGE_PATH": "eclipse_churn.png",
+ "HARD_TRANSITIONS": [
+ {
+ "UNIFORM": "direction",
+ "VALUES":[0.1, 0.35, 0.6, 0.85, 1.3]
+ },{
+ "UNIFORM": "colRegSel",
+ "VALUES":[0.0, 0.1, 0.2]
+ }
+ ],
+ "GPU": 3,
+ "TAGS" :
+ [
+  "eclipse",
+  "feedback",
+  "media",
+  "morphing",
+  "psychedelic"
+ ],
+ "PASSES": [{"TARGET": "firstFB"}, {"TARGET": "secondFB"}, {"TARGET": "vertBlur"}, {"TARGET": "horBlur"} ],
+ "CONTROLS": [
+    {
+      "DEFAULT": [1.0, 0.05, 0.05],
+      "DESCRIPTION": "The rig's colour. FIRST colour control in this list, so it is /controls/global/color/1 and /controls/scene/rigcolor - the same address every eclipse scene answers to. Defaults to red so the scene does something before a sender is driving it.",
+      "IS_META": true,
+      "NAME": "rig_color",
+      "TYPE": "color",
+      "UI_GROUP": "Link"
+    },
+    {
+      "DEFAULT": [0.05, 0.1, 1.0],
+      "DESCRIPTION": "The second colour the churn is painted with. SECOND colour control, so /controls/global/color/2 and /controls/scene/rigcolor2. Defaults to blue. Nothing sends this yet; eclipse-dmx sends one fixture.",
+      "NAME": "rig_color_2",
+      "TYPE": "color",
+      "UI_GROUP": "Link"
+    },
+    {
+      "DEFAULT": 1.0, "MIN": 0.0, "MAX": 1.0,
+      "DESCRIPTION": "How much of the two-colour paint job. 0 is stock Churning, its own rainbow untouched; 1 is only ever the two rig colours and what lies between them.",
+      "NAME": "rig_amount",
+      "TYPE": "slider",
+      "UI_GROUP": "Link"
+    },
+    {
+      "DEFAULT": 0.6, "MIN": 0.0, "MAX": 1.0,
+      "DESCRIPTION": "How hard the paint job pushes light against dark. Churning's texture lives mostly in hue, and a two-colour palette throws hue away - this puts some of that lost variation back as brightness so the strokes still read.",
+      "NAME": "rig_contrast",
+      "TYPE": "slider",
+      "UI_GROUP": "Link"
+    },
+		{"NAME": "turbulence", "DEFAULT": 0.0, "MIN":0.0, "MAX":1.0, "TYPE": "toggle",
+        "UI_GROUP":"creative","DESCRIPTION": "Adds more small swirling turbulence to the simulation when on."},
+        {"NAME": "plasma", "DEFAULT": 0.0, "MIN":0.0, "MAX":-0.5, "TYPE": "toggle",
+        "UI_GROUP":"creative","DESCRIPTION": "Makes the simulation less like paint, more like overdriven plasma."},
+        {"NAME": "broad_strokes", "DEFAULT": 0.0, "MAX":0.0, "MIN":1.0, "TYPE": "toggle",
+        "UI_GROUP":"creative","DESCRIPTION": "If you want smaller strokes, more consistent texture, less big swatches of colors, turn this off."},
+ 		{"NAME": "color_phasing", "DEFAULT": 0.0, "MIN":0.0, "MAX":1.0, "TYPE": "toggle",
+        "UI_GROUP":"creative","DESCRIPTION": "Causes the color palette to smoothly cycle in time."},
+{
+    "NAME": "lift",
+    "MAX" : 1.0,
+    "MIN" : 0.0,
+    "DEFAULT":1.0,
+    "TYPE": "bang smooth",
+    "PARAMS": 0.1,
+    "DESCRIPTION": "Lifts certain parts of the simulation on press, causing vertical streaks.",
+    "UI_GROUP":"movement"
+  },{
+    "NAME": "swirl",
+    "MAX" : 1.0,
+    "MIN" : 0.0,
+    "DEFAULT":1.0,
+    "TYPE": "bang smooth",
+    "PARAMS": 0.1,
+    "DESCRIPTION": "Swirls the entire simulation about the center on press.",
+    "UI_GROUP":"movement"
+  },
+	{"NAME": "img_mix", "DEFAULT": 0.05, "MIN":0.0, "MAX":0.3, "TYPE": "slider", "UI_GROUP": "general",
+    "DESCRIPTION": "How heavily or subtly do you want the underlying Media or Video to be mixed in? Turn up to snap an image into focus, turn down to have it fade into colors."},
+    {"NAME": "blur_on_fps", "DEFAULT": 0.0, "MIN":0.0, "MAX":1.0, "TYPE": "toggle",
+    "UI_GROUP":"general","DESCRIPTION": "Turn ON if you do not get any FPS lag and like the tilt-shift blur effect. Turn OFF to preserve FPS."},
+    {"NAME": "auto_push", "DEFAULT": 1.0, "MIN":0.0, "MAX":1.0, "TYPE": "toggle",
+    "UI_GROUP":"push","DESCRIPTION": "Keep ON to have the simulation automatically swirl and push based on the music. Turn OFF to manually control with manual push."},
+    {"NAME": "manual_push", "DEFAULT": 0.0, "MIN":-1.0, "MAX":1.0, "TYPE": "slider smooth", "PARAMS": 0.05,
+    "UI_GROUP":"push","DESCRIPTION": "auto push MUST BE SET TO OFF. Manually push the simulation forward and backward with this slider."},
+    {"NAME": "dive_in", "DEFAULT": 0.0, "MIN":0.0, "MAX":2.0,
+    "UI_GROUP":"dive","DESCRIPTION": "'Dive In' to the simulation. Best used by choosing a value and letting it sit, resulting in strange feedback fractals. Turn off your user image for a pure, clean look. Recommended to turn plasma ON."}
+    ]
+ }

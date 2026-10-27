@@ -7,14 +7,14 @@
 
 #include <memory>
 
-#include "../../lib/esm/state.h"
+#include <esm/state.h>
 #include "../../kits/effects.h"
-#include "../../lib/eanim/lfo.h"
-#include "../../lib/eanim/noise.h"
+#include <eanim/lfo.h>
+#include <eanim/noise.h>
 
-#include "../../lib/eanim/generator_hsv.h"
+#include <eanim/generator_hsv.h>
 
-#include "../../lib/ecore/hsv.h"
+#include <ecore/hsv.h>
 
 #include "../../kits/palettes.h"
 

@@ -1,0 +1,250 @@
+// Copyright 2024 | Jake Rose
+//
+// This file is part of project eclipse-os
+// See readme.md for full license details.
+
+#pragma once
+
+#include <functional>
+#include <memory>
+#include <string>
+#include <vector>
+
+#include <ecore/hsv.h>
+#include <ecore/tickable.h>
+#include <eanim/lfo.h>
+#include <eanim/generator_float.h>
+#include <eanim/generator_hsv.h>
+#include <eio/hsv_strip.h>
+#include <eio/strip_projection.h>
+
+#include "edesk/config.h"
+
+///
+/// Patterns.
+///
+/// These are deliberately thin. All the actual colour and motion work is done
+/// by ecore::HSVPalette and the eanim generators, exactly as it is on the
+/// microcontroller: the desktop build gets to be a different renderer for the
+/// same library, not a reimplementation of it.
+///
+
+namespace edesk
+{
+    /// Where a rig sits in the coordinate space a relic pattern expects.
+    ///
+    /// A node's coordinate is `origin + position * span`, position being the
+    /// fixture's 0..1 place along the rig. Relic patterns were written against
+    /// a physical layout, and a field tuned for that scale reads as flat colour
+    /// if you hand it 0..1 — so a rig's normalised positions get stretched
+    /// across this frame.
+    ///
+    /// Two numbers per axis rather than one because relic patterns do not agree
+    /// on an origin. The obelisk's looks read a noise field from (0,0) across
+    /// 8 x 43 — 8 being its four sides at two strips each, which is where its
+    /// per-side palettes come from, and 43 being one strip's height. The
+    /// jacket's monowire instead runs up a near-vertical line starting at
+    /// (0.75, -0.25), and every jacket look is tuned around that.
+    ///
+    /// Each pattern declares the frame it was written for; a config overrides
+    /// any of the four when a rig wants a different slice.
+    struct CoordFrame
+    {
+        float originX{0.0f};
+        float originY{0.0f};
+        float spanX{8.0f};
+        float spanY{43.0f};
+
+        /// The coordinate for a fixture at `position` along the rig.
+        ecore::Coordinate at(float position) const
+        {
+            return ecore::Coordinate{originX + position * spanX,
+                                     originY + position * spanY};
+        }
+    };
+
+    /// Everything a pattern is allowed to know about the rig.
+    struct PatternContext
+    {
+        size_t fixtureCount{0};
+        /// Position of each fixture along the rig, 0..1, index-aligned.
+        std::vector<float> positions;
+
+        /// Where each node actually is, in the pattern's own coordinate space,
+        /// when the rig knows. Empty means "derive it from `positions` and
+        /// `coords`", which is what every DMX rig does.
+        ///
+        /// The difference matters for a rig that is not a line. A truss of ten
+        /// pars is one-dimensional and a single 0..1 position describes it
+        /// completely; the obelisk is not. Its 344 pixels are eight vertical
+        /// runs around four sides, and the whole reason `obelisk_seasons` puts
+        /// a different palette on each side is that it reads x as *which side*
+        /// and y as *how far up*. Run that through one scalar and every side
+        /// gets the same colour, which looks plausible and is wrong.
+        ///
+        /// So a rig that states real coordinates hands them over untouched —
+        /// see Config::coordSpace.
+        std::vector<ecore::Coordinate> nodeCoords;
+
+        /// Which object each node belongs to, and where it is in that
+        /// object's own terms - the relative view beside the stage one. See
+        /// eio::HSVStripNode_Space, which is what a pattern gets built from
+        /// these. Index-aligned with nodeCoords; empty means the rig has
+        /// nothing to say and every node is plainly on the stage.
+        struct NodeMapping
+        {
+            eio::NodeSpace space{eio::NodeSpace::Stage};
+            int index{0};
+            int count{1};
+            ecore::Coordinate local;
+            float u{0.5f};
+            float v{0.5f};
+        };
+        std::vector<NodeMapping> nodeMappings;
+
+        /// Resolved for the running pattern: its own default frame, with any
+        /// config override applied on top. Unused when nodeCoords is set.
+        CoordFrame coords;
+    };
+
+    /// One node for fixture `idx`, as the rig described it: a spaced node
+    /// when the context carries mappings, a plain mapped one otherwise. The
+    /// caller still sets `coord`. Shared by every pattern that builds nodes
+    /// here, so all of them answer a look's question about spaces the same
+    /// way.
+    std::shared_ptr<eio::HSVStripNode_Mapped2D> makeStripNode(const PatternContext& context,
+                                                              eio::HSVStripSegment* segment,
+                                                              size_t idx);
+
+    class Pattern : public ecore::Tickable
+    {
+    public:
+        virtual ~Pattern() = default;
+
+        virtual const char* getName() const = 0;
+
+        /// Advance internal generators.
+        void tick(float deltaTime) override = 0;
+
+        /// Fill `outColors` with one HSV per fixture.
+        virtual void render(const PatternContext& context, std::vector<ecore::HSV>& outColors) = 0;
+
+        /// The coordinate space this pattern was written against. The built-in
+        /// patterns work off `positions` directly and do not care; relic
+        /// patterns very much do. A config can override any field of it.
+        virtual CoordFrame defaultCoordFrame() const { return CoordFrame{}; }
+
+        /// Non-null when this pattern is a state machine, so the protocol can
+        /// offer `state` for it. A virtual rather than a dynamic_cast because
+        /// the library builds without RTTI on the microcontroller side and
+        /// there is no reason for the two to diverge.
+        virtual class StateMachinePattern* asStateMachine() { return nullptr; }
+
+        /// The layer under this pattern, on a relic the show has taken over:
+        /// the sculpture's own look, running here in step with it (see
+        /// edesk::RelicShadow). Rendered into the nodes before the pattern's
+        /// own looks each frame, so a look that joins the sculpture finds its
+        /// picture in hand. Null when nothing is underneath. Not owned. The
+        /// default keeps nothing, for a pattern with no looks that compose.
+        virtual void setUnderLayer(eanim::GeneratorHSV* /*under*/) {}
+
+        /// The knobs this pattern offers, gathered fresh on every call.
+        ///
+        /// Fresh, and never cached, because a PropertyBag holds pointers into
+        /// whatever filled it — and on a state machine that is the running
+        /// look, which changes underneath you on a cue. Rebuilding it costs a
+        /// handful of allocations on a command, not on a frame.
+        ///
+        /// The base offers the three every pattern has. A look with its own
+        /// knobs overrides this, calls up, and adds them; one that has no use
+        /// for speed and width overrides without calling up.
+        virtual void reflect(ecore::PropertyBag& bag);
+
+        /// An impulse, by tag - `trigger <tag>` on the protocol. True if the
+        /// running look answered to it; false, the default, is "no such
+        /// trigger" and the desk says so. See eanim::GeneratorHSV::onTrigger
+        /// for the look's side, and ecore::GameplayTag for what a tag is.
+        virtual bool trigger(const ecore::GameplayTag& /*tag*/) { return false; }
+
+        /// Live control, driven by the stdin protocol. Values are applied
+        /// immediately so the python wrapper can nudge a running show.
+        virtual void setSpeed(float value) { speed = value; }
+        virtual void setWidth(float value) { width = value; }
+        virtual void setBrightness(float value) { brightness = value; }
+        virtual void setPalette(const ecore::HSVPalette& value) { palette = value; }
+        virtual void setColor(const ecore::HSV& value) { color = value; }
+
+        float getSpeed() const { return speed; }
+        float getWidth() const { return width; }
+        float getBrightness() const { return brightness; }
+
+    protected:
+        float speed{0.25f};
+        float width{2.0f};
+        float brightness{1.0f};
+        ecore::HSVPalette palette;
+        ecore::HSV color{0.0f, 1.0f, 1.0f};
+    };
+
+    /// Runs any eclipse-os GeneratorHSV as a DMX pattern.
+    ///
+    /// This is the hot-swap seam. A relic pattern is a GeneratorHSV that reads
+    /// a node's 2D coordinate and writes a colour; it does not care whether the
+    /// node is an LED on a strip or a par on a truss. So we build one
+    /// HSVStripNode_Mapped2D per fixture, hand them to the generator, and every
+    /// pattern ever written for a relic runs here unmodified.
+    ///
+    /// No porting, no copies, one source of truth for what a look is.
+    class GeneratorPattern : public Pattern
+    {
+    public:
+        GeneratorPattern(const char* inName, std::shared_ptr<eanim::GeneratorHSV> inGenerator);
+
+        const char* getName() const override { return name.c_str(); }
+
+        void tick(float deltaTime) override;
+        void render(const PatternContext& context, std::vector<ecore::HSV>& outColors) override;
+
+        /// The wrapped generator, for anything that needs to poke at it.
+        eanim::GeneratorHSV* getGenerator() const { return generator.get(); }
+
+        /// Straight through to the generator: a relic look's knobs are the
+        /// look's, not the wrapper's, and speed/width mean nothing here.
+        void reflect(ecore::PropertyBag& bag) override;
+
+    private:
+        /// Rebuilds the node set when the rig changes shape.
+        void ensureNodes(const PatternContext& context);
+
+        std::string name;
+        std::shared_ptr<eanim::GeneratorHSV> generator;
+
+        // The generator writes through nodes, so we need a strip behind them.
+        // It is never shown; it exists to give the nodes somewhere to live.
+        std::unique_ptr<eio::HSVStrip> strip;
+        std::unique_ptr<eio::HSVStripSegment> segment;
+        std::vector<std::shared_ptr<eio::HSVStripNode_Mapped2D>> nodes;
+    };
+
+
+    /// Makes a pattern from scratch. Registered under a name.
+    using PatternFactory = std::function<std::unique_ptr<Pattern>()>;
+
+    /// Adds a pattern to the registry, or replaces one of the same name.
+    ///
+    /// Registration is how a pattern becomes available: there is no switch
+    /// statement to edit. Call this before makePattern and the name is live.
+    void registerPattern(const std::string& name, PatternFactory factory);
+
+    /// Builds the pattern named by `name`, seeded from `config`. Returns
+    /// nullptr and fills outError when the name is not registered.
+    std::unique_ptr<Pattern> makePattern(const std::string& name,
+                                         const PatternConfig& config,
+                                         std::string& outError);
+
+    /// Every registered pattern name, for --list-patterns and error messages.
+    std::vector<std::string> patternNames();
+
+    /// Resolves config.palette / config.paletteName into a usable palette.
+    ecore::HSVPalette resolvePalette(const PatternConfig& config);
+}

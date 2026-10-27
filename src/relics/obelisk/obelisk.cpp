@@ -5,12 +5,14 @@
 
 #include "obelisk.h"
 
+#include <cstdlib>
 #include <string>
 
-#include "../../lib/eio/strip_projection.h"
-#include "../../lib/ecore/logging.h"
+#include <eio/strip_projection.h>
+#include <ecore/logging.h>
 
 #include "state_obelisk.h"
+#include "../scanner/recording_patterns.h"
 
 using namespace obelisk;
 using namespace ecore;
@@ -25,9 +27,23 @@ void ObeliskIO::init()
 {
     RelicIO::init();
 
-    auto [mainStripIt, stripInserted] = strips.emplace(static_cast<uint8_t>(0), make_unique<HSVStrip>(WALL_SIDE_LENGTH * 8, StripLEDPin));
+    // The strip is wiring::kObelisk; the eight runs below are what the
+    // pixels on it mean, so the two lengths had better agree.
+    static_assert(wiring::kObelisk.length == WALL_SIDE_LENGTH * 8, "relics/wiring.h and WALL_SIDE_LENGTH disagree about the obelisk");
+    auto [mainStripIt, stripInserted] = strips.emplace(static_cast<uint8_t>(0), make_unique<HSVStrip>(wiring::kObelisk));
 
     HSVStrip* mainStrip = mainStripIt->second.get();
+
+    // Eight vertical runs: four sides, up and down each. Every run is
+    // WALL_SIDE_LENGTH pixels and every run's coordinates have to line up with
+    // its neighbour's, because the pixels physically do.
+    //
+    // The down runs start at WALL_SIDE_LENGTH - 1, not WALL_SIDE_LENGTH. They
+    // used to start at WALL_SIDE_LENGTH, which put them one whole unit above
+    // the up runs: an up run covered y 0..42 while the down run beside it
+    // covered 43..1. Anything reading y - which is every look here, that is
+    // what the coordinate is *for* - saw half the sculpture shifted by a pixel
+    // against the other half. Subtle on a noise field and obvious on a gradient.
 
     // Side A
 
@@ -37,7 +53,7 @@ void ObeliskIO::init()
 
     int id2 = static_cast<uint8_t>(StripSegmentID::SideA_Down);
     auto [it2, inserted2] = strip_segments.emplace(id2, make_unique<HSVStripSegment>(mainStrip, id2));
-    if (inserted2) HSVStripNodeFactory::GenerateAxisRow(it2->second.get(), WALL_SIDE_LENGTH , WALL_SIDE_LENGTH, Coord(1, WALL_SIDE_LENGTH), Coord(0, -1.f));
+    if (inserted2) HSVStripNodeFactory::GenerateAxisRow(it2->second.get(), WALL_SIDE_LENGTH , WALL_SIDE_LENGTH, Coord(1, WALL_SIDE_LENGTH - 1), Coord(0, -1.f));
     
     // Side B
 
@@ -47,7 +63,7 @@ void ObeliskIO::init()
 
     int id4 = static_cast<uint8_t>(StripSegmentID::SideB_Down);
     auto [it4, inserted4] = strip_segments.emplace(id4, make_unique<HSVStripSegment>(mainStrip, id4));
-    if (inserted4) HSVStripNodeFactory::GenerateAxisRow(it4->second.get(), WALL_SIDE_LENGTH * 3, WALL_SIDE_LENGTH, Coord(3, WALL_SIDE_LENGTH), Coord(0, -1.f));
+    if (inserted4) HSVStripNodeFactory::GenerateAxisRow(it4->second.get(), WALL_SIDE_LENGTH * 3, WALL_SIDE_LENGTH, Coord(3, WALL_SIDE_LENGTH - 1), Coord(0, -1.f));
     
     // Side C
 
@@ -57,7 +73,7 @@ void ObeliskIO::init()
 
     int id6 = static_cast<uint8_t>(StripSegmentID::SideC_Down);
     auto [it6, inserted6] = strip_segments.emplace(id6, make_unique<HSVStripSegment>(mainStrip, id6));
-    if (inserted6) HSVStripNodeFactory::GenerateAxisRow(it6->second.get(), WALL_SIDE_LENGTH * 5, WALL_SIDE_LENGTH, Coord(5, WALL_SIDE_LENGTH), Coord(0, -1.f));
+    if (inserted6) HSVStripNodeFactory::GenerateAxisRow(it6->second.get(), WALL_SIDE_LENGTH * 5, WALL_SIDE_LENGTH, Coord(5, WALL_SIDE_LENGTH - 1), Coord(0, -1.f));
     
     // Side D
 
@@ -67,7 +83,7 @@ void ObeliskIO::init()
 
     int id8 = static_cast<uint8_t>(StripSegmentID::SideD_Down);
     auto [it8, inserted8] = strip_segments.emplace(id8, make_unique<HSVStripSegment>(mainStrip, id8));
-    if (inserted8) HSVStripNodeFactory::GenerateAxisRow(it8->second.get(), WALL_SIDE_LENGTH * 7, WALL_SIDE_LENGTH, Coord(7, WALL_SIDE_LENGTH), Coord(0, -1.f));
+    if (inserted8) HSVStripNodeFactory::GenerateAxisRow(it8->second.get(), WALL_SIDE_LENGTH * 7, WALL_SIDE_LENGTH, Coord(7, WALL_SIDE_LENGTH - 1), Coord(0, -1.f));
     
     dbgLog("ObeliskIO::init", Verbosity::Verbose, Category::Relic);
 
@@ -95,12 +111,80 @@ ObeliskCore::ObeliskCore() : RelicCore()
     testPatternState->setGenerator(std::make_shared<Pattern_Obelisk_Monocolor>());
     testPatternState->init();
 
+    // the default: what the sculpture shows on its own, and what the desk
+    // shadows under the scanner's looks (see relic_shadow.cpp) - the idle
+    // scan line, the countdown's flashes and the arm's fire all land on it
+    blobsPatternState = std::make_shared<State_GenericHSV>("blobsState", coreIO.get());
+    blobsPatternState->setGenerator(std::make_shared<Pattern_Obelisk_Blobs>());
+    blobsPatternState->init();
+
     mainPatternId = stateManager->addState(mainPatternState);
     theaterPatternId = stateManager->addState(theaterPatternState);
     testPatternId = stateManager->addState(testPatternState);
+    blobsPatternId = stateManager->addState(blobsPatternState);
 
-    // Start State Machine
-    stateMachine->setActiveState(mainPatternState);
+    // The scanner's looks, one state per afterglow state tag. The variants the
+    // python picks with save-file flags (emergency lock, broken device, newly
+    // discovered mushroom, seed verdict) are their own tags here, because only
+    // the scanner knows the save - it just names the look it wants.
+    auto addScannerState = [this](const char* name, shared_ptr<scanner::PatternScanner> pattern)
+    {
+        auto state = make_shared<scanner::State_ScannerHSV>(name, coreIO.get(), pattern);
+        state->init();
+        stateManager->addState(state);
+        scannerStates[name] = state;
+        looksByName[name] = state;
+    };
+
+    // The ambient looks under the names a cue uses for them; `state` also
+    // takes the aliases (main, test) below.
+    looksByName["seasons"] = mainPatternState;
+    looksByName["theater"] = theaterPatternState;
+    looksByName["mono"]    = testPatternState;
+    looksByName["blobs"]   = blobsPatternState;
+
+    using namespace scanner;
+
+    addScannerState("none",                            make_shared<Pattern_Scanner_Solid>(HSV(0.0f, 0.0f, 0.0f)));
+    addScannerState("power_up",                        make_shared<Pattern_Scanner_PowerUp>());
+    addScannerState("boot",                            make_shared<Pattern_Scanner_Boot>());
+    addScannerState("scan_idle",                       make_shared<Pattern_Scanner_ScanIdle>());
+    addScannerState("scan_idle_emergency",             make_shared<Pattern_Scanner_Emergency>());
+    addScannerState("scan_idle_broken",                make_shared<Pattern_Scanner_Solid>(HSV(0.0f, 0.0f, 0.0f)));
+    addScannerState("scan_item_detected_filter",       make_shared<Pattern_Scanner_DetectedWave>());
+    addScannerState("scan_item_detected_generic",      make_shared<Pattern_Scanner_DetectedShimmer>());
+    addScannerState("scan_item_detected_seed",         make_shared<Pattern_Scanner_DetectedShimmer>());
+    addScannerState("scan_item_detected_mushroom",     make_shared<Pattern_Scanner_DetectedMushroom>());
+    addScannerState("scan_item_detected_mushroom_new", make_shared<Pattern_Scanner_DetectedMushroomNew>());
+    addScannerState("scan_item_success",               make_shared<Pattern_Scanner_Solid>(HSV(120.0f, 1.0f, 0.392f))); // rgb(0,100,0)
+    addScannerState("scan_item_success_mushroom",      make_shared<Pattern_Scanner_SuccessMushroom>());
+    addScannerState("scan_item_success_secret",        make_shared<Pattern_Scanner_Solid>(HSV(120.0f, 1.0f, 0.392f)));
+    addScannerState("scan_item_failure",               make_shared<Pattern_Scanner_Solid>(HSV(0.0f, 1.0f, 0.471f)));   // rgb(120,0,0)
+    addScannerState("audio_playback_mushroom",         make_shared<Pattern_Scanner_PlaybackMushroom>());
+    addScannerState("audio_playback_generic",          make_shared<Pattern_Scanner_PlaybackGeneric>());
+    addScannerState("audio_playback_seed",             make_shared<Pattern_Scanner_Solid>(HSV(120.0f, 1.0f, 0.392f)));
+    addScannerState("audio_playback_seed_bad",         make_shared<Pattern_Scanner_Solid>(HSV(0.0f, 1.0f, 0.392f)));   // rgb(100,0,0)
+    addScannerState("audio_playback_rest",             make_shared<Pattern_Scanner_Solid>(HSV(0.0f, 0.0f, 0.0f)));
+
+    // The recording flow and the void stone - same table as
+    // makeScannerStateMachine() in the desktop build, kept in step so a cue
+    // works wherever it lands.
+    // the amber breath, fading into the tower's own picture by height
+    addScannerState("record_arm",                      make_shared<Pattern_Scanner_SinePulse>(HSV(45.0f, 1.0f, 1.0f), 4.0f, 0.15f, 0.5f, 1.0f));   // CRGB(1.0, 0.75, 0.0)
+    addScannerState("record_countdown",                make_shared<Pattern_Scanner_RecordCountdown>());
+    addScannerState("record_active",                   make_shared<Pattern_Scanner_RecordComet>());
+    addScannerState("record_saved",                    make_shared<Pattern_Scanner_SinePulse>(HSV(132.0f, 1.0f, 1.0f), 6.0f, 0.4f, 0.6f));   // CRGB(0.0, 1.0, 0.2)
+    // both amber-wave: one recording look, unified with the desktop table
+    addScannerState("scan_item_detected_recording",    make_shared<Pattern_Scanner_DetectedWave>(HSV(33.3f, 0.9f, 1.0f)));                   // CRGB(1.0, 0.6, 0.1)
+    addScannerState("audio_playback_recording",        make_shared<Pattern_Scanner_DetectedWave>(HSV(33.3f, 0.9f, 1.0f)));
+    addScannerState("void",                            make_shared<Pattern_Scanner_SinePulse>(HSV(282.0f, 1.0f, 0.5f), 2.0f, 0.0f, 0.6f));   // CRGB(0.35, 0.0, 0.5)
+    // the cleanse: the fire over the tower's own picture, doused on the
+    // game's cue as the rock lands; done is a cool breath
+    addScannerState("cleanse_arm",                     make_shared<Pattern_Scanner_CleanseFire>());
+    addScannerState("cleanse_done",                    make_shared<Pattern_Scanner_SinePulse>(HSV(200.0f, 0.6f, 1.0f), 6.0f, 0.4f, 0.6f));
+
+    // Start State Machine, on the blobs
+    stateMachine->setActiveState(blobsPatternState);
     stateMachine->init();
 
 #if 0
@@ -134,12 +218,215 @@ void obelisk::ObeliskCore::tick(float deltaTime)
     stateChangeTimer.tick(deltaTime);
 }
 
+void obelisk::ObeliskCore::tickWhileLinked(float deltaTime)
+{
+    // Clocks only. The nodes are the desk's for now, and a look rendered
+    // here would be overwritten by its next frame - but the look's *time*
+    // must keep moving, or the desk's copy runs ahead of it and the handback
+    // jumps. One generator tick: the noise field adds to its clock and that
+    // is all.
+    if (State_GenericHSV* look = activeLook())
+    {
+        look->tickClocks(deltaTime);
+    }
+}
+
+State_GenericHSV* obelisk::ObeliskCore::activeLook() const
+{
+    const shared_ptr<State> active = stateMachine ? stateMachine->getActiveState() : nullptr;
+    if (!active)
+    {
+        return nullptr;
+    }
+    for (const auto& entry : looksByName)
+    {
+        if (entry.second == active)
+        {
+            return entry.second.get();
+        }
+    }
+    return nullptr;
+}
+
+std::string obelisk::ObeliskCore::activeLookName() const
+{
+    const shared_ptr<State> active = stateMachine ? stateMachine->getActiveState() : nullptr;
+    for (const auto& entry : looksByName)
+    {
+        if (entry.second == active)
+        {
+            return entry.first;
+        }
+    }
+    return std::string();
+}
+
+void obelisk::ObeliskCore::say(const string& line)
+{
+    // Back up whatever cable the desk is on, rather than to Serial directly,
+    // so this still reaches a caller that plugged in a different transport.
+    if (elink::LinkTransport* transport = getLink().getTransport())
+    {
+        transport->writeLine(line.c_str());
+    }
+}
+
 bool obelisk::ObeliskCore::handleCommand(string msg)
 {
-    if (strcmp(msg.c_str(), "switch") == 0)  // strcmp returns 0 if strings are equal
+    // Trim: these arrive from a serial monitor as often as from a desk, and a
+    // trailing \r has cost more debugging time than it has any right to.
+    while (!msg.empty() && (msg.back() == '\r' || msg.back() == '\n' || msg.back() == ' '))
+    {
+        msg.pop_back();
+    }
+
+    // Was strcmp, which only ever resolved through whatever <cstring> Arduino.h
+    // drags in - msg is a std::string and has always been one.
+    if (msg == "switch")
     {
         dbgLog("ObeliskCore::handleCommand - switching patterns", Verbosity::Display, Category::Relic);
         stateMachine->setNextState(mainPatternState);
+        return true;
+    }
+
+    // Cue mode: the desk names a look and the obelisk renders it itself. The
+    // names are the ones the desk's own buttons send, so a cue list works over
+    // the link without either end knowing about the other's spelling.
+    //
+    // `state <name> [seconds] [blend]` - the optional seconds set the blend
+    // time for this change, which is how the scanner's transitionTo(state,
+    // time) pairs arrive as a single line; the optional blend sets its shape
+    // (esm::findStateBlend has the names). A word that reads as a number is
+    // the seconds, anything else the blend, so either can stand alone. Both
+    // stick until the next override. The desk sends its own cue line here
+    // verbatim, so the two ends read the same words the same way.
+    if (msg.rfind("state ", 0) == 0)
+    {
+        string wanted = msg.substr(6);
+
+        size_t space = wanted.find(' ');
+        if (space != string::npos)
+        {
+            string tail = wanted.substr(space + 1);
+            wanted = wanted.substr(0, space);
+
+            while (!tail.empty())
+            {
+                space = tail.find(' ');
+                const string word = tail.substr(0, space);
+                tail = (space == string::npos) ? string() : tail.substr(space + 1);
+                if (word.empty())
+                {
+                    continue;
+                }
+
+                char* end = nullptr;
+                const float requested = strtof(word.c_str(), &end);
+                if (end != nullptr && *end == '\0')
+                {
+                    if (requested >= 0.0f)
+                    {
+                        stateMachine->transitionTime = requested;
+                    }
+                }
+                else if (!stateMachine->setBlend(word.c_str()))
+                {
+                    say("EOSLINK unknown blend " + word);
+                }
+            }
+        }
+
+        shared_ptr<State> target{nullptr};
+        if (wanted == "seasons" || wanted == "main")   target = mainPatternState;
+        else if (wanted == "theater")                  target = theaterPatternState;
+        else if (wanted == "mono" || wanted == "test") target = testPatternState;
+        else if (wanted == "blobs")                    target = blobsPatternState;
+        else
+        {
+            auto it = scannerStates.find(wanted);
+            if (it != scannerStates.end())
+            {
+                target = it->second;
+            }
+        }
+
+        if (target)
+        {
+            // The scanner resends its current state on reconnects; arriving
+            // where we already are is success, not an error log.
+            if (target != stateMachine->getActiveState() && target != stateMachine->getNextState())
+            {
+                stateMachine->setNextState(target);
+            }
+            say("EOSLINK state " + wanted);
+            return true;
+        }
+
+        say("EOSLINK unknown state " + wanted);
+        return true;
+    }
+
+    // `sim` - what is showing and where its clocks are, as one line a desk
+    // can spawn a copy from:
+    //
+    //   EOSLINK sim seasons noise.time=812.4000
+    //
+    // and `sim <name> [k=v ...]` sets it: that look, at that state, with no
+    // blend - the desk putting the sculpture where its own copy is. Either
+    // way the answer is the state as it now stands. See
+    // ecore::Reflectable for what a look puts in it.
+    if (msg == "sim" || msg.rfind("sim ", 0) == 0)
+    {
+        if (msg.size() > 4)
+        {
+            string wanted = msg.substr(4);
+            string values;
+            const size_t space = wanted.find(' ');
+            if (space != string::npos)
+            {
+                values = wanted.substr(space + 1);
+                wanted = wanted.substr(0, space);
+            }
+            if (wanted == "main") wanted = "seasons";
+            if (wanted == "test") wanted = "mono";
+
+            auto it = looksByName.find(wanted);
+            if (it == looksByName.end())
+            {
+                say("EOSLINK unknown state " + wanted);
+                return true;
+            }
+            if (it->second != stateMachine->getActiveState())
+            {
+                stateMachine->setActiveState(it->second);
+            }
+            if (!values.empty())
+            {
+                ecore::PropertyBag bag;
+                it->second->reflect(bag);
+                ecore::applyState(bag, values);
+            }
+        }
+
+        State_GenericHSV* look = activeLook();
+        ecore::PropertyBag bag;
+        if (look)
+        {
+            look->reflect(bag);
+        }
+        const std::string state = ecore::serializeState(bag);
+        say("EOSLINK sim " + activeLookName() + (state.empty() ? "" : " " + state));
+        return true;
+    }
+
+    if (msg == "states")
+    {
+        string reply = "EOSLINK states blobs seasons theater mono";
+        for (const auto& entry : scannerStates)
+        {
+            reply += " " + entry.first;
+        }
+        say(reply);
         return true;
     }
 

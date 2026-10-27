@@ -1,0 +1,1348 @@
+"""Command line front end: ``python -m eclipse_dmx``.
+
+Thin on purpose. This is the "does my rig work" tool, not a console.
+"""
+
+from __future__ import annotations
+
+import argparse
+import errno
+import json
+import sys
+import time
+import pathlib
+from pathlib import Path
+from typing import List, Optional
+
+from .binary import BinaryNotFoundError, find_executable
+from .calibrate import DEFAULT_BPM as DEFAULT_CALIBRATION_BPM
+from .config import BUILTIN_PALETTES, BUILTIN_PROFILES, PATTERN_NAMES, Config, ConfigError
+from .controller import FrameForwarder, ShowController, ShowError
+from .osc import DEFAULT_ADDRESS, DEFAULT_CONTROL, RESOLVE_INTERVAL
+from .osc_input import DEFAULT_BIND, DEFAULT_INPUT_PORT
+from .ports import list_midi_ports, list_ports
+
+
+def _cmd_ports(args: argparse.Namespace) -> int:
+    ports = list_ports(args.executable)
+    if not ports:
+        print("no serial ports found", file=sys.stderr)
+        return 1
+    for port in ports:
+        print(port)
+    return 0
+
+
+def _cmd_midi(args: argparse.Namespace) -> int:
+    ports = list_midi_ports(args.executable)
+    if not ports:
+        print("no MIDI inputs found", file=sys.stderr)
+        return 1
+    for port in ports:
+        print(port)
+    return 0
+
+
+def _cmd_midi_watch(args: argparse.Namespace) -> int:
+    """Prints what a MIDI input is actually sending.
+
+    The setup tool. Every step of wiring Mixxx up is verifiable except the last
+    one — whether the notes are the notes we think they are — and this is that
+    step. Play a track and read what comes out.
+    """
+    config = Config.load(args.config)
+
+    seen: dict = {}
+    beats = [0]
+
+    def note(payload: str) -> None:
+        parts = payload.split()
+        if len(parts) < 4 or parts[1] != "note_on":
+            return
+        key = (parts[0], parts[2])          # channel, note number
+        seen[key] = seen.get(key, 0) + 1
+        if not args.quiet:
+            print(payload)
+
+    def beat(index: int, bpm: float) -> None:
+        beats[0] = index
+
+    show = ShowController(
+        args.config,
+        executable=args.executable,
+        dry_run=True,                       # a diagnostic must not light a rig
+        midi=args.midi,
+        on_midi=note,
+        on_beat=beat,
+    )
+
+    with show:
+        show.midi_monitor(True)
+        print(f"listening on {show.midi_status()}", file=sys.stderr)
+        print(f"play a track for {args.seconds:.0f}s...", file=sys.stderr)
+        show.wait(args.seconds)
+        counts = dict(seen)
+        status = show.midi_status()
+
+    print()
+    if not counts:
+        print("nothing arrived.", file=sys.stderr)
+        print(
+            "  - is loopMIDI running, and was it running before Mixxx started?\n"
+            "  - Mixxx: Preferences > Controllers, is the port enabled and the\n"
+            "    'MIDI for light' mapping loaded and applied?\n"
+            "  - is a track actually playing?",
+            file=sys.stderr,
+        )
+        return 1
+
+    print("notes seen (channel, note, count):")
+    for (channel, number), count in sorted(counts.items(), key=lambda kv: -kv[1]):
+        label = ""
+        if int(number) == config.midi.beat_note:
+            label = "  <- taken as the beat"
+        elif int(number) == config.midi.bpm_note:
+            label = "  <- taken as the tempo"
+        print(f"  ch{channel:<4} note {number:<5} x{count}{label}")
+
+    print()
+    print(status)
+
+    if beats[0] == 0:
+        print(
+            "\nno beats registered. Set midi.beat_note to whichever note above "
+            "arrives once per beat,\nand midi.beat_channel to its channel.",
+            file=sys.stderr,
+        )
+        return 1
+
+    return 0
+
+
+#: What to say about firewalls when nothing can be read about them - another
+#: platform, another firewall, or rules that need root. A question rather than
+#: a claim, because that is all it is.
+_FIREWALL_UNKNOWN = ("is a firewall on THIS machine holding inbound UDP on "
+                     "port {port}?")
+
+
+def _cmd_osc_watch(args: argparse.Namespace) -> int:
+    """Prints what is actually arriving on the OSC input port.
+
+    The setup tool, and the twin of `midi-watch`. Synesthesia's audio
+    variables are documented by *name* - syn_BassLevel and forty others - but
+    the OSC addresses they arrive on are not, and they were renamed once
+    already. So there is no honest way to write a binding except to look, and
+    this is looking.
+
+    Needs no show, no executable and no rig: the visualiser sends whether or
+    not anything here is running, and the socket is python's.
+    """
+    from .osc_input import OscListener
+
+    seen: dict = {}
+
+    def message(address: str, arguments) -> None:
+        number = next((float(a) for a in arguments
+                       if isinstance(a, (int, float)) and not isinstance(a, bool)), None)
+        entry = seen.get(address)
+        if entry is None:
+            entry = seen[address] = {"count": 0, "low": number, "high": number,
+                                     "last": arguments}
+        entry["count"] += 1
+        entry["last"] = arguments
+        if number is not None:
+            entry["low"] = number if entry["low"] is None else min(entry["low"], number)
+            entry["high"] = number if entry["high"] is None else max(entry["high"], number)
+        if args.verbose:
+            print(f"{address} {list(arguments)}")
+
+    try:
+        listener = OscListener(args.port, args.bind, on_message=message)
+    except OSError as error:
+        print(f"error: cannot listen on {args.bind}:{args.port}: {error}", file=sys.stderr)
+        if getattr(error, "errno", None) == errno.EADDRINUSE:
+            # Worth naming: the show itself binds this port when it is running
+            # with --osc-in, and one port has one owner.
+            print("  something already has that port - a running show with "
+                  "--osc-in, or another copy of this.", file=sys.stderr)
+        return 1
+
+    with listener:
+        print(f"{listener.describe()}; play something for {args.seconds:.0f}s...",
+              file=sys.stderr)
+        _wait_out(args.seconds)
+        packets, undecodable = listener.packets, listener.undecodable
+
+    print()
+    if not seen:
+        mine = " or ".join(_my_addresses()) or "this machine's LAN address"
+        print("nothing arrived.", file=sys.stderr)
+        print(
+            "  - Synesthesia: Settings > OSC. Is OUTPUT on, and is\n"
+            "    'Output Audio Variables' ticked? Both are needed and both ship off.\n"
+            "  - OSC is a Pro feature.\n"
+            f"\n  - is its output IP {mine}?\n"
+            "\n    127.0.0.1 there means *the machine Synesthesia is running on*,\n"
+            "    which reaches this one only if the app is running on it too. On a\n"
+            "    rig where the visualiser sits on a mac beside the desk, localhost\n"
+            "    sends the whole analysis into that mac's own loopback and nothing\n"
+            "    ever leaves it. It is the easiest setting in the app to get wrong,\n"
+            "    because it is also the one that is right when you are testing both\n"
+            "    halves on one machine. Broadcast (255.255.255.255) reaches here too.\n"
+            f"\n  - does its output port say {args.port}?\n"
+            f"  - {_firewall_note(args.port) or _FIREWALL_UNKNOWN.format(port=args.port)}\n"
+            "\n  Note that the rig's colour reaching the visualiser proves none of\n"
+            "  this: that is the other direction, a different port and a different\n"
+            "  setting, and either direction works perfectly well alone.",
+            file=sys.stderr,
+        )
+        return 1
+
+    # What the map would do with each of them. This is the whole question this
+    # command exists to answer: the addresses are undocumented and were renamed
+    # once already, so a map is a set of guesses until something checks them
+    # against what the app on *this* machine actually sends. Printing the
+    # arrivals alone left the last step - "and does my map catch these?" - to
+    # be done by eye against a glob, which is exactly where it goes wrong.
+    bindings = _watch_bindings(args)
+
+    print(f"{packets} packets, {len(seen)} addresses:")
+    for address, entry in sorted(seen.items(), key=lambda kv: -kv[1]["count"]):
+        span = ""
+        if entry["low"] is not None:
+            span = f"  {entry['low']:.3f}..{entry['high']:.3f}"
+
+        bound = ""
+        if bindings is not None:
+            takers = [b for b in bindings.bindings if b.enabled and b.matches(address)]
+            if not takers:
+                bound = "  -> nothing"
+            elif len(takers) == 1:
+                bound = "  -> " + _binding_target(takers[0])
+            else:
+                # Two bindings on one address is not a warning, it is the bug:
+                # for a bus channel it means whichever spoke last wins, and
+                # there is no reading of that anything could show.
+                bound = "  -> CLASH: " + ", ".join(_binding_target(b) for b in takers)
+
+        print(f"  {address:<40} x{entry['count']:<5}{span}{bound}")
+
+    if undecodable:
+        print(f"\n{undecodable} packets were not OSC this understood.", file=sys.stderr)
+
+    if bindings is None:
+        print("\nBind one of these in an OSC map - the pattern is a glob, so\n"
+              "'*bass*level*' survives the app renaming what is around it.",
+              file=sys.stderr)
+        return 0
+
+    # The other direction, and the one that actually bites: a binding whose glob
+    # matches nothing that arrived is a channel that will never be filled and a
+    # look that will never move - and it is invisible from the rig, because it
+    # looks identical to a visualiser that is not sending at all.
+    idle = [b for b in bindings.bindings if b.enabled
+            and not any(b.matches(address) for address in seen)]
+    if idle:
+        print(f"\n{len(idle)} enabled binding(s) matched nothing that arrived:",
+              file=sys.stderr)
+        for binding in idle:
+            print(f"  {binding.pattern:<24} {_binding_target(binding)}", file=sys.stderr)
+        print("  These are guesses at addresses this build does not send under\n"
+              "  those names. Edit their `pattern` to match the list above.",
+              file=sys.stderr)
+    else:
+        print("\nEvery enabled binding matched something. The map fits this build.",
+              file=sys.stderr)
+    return 0
+
+
+def _firewall_note(port: int) -> Optional[str]:
+    """Whether a local firewall is visibly going to eat this port.
+
+    Only ufw, only on Linux, and only what can be read without root - which is
+    enough, because `/etc/ufw/user.rules` and the default policy are both
+    world-readable and between them they answer it.
+
+    Here because "a firewall might be holding it" is advice nobody acts on,
+    while "ufw is active, its default is DROP, and nothing in its rules
+    mentions this port" is a diagnosis. This was found by hand on the rig it
+    was written for, after the port had already been silently swallowing an
+    evening's worth of packets.
+
+    Deliberately silent when it cannot tell. A confident wrong answer here
+    sends someone to reconfigure a firewall that was never the problem.
+    """
+    import shutil
+    import subprocess
+
+    if sys.platform.startswith("win") or sys.platform == "darwin":
+        return None
+    if shutil.which("ufw") is None:
+        return None
+
+    try:
+        active = subprocess.run(["systemctl", "is-active", "ufw"],
+                                capture_output=True, text=True, timeout=3)
+        if active.stdout.strip() != "active":
+            return None
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+    policy = ""
+    try:
+        policy = pathlib.Path("/etc/default/ufw").read_text(encoding="utf-8")
+    except OSError:
+        return None
+    if 'DEFAULT_INPUT_POLICY="DROP"' not in policy.replace("'", '"'):
+        return None
+
+    rules = ""
+    for name in ("/etc/ufw/user.rules", "/etc/ufw/user6.rules"):
+        try:
+            rules += pathlib.Path(name).read_text(encoding="utf-8")
+        except OSError:
+            # Root-only on some distributions. Then we know the policy is DROP
+            # but not whether this port is excepted, and saying so would be a
+            # guess - so say nothing.
+            return None
+
+    if str(port) in rules:
+        return None
+
+    # One line for the command, no continuation: this string is also flattened
+    # onto a single status line by osc_input_hints, and a backslash surviving
+    # that is a command that will not paste.
+    return (f"ufw is active, its default for incoming is DROP, and nothing in\n"
+            f"    its rules mentions port {port}. It will silently drop these\n"
+            f"    packets however the visualiser is pointed. To let the LAN in:\n"
+            f"      sudo ufw allow from 192.168.0.0/16 to any port {port} proto udp")
+
+
+def _my_addresses() -> List[str]:
+    """This machine's LAN addresses, for pasting into the visualiser.
+
+    Found by asking the routing table which source address would be used to
+    reach the network, via a UDP socket that is connected and never written
+    to - no packet is sent and nothing has to be up. Loopback is filtered out
+    on purpose: it is the answer that is never useful here, and offering it
+    would be repeating the mistake this message exists to explain.
+    """
+    import socket as socket_module
+
+    found: List[str] = []
+    for probe in ("192.168.1.1", "10.0.0.1", "8.8.8.8"):
+        sock = socket_module.socket(socket_module.AF_INET, socket_module.SOCK_DGRAM)
+        try:
+            sock.connect((probe, 9))
+            address = sock.getsockname()[0]
+            if not address.startswith("127.") and address not in found:
+                found.append(address)
+        except OSError:
+            continue
+        finally:
+            sock.close()
+    return found
+
+
+def _binding_target(binding) -> str:
+    """`bass_hits` for a bus binding, `param floor` for a knob - what it drives."""
+    if binding.action == "audio":
+        return str(binding.params.get("channel", "audio ?"))
+    named = binding.params.get("name")
+    return f"{binding.action} {named}" if named else binding.action
+
+
+def _watch_bindings(args):
+    """The map osc-watch should check arrivals against, or None for none.
+
+    Defaults to whatever a config beside it declares, so the common case -
+    `osc-watch` in a rig directory - checks the map that rig will actually run
+    rather than saying nothing.
+    """
+    from .osc_input import BindingSet
+
+    chosen = getattr(args, "oscmap", None)
+    if chosen:
+        path = Path(chosen)
+    else:
+        here = Path("config/oscmaps/synesthesia.json")
+        path = here if here.exists() else Path("oscmaps/synesthesia.json")
+
+    if not path.exists():
+        return None
+    try:
+        return BindingSet.load(path)
+    except (OSError, ValueError) as error:
+        print(f"osc map: {error}", file=sys.stderr)
+        return None
+
+
+def _wait_out(seconds: float) -> None:
+    """Sleeps, but wakes for Ctrl-C the way the rest of this CLI does."""
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        time.sleep(min(0.2, deadline - time.monotonic()))
+
+
+def _add_osc_input_args(parser: argparse.ArgumentParser) -> None:
+    """--osc-in and --oscmap, on every subcommand that runs a show."""
+    parser.add_argument("--osc-in", nargs="?", type=int, const=DEFAULT_INPUT_PORT,
+                        default=None, metavar="PORT",
+                        help="take a visualiser's audio analysis in as OSC and let it "
+                             f"drive the rig (default port {DEFAULT_INPUT_PORT}; it must match "
+                             "Synesthesia's OSC *output* port). `osc-watch` shows what arrives. "
+                             'A config with "audio": {"source": "synesthesia"} opens this on '
+                             "its own; this flag is for overriding it or for a config without one.")
+    parser.add_argument("--no-osc-in", action="store_true",
+                        help="do not listen, whatever the config's audio block says. "
+                             "For the night the visualiser is not running: the show keeps "
+                             "its beat, and anything driven off the audio bus holds at zero.")
+    parser.add_argument("--oscmap", metavar="FILE",
+                        help="which OSC bindings to load (default: the config's audio.map, "
+                             "else oscmaps/synesthesia.json beside the config, if present)")
+
+
+def _audio_block(config_path) -> dict:
+    """A config's `audio` block, or an empty one.
+
+    Deliberately forgiving: a missing file, a config that does not parse, a
+    file with no `audio` in it all read the same way here - "nothing declared"
+    - because this only decides whether to open a port, and a config that is
+    actually broken is about to say so properly somewhere else.
+    """
+    if not config_path:
+        return {}
+    try:
+        from .config import _strip_line_comments
+        text = Path(config_path).read_text(encoding="utf-8")
+        data = json.loads(_strip_line_comments(text))
+    except (OSError, ValueError):
+        return {}
+    audio = data.get("audio")
+    return audio if isinstance(audio, dict) else {}
+
+
+def _osc_input_for(args, show, say=None):
+    """The listener and dispatcher for a show, or None if not asked for.
+
+    Returns the listener so the caller can close it; it holds a socket and a
+    thread, and both outlive the show if nobody does.
+    """
+    from .osc_input import BindingSet, Dispatcher as OscDispatcher, OscListener
+    from .midi_map import ActionContext
+
+    # Checked before anything else, including the config's own declaration.
+    # A config that says "synesthesia" opens the port on its own, so refusing
+    # has to be sayable - otherwise the only way to run a declared show without
+    # the visualiser would be to edit the config, at a venue, under lights.
+    if getattr(args, "no_osc_in", False):
+        return None
+
+    port = getattr(args, "osc_in", None)
+    chosen = getattr(args, "oscmap", None)
+    config = getattr(args, "config", None)
+
+    # The config's own `audio` block, when there is one. This is what makes
+    # `--osc-in` a thing you type to override rather than a thing you must
+    # remember: a show whose analysis comes from Synesthesia says so in its
+    # config, and opening the port is then not a flag on the command line that
+    # somebody has to get right at a venue.
+    #
+    # Read straight off the file rather than through Config.load, because this
+    # runs on paths that Config.load would refuse - `osc` and `view` take a
+    # config that may not have devices resolved yet - and because a bad config
+    # should fail where configs are loaded, not here.
+    declared = _audio_block(config)
+    if port is None and not chosen:
+        if declared.get("source") != "synesthesia":
+            return None
+        port = int(declared.get("port") or DEFAULT_INPUT_PORT)
+    port = port or int(declared.get("port") or DEFAULT_INPUT_PORT)
+
+    say = say or (lambda line: print(line, file=sys.stderr))
+
+    if chosen:
+        path = Path(chosen)
+    elif declared.get("map"):
+        path = Path(config or ".").parent / str(declared["map"])
+    else:
+        path = Path(config or ".").parent / "oscmaps" / "synesthesia.json"
+    if path.exists():
+        try:
+            bindings = BindingSet.load(path)
+        except (OSError, ValueError) as error:
+            say(f"osc map: {error}")
+            bindings = BindingSet()
+    elif chosen or declared.get("map"):
+        say(f"osc map: {path} not found; listening with no bindings")
+        bindings = BindingSet()
+    else:
+        # No map beside the config and none named: the port is still opened,
+        # because `osc-watch` cannot run while a show holds it and "what is
+        # arriving" is the question this is usually opened to answer.
+        say(f"osc map: no {path.name} beside the config; listening with no bindings")
+        bindings = BindingSet()
+
+    dispatcher = OscDispatcher(bindings, ActionContext(show=show, say=say))
+
+    try:
+        listener = OscListener(port, on_message=lambda address, arguments: [
+            say(line) for line in dispatcher.handle(address, arguments)])
+    except OSError as error:
+        # Not fatal. The rig is the show; the audio bindings are a layer on
+        # top of it, and a port already taken must not cost a set.
+        say(f"osc in: cannot listen on {port}: {error}")
+        return None
+
+    live = sum(1 for one in bindings.bindings if one.enabled)
+    say(f"osc in: {listener.describe()}, {live} of {len(bindings.bindings)} bindings live")
+
+    # What to type at the far end, said before anything has gone wrong.
+    #
+    # Synesthesia's output address field takes a numeric IP only - no hostname,
+    # no .local - so the number has to come from somewhere, and every other
+    # source for it is a guess made under pressure. The app's own default is
+    # 127.0.0.1, which on a rig where the visualiser sits on a different
+    # machine means "send the analysis into my own loopback" and is completely
+    # silent about it. This one line is the cheapest possible fix for that.
+    for note in osc_input_hints(port):
+        say(note)
+    return listener
+
+
+def osc_input_hints(port: int) -> List[str]:
+    """The lines worth saying when an OSC input port opens.
+
+    Shared by the CLI and the viewer so the two cannot drift, and returned
+    rather than printed so a window can put them somewhere other than stdout.
+    """
+    hints: List[str] = []
+    mine = _my_addresses()
+    if mine:
+        hints.append(f"osc in: point Synesthesia's OSC *output* at "
+                     f"{' or '.join(mine)}:{port} - it takes a numeric IP only, "
+                     f"and 127.0.0.1 there means the machine it is running on")
+    note = _firewall_note(port)
+    if note:
+        hints.append("osc in: " + " ".join(note.split()))
+    return hints
+
+
+def _cmd_validate(args: argparse.Namespace) -> int:
+    config = Config.load(args.config)
+    warnings = config.validate(strict_overlap=not args.allow_overlap)
+
+    for warning in warnings:
+        print(f"warning: {warning}", file=sys.stderr)
+
+    print(f"ok: {len(config.fixtures)} fixtures, pattern '{config.pattern.name}', "
+          f"device '{config.device.type}' on '{config.device.port}'")
+    return 0
+
+
+def _cmd_generate(args: argparse.Namespace) -> int:
+    """Writes a config for a bank of identical fixtures."""
+    config = Config()
+    config.device.type = args.device
+    config.device.port = args.port
+    config.pattern.name = args.pattern
+
+    if args.profile:
+        config.add_bank(args.profile, count=args.count, address=args.first_channel)
+    else:
+        config.add_rgb_bank(
+            count=args.count,
+            first_channel=args.first_channel,
+            channels_per_fixture=args.channels_per_fixture,
+            order=args.order,
+        )
+
+    if args.output == "-":
+        print(config.to_json())
+    else:
+        path = config.write(args.output)
+        print(f"wrote {path} ({len(config.fixtures)} fixtures)")
+    return 0
+
+
+def _cmd_patch(args: argparse.Namespace) -> int:
+    """Prints the resolved channel map, so a patch can be checked on paper."""
+    config = Config.load(args.config)
+    config.validate(strict_overlap=not args.allow_overlap)
+
+    # Reported in the config's own numbering, so these line up with what is
+    # dialled on the fixtures. Matches the executable's --show-patch.
+    show = config.display_channel
+    print(f"addressing: {config.addressing}-based")
+    print()
+
+    highest = 0
+    for fixture in config.fixtures:
+        r, g, b = (show(fixture.start_channel + offset) for offset in fixture.offsets())
+        line = f"{fixture.name:<16} r={r:<4} g={g:<4} b={b:<4}"
+        if fixture.dimmer_channel:
+            line += f" dimmer={show(fixture.dimmer_channel)}@{fixture.dimmer_value}"
+        if fixture.static_channels:
+            parked = " ".join(
+                f"park[{show(c)}]={v}" for c, v in sorted(fixture.static_channels.items())
+            )
+            line += f" {parked}"
+        print(line)
+        highest = max(highest, max(fixture.used_channels()))
+
+    print()
+    print(f"{len(config.fixtures)} fixtures, highest channel {show(highest)}")
+    return 0
+
+
+def _client_for(args, config_path) -> Optional[FrameForwarder]:
+    """The far end of client mode, if --client named one. Not opened yet.
+
+    Shared by `run` and `osc`, which are the headless ways to run a set and
+    were the ways that could not reach the pi: `--client` was the viewer's
+    alone. Opened after the show starts, so its warnings land in order.
+    """
+    host = (getattr(args, "client", None) or "").strip()
+    if not host:
+        return None
+    if args.host:
+        print("error: --host and --client are opposite ways round; pick one",
+              file=sys.stderr)
+        raise SystemExit(2)
+    return FrameForwarder(config_path, host, live=not args.dry_run)
+
+
+def _cmd_run(args: argparse.Namespace) -> int:
+    config_path = Path(args.config)
+
+    def log(line: str) -> None:
+        print(line, file=sys.stderr)
+
+    # With a client, the frames have to come out of the show to go anywhere:
+    # `run` asks for none on its own, having no window to draw them in.
+    client = _client_for(args, config_path)
+
+    # The pads, when a map was named: the viewer's, without the window.
+    pads = _pads_for(args, config_path, say=log)
+
+    show = ShowController(
+        config_path,
+        executable=args.executable,
+        dry_run=args.dry_run,
+        frames=args.frames,
+        midi=args.midi,
+        bpm=args.bpm,
+        on_log=log if args.verbose else None,
+        on_midi=pads.on_midi if pads is not None else None,
+        remote=args.host,
+        remote_command=args.remote_command,
+        emit_frames=client is not None,
+        emit_rate=args.rate,
+        on_frame=client.send if client is not None else None,
+    )
+
+    with show:
+        for warning in show.warnings:
+            print(f"warning: {warning}", file=sys.stderr)
+        if client is not None:
+            client.open()
+
+        if args.pattern:
+            show.set_pattern(args.pattern)
+        if args.state:
+            show.set_state(args.state)
+        if args.brightness is not None:
+            show.set_master(args.brightness)
+
+        # After the cue overrides, so a binding cannot be outrun by the state
+        # it is aimed at; before the wait, so it is live for the whole set.
+        listener = _osc_input_for(args, show)
+        if pads is not None:
+            pads.attach(show).open()
+        try:
+            print(f"running: {show.status()}", file=sys.stderr)
+            code = show.wait(args.seconds)
+        finally:
+            if pads is not None:
+                pads.close()
+            if listener is not None:
+                listener.close()
+            if client is not None:
+                client.close()
+        return 0 if code is None else code
+
+
+def _cmd_osc(args: argparse.Namespace) -> int:
+    """Runs a show and sends one fixture's colour out as OSC.
+
+    The bridge to a visualiser — Synesthesia, or anything else with an OSC
+    colour control. See eclipse_dmx/osc.py for why this reads the frame stream
+    rather than living in the executable.
+    """
+    from .osc import SynesthesiaLink
+
+    if not args.test and not args.config:
+        print("error: osc needs a config, or --test to send without a show",
+              file=sys.stderr)
+        return 1
+
+    # The frame carries master.gamma already applied, for LEDs that need it.
+    # A screen does not; see SynesthesiaLink.gamma. Read from the show rather
+    # than assumed, so a config that turns gamma off does not get it undone.
+    ungamma = args.ungamma
+    if ungamma is None:
+        ungamma = Config.load(args.config).master.gamma if args.config else 0.0
+
+    def resolved(address: str) -> None:
+        # Said out loud because it is the one thing that changes where a whole
+        # set is being sent, and it happens with no other symptom.
+        print(f"{args.address} now resolves to {address}", file=sys.stderr)
+
+    try:
+        link = SynesthesiaLink(
+            args.address,
+            args.control,
+            separate=args.separate,
+            gamma=0.0 if args.no_ungamma else ungamma,
+            resolve_every=args.resolve_every,
+            on_resolve=resolved,
+        )
+    except (OSError, ValueError) as error:
+        # ValueError is a host:port that is not one; OSError is now only an
+        # *address* that cannot be connected to, which is a typo — a name that
+        # does not resolve is tolerated and retried inside the link. Between
+        # them they are the only send-side failure that gets reported at all —
+        # see the note at the end of osc.py — so they are worth a sentence each
+        # rather than a traceback.
+        print(f"error: cannot send to '{args.address}': {error}", file=sys.stderr)
+        return 1
+
+    with link:
+        print(f"sending to {link.describe()}", file=sys.stderr)
+        if link.is_name and link.address is None:
+            print(f"warning: {link.last_error}", file=sys.stderr)
+            print("the show runs anyway; the name is looked up again every "
+                  f"{args.resolve_every:g}s.", file=sys.stderr)
+
+        if args.test:
+            return _osc_test(link, args)
+
+        # Which fixture is the rig's colour. An index into the flat run of
+        # fixtures across every device, which is exactly what a frame is; or
+        # the first fixture of a named device, resolved once the executable has
+        # announced its devices.
+        chosen = [args.fixture]
+        announced = [False]
+        complained = [False]
+        client = _client_for(args, args.config)
+
+        def frame(colors) -> None:
+            # One picture going two places: the fixture below to the
+            # visualiser, the whole of it to the rig when the rig is
+            # somebody else's.
+            if client is not None:
+                client.send(colors)
+            if not announced[0]:
+                announced[0] = True
+                if args.device:
+                    span = next((d for d in show.devices if d.name == args.device), None)
+                    if span is None:
+                        names = ", ".join(d.name for d in show.devices) or "none"
+                        print(f"warning: no device '{args.device}' (have: {names}),"
+                              f" sampling fixture {chosen[0]}", file=sys.stderr)
+                    else:
+                        chosen[0] = span.first
+                index = chosen[0]
+                name = show.fixture_names[index] if index < len(show.fixture_names) else "?"
+                print(f"sampling fixture {index} ('{name}') of {len(colors)}",
+                      file=sys.stderr)
+
+            index = chosen[0]
+            if index < len(colors):
+                link.send_color(colors[index])
+            elif not complained[0]:
+                # Said once, and out loud, while the show is still running.
+                # Otherwise the only sign is a count of zero at the end, which
+                # is what a show producing no frames at all also looks like.
+                complained[0] = True
+                print(f"warning: fixture {index} is past the end of a "
+                      f"{len(colors)}-fixture frame; nothing is being sent",
+                      file=sys.stderr)
+
+        # The pads, when a map was named. Their scene bindings go down the
+        # same link as the colour, so the app sees one peer.
+        pads = _pads_for(args, args.config,
+                         say=lambda line: print(line, file=sys.stderr),
+                         osc_factory=lambda: link)
+
+        # autostart=False so `show` is bound before any frame can arrive: the
+        # callback above reads it, and the reader thread starts inside start().
+        show = ShowController(
+            args.config,
+            executable=args.executable,
+            dry_run=args.dry_run,
+            midi=args.midi,
+            bpm=args.bpm,
+            on_frame=frame,
+            on_midi=pads.on_midi if pads is not None else None,
+            emit_rate=args.rate,
+            on_log=(lambda line: print(line, file=sys.stderr)) if args.verbose else None,
+            autostart=False,
+        )
+        show.start()
+
+        # The report is in a finally because without --seconds this runs until
+        # Ctrl-C, which is the normal way to use it — and a diagnostic that
+        # only prints on the exit nobody takes is not a diagnostic. main()
+        # catches the KeyboardInterrupt after this has had its say.
+        try:
+            with show:
+                for warning in show.warnings:
+                    print(f"warning: {warning}", file=sys.stderr)
+                for name, why in show.offline_devices:
+                    print(f"warning: device '{name}' is offline: {why}", file=sys.stderr)
+                if client is not None:
+                    client.open()
+
+                # The cue matters here in a way it does not for `run`: what is
+                # being sent is a *colour*, and a monochrome look sends grey.
+                # mythos26 opens on beat_pulse, which is white on every hit for
+                # good reasons of its own, and a scene keyed on grey has nothing
+                # to key. So the same overrides `run` has, for the same reason
+                # it has them - to open on the look you meant.
+                if args.pattern:
+                    show.set_pattern(args.pattern)
+                if args.state:
+                    show.set_state(args.state)
+
+                listener = _osc_input_for(args, show)
+                if pads is not None:
+                    pads.attach(show).open()
+                try:
+                    print(f"running: {show.status()}", file=sys.stderr)
+                    code = show.wait(args.seconds)
+                finally:
+                    if pads is not None:
+                        pads.close()
+                    if listener is not None:
+                        listener.close()
+                    if client is not None:
+                        client.close()
+        finally:
+            _osc_report(link)
+
+        return 0 if code is None else code
+
+
+def _osc_test(link, args: argparse.Namespace) -> int:
+    """Sweeps a hue at the control, with no show and no hardware involved.
+
+    The first thing to run, and the one that answers the only question worth
+    de-risking: is the app listening, on this port, at this address, in this
+    message form. Everything downstream assumes the answer.
+    """
+    import colorsys
+    import time
+
+    seconds = args.seconds if args.seconds else 10.0
+    period = 1.0 / max(args.rate, 1.0)
+    deadline = time.monotonic() + seconds
+    print(f"sweeping a hue for {seconds:.0f}s - the control should move",
+          file=sys.stderr)
+
+    try:
+        while time.monotonic() < deadline:
+            hue = (time.monotonic() * 0.25) % 1.0
+            rgb = colorsys.hsv_to_rgb(hue, 1.0, 1.0)
+            link.send_color([int(channel * 255) for channel in rgb])
+            time.sleep(period)
+    finally:
+        _osc_report(link)
+
+    return 0
+
+
+def _osc_report(link) -> None:
+    """What we can and cannot say about whether that worked.
+
+    Carefully worded, because the honest answer is "we do not know". UDP is
+    unacknowledged, and a closed port on loopback does not even come back as an
+    error — so a clean run against nothing at all looks exactly like a clean run
+    against a listening visualiser. Saying "88 sent, 0 dropped" and stopping
+    would read as confirmation of the one thing this cannot confirm.
+    """
+    # One line of it, because the full version was printed when the link was
+    # made and a report that repeats it buries the counts it exists to give.
+    lines = (link.last_error or "").splitlines()
+    reason = lines[0] if lines else ""
+
+    where = f"{link.host}:{link.port}"
+    if link.is_name and link.address:
+        where += f" ({link.address})"
+
+    print(f"\n{link.sent} messages sent to {where}"
+          + (f", {link.dropped} refused" if link.dropped else ""), file=sys.stderr)
+
+    if link.is_name and link.address is None:
+        # Nothing was sent and nothing could have been. Said here and returned,
+        # rather than letting the advice below send them into Synesthesia's
+        # settings for a problem that never got off this machine.
+        print(f"  '{link.host}' never resolved, so there was nowhere to send.\n"
+              f"  {reason}", file=sys.stderr)
+        return
+
+    if link.rebinds:
+        # A machine that moved is the ordinary reason and no cause for alarm -
+        # but a laptop hopping between wifi and ethernet mid-set is not, and
+        # neither is two machines answering to one name. Worth a line either way.
+        print(f"  '{link.host}' moved {link.rebinds} time(s); "
+              f"now {link.address}", file=sys.stderr)
+    if link.lookups_failed:
+        print(f"  {link.lookups_failed} look-up(s) of '{link.host}' failed; "
+              "the address in hand was kept", file=sys.stderr)
+    if link.dropped:
+        print(f"  last error: {reason}", file=sys.stderr)
+
+    if not link.sent:
+        print("  nothing was sent - either no frame arrived, or the fixture "
+              "being sampled is not in it.", file=sys.stderr)
+        return
+
+    print(
+        "\n  UDP is unacknowledged: sending is not evidence anything received it.\n"
+        "  If the control did not move, in the order worth checking:\n"
+        "    - is OSC *input* switched on in Synesthesia's settings? It ships\n"
+        f"      off, and off looks exactly like every other failure here.\n"
+        f"    - does that panel say port {link.port}? Both ends have to agree,\n"
+        "      and neither will complain if they do not.\n"
+        "    - OSC input is a Synesthesia Pro feature; on other licences the\n"
+        "      fallback is MIDI, which this does not speak.\n"
+        "    - does the running scene actually have a colour control? The\n"
+        "      default address is positional - the *first* one, if there is one.\n"
+        "    - if it has one and it still sits still, try --separate.",
+        file=sys.stderr,
+    )
+
+
+def _cmd_view(args: argparse.Namespace) -> int:
+    """Opens the viewer. Imported here so the rest of the CLI works headless."""
+    try:
+        from .viewer import view
+    except ImportError as error:  # tkinter missing (some slim linux pythons)
+        print(
+            f"error: the viewer needs tkinter, which this python does not have ({error}).\n"
+            f"       on debian/ubuntu: sudo apt install python3-tk",
+            file=sys.stderr,
+        )
+        return 1
+
+    # The window and the visualiser off one show, rather than two copies of it
+    # running side by side with their own beat clocks. See ViewerApp._send_osc.
+    link = None
+    if args.osc:
+        from .osc import SynesthesiaLink
+
+        try:
+            link = SynesthesiaLink(
+                args.osc,
+                args.osc_control,
+                gamma=Config.load(args.config).master.gamma,
+                resolve_every=args.osc_resolve_every,
+                on_resolve=lambda address: print(
+                    f"{args.osc} now resolves to {address}", file=sys.stderr),
+            )
+        except (OSError, ValueError) as error:
+            print(f"error: cannot send to '{args.osc}': {error}", file=sys.stderr)
+            return 1
+
+        print(f"sending to {link.describe()}", file=sys.stderr)
+        if link.is_name and link.address is None:
+            # Not fatal: the window opens, the rig runs, and the name is looked
+            # up again on its interval. A visualiser that is not up yet must not
+            # be able to stop a show from starting.
+            print(f"warning: {link.last_error}", file=sys.stderr)
+
+    return view(
+        args.config,
+        executable=args.executable,
+        pattern=args.pattern,
+        state=args.state,
+        live=args.live,
+        emit_rate=args.emit_rate,
+        midi=args.midi,
+        bpm=args.bpm,
+        osc=link,
+        osc_device=args.osc_device,
+        osc_fixture=args.osc_fixture,
+        midimap=args.midimap,
+        midi_out=args.midi_out,
+        client=args.client,
+        oscmap=None if args.no_osc_in else args.oscmap,
+        # --no-osc-in wins here the way it does in _osc_input_for. Without
+        # this the flag was accepted and ignored on the one command that has
+        # a window, which is the command it would actually be typed at.
+        osc_in=None if args.no_osc_in else args.osc_in,
+        host=args.host,
+        remote_command=args.remote_command,
+    )
+
+
+def _cmd_calibrate(args: argparse.Namespace) -> int:
+    """The beep test. Imported here so the rest of the CLI works headless."""
+    if args.host:
+        # The click has to sound where the music does. With the executable
+        # on the pi the beep would come out of the pi, or nowhere.
+        print("error: calibrate runs the show here, where the speakers are; "
+              "use --client to reach the pi's wires, not --host", file=sys.stderr)
+        return 2
+    try:
+        from .calibrate import calibrate
+    except ImportError as error:  # tkinter missing (some slim linux pythons)
+        print(
+            f"error: calibrate needs tkinter, which this python does not have ({error}).\n"
+            f"       on debian/ubuntu: sudo apt install python3-tk",
+            file=sys.stderr,
+        )
+        return 1
+
+    def log(line: str) -> None:
+        print(line, file=sys.stderr)
+
+    return calibrate(
+        args.config,
+        executable=args.executable,
+        dry_run=args.dry_run,
+        client=args.client,
+        bpm=args.bpm,
+        emit_rate=args.rate,
+        click=not args.no_click,
+        on_log=log if args.verbose else None,
+    )
+
+
+def _cmd_list(args: argparse.Namespace) -> int:
+    print("patterns:")
+    for name in PATTERN_NAMES:
+        print(f"  {name}")
+    print()
+    print("palettes:")
+    for name in BUILTIN_PALETTES:
+        print(f"  {name}")
+    print()
+    print("fixture profiles:")
+    for name, profile in BUILTIN_PROFILES.items():
+        slots = ["-"] * profile.footprint
+        slots[profile.red - 1] = "red"
+        slots[profile.green - 1] = "green"
+        slots[profile.blue - 1] = "blue"
+        if profile.dimmer:
+            slots[profile.dimmer - 1] = f"dimmer={profile.dimmer_value}"
+        for offset, value in profile.park.items():
+            slots[int(offset) - 1] = f"park={value}"
+        chart = "  ".join(f"{i + 1}:{slot}" for i, slot in enumerate(slots))
+        print(f"  {name} ({profile.footprint}ch)  {chart}")
+    return 0
+
+
+def _add_remote_args(parser: argparse.ArgumentParser) -> None:
+    """--host and --remote-command, on a subcommand as well as before it.
+
+    argparse only reads a top-level option before the subcommand's name, and
+    `view config.json --host pi` is how anyone types it. Defaults are
+    SUPPRESSed here so a subcommand that was not given them leaves the
+    top-level value (or its None) alone rather than overwriting it.
+    """
+    parser.add_argument("--host", metavar="SSH_HOST", default=argparse.SUPPRESS,
+                        help="run the show on this machine over ssh; the config path is the "
+                             "host's, relative to desktop/ when it is under this checkout")
+    parser.add_argument("--remote-command", metavar="SHELL_LINE", default=argparse.SUPPRESS,
+                        help="what --host runs at the far end (default: afterglow's "
+                             "launch-desk.sh, or $ECLIPSE_DMX_REMOTE_COMMAND)")
+
+
+def _add_client_arg(parser: argparse.ArgumentParser) -> None:
+    """--client, on every way of running a show: the wires are over there,
+    the render and everything plugged into this machine stay here."""
+    parser.add_argument("--client", metavar="HOST",
+                        help="run the show HERE and put the frames on HOST's wires "
+                             "over ssh - the opposite of --host, and the way to keep "
+                             "Mixxx and a controller, which do not cross the link")
+
+
+def _add_pads_args(parser: argparse.ArgumentParser) -> None:
+    """--midimap and --midi-out, on the headless ways of running a show: the
+    viewer's pads and lamps with the window taken away. See pads.py."""
+    parser.add_argument("--midimap", metavar="FILE",
+                        help="a midi map to run the pads off, with the config's cue table "
+                             "(the viewer's --midimap); nothing by default")
+    parser.add_argument("--midi-out", metavar="SPEC",
+                        help="the controller to light from the map (a Launchpad X, put into "
+                             "Programmer mode); nothing by default")
+
+
+def _pads_for(args, config_path, say, osc_factory=None):
+    """The pads for a headless show, or None when no map was asked for.
+
+    Built before the show so its on_midi can be handed to the controller;
+    the caller attaches the show and opens it once the cues are up.
+    """
+    midimap = getattr(args, "midimap", None)
+    if not midimap:
+        return None
+    from .config import Config
+    from .pads import HeadlessPads
+    try:
+        config = Config.load(config_path)
+    except Exception as error:  # the map still fires; only the mode pad reads the table
+        say(f"pads: cue table not read: {error}")
+        config = None
+    if osc_factory is None:
+        held = []
+
+        def osc_factory():
+            if not held:
+                from .osc import SynesthesiaLink
+                held.append(SynesthesiaLink())
+            return held[0]
+    return HeadlessPads(midimap, config=config, osc_factory=osc_factory, say=say,
+                        midi_out=getattr(args, "midi_out", "") or "")
+
+
+def _add_tempo_args(parser: argparse.ArgumentParser) -> None:
+    """Tempo overrides, shared by the subcommands that start a show."""
+    parser.add_argument("--midi", metavar="SPEC",
+                        help="MIDI input to take the beat from: an index, a name, part of one, "
+                             "or 'auto'. Overrides the config's midi block; "
+                             "pass an empty string to open nothing.")
+    parser.add_argument("--bpm", type=float,
+                        help="starting tempo, and the one the rig falls back to if the "
+                             "MIDI link goes quiet")
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="eclipse_dmx",
+        description="configure and drive eclipse-dmx, the eclipse-os DMX renderer",
+    )
+    parser.add_argument("--executable", help="path to eclipse-dmx (default: the build output, then PATH)")
+    parser.add_argument("--host", metavar="SSH_HOST", default=None,
+                        help="run the show on this machine over ssh (run and view); the config "
+                             "path is the host's, relative to desktop/ when it is under this checkout")
+    parser.add_argument("--remote-command", metavar="SHELL_LINE", default=None,
+                        help="what --host runs at the far end (default: afterglow's launch-desk.sh, "
+                             "or $ECLIPSE_DMX_REMOTE_COMMAND)")
+
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    ports = subparsers.add_parser("ports", help="list serial ports the executable can see")
+    ports.set_defaults(func=_cmd_ports)
+
+    midi = subparsers.add_parser("midi", help="list MIDI inputs the executable can see")
+    midi.set_defaults(func=_cmd_midi)
+
+    watch = subparsers.add_parser(
+        "midi-watch",
+        help="print what a MIDI input is actually sending, and whether we read it as a beat",
+    )
+    watch.add_argument("config")
+    watch.add_argument("--midi", metavar="SPEC",
+                       help="override the config's midi.port")
+    watch.add_argument("--seconds", type=float, default=10.0,
+                       help="how long to listen (default 10)")
+    watch.add_argument("--quiet", "-q", action="store_true",
+                       help="only the summary, not every message")
+    watch.set_defaults(func=_cmd_midi_watch)
+
+    listing = subparsers.add_parser("list", help="list available patterns and palettes")
+    listing.set_defaults(func=_cmd_list)
+
+    osc_watch = subparsers.add_parser(
+        "osc-watch",
+        help="print what a visualiser is sending on the OSC input port")
+    osc_watch.add_argument("--port", type=int, default=DEFAULT_INPUT_PORT,
+                           help=f"port to listen on (default {DEFAULT_INPUT_PORT}; it must "
+                                "match Synesthesia's OSC *output* port)")
+    osc_watch.add_argument("--bind", default=DEFAULT_BIND,
+                           help=f"interface to listen on (default {DEFAULT_BIND}, everything)")
+    osc_watch.add_argument("--seconds", type=float, default=15.0,
+                           help="how long to listen (default 15)")
+    osc_watch.add_argument("--verbose", "-v", action="store_true",
+                           help="print every message as it arrives, not just the summary")
+    osc_watch.set_defaults(func=_cmd_osc_watch)
+
+    validate = subparsers.add_parser("validate", help="check a config without touching hardware")
+    validate.add_argument("config")
+    validate.add_argument("--allow-overlap", action="store_true",
+                          help="treat channel collisions as warnings instead of errors")
+    validate.set_defaults(func=_cmd_validate)
+
+    patch = subparsers.add_parser("patch", help="print the resolved channel map for a config")
+    patch.add_argument("config")
+    patch.add_argument("--allow-overlap", action="store_true")
+    patch.set_defaults(func=_cmd_patch)
+
+    generate = subparsers.add_parser("generate", help="write a config for a bank of fixtures")
+    generate.add_argument("--count", type=int, required=True, help="how many fixtures")
+    generate.add_argument("--profile", choices=sorted(BUILTIN_PROFILES),
+                          help="fixture model to patch (e.g. uking_par36); "
+                               "otherwise a plain RGB fixture is assumed")
+    generate.add_argument("--first-channel", type=int, default=1,
+                          help="DMX address of the first fixture")
+    generate.add_argument("--channels-per-fixture", type=int, default=3,
+                          help="address stride, when not using --profile")
+    generate.add_argument("--order", default="rgb",
+                          help="channel order, when not using --profile")
+    generate.add_argument("--device", default="enttec_pro",
+                          help="enttec_pro, enttec_open, console or preview")
+    generate.add_argument("--port", default="auto")
+    generate.add_argument("--pattern", default="palette_wave", choices=PATTERN_NAMES)
+    generate.add_argument("--output", "-o", default="-", help="output path, or - for stdout")
+    generate.set_defaults(func=_cmd_generate)
+
+    run = subparsers.add_parser("run", help="run a show")
+    run.add_argument("config")
+    run.add_argument("--seconds", type=float, help="stop after this long (default: run until interrupted)")
+    run.add_argument("--frames", type=int, default=0, help="stop after this many frames")
+    run.add_argument("--dry-run", action="store_true", help="print frames instead of driving hardware")
+    run.add_argument("--pattern", choices=PATTERN_NAMES, help="override the config's pattern")
+    run.add_argument("--state", help="for a state machine pattern, the look to open on")
+    run.add_argument("--brightness", type=float, help="override master brightness (0..1)")
+    run.add_argument("--verbose", "-v", action="store_true", help="echo the executable's logs")
+    run.add_argument("--rate", type=float, default=30.0,
+                     help="with --client, frames per second sent to the far end's wires "
+                          "(default 30; at least the fastest device.fps over there)")
+    _add_tempo_args(run)
+    _add_pads_args(run)
+    _add_remote_args(run)
+    _add_client_arg(run)
+    _add_osc_input_args(run)
+    run.set_defaults(func=_cmd_run)
+
+    osc = subparsers.add_parser(
+        "osc",
+        help="run a show and send one fixture's colour out as OSC, for a visualiser",
+        description="Sends the rig's colour to an OSC colour control - Synesthesia's, "
+                    "by default. Start with --test, which needs no config and no "
+                    "hardware and proves the app is listening.",
+    )
+    osc.add_argument("config", nargs="?", help="the show to run (not needed with --test)")
+    osc.add_argument("--address", default=DEFAULT_ADDRESS,
+                     help=f"where the visualiser listens (default {DEFAULT_ADDRESS})")
+    osc.add_argument("--control", default=DEFAULT_CONTROL,
+                     help=f"OSC address of the colour control (default {DEFAULT_CONTROL}); "
+                          f"/controls/scene/<name> targets one scene's control by name")
+    osc.add_argument("--fixture", type=int, default=0, metavar="N",
+                     help="which fixture is the rig's colour, indexed across every "
+                          "device in patch order (default 0)")
+    osc.add_argument("--device", metavar="NAME",
+                     help="sample that device's first fixture instead of --fixture")
+    osc.add_argument("--pattern", choices=PATTERN_NAMES, help="override the config's pattern")
+    osc.add_argument("--state", help="for a state machine pattern, the look to open on")
+    osc.add_argument("--separate", action="store_true",
+                     help="send r, g and b as three messages instead of one with "
+                          "three floats - the fallback if the control does not move")
+    osc.add_argument("--ungamma", type=float, metavar="G",
+                     help="undo this gamma before sending (default: the config's "
+                          "master.gamma, because a screen corrects again)")
+    osc.add_argument("--no-ungamma", action="store_true",
+                     help="send the frame's bytes as they are")
+    osc.add_argument("--resolve-every", type=float, default=RESOLVE_INTERVAL,
+                     metavar="SECONDS",
+                     help="how often to look a hostname up again while running, so a "
+                          f"machine that changes address is followed (default {RESOLVE_INTERVAL:g}; "
+                          "0 to resolve once). Ignored for an IP address.")
+    osc.add_argument("--rate", type=float, default=30.0,
+                     help="messages a second (default 30)")
+    osc.add_argument("--seconds", type=float,
+                     help="stop after this long (default: until interrupted; 10 with --test)")
+    osc.add_argument("--test", action="store_true",
+                     help="sweep a hue with no show running, to prove the link")
+    osc.add_argument("--dry-run", action="store_true",
+                     help="render without driving hardware; the OSC still goes out")
+    osc.add_argument("--verbose", "-v", action="store_true", help="echo the executable's logs")
+    _add_tempo_args(osc)
+    _add_pads_args(osc)
+    _add_client_arg(osc)
+    _add_osc_input_args(osc)
+    osc.set_defaults(func=_cmd_osc)
+
+    calibrate = subparsers.add_parser(
+        "calibrate",
+        help="the beep test: measure how late the rig is, and bake it into the config",
+        description="A click on this machine's speakers and the rig flashing on the same "
+                    "beat. Nudge the latency a millisecond at a time until they land "
+                    "together, or tap along to each and let the difference say - then "
+                    "save, and midi.latency_ms in the config carries it into every set.",
+    )
+    calibrate.add_argument("config")
+    calibrate.add_argument("--bpm", type=float, default=DEFAULT_CALIBRATION_BPM,
+                           help=f"tempo of the test (default {DEFAULT_CALIBRATION_BPM:g})")
+    calibrate.add_argument("--dry-run", action="store_true",
+                           help="no hardware on this machine; with --client the far end still lights")
+    calibrate.add_argument("--no-click", action="store_true",
+                           help="no sound - only the arrow keys and the flash, for a bench")
+    calibrate.add_argument("--rate", type=float, default=30.0,
+                           help="with --client, frames per second sent to the far end's wires "
+                                "(default 30; at least the fastest device.fps over there)")
+    calibrate.add_argument("--verbose", "-v", action="store_true", help="echo the executable's logs")
+    _add_client_arg(calibrate)
+    calibrate.set_defaults(func=_cmd_calibrate)
+
+    viewer = subparsers.add_parser(
+        "view", help="watch the rig in a window, laid out from the config"
+    )
+    viewer.add_argument("config")
+    viewer.add_argument("--pattern", help="start on this pattern instead of the config's")
+    viewer.add_argument("--state", help="for a state machine pattern, the look to open on")
+    viewer.add_argument("--live", action="store_true",
+                        help="also drive the real rig; without this nothing is put on the wire")
+    viewer.add_argument("--emit-rate", type=float, default=30.0,
+                        help="frames per second to draw (default 30)")
+    viewer.add_argument("--osc", nargs="?", const=DEFAULT_ADDRESS, metavar="HOST:PORT",
+                        help="also send one fixture's colour out as OSC, for a "
+                             f"visualiser (default {DEFAULT_ADDRESS})")
+    viewer.add_argument("--osc-device", metavar="NAME",
+                        help="sample that device's first fixture (default: fixture 0)")
+    viewer.add_argument("--osc-fixture", type=int, default=0, metavar="N",
+                        help="which fixture to send, indexed across every device")
+    viewer.add_argument("--osc-resolve-every", type=float, default=RESOLVE_INTERVAL,
+                        metavar="SECONDS",
+                        help="how often to look an --osc hostname up again while running "
+                             f"(default {RESOLVE_INTERVAL:g}; 0 to resolve once)")
+    viewer.add_argument("--osc-control", default=DEFAULT_CONTROL,
+                        help=f"OSC address of the colour control (default {DEFAULT_CONTROL})")
+    viewer.add_argument("--midimap", metavar="FILE",
+                        help="load this midi mapping file into the [m] panel "
+                             "(default: midimaps/default.json beside the config, if present)")
+    _add_client_arg(viewer)
+    viewer.add_argument("--midi-out", metavar="SPEC", dest="midi_out",
+                        help="light a controller's pads from the map: a MIDI output "
+                             "name, a fragment of one, an index or hw:C,D,S. "
+                             "`--list-midi` shows what is here. Off when not given, "
+                             "and never fatal - no controller is a set without lamps")
+    _add_tempo_args(viewer)
+    _add_remote_args(viewer)
+    _add_osc_input_args(viewer)
+    viewer.set_defaults(func=_cmd_view)
+
+    return parser
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+
+    try:
+        return args.func(args)
+    except KeyboardInterrupt:
+        # the controller's context manager has already sent the dark frame
+        print("\ninterrupted", file=sys.stderr)
+        return 130
+    except (ConfigError, ShowError, BinaryNotFoundError) as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

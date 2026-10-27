@@ -7,14 +7,14 @@
 
 #include <memory>
 
-#include "../../lib/ecore/core.h"
-#include "../../lib/ecore/logging.h"
-#include "../../lib/ecore/delegate.h"
+#include <ecore/core.h>
+#include <ecore/logging.h>
+#include <ecore/delegate.h>
 
-#include "../../lib/eio/relic.h"
-#include "../../lib/eio/screen_drawer.h"
+#include <eio/relic.h>
+#include <eio/screen_drawer.h>
 
-#include "../../lib/esm/state_generic.h"
+#include <esm/state_generic.h>
 
 using namespace ecore;
 using namespace eio;

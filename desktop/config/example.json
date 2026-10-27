@@ -1,0 +1,55 @@
+{
+  // eclipse-dmx example rig: four RGB pars on a single universe.
+  //
+  // Channel numbers are 1-based, exactly as they read on the fixture display.
+  // Comments and trailing structure are fine; this parser tolerates // lines.
+
+  "device": {
+    "type": "enttec_pro",     // enttec_pro | enttec_open | console
+    "port": "auto",           // "auto", or "COM3" / "/dev/ttyUSB0"
+    "baud": 115200,
+    "fps": 40,
+    "console_channels": 12    // how many channels the console output prints
+  },
+
+  "master": {
+    "brightness": 1.0,
+    "gamma": 2.2              // set to 1.0 to send linear values
+  },
+
+  "pattern": {
+    "name": "palette_wave",   // solid | palette_wave | rainbow | chase | pulse | off
+    "speed": 0.25,
+    "width": 2.0,
+    "brightness": 1.0,
+    "palette": "p_bluemagic", // a built-in name, or a list: ["#ff0044", "#22ffcc"]
+    "color": "#ff2200"        // used by solid and pulse
+  },
+
+  "fixtures": [
+    {
+      "name": "par_left",
+      "start_channel": 1,
+      "channels": "rgb",
+      "position": [0.0, 0.0]
+    },
+    {
+      "name": "par_mid_left",
+      "start_channel": 4,
+      "channels": "rgb",
+      "position": [0.33, 0.0]
+    },
+    {
+      "name": "par_mid_right",
+      "start_channel": 7,
+      "channels": "rgb",
+      "position": [0.66, 0.0]
+    },
+    {
+      "name": "par_right",
+      "start_channel": 10,
+      "channels": "rgb",
+      "position": [1.0, 0.0]
+    }
+  ]
+}

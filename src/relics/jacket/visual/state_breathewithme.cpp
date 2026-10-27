@@ -2,11 +2,12 @@
 //
 // This file is part of project eclipse-os
 // See readme.md for full license details.
+#include <cmath>
 #include "state_breathewithme.h"
 
-#include "../../../lib/ecore/logging.h"
+#include <ecore/logging.h>
 
-#include "../../../lib/ecore/math.h"
+#include <ecore/math.h>
 
 
 #include "../jacket_io.h"
@@ -44,7 +45,7 @@ void Pattern_BreatheWithMe::render(HSVStripNode *node, HSV &inOutColor) const
     float sat = (buttonALerper.getValue() * 0.6f + 0.4f) * inOutColor.getSatFloat();
     inOutColor.setSaturationAlpha(sat);
 
-    float brightnessScalar = lerp(0.4f, 1.0f, buttonALerper.getValue());
+    float brightnessScalar = std::lerp(0.4f, 1.0f, buttonALerper.getValue());
     inOutColor.setBrightnessAlpha(inOutColor.getValFloat() * brightnessScalar);
 }
 

@@ -1,0 +1,38 @@
+{
+  // The scanner's whole show at a desk: the ring and the obelisk side by
+  // side, every game state a cue button, no hardware needed.
+  //
+  //   python -m eclipse_dmx view config/scanner.json
+  //
+  // The cue list is afterglow's own state tags - power_up, scan_idle,
+  // record_countdown, void, ... - because the scanner pattern names its
+  // states with them. Clicking down the list is clicking through the game,
+  // and `state <tag> <seconds>` typed at the process is exactly what the
+  // game sends.
+  //
+  // Nothing reaches a wire without --live. With it, the obelisk device's own
+  // output (relic_usb, port auto) drives a plugged-in sculpture the same way
+  // the game does - so a new look can be checked on screen and then on the
+  // object with the same file.
+
+  "master": {
+    "brightness": 1.0,
+    "gamma": 2.2
+  },
+
+  "pattern": {
+    "name": "scanner"
+  },
+
+  "devices": [
+    // Both devices carry literal stage coordinates - the obelisk standing on
+    // y=0, the ring a circle on it with its lowest pixel on the origin line
+    // y=16 - so zero offsets land them in one shared space and a wave
+    // running up y passes through the ring on its way up the sculpture.
+    //
+    // A near-square panel for a circle, a pillar for the obelisk - view_scale
+    // is a view property and touches nothing the pattern sees.
+    { "device": "scanner_ring", "offset": [0, 0], "view_scale": [0.9, 1.0] },
+    { "device": "obelisk",      "offset": [0, 0], "view_scale": [0.5, 1.1] }
+  ]
+}

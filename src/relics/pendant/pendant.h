@@ -7,10 +7,10 @@
 
 #include <memory>
 
-#include "../../lib/ecore/core.h"
-#include "../../lib/eio/button.h"
-#include "../../lib/eio/relic.h"
-#include "../../lib/eio/screen_drawer.h"
+#include <ecore/core.h>
+#include <eio/button.h>
+#include <eio/relic.h>
+#include <eio/screen_drawer.h>
 
 using namespace ecore;
 using namespace eio;

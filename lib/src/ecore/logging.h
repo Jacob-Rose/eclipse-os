@@ -1,0 +1,64 @@
+// Copyright 2024 | Jake Rose 
+//
+// This file is part of project eclipse-os
+// See readme.md for full license details.
+
+#pragma once
+
+#include <string>
+
+#include "core.h"
+
+namespace ecore
+{
+    namespace log
+    {
+        enum class Verbosity // levels are self explanatory
+        {
+            VeryVerbose, 
+            Verbose,
+            Display,
+            Warning,
+            Error,
+            Fatal,
+        };
+
+        // not static: defined in logging.cpp; a static declaration here gave
+        // every other translation unit an internal function with no definition
+        std::string getVerbosityString(Verbosity inVerbosity);
+    
+        enum class Category : uint64_t
+        {
+            None        = 0b00000000, // none flag
+            OnTick      = 0b00000001, // logging flag for those activated on the tick function
+            State       = 0b00000010, // state related logging
+            IO          = 0b00000100, // IO related logging
+            Relic       = 0b00001000, // part of the relic core
+            Screen      = 0b00010000, // part of the screen core
+            Library     = 0b00100000, // part of the core eclipse library
+        };
+    
+        // the flags combine; != comes with the enum class for free
+        using CategoryBits = std::underlying_type_t<Category>;
+
+        constexpr Category operator|(Category lhs, Category rhs)
+        {
+            return static_cast<Category>(static_cast<CategoryBits>(lhs) | static_cast<CategoryBits>(rhs));
+        }
+
+        constexpr Category operator&(Category lhs, Category rhs)
+        {
+            return static_cast<Category>(static_cast<CategoryBits>(lhs) & static_cast<CategoryBits>(rhs));
+        }
+
+        constexpr Verbosity ProjectVerbosity = Verbosity::Display;
+        constexpr Category ProjectHideCategories = (
+            Category::None |
+            Category::Library |
+            Category::OnTick
+        );
+    
+        void dbgLog(const char *msg, Verbosity InVerbosity = Verbosity::Display, Category InHideCategories = Category::None);
+        void dbgLog(std::string msg, Verbosity InVerbosity = Verbosity::Display, Category InHideCategories = Category::None);
+    }
+}

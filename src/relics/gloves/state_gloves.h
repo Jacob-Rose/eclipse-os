@@ -7,9 +7,9 @@
 
 #include <memory>
 
-#include "../../lib/esm/state.h"
-#include "../../lib/ecore/hsv.h"
-#include "../../lib/eanim/generator_hsv.h"
+#include <esm/state.h>
+#include <ecore/hsv.h>
+#include <eanim/generator_hsv.h>
 
 #include "../../kits/palettes.h"
 #include "../../kits/effects.h"

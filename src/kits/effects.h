@@ -7,11 +7,11 @@
 
 #include <list>
 
-#include "../lib/ecore/core.h"
-#include "../lib/ecore/range.h"
+#include <ecore/core.h>
+#include <ecore/range.h>
 
-#include "../lib/eanim/generator_float.h"
-#include "../lib/eanim/generator_hsv.h"
+#include <eanim/generator_float.h>
+#include <eanim/generator_hsv.h>
 
 using namespace ecore;
 

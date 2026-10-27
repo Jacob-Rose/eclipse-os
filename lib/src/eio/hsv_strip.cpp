@@ -1,0 +1,239 @@
+// Copyright 2024 | Jake Rose 
+//
+// This file is part of project eclipse-os
+// See readme.md for full license details.
+
+#include "hsv_strip.h"
+
+#include <memory>
+#include <algorithm>
+
+#include <ecore/core.h>
+#include <ecore/logging.h>
+
+using namespace eio;
+using namespace ecore::log;
+
+#if USING_NEOPIXEL
+HSVStrip::HSVStrip(uint16_t inLedCount, uint16_t inLedPin, neoPixelType inPixelType) : strip(inLedCount, inLedPin, inPixelType)
+{
+    strip_HSV = std::vector<HSV>(inLedCount);
+
+    strip.begin();
+}
+#endif
+
+HSVStrip::HSVStrip(uint16_t inLedCount, uint16_t inLedPin)
+#if USING_NEOPIXEL
+    : HSVStrip(inLedCount, inLedPin, NEO_GRB + NEO_KHZ800)
+#endif
+{
+#if !USING_NEOPIXEL
+    (void)inLedPin;
+    strip_HSV = std::vector<HSV>(inLedCount);
+#endif
+}
+
+HSVStrip::HSVStrip(const StripWiring& wiring)
+#if USING_NEOPIXEL
+    : HSVStrip(wiring.length, wiring.pin, wiring.order)
+#else
+    : HSVStrip(wiring.length, wiring.pin)
+#endif
+{
+}
+
+HSVStrip::~HSVStrip()
+{
+}
+
+HSV HSVStrip::getHSV(uint16_t idx) const
+{
+    return strip_HSV[idx];
+}
+
+void HSVStrip::setHSV(uint16_t idx, const HSV& hsv)
+{
+#if ERROR_CHECKING_ENABLED
+    if(idx >= strip_HSV.size())
+    {
+#if DEBUG_LOGGING_ENABLED
+        std::string str = "HSVStrip::setHSV - index out of range: " + std::to_string(idx) + " >= " + std::to_string(strip_HSV.size());
+        dbgLog(str.c_str(), Verbosity::Error, Category::Library);
+#endif
+        return;
+    }
+#endif
+    strip_HSV[idx] = hsv;
+
+    updateStripPixel(idx);
+}
+
+void HSVStrip::setHSV(uint16_t idx, float h, uint8_t s, uint8_t v)
+{
+#if ERROR_CHECKING_ENABLED
+    if(idx >= strip_HSV.size())
+    {
+#if DEBUG_LOGGING_ENABLED
+        std::string str = "HSVStrip::setHSV - index out of range: " + std::to_string(idx) + " >= " + std::to_string(strip_HSV.size());
+        dbgLog(str.c_str(), Verbosity::Error, Category::Library);
+#endif
+        return;
+    }
+#endif
+
+    // degrees and two 8-bit channels, into the same fixed point as everything else
+    strip_HSV[idx] = HSV(h, s * (1.0f / 255.0f), v * (1.0f / 255.0f));
+
+    updateStripPixel(idx);
+}
+
+void HSVStrip::setPixelRGB(uint16_t idx, uint8_t r, uint8_t g, uint8_t b)
+{
+#if ERROR_CHECKING_ENABLED
+    if(idx >= getLength())
+    {
+#if DEBUG_LOGGING_ENABLED
+        std::string str = "HSVStrip::setPixelRGB - index out of range: " + std::to_string(idx);
+        dbgLog(str.c_str(), Verbosity::Error, Category::Library);
+#endif
+        return;
+    }
+#endif
+
+#if USING_NEOPIXEL
+    // Straight to the driver. No ColorHSV, no gamma32 - see the header.
+    strip.setPixelColor(idx, r, g, b);
+#else
+    if(hostPixels.size() < static_cast<size_t>(strip_HSV.size()) * 3)
+    {
+        hostPixels.assign(strip_HSV.size() * 3, 0);
+    }
+    hostPixels[idx * 3 + 0] = r;
+    hostPixels[idx * 3 + 1] = g;
+    hostPixels[idx * 3 + 2] = b;
+#endif
+}
+
+void HSVStrip::updateStripPixel(uint16_t idx)
+{
+#if USING_NEOPIXEL
+    uint32_t neoColor = Adafruit_NeoPixel::ColorHSV(strip_HSV[idx].getHueAs16(), strip_HSV[idx].getSatAs8(), strip_HSV[idx].getValAs8());
+    if(bUsesGammaCorrection)
+    {
+        neoColor = Adafruit_NeoPixel::gamma32(neoColor);
+    }
+
+    strip.setPixelColor(idx, neoColor);
+#endif
+}
+
+void HSVStrip::show()
+{
+#if USING_NEOPIXEL
+#if DEBUG_LOGGING_ENABLED
+    dbgLog("HSVStrip::show", Verbosity::VeryVerbose, Category::Library);
+#endif
+    strip.show();
+#endif
+}
+
+uint16_t HSVStrip::getLength() const
+{
+#if USING_NEOPIXEL
+    return strip.numPixels();
+#else
+    return static_cast<uint16_t>(strip_HSV.size());
+#endif
+}
+
+uint8_t HSVStrip::getStripBrightness() const
+{
+#if USING_NEOPIXEL
+    return strip.getBrightness();
+#else
+    return hostBrightness;
+#endif
+}
+
+void HSVStrip::setStripBrightness(uint8_t inBrightness)
+{
+#if USING_NEOPIXEL
+    strip.setBrightness(inBrightness);
+#else
+    hostBrightness = inBrightness;
+#endif
+}
+
+void HSVStrip::updateStripPixels()
+{
+    for(uint16_t idx = 0; idx < getLength(); ++idx)
+    {
+        updateStripPixel(idx);
+    }
+}
+
+HSVStripNode::HSVStripNode(HSVStripSegment *inParentStripSegment, int inStripIdx) : parentStripSegment(inParentStripSegment), stripIdx(inStripIdx) 
+{
+
+}
+
+void HSVStripNode::setHSV(const HSV &hsv)
+{
+    parentStripSegment->getParentStrip()->setHSV(stripIdx, hsv);
+}
+
+void HSVStripNode::setHSV(float h, uint8_t s, uint8_t v)
+{
+    parentStripSegment->getParentStrip()->setHSV(stripIdx, h, s, v);
+}
+
+void eio::HSVStripNode::setBuffer(int idx, const HSV &inHSV)
+{
+    bufferMap[idx] = inHSV;
+}
+
+HSV eio::HSVStripNode::getBuffer(int idx) const
+{
+    auto it = bufferMap.find(idx);
+    if(it == bufferMap.end())
+    {
+#if DEBUG_LOGGING_ENABLED
+        std::string str = "HSVStripNode::getBuffer - no buffer found for index: " + std::to_string(idx);
+        dbgLog(str.c_str(), Verbosity::Error, Category::Library);
+#endif
+        return HSV(); // Return a default HSV if not found
+    }
+    return it->second;
+}
+
+void eio::HSVStripNode::clearBuffer(int idx)
+{
+    bufferMap.erase(idx); // Remove the entry from the buffer map
+}
+
+std::vector<std::pair<int, HSV>> eio::HSVStripNode::getBufferMap() const
+{
+    return std::vector<std::pair<int, HSV>>(bufferMap.begin(), bufferMap.end());
+}
+
+eio::HSVStripSegment::HSVStripSegment(HSVStrip* inParentStrip, int inId) : parentStrip(inParentStrip), id(inId)
+{
+}
+
+
+void eio::HSVStripSegment::addNode(std::shared_ptr<HSVStripNode> node)
+{
+    Nodes.push_back(node);
+}
+
+void eio::HSVStripSegment::addNodes(std::vector<std::shared_ptr<HSVStripNode>> inNodes)
+{
+    Nodes.insert(Nodes.end(), inNodes.begin(), inNodes.end());
+}
+
+
+const std::vector<std::shared_ptr<HSVStripNode>> &eio::HSVStripSegment::getNodes() const
+{ 
+    return Nodes; 
+}
