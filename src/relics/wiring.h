@@ -21,6 +21,10 @@
 // keep each entry on one line, in this shape:
 //
 //     constexpr eio::StripWiring kName { pin, length, order };
+//
+// A relic's DMX or MIDI port is declared here the same way, with the
+// library's wiring structs: edmx::DmxWiring { uart, txPin, enablePin },
+// edmx::DmxInputWiring { uart, rxPin }, emidi::MidiWiring { uart, rxPin, txPin }.
 // ---------------------------------------------------------------------------
 namespace wiring
 {

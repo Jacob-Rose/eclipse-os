@@ -32,7 +32,11 @@ set(ECLIPSE_SRC  "${ECLIPSE_ROOT}/src")
 # someone adds a file.
 # ---------------------------------------------------------------------------
 set(ECLIPSE_CORE_SOURCES
+    ${ECLIPSE_SRC}/lib/edmx/binding.cpp
     ${ECLIPSE_SRC}/lib/edmx/fixture.cpp
+    ${ECLIPSE_SRC}/lib/emidi/binding.cpp
+    ${ECLIPSE_SRC}/lib/emidi/clock.cpp
+    ${ECLIPSE_SRC}/lib/emidi/parser.cpp
     ${ECLIPSE_SRC}/lib/ecore/coord.cpp
     ${ECLIPSE_SRC}/lib/ecore/hsv.cpp
     ${ECLIPSE_SRC}/lib/ecore/logging.cpp

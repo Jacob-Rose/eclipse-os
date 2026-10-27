@@ -11,6 +11,9 @@
 #include <thread>
 #include <vector>
 
+#include "lib/emidi/clock.h"
+#include "lib/emidi/parser.h"
+
 #include "edesk/beat_clock.h"
 
 ///
@@ -60,8 +63,8 @@
 ///
 /// Linux has two, because Linux has two MIDI worlds. **ALSA rawmidi** is a
 /// device node — `/dev/snd/midiC1D0` — and reading it gives the raw byte
-/// stream, which is why there is a small parser here for running status and
-/// interleaved realtime bytes. **The ALSA sequencer** is the patchbay where
+/// stream, which the library's emidi::Parser frames (running status and
+/// interleaved realtime bytes). **The ALSA sequencer** is the patchbay where
 /// *applications* publish ports, and it is where Mixxx lives: it owns no
 /// hardware, so it has no device node to read. Software talks to software
 /// there, or not at all.
@@ -335,22 +338,17 @@ namespace edesk
         std::atomic<unsigned long long> clockTicks{0};
         std::atomic<unsigned long long> beatsSeen{0};
 
-        /// 0..23 within the quarter note. Reset by Start and by alignToNow().
-        std::atomic<int> tickInBeat{0};
+        /// A `midi align` from another thread, applied by the MIDI thread on
+        /// its next message - see alignToNow.
+        std::atomic<bool> alignRequested{false};
 
-        /// When each of the last 24 clock ticks arrived.
-        ///
-        /// A rolling window of exactly one beat, which makes the tempo a
-        /// subtraction rather than an average: the tick 24 ago was, by
-        /// definition, one beat ago. Measuring only at beat boundaries and
-        /// smoothing instead takes tens of beats to settle and is a whole bpm
-        /// out for the first several — long enough to see on a rig.
-        ///
-        /// MIDI-thread only, so no atomics.
-        static constexpr int kTickWindow = 24;
-        double tickTimes[kTickWindow]{};
-        int tickCount{0};
-        int tickWrite{0};
+        /// The 0xF8 stream: beats, tempo and phase. MIDI-thread only.
+        emidi::ClockFollower follower;
+
+        /// How the follower's beats, tempo and restarts reach the BeatClock,
+        /// under the desk's rules (followClock, notes holding clock off).
+        class ClockRelay;
+        friend class ClockRelay;
 
         /// When the last note-driven beat landed. Only ever touched from the
         /// MIDI thread, so it does not need to be atomic. See the note about
@@ -372,11 +370,8 @@ namespace edesk
         /// Only the draining thread touches this.
         unsigned long long monitorRead{0};
 
-        // -- byte-stream parser state (POSIX path only) ---------------------
-        unsigned char runningStatus{0};
-        unsigned char messageBytes[2]{0, 0};
-        int messageLength{0};
-        int messageWanted{0};
+        /// The byte stream (POSIX path only), framed by the library.
+        emidi::Parser parser;
 
 #if defined(_WIN32)
         /// HMIDIIN, kept as void* so windows.h stays out of this header.

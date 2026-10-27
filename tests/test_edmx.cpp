@@ -5,6 +5,9 @@
 
 #include "eclipse_test.h"
 
+#include "ecore/property.h"
+#include "ecore/reflectable.h"
+#include "edmx/binding.h"
 #include "edmx/fixture.h"
 #include "edmx/output.h"
 #include "edmx/universe.h"
@@ -178,4 +181,46 @@ TEST(edmx_output_sends_the_universe_length_it_was_set)
     CHECK_EQ(output.last.size(), 24u);
     CHECK_EQ(output.last[2], 42);
     CHECK_NEAR(output.maxFrameRate(), 0.0f, 0.0f);
+}
+
+namespace
+{
+    struct BoundLook : public Reflectable
+    {
+        float gain{0.5f};
+        bool bInverted{false};
+        HSV tint;
+        void reflect(PropertyBag& bag) override
+        {
+            bag.add("gain", gain, 0.0f, 2.0f);
+            bag.add("inverted", bInverted);
+            bag.add("tint", tint);
+        }
+    };
+}
+
+TEST(edmx_channel_binding_drives_properties_from_a_universe)
+{
+    BoundLook look;
+    ChannelBinding binding;
+    binding.bindChannel(1, "gain");
+    binding.bindChannel(2, "inverted");
+    binding.bindChannel(3, "tint");       // a colour: skipped
+    binding.bindChannel(4, "missing");    // no such property: skipped
+
+    ChannelBuffer universe(DMX_CHANNEL_COUNT);
+    universe.setChannel(1, 255);
+    universe.setChannel(2, 200);
+    CHECK_EQ(binding.apply(universe, look), 2);
+    CHECK_NEAR(look.gain, 2.0f, 1e-6f);
+    CHECK(look.bInverted);
+
+    universe.setChannel(1, 0);
+    universe.setChannel(2, 100);
+    binding.apply(universe, look);
+    CHECK_NEAR(look.gain, 0.0f, 1e-6f);
+    CHECK(!look.bInverted);
+
+    binding.clear();
+    CHECK_EQ(binding.apply(universe, look), 0);
 }

@@ -66,7 +66,7 @@ float PerlinNoiseGenerator2D::evaluate(float x, float y) const
     {
         const float alpha = (currentTime - fadeStart) / kLoopFade;
         const float ahead = noise.GetNoise<float>(sx, sy, (currentTime - kLoopLength) * freqScalar);
-        value = lerp(value, ahead, alpha);
+        value = ecore::lerp(value, ahead, alpha);
     }
 
     return value;

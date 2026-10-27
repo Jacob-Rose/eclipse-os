@@ -29,9 +29,6 @@ using namespace edesk;
 
 namespace
 {
-    /// 24 MIDI clock ticks to the quarter note. Fixed by the spec, not a knob.
-    constexpr int kTicksPerBeat = 24;
-
     /// How long a note-based beat suppresses clock-based ones. A source that
     /// sends both would otherwise fire two beats slightly out of step with each
     /// other, which reads as a stutter. Notes carry the downbeat explicitly, so
@@ -519,6 +516,43 @@ bool MidiInput::resolvePort(const std::string& spec, const std::vector<std::stri
 // Platform-independent: both backends funnel into handleMessage().
 // ============================================================================
 
+/// The follower reports ticks it has counted; this decides whether the clock
+/// is driving (followClock on, and no note-beat within kNoteHoldsOffClock)
+/// and forwards to the BeatClock under that rule.
+class MidiInput::ClockRelay : public emidi::ClockSink
+{
+public:
+    ClockRelay(MidiInput& inInput, bool inDriving) : input(inInput), driving(inDriving) {}
+
+    void onBeat(double when) override
+    {
+        if (driving)
+        {
+            input.onBeat(when, false);
+        }
+    }
+
+    void onTempo(float bpm, double when) override
+    {
+        if (driving && input.clock != nullptr)
+        {
+            input.clock->setBpm(bpm, BeatSource::MidiClock, when);
+        }
+    }
+
+    void onRestart(double when) override
+    {
+        if (input.clock != nullptr && input.followClock.load())
+        {
+            input.clock->restart(when, BeatSource::MidiClock);
+        }
+    }
+
+private:
+    MidiInput& input;
+    bool driving;
+};
+
 void MidiInput::onBeat(double when, bool fromNote)
 {
     if (clock == nullptr)
@@ -531,7 +565,7 @@ void MidiInput::onBeat(double when, bool fromNote)
         lastNoteBeat = when;
         // A note is a downbeat, so put the tick grid back in step with it. One
         // tick already counts as consumed: the next 0xF8 is tick 1, not 0.
-        tickInBeat.store(1);
+        follower.setTickInBeat(1);
     }
 
     clock->markBeat(when, fromNote ? BeatSource::MidiNote : BeatSource::MidiClock);
@@ -628,87 +662,27 @@ void MidiInput::handleMessage(unsigned char status, unsigned char data1, unsigne
         return;
     }
 
-    // ---- system realtime -------------------------------------------------
-    if (status >= 0xF8)
+    // ---- system realtime and song position --------------------------------
+    // Counted by the library's follower; its beats and tempo reach the
+    // BeatClock through the relay, which applies the desk's rules. Stop is
+    // ignored there too: the clock free-runs through a track change.
+    if (status >= 0xF8 || status == 0xF2)
     {
-        switch (status)
+        if (alignRequested.exchange(false))
         {
-            case 0xF8: // timing clock
-            {
-                clockTicks.fetch_add(1);
-
-                const int tick = tickInBeat.load();
-                tickInBeat.store((tick + 1) % kTicksPerBeat);
-
-                const bool driving = followClock.load()
-                    && !(lastNoteBeat > 0.0 && (when - lastNoteBeat) < kNoteHoldsOffClock);
-
-                // Tempo off the tick 24 ago, which was one beat ago by
-                // definition. Exact after a single beat of history, where
-                // averaging beat-to-beat gaps takes tens of beats to settle.
-                if (driving && clock != nullptr && tickCount >= kTickWindow)
-                {
-                    const double beatSeconds = when - tickTimes[tickWrite];
-                    if (beatSeconds >= (60.0 / BeatClock::kMaxBpm) &&
-                        beatSeconds <= (60.0 / BeatClock::kMinBpm))
-                    {
-                        clock->setBpm(static_cast<float>(60.0 / beatSeconds),
-                                      BeatSource::MidiClock, when);
-                    }
-                }
-
-                tickTimes[tickWrite] = when;
-                tickWrite = (tickWrite + 1) % kTickWindow;
-                if (tickCount < kTickWindow)
-                {
-                    ++tickCount;
-                }
-
-                if (!driving || tick != 0)
-                {
-                    return;
-                }
-                onBeat(when, false);
-                return;
-            }
-
-            case 0xFA: // start - the downbeat is here
-                tickInBeat.store(0);
-                // The stream restarted, so the window is stale. Keeping it
-                // would measure one bogus interval across the gap.
-                tickCount = 0;
-                tickWrite = 0;
-                if (clock != nullptr && followClock.load())
-                {
-                    clock->restart(when, BeatSource::MidiClock);
-                }
-                return;
-
-            case 0xFB: // continue - resume where the tick counter left off
-            case 0xFC: // stop
-                // Stop deliberately does nothing. The clock free-runs, so the
-                // rig keeps its pulse through a track change instead of going
-                // dead between songs.
-                return;
-
-            default:
-                return; // active sensing, reset, undefined
+            follower.alignToNow();
         }
+        const bool driving = followClock.load()
+            && !(lastNoteBeat > 0.0 && (when - lastNoteBeat) < kNoteHoldsOffClock);
+        ClockRelay relay(*this, driving);
+        follower.setBpmRange(BeatClock::kMinBpm, BeatClock::kMaxBpm);
+        follower.handle(emidi::Message(status, data1, data2), when, relay);
+        clockTicks.store(follower.getTicks());
+        return;
     }
 
     const unsigned char kind = status & 0xF0;
     const int channel = (status & 0x0F) + 1;
-
-    // ---- song position pointer ------------------------------------------
-    // Fourteen bits of position, counted in sixteenth notes. Four sixteenths to
-    // a beat, six ticks to a sixteenth: that is the phase a bare 0xF8 stream
-    // cannot tell us.
-    if (status == 0xF2)
-    {
-        const int sixteenths = (static_cast<int>(data2) << 7) | static_cast<int>(data1);
-        tickInBeat.store((sixteenths % 4) * 6);
-        return;
-    }
 
     // ---- note on ---------------------------------------------------------
     if (kind == 0x90 && data2 > 0)
@@ -781,84 +755,31 @@ void MidiInput::handleMessage(unsigned char status, unsigned char data1, unsigne
     }
 }
 
+namespace
+{
+    /// The parser's messages, into handleMessage with the flags it needs.
+    struct IntoHandleMessage : public emidi::MessageSink
+    {
+        MidiInput& input;
+        bool fromPads;
+        IntoHandleMessage(MidiInput& inInput, bool inFromPads) : input(inInput), fromPads(inFromPads) {}
+        void onMessage(const emidi::Message& message, double when) override
+        {
+            input.handleMessage(message.status, message.data1, message.data2, when, fromPads);
+        }
+    };
+}
+
 void MidiInput::handleBytes(const unsigned char* data, size_t length, double when,
                             bool fromPads)
 {
-    for (size_t idx = 0; idx < length; ++idx)
-    {
-        const unsigned char byte = data[idx];
-
-        // Realtime bytes are allowed to appear *inside* another message, so
-        // they are dispatched without touching the parser's state.
-        if (byte >= 0xF8)
-        {
-            handleMessage(byte, 0, 0, when, fromPads);
-            continue;
-        }
-
-        if (byte >= 0x80)
-        {
-            const unsigned char kind = byte & 0xF0;
-
-            // System common clears running status; a channel message sets it.
-            if (byte >= 0xF0)
-            {
-                runningStatus = 0;
-                messageWanted = (byte == 0xF2) ? 2 : ((byte == 0xF1 || byte == 0xF3) ? 1 : 0);
-            }
-            else
-            {
-                runningStatus = byte;
-                messageWanted = (kind == 0xC0 || kind == 0xD0) ? 1 : 2;
-            }
-
-            messageBytes[0] = byte; // status held in slot 0 while we collect
-            messageLength = 0;
-
-            if (messageWanted == 0)
-            {
-                handleMessage(byte, 0, 0, when, fromPads);
-            }
-            continue;
-        }
-
-        // A data byte with no status before it: running status, if we have one.
-        if (messageWanted == 0)
-        {
-            if (runningStatus == 0)
-            {
-                continue; // mid-sysex, or a stream we joined late
-            }
-            messageBytes[0] = runningStatus;
-            messageWanted = ((runningStatus & 0xF0) == 0xC0 || (runningStatus & 0xF0) == 0xD0) ? 1 : 2;
-            messageLength = 0;
-        }
-
-        if (messageLength == 0)
-        {
-            messageBytes[1] = byte;
-            messageLength = 1;
-        }
-        else
-        {
-            handleMessage(messageBytes[0], messageBytes[1], byte, when, fromPads);
-            messageLength = 0;
-            messageWanted = 0;
-            continue;
-        }
-
-        if (messageWanted == 1)
-        {
-            handleMessage(messageBytes[0], messageBytes[1], 0, when, fromPads);
-            messageLength = 0;
-            messageWanted = 0;
-        }
-    }
+    IntoHandleMessage sink(*this, fromPads);
+    parser.feed(data, length, when, sink);
 }
 
 void MidiInput::alignToNow()
 {
-    tickInBeat.store(0);
+    alignRequested.store(true);
     lastNoteBeat = -1.0;
 }
 

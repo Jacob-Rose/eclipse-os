@@ -42,6 +42,12 @@ contains advanced generator system for creating led animations generically
       - noise generators (FastNoiseLite)
    - processors: take in a target and perform some algorithm over time to get to it. (ex: spring, momentum, lerp)
 
+### edmx
+DMX for both the desk and a relic: a `ChannelBuffer` (a `DmxUniverse` is the 512-channel case), the `DmxOutput` interface a transport implements, the fixture model (profiles, the patch, rendering HSV into channels with dimmer, parked channels and gamma), and `ChannelBinding` to drive a look's reflected properties from incoming DMX. On the RP2040, `UartDmxOutput` sends a universe from a UART by DMA and `UartDmxInput` receives one; the desk's USB widgets implement the same interface. Wiring for a relic's DMX port goes in `relics/wiring.h`.
+
+### emidi
+MIDI for both: the message model, a byte-stream `Parser` (running status, interleaved realtime), a `ClockFollower` for beat clock, and `Binding` to land controllers on reflected properties and notes on trigger tags. `MidiPort` pumps a `Transport` each tick; on the RP2040 that is `UartMidiTransport` (DIN, 31250 baud) or `UsbMidiTransport` (a class-compliant USB MIDI device, needs the TinyUSB stack). The desk's MIDI input frames and follows clock through the same code.
+
 ### eio
 contains io device wrappers.
 simple wrapper layers for:
