@@ -49,7 +49,6 @@ set(ECLIPSE_CORE_SOURCES
     ${ECLIPSE_LIB}/ecore/timer.cpp
     ${ECLIPSE_LIB}/ecore/utils.cpp
 
-    ${ECLIPSE_LIB}/eanim/attribute_float.cpp
     ${ECLIPSE_LIB}/eanim/automation_curve.cpp
     ${ECLIPSE_LIB}/eanim/generator_float.cpp
     ${ECLIPSE_LIB}/eanim/generator_hsv.cpp
