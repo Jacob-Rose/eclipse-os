@@ -636,8 +636,8 @@ void Pattern_Mythos_BusWash::render(eio::HSVStripNode* node, ecore::HSV& inOutCo
                      * std::clamp(kick / 0.25f, 0.0f, 1.0f);
     const float pop = std::clamp(kick * 1.5f, 0.0f, 1.0f);
     const float shape = std::clamp(afterglow, 0.0f, 1.0f);
-    float share = lerp(kick, glow, shape);
-    const float lift = lerp(kick, std::max(pop, glow * 0.85f), shape);
+    float share = std::lerp(kick, glow, shape);
+    const float lift = std::lerp(kick, std::max(pop, glow * 0.85f), shape);
 
     ecore::HSV base = color;
     if (blend > 0.0f || accent < 1.0f)
@@ -936,8 +936,8 @@ void Pattern_Mythos_CanyonWave::render(eio::HSVStripNode* node, ecore::HSV& inOu
 
     const float lift = std::clamp(rainbowLift, 0.0f, 1.0f);
     const float value = rock.getValFloat();
-    const float level = lerp(value, value + (1.0f - value) * lift, amount);
-    ecore::HSV out(turned.getHueFloat(), lerp(rock.getSatFloat(), 1.0f, amount), level);
+    const float level = std::lerp(value, value + (1.0f - value) * lift, amount);
+    ecore::HSV out(turned.getHueFloat(), std::lerp(rock.getSatFloat(), 1.0f, amount), level);
     out.setBrightnessAlpha(level);
     inOutColor = out;
 }
@@ -1027,7 +1027,7 @@ void Pattern_Mythos_GradientStrobe::tick(float deltaTime)
     // the drop is the channel's or the beat's by `follow`: the cue rides
     // the meter, the half- and double-time modes strobe on the grid
     const float onBeat = std::clamp(envelope.getValue(), 0.0f, 1.0f);
-    strobe = lerp(onBeat, level, std::clamp(follow, 0.0f, 1.0f))
+    strobe = std::lerp(onBeat, level, std::clamp(follow, 0.0f, 1.0f))
            * std::clamp(intensity, 0.0f, 1.0f);
 
     // the pars: a peak follower on the hits - up in a few frames, down
@@ -1074,7 +1074,7 @@ void Pattern_Mythos_GradientStrobe::render(eio::HSVStripNode* node, ecore::HSV& 
     float mix = 1.0f - std::fabs(phase * 2.0f - 1.0f);
     if (truss)
     {
-        mix = lerp(mix, 1.0f - mix, std::clamp(trussInvert, 0.0f, 1.0f) * invert * amount);
+        mix = std::lerp(mix, 1.0f - mix, std::clamp(trussInvert, 0.0f, 1.0f) * invert * amount);
     }
 
     // round the short side of the wheel both ways: purple to orange
@@ -1123,7 +1123,7 @@ void Pattern_Mythos_Fire::applyIntensity()
 {
     // how eagerly the floor ignites: a few embers at the bottom of the knob,
     // the generic look's own default at the top
-    sparking = lerp(0.12f, 0.47f, std::clamp(intensity, 0.0f, 1.0f));
+    sparking = std::lerp(0.12f, 0.47f, std::clamp(intensity, 0.0f, 1.0f));
 }
 
 void Pattern_Mythos_Fire::reset()
@@ -1187,7 +1187,7 @@ void Pattern_Mythos_Rain::applyIntensity()
 {
     // a handful of drops at the bottom of the knob, heavy rain at the top;
     // the downpour modes go past this on their own
-    dropCount = lerp(8.0f, 48.0f, std::clamp(intensity, 0.0f, 1.0f));
+    dropCount = std::lerp(8.0f, 48.0f, std::clamp(intensity, 0.0f, 1.0f));
 }
 
 void Pattern_Mythos_Rain::reset()
@@ -1503,7 +1503,7 @@ void Pattern_Mythos_CloudFlight::render(eio::HSVStripNode* node, ecore::HSV& inO
         // the whole truss one light: the sky toward yellow the higher the
         // flight, dim in the deck and bright above it
         const float h = std::clamp(heightNow, 0.0f, 1.0f);
-        const float level = lerp(std::clamp(trussLow, 0.0f, 1.0f),
+        const float level = std::lerp(std::clamp(trussLow, 0.0f, 1.0f),
                                  std::clamp(trussHigh, 0.0f, 1.0f), h);
         // a sunset along the line of them, the whole of it warming toward
         // the yellow as the flight climbs
@@ -1575,7 +1575,7 @@ void Pattern_Mythos_CloudFlight::render(eio::HSVStripNode* node, ecore::HSV& inO
     const float lit = std::clamp((n - crest) / 0.3f, 0.0f, 1.0f) * std::clamp(glow, 0.0f, 1.0f)
                     * std::clamp(intensity, 0.0f, 1.0f);
     ecore::HSV deck = blendRgb(cloud, skyLow, lit);
-    deck.setBrightnessAlpha(lerp(cloud.getValFloat() * (0.6f + 0.4f * n), skyLow.getValFloat(), lit));
+    deck.setBrightnessAlpha(std::lerp(cloud.getValFloat() * (0.6f + 0.4f * n), skyLow.getValFloat(), lit));
 
     // the deck's edge is soft - a band of the stage's height either side
     // of the horizon where cloud and sky mix - so the pars do not step
@@ -1694,7 +1694,7 @@ void Pattern_Mythos_Reaction::render(eio::HSVStripNode* node, ecore::HSV& inOutC
     // mixed as light so the hues arrive tinted rather than through grey
     const float amount = getRainbow();
     inOutColor = blendRgb(white, rainbow, amount);
-    inOutColor.setBrightnessAlpha(lerp(whiteValue, 1.0f, amount));
+    inOutColor.setBrightnessAlpha(std::lerp(whiteValue, 1.0f, amount));
 }
 
 void Pattern_Mythos_Reaction::reflect(ecore::PropertyBag& bag)
@@ -1807,7 +1807,7 @@ void Pattern_Mythos_Scaffold::render(eio::HSVStripNode* node, ecore::HSV& inOutC
 
     const float mix = band * amount;
     inOutColor = blendRgb(ground, strut, mix);
-    inOutColor.setBrightnessAlpha(lerp(groundValue, std::max(strutValue, groundValue), band));
+    inOutColor.setBrightnessAlpha(std::lerp(groundValue, std::max(strutValue, groundValue), band));
 }
 
 void Pattern_Mythos_Scaffold::reflect(ecore::PropertyBag& bag)

@@ -14,6 +14,7 @@
 - **File headers**: Include copyright header with "Copyright 2024 | Jake Rose" and license reference
 - **Includes**: Use relative paths with "../../" for lib includes, group by category
 - **Namespaces**: Use explicit namespace declarations (e.g., `using namespace ecore;`)
+- **Standard library**: the library is C++20 on every toolchain. Use `std::lerp`, `std::clamp`, `std::min`/`max` qualified; never `using namespace std` in a header, and never an unqualified `lerp` (the rp2040 core's libstdc++ exports `std::lerp` globally, which makes one ambiguous)
 - **Naming**: CamelCase classes, snake_case files/functions, descriptive variable names
 - **Memory**: Use smart pointers (`std::unique_ptr`, `std::shared_ptr`) for object management
 - **Error handling**: Check bounds, use ERROR_CHECKING_ENABLED preprocessor flag

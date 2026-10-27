@@ -68,9 +68,9 @@ namespace
             return hash01(static_cast<uint32_t>(cx * 311 + cy * 57));
         };
 
-        return ecore::lerp(
-            ecore::lerp(corner(ix, iy),     corner(ix + 1, iy),     fx),
-            ecore::lerp(corner(ix, iy + 1), corner(ix + 1, iy + 1), fx),
+        return std::lerp(
+            std::lerp(corner(ix, iy),     corner(ix + 1, iy),     fx),
+            std::lerp(corner(ix, iy + 1), corner(ix + 1, iy + 1), fx),
             fy);
     }
 }
@@ -240,8 +240,8 @@ void Pattern_Generic_MatrixRain::renderAt(const Coordinate& at, HSV& inOutColor)
     // blending on headness so it fades out smoothly in both axes
     inOutColor = HSV(
         hue,
-        ecore::lerp(1.0f, 0.35f, headness),
-        brightness * ecore::lerp(0.8f * churn, 1.0f, headness));
+        std::lerp(1.0f, 0.35f, headness),
+        brightness * std::lerp(0.8f * churn, 1.0f, headness));
 }
 
 void Pattern_Generic_MatrixRain::reflectStorm(ecore::PropertyBag& bag)
@@ -388,7 +388,7 @@ void Pattern_Generic_Fire2012::renderAt(const Coordinate& at, HSV& inOutColor) c
             const int segment = static_cast<int>(at.x * 1.5f);
             const float breath = timeActive * 2.0f;
             const int step = static_cast<int>(breath);
-            const float flicker = ecore::lerp(
+            const float flicker = std::lerp(
                 hash01(static_cast<uint32_t>(segment * 31 + step * 7)),
                 hash01(static_cast<uint32_t>(segment * 31 + (step + 1) * 7)),
                 breath - step);

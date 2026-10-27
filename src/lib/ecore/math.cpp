@@ -28,11 +28,6 @@ namespace
 }
 
 
-float ecore::lerp(const float &a, const float &b, const float &t)
-{
-    return ((1.0f - t) * a) + (t * b);
-}
-
 float ecore::inv_lerp(const float &a, const float &b, const float &t)
 {
     return (t - a) / (b - a);
@@ -40,7 +35,7 @@ float ecore::inv_lerp(const float &a, const float &b, const float &t)
 
 float ecore::remap(const float &i_min, const float &i_max, const float &o_min, const float &o_max, const float &v)
 {
-    return lerp(o_min, o_max, inv_lerp(i_min, i_max, v));
+    return std::lerp(o_min, o_max, inv_lerp(i_min, i_max, v));
 }
 
 float ecore::lerp_keyframes(float a, const std::vector<float> &keys)
@@ -60,7 +55,7 @@ float ecore::lerp_keyframes(float a, const std::vector<float> &keys)
     float stepAlpha = a / step;
     stepAlpha -= lowerPart;
     // jlog::print("step alpha: " + std::to_string(stepAlpha));
-    return lerp(keys[lowerPart], keys[lowerPart + 1], stepAlpha);
+    return std::lerp(keys[lowerPart], keys[lowerPart + 1], stepAlpha);
 }
 
 float ecore::get_index_from_alpha(float a, const std::vector<float> &keys)

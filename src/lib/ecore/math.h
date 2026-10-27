@@ -15,15 +15,7 @@
 
 namespace ecore
 {
-    // https://gist.github.com/laundmo/b224b1f4c8ef6ca5fe47e132c8deab56
-    // converted to c++
-            
-    // Linear interpolate on the scale given by a to b, using t as the point on that scale.
-    //      Examples
-    //      --------
-    //      50 == lerp(0, 100, 0.5)
-    //      4.2 == lerp(1, 5, 0.8)
-    float lerp(const float& a, const float& b, const float& t);
+    // lerp is std::lerp (C++20); qualify it as std::lerp at every call site
         
             
     // https://gist.github.com/laundmo/b224b1f4c8ef6ca5fe47e132c8deab56

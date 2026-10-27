@@ -21,7 +21,7 @@ OUT=build-tests
 mkdir -p "$OUT"
 
 CXX="${CXX:-g++}"
-CXXFLAGS=(-std=c++17 -O1 -Wall -Wextra -DUSE_ARDUINO=0 -Isrc/lib -Itests)
+CXXFLAGS=(-std=c++20 -O1 -Wall -Wextra -DUSE_ARDUINO=0 -Isrc/lib -Itests)
 
 # the same portable slice desktop/CMakeLists.txt builds: everything but button.cpp
 LIB_SOURCES=(src/lib/ecore/*.cpp src/lib/eanim/*.cpp src/lib/esm/*.cpp src/lib/elink/*.cpp src/lib/edmx/*.cpp src/lib/emidi/*.cpp
