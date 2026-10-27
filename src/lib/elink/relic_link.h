@@ -18,80 +18,70 @@ namespace eio
 }
 
 ///
-/// The relic's end of the link.
+/// The relic's end of the link. A desk drives a relic two ways:
 ///
-/// A desk can drive a relic two ways and they are not alternatives:
+///   cue    a Command frame carries console text; the relic keeps rendering
+///          its own looks.
+///   pixel  a Pixels frame carries the picture; the relic becomes a display.
 ///
-///   cue    a Command frame carries the same text the serial console already
-///          takes, and the relic goes on rendering its own looks. A few bytes,
-///          occasionally, and nothing to keep up with.
-///
-///   pixel  a Pixels frame carries the frame itself and the relic becomes a
-///          display. Any look the desk can render lands on the sculpture,
-///          including ones that were never compiled into it.
-///
-/// Pixel mode is a *takeover*, and the important part is how it ends. The relic
-/// does not wait to be told: if no pixel frame has arrived for `holdoverSeconds`
-/// it takes its own pixels back and carries on. A pulled USB cable should cost
-/// you a look, not a dark sculpture in front of a room.
+/// Pixel mode is a takeover that ends on its own: if no pixel frame arrives
+/// for `holdoverSeconds` the relic takes its pixels back. A pulled cable costs
+/// a look, not a dark sculpture.
 ///
 
 namespace elink
 {
-    /// Where bytes come from and where log lines go.
-    ///
-    /// Abstract so the whole link can run on a host with no hardware: the
-    /// firmware plugs Serial in behind this, the tests plug a byte queue in,
-    /// and the code between them is the same code.
+    /* @brief Where bytes come from and where log lines go.
+    *
+    * The firmware plugs Serial in behind this (SerialLinkTransport); tests
+    * plug in a byte queue.
+    */
     class LinkTransport
     {
     public:
         virtual ~LinkTransport() = default;
 
-        /// One byte, or -1 when there is nothing waiting. Must not block.
+        /// One byte, or -1 when nothing is waiting. Must not block.
         virtual int readByte() = 0;
 
-        /// A line back to the desk. Text, not frames: the relic's log stream is
-        /// already text and a human already reads it over the same cable.
+        /// A text line back to the desk, on the relic's log stream.
         virtual void writeLine(const char* text) = 0;
 
-        /// Reboot into the USB bootloader and do not come back.
-        ///
-        /// On the transport rather than on RelicLink because it is the one
-        /// genuinely platform-specific thing in the whole link — it is a call
-        /// into the RP2040's boot ROM. The default does nothing, which is the
-        /// right answer for a host running this in a test.
+        /// Reboot into the USB bootloader and do not come back. The default
+        /// does nothing, which is right for a host.
         virtual void rebootToBootloader() {}
     };
 
 
+    /* @brief Reads frames off a LinkTransport and applies them: pixels to a
+    * RelicIO, commands to a queue the relic pops with takeCommand().
+    *
+    *     link.setTransport(&serial);
+    *     link.setIdentity("obelisk");
+    *     ...
+    *     link.tick(deltaTime, io);
+    *     if (!link.ownsPixels()) renderOwnLook();
+    *     while (link.takeCommand(line)) handleCommand(line);
+    */
     class RelicLink
     {
     public:
-        /// Nothing happens until a transport is set, which is what keeps the
-        /// link off relics that have not asked for it.
+        /// Nothing happens until a transport is set.
         void setTransport(LinkTransport* inTransport) { transport = inTransport; }
         LinkTransport* getTransport() const { return transport; }
 
-        /// Drains whatever has arrived and applies it. Pixel frames are written
-        /// through to `io` as they land; commands queue for takeCommand.
-        ///
-        /// `io` may be null, in which case pixel frames are parsed, counted and
-        /// dropped — which is what a relic with no strips wants.
+        /// Drains whatever has arrived. Pixel frames are written through to
+        /// `io` (null: parsed, counted and dropped); commands queue.
         void tick(float deltaTime, eio::RelicIO* io);
 
-        /// True while the desk owns the pixels. The relic's own rendering
-        /// should be skipped entirely rather than computed and overwritten:
-        /// generating a frame nobody will see is the expensive half of a tick.
+        /// True while the desk owns the pixels; skip the relic's own rendering.
         bool ownsPixels() const { return streaming; }
 
-        /// Pops one queued command, oldest first. Returns false when there are
-        /// none. These are the strings RelicCore::handleCommand already takes.
+        /// Pops one queued command, oldest first. False when there are none.
         bool takeCommand(std::string& outCommand);
 
-        /// How long a takeover survives silence. Long enough to ride out a
-        /// missed frame or two, short enough that a dead cable is a stumble
-        /// rather than a blackout.
+        /// How long a takeover survives silence before the relic takes its
+        /// pixels back.
         void setHoldover(float seconds) { holdoverSeconds = seconds; }
         float getHoldover() const { return holdoverSeconds; }
 
@@ -103,8 +93,7 @@ namespace elink
         /// Pixel frames that named a strip this relic does not have.
         uint32_t framesUnrouted() const { return unrouted; }
 
-        /// What a relic answers a Hello with. Set it to something that names
-        /// the sculpture; the desk prints it when it opens the port.
+        /// What the relic answers a Hello with; the desk prints it.
         void setIdentity(const std::string& inIdentity) { identity = inIdentity; }
 
     private:
@@ -126,7 +115,7 @@ namespace elink
         std::string identity{"eclipse-os relic"};
         std::vector<std::string> commands;
 
-        /// Bytes typed by a human, gathered between frames. See collectTyped.
+        /// bytes typed by a human, gathered between frames; see collectTyped
         std::string typed;
     };
 }

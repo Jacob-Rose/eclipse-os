@@ -1,4 +1,4 @@
-// Copyright 2024 | Jake Rose 
+// Copyright 2024 | Jake Rose
 //
 // This file is part of project necklace_code_c
 // See readme.md for full license details.
@@ -20,8 +20,11 @@ using namespace ecore;
 using namespace eanim;
 using namespace esm;
 
-/*
-* Just runs the provided pattern
+/* @brief A state that runs one GeneratorHSV over every node of a RelicIO.
+*
+*     auto state = std::make_shared<State_GenericHSV>("blobs", io);
+*     state->setGenerator(std::make_shared<Pattern_Obelisk_Blobs>());
+*     state->init();
 */
 class State_GenericHSV : public State, public ecore::Reflectable
 {
@@ -31,17 +34,14 @@ public:
     void setGenerator(std::shared_ptr<GeneratorHSV> inGenerator) { generator = inGenerator; }
     std::shared_ptr<GeneratorHSV> getGenerator() const { return generator; }
 
-    /// Reflectable interface: the look's properties, or nothing for a state
-    /// with no generator.
+    /// Reflectable interface: the look's properties, or nothing without a look.
     virtual void reflect(ecore::PropertyBag& bag) override { if (generator) generator->reflect(bag); }
 
-    /* @brief What a node's colour is when the look is asked to render it.
+    /* @brief The colour a node starts from when the look renders it.
     *
-    * LastFrame, the default: the colour the strip is showing, so a look
-    * that only writes some nodes leaves the rest as they were, and one
-    * that reads before it writes can fade or trail its own last frame.
-    * Black: every node starts dark each frame, for a look that blends
-    * into what it is handed and must not feed back on itself.
+    * LastFrame, the default: what the strip shows, so a look that writes only
+    * some nodes leaves the rest, and one that reads before writing can trail
+    * its own last frame. Black: every node starts dark each frame.
     */
     enum class RenderBase
     {
@@ -52,11 +52,8 @@ public:
     void setRenderBase(RenderBase inBase) { renderBase = inBase; }
     RenderBase getRenderBase() const { return renderBase; }
 
-    /// Advances the look's clocks without drawing a pixel. For a relic whose
-    /// pixels a desk owns: the look keeps time underneath the takeover, so
-    /// the desk's simulation of it stays in step and the handback lands on
-    /// the picture the desk was already showing. Cheap where tick() is not -
-    /// no nodes are visited.
+    /// Advances the look's clocks without drawing. For a relic whose pixels
+    /// a desk owns: the look keeps time, so the handback does not jump.
     void tickClocks(float deltaTime) { if (generator) generator->tick(deltaTime); }
 
 protected:
@@ -68,6 +65,9 @@ protected:
     RelicIO* io;
 };
 
+/* @brief A StateMachine that renders its states' nodes and blends them on
+* the strip during a transition.
+*/
 class StateMachine_GenericHSV : public StateMachine
 {
 public:
@@ -79,7 +79,7 @@ public:
     RelicIO* getRelicIO() const { return io; }
 
 protected:
-    /// The picture on the strip right now, into every node's snapshot buffer.
+    /// The strip as it is now, into every node's snapshot buffer.
     virtual void captureBlendSource() override;
 
 private:

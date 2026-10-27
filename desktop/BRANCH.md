@@ -1,5 +1,13 @@
 # branch: `desktop-dmx`
 
+> **Historical.** This is the branch's own account of itself, kept as a record.
+> It was reviewed and merged through `lib-review` in October 2026, and some of
+> what it describes changed on the way in: there is one `reflect()` on
+> `ecore::Reflectable` (no `reflectState`/`reflectCurves`/`CurveBag`), looks
+> stack with `LayeredGeneratorHSV` instead of an `Underlay`, the fixed point is
+> `efp::ONE` (2^14), and `GameplayTag` is an alias of `Name`. The headers under
+> `src/lib` are the current word; `desktop/readme.md` is kept up to date.
+
 What this branch adds, why, and how to pick it up cold.
 
 Base: `master` at `f29a6dd`.

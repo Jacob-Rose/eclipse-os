@@ -11,21 +11,17 @@
 ///
 /// elink: the wire between a desk and a relic.
 ///
-/// One format, compiled into both ends. The desktop builds frames with
-/// writeFrame and the relic reads them with FrameReader, out of this file, so
-/// there is no second definition of the protocol to drift out of step. Same
-/// reason the patterns are shared rather than ported.
+/// One frame format, compiled into both ends: the desk builds frames with
+/// writeFrame(), the relic reads them with FrameReader. Nothing here touches
+/// Arduino, allocates or blocks, so the parser runs in tests on a host
+/// (`eclipse-dmx --link-selftest`).
 ///
-/// Nothing here touches Arduino, allocates, or blocks. It is a byte at a time
-/// on the way in and a buffer on the way out, which is what lets the whole
-/// parser be tested on a host with no hardware attached — see
-/// desktop/python/tests and `eclipse-dmx --link-selftest`.
+/// A frame is: MAGIC_0 MAGIC_1 type length-lo length-hi payload crc-lo crc-hi.
 ///
 
 namespace elink
 {
-    /// 0xEC 0x15 — "ec-lipse", and two bytes rather than one because a single
-    /// sentinel occurs in pixel data roughly every 256 bytes.
+    /// 0xEC 0x15, two bytes so pixel data cannot fake a frame start
     static constexpr uint8_t MAGIC_0 = 0xEC;
     static constexpr uint8_t MAGIC_1 = 0x15;
 
@@ -34,45 +30,33 @@ namespace elink
     /// crc lo, crc hi
     static constexpr size_t TRAILER_SIZE = 2;
 
-    /// The obelisk is the biggest thing we carry: 344 pixels at three bytes,
-    /// plus the five-byte pixel header below, is 1037. The rest is headroom for
-    /// a longer relic without a protocol change.
+    /// The obelisk's 344 pixels plus the pixel header is 1037; the rest is
+    /// headroom for a longer relic.
     static constexpr uint16_t MAX_PAYLOAD = 1400;
 
     enum class FrameType : uint8_t
     {
-        /// A run of pixels. Payload is a PixelHeader then 3 bytes per pixel.
+        /// A run of pixels: a PixelHeader then 3 bytes per pixel.
         Pixels = 0x01,
 
-        /// A line of text for RelicCore::handleCommand — the same strings the
-        /// serial console already accepts. This is cue mode.
+        /// A line of text for RelicCore::handleCommand, the same strings the
+        /// serial console takes. Cue mode.
         Command = 0x02,
 
-        /// Empty. The relic answers on its log stream, so a desk can tell a
-        /// relic from a widget without lighting anything.
+        /// Empty. The relic answers on its log stream with its identity.
         Hello = 0x03,
 
-        /// Empty. Hands the pixels back immediately rather than waiting for the
-        /// stream to time out, so a desk can end a show cleanly.
+        /// Empty. Hands the pixels back at once instead of after the holdover.
         Release = 0x04,
 
-        /// Empty. Reboots the relic into its USB bootloader, so it can be
-        /// reflashed without anyone reaching behind a sculpture for the BOOTSEL
-        /// button.
-        ///
-        /// The relic does not come back from this: it reboots as a mass-storage
-        /// device waiting for a .uf2, and only a flash or a power cycle brings
-        /// the sketch back. That is the point, and it is why this is its own
-        /// frame type rather than a command string — it should be impossible to
-        /// arrive at by fat-fingering a cue.
+        /// Empty. Reboots the relic into its USB bootloader for a reflash. It
+        /// does not come back until flashed or power cycled, which is why this
+        /// is a frame type and not a command string.
         Reboot = 0x05,
     };
 
-    /// The front of a Pixels payload.
-    ///
-    /// `strip` because a relic may have more than one; `start` and `count`
-    /// because a frame does not have to carry the whole strip, which is what
-    /// lets a desk repaint one side of the obelisk without sending 1032 bytes.
+    /// The front of a Pixels payload. `start` and `count` let a frame carry
+    /// part of a strip.
     struct PixelHeader
     {
         uint8_t strip{0};
@@ -81,59 +65,44 @@ namespace elink
     };
     static constexpr size_t PIXEL_HEADER_SIZE = 5;
 
-    /// CRC16-CCITT (poly 0x1021, init 0xFFFF), over type, length and payload.
-    ///
-    /// Worth the cost precisely because the failure it catches is silent. A
-    /// corrupt pixel frame is not an error anyone sees; it is one wrong-coloured
-    /// frame in a show, which reads as a glitch in the look rather than as a
-    /// bad cable. Bitwise rather than table-driven: 1032 bytes at 40fps is
-    /// around 1.5% of an RP2040, and a 512-byte table is not worth the flash.
+    /// CRC16-CCITT (poly 0x1021, init 0xFFFF) over type, length and payload.
     uint16_t crc16(const uint8_t* data, size_t length);
 
-    /// Running form, for feeding a frame through as it arrives.
+    /// Running form, for a frame fed through as it arrives.
     uint16_t crc16Update(uint16_t crc, uint8_t byte);
     static constexpr uint16_t CRC16_INIT = 0xFFFF;
 
 
-    /// Writes one frame into `out`, which must have room for
-    /// HEADER_SIZE + length + TRAILER_SIZE. Returns bytes written, or 0 when
-    /// the payload is too long or the buffer too small.
+    /// Writes one frame into `out`, which needs HEADER_SIZE + length +
+    /// TRAILER_SIZE bytes. Returns bytes written, or 0 when the payload is
+    /// too long or the buffer too small.
     size_t writeFrame(FrameType type,
                       const uint8_t* payload,
                       uint16_t length,
                       uint8_t* out,
                       size_t outCapacity);
 
-    /// Fills the five bytes of a PixelHeader. `out` must have room for
-    /// PIXEL_HEADER_SIZE.
+    /// Fills the PIXEL_HEADER_SIZE bytes of a PixelHeader into `out`.
     void writePixelHeader(const PixelHeader& header, uint8_t* out);
 
-    /// Reads a PixelHeader off the front of a Pixels payload. Returns false
-    /// when the payload is too short for it, or when `count` does not match the
-    /// bytes that follow.
+    /// Reads a PixelHeader off the front of a Pixels payload. False when the
+    /// payload is too short or `count` does not match the bytes that follow.
     bool readPixelHeader(const uint8_t* payload, uint16_t length, PixelHeader& outHeader);
 
 
-    /// A frame parser that takes one byte at a time.
-    ///
-    /// Byte at a time on purpose: the relic reads whatever happens to be in the
-    /// UART buffer this tick, which is almost never a whole frame, and a reader
-    /// that waits for one would either block the render loop or need its own
-    /// thread. This one never waits for anything.
-    ///
-    /// It also resyncs. A relic can be plugged into a running desk, a cable can
-    /// be pulled mid-frame, and the very first bytes it ever sees are usually
-    /// the tail of something. Anything that is not a clean frame is discarded a
-    /// byte at a time until the magic turns up again, which is the only
-    /// behaviour that recovers without a reset.
+    /* @brief A frame parser fed one byte at a time, from whatever the UART
+    * had this tick. Never blocks, and resyncs on the magic after garbage,
+    * a pulled cable or a mid-frame connect.
+    *
+    *     while ((byte = transport.readByte()) >= 0)
+    *         if (reader.push(byte)) handle(reader.type(), reader.payload(), reader.payloadSize());
+    */
     class FrameReader
     {
     public:
-        /// Feeds one byte. Returns true when a complete, checksum-clean frame
-        /// is now readable from type() / payload() / payloadSize().
-        ///
-        /// The frame stays valid until the next push() that returns true, so a
-        /// caller may hold onto it for the rest of its tick.
+        /// Feeds one byte. True when a complete, checksum-clean frame is
+        /// readable from type() / payload() / payloadSize(); it stays valid
+        /// until the next push() that returns true.
         bool push(uint8_t byte);
 
         FrameType type() const { return frameType; }
@@ -142,19 +111,13 @@ namespace elink
 
         void reset();
 
-        /// True when no frame is part-read: the next byte is either a magic or
-        /// a byte we will throw away.
-        ///
-        /// This is what lets typed text and binary frames share one cable. A
-        /// human with a serial monitor open is still the fastest way to poke a
-        /// relic, and losing that the moment a desk is supported would be a bad
-        /// trade — so RelicLink collects printable bytes seen while the reader
-        /// is idle into a line, and a frame in flight discards them.
+        /// True when no frame is part-read. RelicLink uses this to let typed
+        /// console text share the cable: printable bytes seen while idle are
+        /// collected into a line.
         bool isIdle() const { return state == State::Magic0; }
 
-        /// Counters, for a relic that wants to say how the link is going. A
-        /// rising `rejected` is a wiring or timing problem; a rising
-        /// `discarded` on its own is just resync after a reconnect.
+        /// Counters for a status line. Rising `rejected` is a wiring or timing
+        /// problem; rising `discarded` alone is resync after a reconnect.
         uint32_t framesAccepted() const { return accepted; }
         uint32_t framesRejected() const { return rejected; }
         uint32_t bytesDiscarded() const { return discarded; }

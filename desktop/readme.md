@@ -180,8 +180,9 @@ knob and curve returns to the values the cue constructed, taken from the
 look's first announcement — the executable starts fresh with the desk, so
 first-seen *is* the cue's defaults.
 
-A look can also hand out its *own* curves — `reflectCurves()`, reflect for
-shapes. Those appear in the aim menu as `~ envelope` and the like: aiming at
+A look can also hand out its *own* curves — an `AutomationCurve` registered
+in `reflect()` is a property of type `Curve`. Those appear in the aim menu as
+`~ envelope` and the like: aiming at
 one loads the live shape (the beat pulse's attack/decay envelope, the boot
 swell), and every finished edit writes the whole curve back over the
 protocol (`CURVE` announcements, the `curve` command), so the next beat
@@ -2806,22 +2807,23 @@ LINK obelisk streaming over blobs
 
 Three pieces:
 
-- **`reflectState`.** Beside `reflect` (the knobs) and `reflectCurves` (the
-  shapes), a look can hand out its *clocks*: `GeneratorHSV::reflectState`
-  registers them with `PropertyBag::addState`, and `ecore::serializeState` /
-  `applyState` turn the bag into `name=value` text and back. The primitives
-  do the work — a `PerlinNoiseGenerator2D` names its seed and its time, an
-  `LFO` its phase — so a look is one line per field. Optional: a look with no
-  clocks says nothing, and one that has clocks and says nothing simply cannot
-  be shadowed.
+- **State properties.** In the same `reflect()` that hands out its knobs, a
+  look registers its *clocks* with `PropertyBag::addState`, and
+  `ecore::serializeState` / `applyState` turn those into `name=value` text and
+  back. The primitives do the work — a `PerlinNoiseGenerator2D` names its seed
+  and its time, an `LFO` its phase — so a look nests them with
+  `bag.reflect("noise", noise)`. Optional: a look with no clocks says nothing,
+  and one that has clocks and says nothing simply cannot be shadowed.
 - **`sim`.** A relic command. Bare, it answers `EOSLINK sim <look> <state>`
   for whatever is showing. `sim <look> k=v ...` sets it, with no blend — the
   desk putting the sculpture where its own copy is.
 - **`RelicShadow`.** On the desk: spawns the named look on the relic's own IO
   layer (the same `ObeliskIO` the firmware builds, compiled for the host, so
   the geometry is the sculpture's and not the show's patch of it), applies
-  the state, and ticks it beside the show. It is an `eanim::Underlay`: any
-  look that wants to compose over the sculpture samples it by node. Which
+  the state, and ticks it beside the show. It is a `GeneratorHSV` the show
+  renders into the nodes under its own looks (`Pattern::setUnderLayer`); a
+  scanner look in `ObeliskMode::Join` blends into what it finds there, one in
+  `Leave` leaves the tower to it. Which
   relics can be shadowed is a `RelicShadowProfile` each — identity, node
   space, an IO factory, a look factory — registered in
   `relic_shadow_profiles.cpp`; the profile is picked from the relic's Hello.
@@ -2829,7 +2831,7 @@ Three pieces:
 
 `link take` sends `sim` and waits for the shadow before the first frame, so
 the takeover *is* the sculpture's own picture; then it is the showing look's
-business what happens. The scanner's idle look composes over the underlay:
+business what happens. The scanner's idle look joins the tower:
 each ping's pulse claims the tower row by row as it climbs (its `wake` curve),
 the claim eases off as the next ping comes due, and when the pings stop the
 tower is the sculpture's own again — at which point `link release` is a

@@ -8,35 +8,21 @@
 #include <cstdint>
 #include <string>
 
-// No `using namespace std;` here, deliberately.
-//
-// A header that opens std at global scope opens it for every translation unit
-// that includes it, and the arduino-pico core builds at -std=gnu++23 - where
-// std has `byte`, `lerp`, `size`, `data` and a growing list of names Arduino
-// also defines. The collisions read as errors deep inside SPI.h or Common.h,
-// nowhere near the header that caused them. Qualify instead.
+// No `using namespace std;` here: this header reaches every translation unit,
+// and the arduino-pico core builds at gnu++23, where std has names (byte,
+// lerp, size, data) that Arduino also defines. Qualify instead.
 
 namespace ecore
 {
     /* @brief A hashed string: an event's name, a trigger, a tag a look answers to.
     *
-    * Text under the hood, because text is what travels the protocol and what
-    * a human reads in a log; compared by hash, because an event manager keys
-    * on it and a look asks "is this mine?" on every impulse, and neither
-    * should be comparing strings to find out.
+    * Compared by hash, so a lookup on every frame costs nothing. The hash is
+    * FNV-1a 32-bit, computed here and constexpr, so it is the same number on
+    * the host and on the relic and a name can cross the cable as a hash.
     *
-    * The hash is FNV-1a, 32 bits, computed here rather than borrowed from
-    * std::hash on purpose: it is the same number on the host and on the
-    * relic's RP2040, and constexpr, so a name that crosses the USB cable as
-    * a hash can be checked against a constant on the other end.
-    *
-    * Dots make a hierarchy. `scanner.ping` matches `scanner`, so a handler
-    * can take a family of names without listing them, and it is a boundary
-    * match, not a prefix one - `scan` does not claim `scanner.ping`.
-    *
-    * Declare the names a look answers to once, next to the look, and compare
-    * against those; a name spelled inline at the compare site is a typo
-    * waiting to happen:
+    * Dots make a hierarchy: `scanner.ping` matches `scanner`, and the match is
+    * on a boundary, so `scan` does not claim it. Declare the names a look
+    * answers to once, beside the look, rather than spelling them inline:
     *
     *     namespace scanner_tags { inline const Name Ping{"scanner.ping"}; }
     *     ...
@@ -53,8 +39,7 @@ namespace ecore
         explicit Name(const char* inText) : text(inText), hash(hashOf(inText)) {}
         explicit Name(const std::string& inText) : text(inText), hash(hashOf(inText.c_str())) {}
 
-        /// FNV-1a over the text. Empty text hashes to kEmptyHash, so an
-        /// empty name is the one name with that hash.
+        /// FNV-1a over the text; empty text hashes to kEmptyHash.
         static constexpr uint32_t hashOf(const char* s)
         {
             if (s == nullptr || *s == '\0')
@@ -81,10 +66,8 @@ namespace ecore
         /// By text, for a sorted container or a stable listing.
         bool operator<(const Name& other) const { return text < other.text; }
 
-        /// This name, or one of its children: `scanner.ping` matches `scanner`
-        /// and matches itself; `scanner` does not match `scanner.ping`. A
-        /// text walk rather than a hash compare - it runs when a family is
-        /// asked for, which is rarer than an exact compare and cheap anyway.
+        /// This name or one of its children: `scanner.ping` matches `scanner`
+        /// and itself; `scanner` does not match `scanner.ping`.
         bool matches(const Name& parent) const
         {
             if (!isValid() || !parent.isValid())
@@ -106,7 +89,7 @@ namespace ecore
         uint32_t hash{kEmptyHash};
     };
 
-    /// The hierarchical use of a Name. Same type: a tag is a name with dots.
+    /// The hierarchical use of a Name: a tag is a name with dots.
     using GameplayTag = Name;
 
     // the hash contract, checked where it is defined

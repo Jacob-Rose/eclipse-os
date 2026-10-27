@@ -1,4 +1,4 @@
-// Copyright 2024 | Jake Rose 
+// Copyright 2024 | Jake Rose
 //
 // This file is part of project eclipse-os
 // See readme.md for full license details.
@@ -23,8 +23,11 @@ using namespace ecore;
 namespace eanim
 {
 
-    /* @brief Spring will help round out values and give things that bounciness that UX designers love
+    /* @brief A sine wave over position and time.
     *
+    * evaluate(x) is the wave at `x`, scrolling by `speed` per second. `width`
+    * is the wavelength, `amplitude` and `yOffset` scale and lift the output,
+    * `xOffset` shifts the phase. Optionally shaped by an easing function.
     */
    class LFO : public Generator1D, public Tickable, public ecore::Reflectable
    {
@@ -57,4 +60,3 @@ namespace eanim
        float currentOffset = 0.0f;
    };
 } // namespace eanim
- 

@@ -9,24 +9,22 @@ namespace ecore
 {
     class PropertyBag;
 
-    /* @brief Something with knobs, clocks or shapes a desk can reach by name.
+    /* @brief Something with properties a desk can reach by name.
     *
-    * One method. Implement it to hand out what is worth touching from
-    * outside - a knob to turn, a clock to match, a curve to redraw - one
-    * line per property, into the bag:
+    * Implement reflect() to hand out what is worth touching from outside,
+    * one line per property:
     *
     *     void MyLook::reflect(ecore::PropertyBag& bag)
     *     {
-    *         bag.add("gain", gain, 0.0f, 2.0f);
-    *         bag.addState("time", timeActive);
-    *         bag.reflect("noise", noise);        // a child's properties, as noise.*
+    *         bag.add("gain", gain, 0.0f, 2.0f);   // a knob with a slider range
+    *         bag.addState("time", timeActive);    // a clock, for the sim handshake
+    *         bag.add("envelope", envelope.curve); // a shape for a curve editor
+    *         bag.reflect("noise", noise);         // a child's properties, as noise.*
     *     }
     *
-    * A base class rather than anything cleverer because the library builds
-    * without RTTI on the microcontroller side, so there is nothing to cast
-    * to. Every GeneratorHSV is one, saying nothing until it has knobs; an
-    * LFO or a noise field is one on its own, since it has clocks to match
-    * without rendering anything. @see ecore::PropertyBag
+    * Every GeneratorHSV is one and says nothing by default; an LFO or a noise
+    * field is one on its own. There is no RTTI on the microcontroller, so an
+    * object is reached through this base, never a cast. @see ecore::PropertyBag
     */
     class Reflectable
     {

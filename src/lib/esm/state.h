@@ -1,4 +1,4 @@
-// Copyright 2024 | Jake Rose 
+// Copyright 2024 | Jake Rose
 //
 // This file is part of project eclipse-os
 // See readme.md for full license details.
@@ -32,8 +32,8 @@ namespace esm
         TransitionOut,
         Active
     };
-    /* @brief States are the structures that really handle all of the associated properties. They handle input themselves.
-    * States support generalized lambda based transitions for easily writing inline setters
+    /* @brief One state of a StateMachine. Handles its own input, ticks its own
+    * logic, and can carry lambda-based transitions and per-tick lambdas.
     */
     class State : public Tickable
     {
@@ -55,21 +55,21 @@ namespace esm
         using ShouldTransitionLambda = std::function<bool(State* TargetState, State* MyState)>;
         using TickLambda = std::function<void(float deltaTime)>;
 
-        // lambda passes in the owning state
+        /// Adds a transition test; the lambda is passed the target and this state.
         void addStateTransition(std::weak_ptr<State> State,  ShouldTransitionLambda Lambda);
 
         int addStateTickLambda(TickLambda Lambda);
         void removeStateTickLambda(int id);
 
-        // runs all state transitions and returns first one that returns true
+        /// Runs every transition test and returns the first that passes.
         std::weak_ptr<State> runStateTransitionTest() const;
 
         int getStateID() const; // set by owning state manager
 
         const std::string& GetStateName() const { return stateName; }
-        StateStatus GetStatus() const { return status; } // returns current state status
+        StateStatus GetStatus() const { return status; }
 
-        std::chrono::duration<double> GetStateActiveDuration() const;     // returned in seconds
+        std::chrono::duration<double> GetStateActiveDuration() const;     // seconds
 
     private:
         std::map<std::weak_ptr<State>, ShouldTransitionLambda, std::owner_less<std::weak_ptr<State>>> stateTransitions;
@@ -81,9 +81,7 @@ namespace esm
         std::string stateName;
         bool bInit = false;
 
-        // Off until a machine enters it: a state's status is read before its
-        // first entry now (StateMachine::tick skips an Off active), so it
-        // cannot be left to whatever the allocator had there.
+        // Off until a machine enters it; the status is read before first entry
         StateStatus status{StateStatus::Off};
     protected:
         int stateManagerId {0}; // set by state manager
@@ -94,6 +92,16 @@ namespace esm
     };
 
 
+    /* @brief Runs one active State and cross-fades to the next over
+    * transitionTime, using a StateBlend.
+    *
+    *     machine.setActiveState(idle);      // no fade: the starting state
+    *     machine.setNextState(flash);       // fades, from wherever it is
+    *     machine.setBlend("wipe");          // how the next fades look
+    *     machine.restartState(flash);       // take the current state from the top
+    *
+    * @see StateBlend for the built-in blends
+    */
     class StateMachine : public Tickable
     {
     public:
@@ -105,65 +113,46 @@ namespace esm
         float transitionTime = 2.5f;
 
         virtual void tick(float deltaTime) override;
-    
+
         void setActiveState(std::shared_ptr<State> inNewState);
 
-        /* @brief Starts a transition to inNextState, from wherever the machine is.
-        *
-        * Not only from a settled state: asked for a third look while a
-        * cross-fade is still running, the machine freezes the picture it is
-        * showing and blends from *that* to the new target, so any state can
-        * be cued at any moment and the rig never snaps back to the look it
-        * was already leaving. The dropped state is told Off. Naming the state
-        * already on its way in is a no-op; naming the active one while
-        * settled is refused, as before - restartState is the way to re-enter.
-        *
-        * A blend that isInstant(), or a transitionTime of zero, lands the
-        * state at once rather than a frame later.
-        */
+        /// Starts a transition to inNextState from wherever the machine is,
+        /// mid-fade included: the picture showing is frozen and blended from.
+        /// Naming the state already on its way in is a no-op; naming the
+        /// active state while settled is refused (use restartState). An
+        /// instant blend or a transitionTime of zero lands at once.
         void setNextState(std::shared_ptr<State> inNextState);
 
         // ---- the blend: what the rig shows between two states ----------
-        //
-        // Held as a pointer to a built-in, never owned: blends are stateless
-        // and one instance serves every machine. See state_blend.h.
 
         const StateBlend& getBlend() const { return *blend; }
         void setBlend(const StateBlend& inBlend) { blend = &inBlend; }
-        /// By the name a cue line spells. False and unchanged for a name
-        /// that is not a built-in.
+        /// By name (`cut`, `crossfade`, `rgb`, `dip`, `wipe`). False and
+        /// unchanged for a name that is not a built-in.
         bool setBlend(const char* name);
 
         /// 0 -> 1 through the running transition; 1 when there is none.
         float getTransitionProgress() const;
 
-        /// Where the outgoing picture lives, for whoever mixes the nodes: the
-        /// active state's own buffer, or - after a retarget mid-fade - the
-        /// frozen picture in kSnapshotBuffer. kNoBuffer when there is no
-        /// outgoing picture at all (the machine's very first fade).
+        /// The buffer holding the outgoing picture: the active state's, or
+        /// kSnapshotBuffer after a retarget mid-fade. kNoBuffer when there is
+        /// no outgoing picture (the machine's first fade).
         int getBlendSourceBuffer() const;
 
         static constexpr int kSnapshotBuffer = -1;
         static constexpr int kNoBuffer = 0;
 
-        /* @brief Re-enters a state the machine is already showing or blending toward.
-        *
-        * setNextState refuses a self-transition, and should - but a cue that
-        * names the current state means "take it from the top". The scanner
-        * leans on this: a machine starts in its first state at launch, so a
-        * boot's first cue can name a state that is already active with its
-        * clock long run out. The re-entry goes through Off so it reads as a
-        * genuine entry to states whose entry logic keys on the edge.
-        */
+        /// Re-enters the state already showing or arriving, going through Off
+        /// so entry logic runs again. For a cue that means "take it from the top".
         void restartState(std::shared_ptr<State> inState);
-        std::shared_ptr<State> getActiveState() const { return ActiveState; } // returns the currently active state
+        std::shared_ptr<State> getActiveState() const { return ActiveState; }
         std::shared_ptr<State> getNextState() const { return NextState; }
 
         bool isInTransition() const;
 
     protected:
-        /// Copies what every node is showing right now into kSnapshotBuffer.
-        /// The base machine has no nodes; the one that renders them does.
+        /// Copies what every node shows now into kSnapshotBuffer. The base
+        /// machine has no nodes; the one that renders them overrides this.
         virtual void captureBlendSource() {}
 
         std::shared_ptr<State> ActiveState;
@@ -176,6 +165,7 @@ namespace esm
     };
 
 
+    /* @brief Owns states and hands out their ids. */
     class StateManager
     {
     public:

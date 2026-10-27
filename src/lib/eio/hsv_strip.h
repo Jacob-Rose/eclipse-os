@@ -1,4 +1,4 @@
-// Copyright 2024 | Jake Rose 
+// Copyright 2024 | Jake Rose
 //
 // This file is part of project eclipse-os
 // See readme.md for full license details.
@@ -18,8 +18,7 @@
 #include <Adafruit_NeoPixel.h>
 #else
 // The host has no pixel driver, but relics/wiring.h names a colour order per
-// sculpture and is compiled on both sides. Adafruit's values, so the table
-// reads the same in a host test as on the board.
+// sculpture and is compiled on both sides. Adafruit's values.
 typedef uint16_t neoPixelType;
 #define NEO_RGB    ((0 << 6) | (0 << 4) | (1 << 2) | (2))
 #define NEO_GRB    ((1 << 6) | (1 << 4) | (0 << 2) | (2))
@@ -33,11 +32,9 @@ using namespace ecore;
 
 namespace eio
 {
-    /// @brief Where a strip is plugged in, and what it is.
-    ///
-    /// The one thing about a sculpture that its code cannot tell you. Every
-    /// relic's strip is one of these, and they all live in relics/wiring.h -
-    /// the only file a pin number is allowed in.
+    /* @brief Where a strip is plugged in and what it is. Every relic's strips
+    * are declared in relics/wiring.h, the only file a pin number lives in.
+    */
     struct StripWiring
     {
         uint16_t pin;
@@ -45,13 +42,9 @@ namespace eio
         neoPixelType order; // NEO_GRB + NEO_KHZ800 and friends. Ignored on a host.
     };
 
-    /// @brief HSV Wrapper for Adafruit_Neopixel
-    ///
-    /// HSV Wrapper for an Adafruit Neopixel strip, allows us to lerp and perform much cleaner calculations 
-    /// at the cost of performance, but honestly, def worth it in this case.
-    /// 
-    /// gives us an easy way to brighten, dim, and blend colors using HSV, which improves accuracy tremendously
-    ///
+    /* @brief An LED strip addressed in HSV, over an Adafruit_NeoPixel on the
+    * board or a plain buffer on a host. Set colours with setHSV(), then show().
+    */
     class HSVStrip
     {
     public:
@@ -66,22 +59,11 @@ namespace eio
         void setHSV(uint16_t idx, const HSV& hsv);
         void setHSV(uint16_t idx, float h, uint8_t s, uint8_t v);
 
-        /// Writes a pixel straight through, with no HSV step and no gamma.
-        ///
-        /// This is for a frame that arrived already rendered — a desk driving
-        /// the strip over elink. Gamma has to be applied exactly once and the
-        /// desk has already done it, so going through setHSV here would correct
-        /// a corrected frame and crush everything below mid-brightness toward
-        /// black. Quiet failure, not a loud one, which is why it gets its own
-        /// door rather than a flag on the existing one.
-        ///
-        /// strip_HSV is deliberately left alone: it is what the relic's own
-        /// patterns read and write, and it should still hold the look that was
-        /// running when the desk took over. The next tick after a handback
-        /// paints every node anyway.
-        ///
-        /// The strip's own brightness still applies — it is a current limit,
-        /// not a preference, and 344 pixels at full white is 20A.
+        /// Writes a pixel straight through, no HSV step and no gamma, for a
+        /// frame a desk has already rendered over elink (gamma is applied
+        /// exactly once, by the desk). strip_HSV is left alone so the relic's
+        /// own look is still there after a handback. The strip brightness
+        /// still applies: it is a current limit.
         void setPixelRGB(uint16_t idx, uint8_t r, uint8_t g, uint8_t b);
 
         uint8_t getStripBrightness() const;
@@ -90,7 +72,7 @@ namespace eio
         void updateStripPixels();
 
         std::vector<HSV>& getStripHSV() { return strip_HSV; }
-        
+
         void show();
 
         uint16_t getLength() const;
@@ -105,27 +87,23 @@ namespace eio
 #if USING_NEOPIXEL
         Adafruit_NeoPixel strip;
 #else
-        // the host build has no pixel driver behind the strip: strip_HSV *is*
-        // the framebuffer, and a consumer (see edmx::Renderer) reads it back out
-        // via getStripHSV() on show().
+        // on a host strip_HSV is the framebuffer; a consumer reads it back
+        // through getStripHSV() on show()
         uint8_t hostBrightness{255};
 
-        // ...except for setPixelRGB, which bypasses strip_HSV by design. On a
-        // host it lands here instead, so the elink path can be driven and read
-        // back with no hardware attached. Sized on first use.
+        // what setPixelRGB wrote, since it bypasses strip_HSV. Sized on first use.
         std::vector<uint8_t> hostPixels;
 #endif
 
     public:
 #if !USING_NEOPIXEL
-        /// What setPixelRGB has written, 3 bytes per pixel. Host builds only —
-        /// this is how a test sees what a relic would have lit.
+        /// What setPixelRGB has written, 3 bytes per pixel. Host builds only.
         const std::vector<uint8_t>& getHostPixels() const { return hostPixels; }
 #endif
     };
 
 
-    // see HSVStripNode:: 
+    // see HSVStripNode::
     enum class StripNodeType
     {
         ROOT,
@@ -134,23 +112,26 @@ namespace eio
         // YOU CAN EXTEND WITH CASTING LOCALLY HERE
     };
 
+    /* @brief One pixel of a segment, as a look sees it: a place to write a
+    * colour, plus per-state buffers the machine blends during a transition.
+    * Subclasses add coordinates; GetStripNodeType() is the cast guard, since
+    * there is no RTTI.
+    */
     class HSVStripNode
     {
     public:
         HSVStripNode(class HSVStripSegment* inParentStrip, int inStripIdx);
-        // we need to provide a virtual destructor so we can delete derived classes safely;
         virtual ~HSVStripNode() = default;
-        
+
         void setHSV(const HSV& hsv);
         void setHSV(float h, uint8_t s, uint8_t v);
 
         void setBuffer(int idx, const HSV& inHSV);
         HSV getBuffer(int idx) const;
         void clearBuffer(int idx);
-        // get all the buffers in a map pair key list
+        /// every buffer, as (id, colour) pairs
         std::vector<std::pair<int, HSV>> getBufferMap() const;
 
-        // since we dont support RTTI (nor do I want to due to perf concerns), we need to provide a way to check if a node is supported
         virtual StripNodeType GetStripNodeType() const { return StripNodeType::ROOT; }
 
     private:
@@ -165,6 +146,7 @@ namespace eio
     };
 
 
+    /* @brief A run of nodes on one strip. */
     class HSVStripSegment
     {
     public:

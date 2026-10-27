@@ -1,4 +1,4 @@
-// Copyright 2024 | Jake Rose 
+// Copyright 2024 | Jake Rose
 //
 // This file is part of project eclipse-os
 // See readme.md for full license details.
@@ -26,7 +26,11 @@ namespace eanim
     //TODO lots of noise functions https://gametorrahod.com/various-noise-functions/
 
 
-    /* @brief Wrapper for FastNoiseLite to make it support float attributes
+    /* @brief A 2d noise field that drifts with time.
+    *
+    * Configure `noise` (FastNoiseLite) directly for type and frequency; scale
+    * the sample space with imageScaleX/Y and the clock with timeScale.
+    * evaluate(x, y) samples it.
     */
     class PerlinNoiseGenerator2D : public Generator2D, public Tickable, public ecore::Reflectable
     {
@@ -47,34 +51,24 @@ namespace eanim
 
         FastNoiseLite noise;
 
-        /// Reflectable interface. What makes this field this field: its seed,
-        /// drawn at random when it was built, and its clock - as `seed` and
-        /// `time`, so a copy of the look elsewhere can be put at the same
-        /// picture. The rest (frequency, type, scale) is the look's own
-        /// constants and travels in its code.
+        /// Reflectable interface: the state that makes this field this field,
+        /// `seed` and `time`, so a copy elsewhere can be put at the same picture.
         virtual void reflect(ecore::PropertyBag& bag) override;
 
         void setSeed(int inSeed);
         int getSeed() const { return seed; }
         float getCurrentTime() const { return currentTime; }
 
-        /// The clock is a float, and a float that only ever grows runs out of
-        /// resolution: at 2^18 its steps are 0.03, which is a whole 30ms tick,
-        /// and a tick that rounds to nothing is a field that stops moving.
-        /// The whiteboard got there in six days. So the clock loops instead,
-        /// and because the field is not periodic the loop has a seam: over the
-        /// last kLoopFade of it evaluate() fades to the field as it will be
-        /// when the clock lands on zero again. Two samples per pixel for that
-        /// window, one the rest of the time. In clock units (seconds *
-        /// timeScale), so a fast field gets a shorter seam and never notices.
+        /// The clock loops every kLoopLength clock units (seconds * timeScale)
+        /// so it never loses float precision; the last kLoopFade of each loop
+        /// cross-fades into the next, which costs a second sample per pixel.
         static constexpr float kLoopLength = 1024.0f;
         static constexpr float kLoopFade = 8.0f;
 
     private:
         float currentTime;
         int seed{0};
-        /// the seed as the bag sees it: a float, applied back through
-        /// setSeed when a state lands. rand() fits a float exactly.
+        /// the seed as the property bag sees it, applied back through setSeed
         float seedState{0.0f};
     };
 }

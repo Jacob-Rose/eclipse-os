@@ -20,14 +20,10 @@ using namespace ecore;
 
 namespace eanim
 {
-    /* @brief One point on an AutomationCurve, and the shape of the segment that leaves it.
+    /* @brief One keyframe of an AutomationCurve.
     *
-    * The easing belongs to the key the segment *starts* from, so a curve reads
-    * top to bottom as "hold this value, get to the next one like this". The
-    * last key has no segment after it, so its easing is unused.
-    *
-    * Linear is the default because easing_functions has no entry for it - see
-    * external/easing.h, which starts at EaseInSine.
+    * The easing shapes the segment that leaves this key; the last key's
+    * easing is unused. Linear when bUseEasing is false.
     */
     struct AutomationKey
     {
@@ -39,27 +35,17 @@ namespace eanim
     };
 
 
-    /* @brief A value over time, described by keyframes rather than by parameters.
+    /* @brief A value over time, drawn as up to kMaxKeys keyframes.
     *
-    * The point of this over an attack/decay pair is that a curve is not limited
-    * to one family of shapes: a hit that snaps up, sits, and trails away is
-    * three keys, and so is anything else.
-    *
-    * Fixed capacity and no allocation, because this compiles for the
-    * microcontrollers as well as the desktop.
-    *
-    * @see AutomationCurveTrigger to play one from an impulse
+    * Fixed capacity, no allocation. @see AutomationCurveTrigger to play one
+    * from an impulse.
     */
     class AutomationCurve
     {
     public:
         static constexpr int kMaxKeys = 8;
 
-        /* @brief Adds a key, keeping the list sorted by time.
-        *
-        * Out of order is fine; the insert finds its place. Returns false if the
-        * curve is full, so a caller building one from config can say so.
-        */
+        /// Inserts in time order. False when the curve is full.
         bool addKey(float inTime, float inValue);
         bool addKey(float inTime, float inValue, easing_functions inEasing);
 
@@ -68,25 +54,15 @@ namespace eanim
         int getKeyCount() const { return count; }
         const AutomationKey* getKey(int index) const;
 
-        /* @brief How long the curve runs: the time of its last key. */
+        /// The time of the last key.
         float getDuration() const;
 
-        /* @brief The value at `seconds`, clamped to the first and last key outside the span. */
+        /// The value at `seconds`; held at the first/last key outside the span.
         float evaluate(float seconds) const;
 
-        /* @brief The largest value across [fromSeconds, toSeconds].
-        *
-        * This exists because a frame is a span, not an instant. A curve whose
-        * rise is shorter than a frame would otherwise be sampled at whatever
-        * point the frame happened to land on, so its peak would come out at a
-        * different height every time it fired - which on a rig reads as an
-        * uneven flicker on a perfectly steady beat.
-        *
-        * The endpoints and every key inside the span are checked, which is
-        * exact for monotonic easings. The overshooting ones - Back, Elastic,
-        * Bounce - can crest between two keys and are not caught; if a curve
-        * leans on one of those for its peak, give it a key at the crest.
-        */
+        /// The largest value in [fromSeconds, toSeconds]: what a frame that
+        /// spans a short peak should show. Exact for monotonic easings; the
+        /// overshooting ones (Back, Elastic, Bounce) can crest between keys.
         float peak(float fromSeconds, float toSeconds) const;
 
     private:
@@ -95,64 +71,50 @@ namespace eanim
     };
 
 
-    /* @brief What a new impulse does to a curve that is still playing. */
+    /* @brief What a new impulse does to a curve that is still playing.
+    */
     enum class RetriggerMode
     {
-        /* @brief The timeline restarts, and the output steps to the curve's first value.
-        *
-        * The honest choice when the curve finishes before the next impulse. If
-        * it does not, this is a visible step back down on every impulse.
-        */
+        /// Restart from the first key, stepping the output down if needed.
         Restart,
 
-        /* @brief The timeline restarts, but the output never falls to do it.
-        *
-        * The level the curve had reached is held flat until the new pass climbs
-        * back above it, and from there the curve takes over. So the impulse
-        * still lands on time and still peaks, but a curve longer than the gap
-        * between impulses swells instead of cutting to the floor first.
-        */
+        /// Restart the clock but hold the current level until the new pass
+        /// climbs above it. Swells instead of dipping on every impulse.
         RestartHold,
 
-        /* @brief Each impulse starts its own voice, and the live ones are combined.
-        *
-        * Closest to what an impulse on a timeline actually is: an old pass is
-        * not cancelled by a new one, it finishes underneath it. Costs a fixed
-        * pool of voices, and past that the oldest is stolen.
-        */
+        /// Each impulse plays its own voice; live voices combine by
+        /// VoiceBlend. Past kMaxVoices the oldest is stolen.
         Overlap,
     };
 
-    /* @brief How overlapping voices are combined. */
+    /* @brief How overlapping voices combine in RetriggerMode::Overlap.
+    */
     enum class VoiceBlend
     {
-        Max,    ///< the loudest voice wins. Stays inside the curve's own range.
-        Sum,    ///< voices add. Can exceed the curve's range; clamp downstream.
+        Max,    ///< loudest voice wins; stays inside the curve's range
+        Sum,    ///< voices add; can exceed the range, clamp downstream
     };
 
 
-    /* @brief Plays an AutomationCurve from an impulse, so a layer can be animated on that timeline.
+    /* @brief Plays an AutomationCurve from an impulse.
     *
-    * A trigger is a FloatAttribute, so anything that already takes one of those
-    * takes this: brightness, a hue shift, a position, a blend weight. What the
-    * number means is the consumer's business - this only owns the shape and the
-    * clock.
+    * A FloatAttribute, so anything that takes one (brightness, a hue shift,
+    * a blend weight) can be driven by it.
     *
-    * Usage is two calls: trigger() when the event lands, tick(deltaTime) once a
-    * frame, then getValue().
+    *     trigger.curve.addKey(0.0f, 0.0f);
+    *     trigger.curve.addKey(0.1f, 1.0f);
+    *     trigger.curve.addKey(0.6f, 0.0f);
+    *     ...
+    *     trigger.trigger();          // when the event lands
+    *     trigger.tick(deltaTime);    // once a frame
+    *     brightness = trigger.getValue();
     *
-    * @see AutomationCurve
     * @see RetriggerMode for what a second impulse does to the first
     */
     class AutomationCurveTrigger : public FloatAttribute, public Tickable
     {
     public:
-        /* @brief How many passes of the curve can be alive at once in Overlap.
-        *
-        * Four rather than a number that cannot run out, because the pool is
-        * fixed-size for the microcontrollers. Past it the oldest voice is
-        * stolen, which is what you want anyway - it is the one nearest done.
-        */
+        /// Voices alive at once in Overlap mode.
         static constexpr int kMaxVoices = 4;
 
         AutomationCurve curve;
@@ -160,20 +122,14 @@ namespace eanim
         RetriggerMode retriggerMode{RetriggerMode::RestartHold};
         VoiceBlend voiceBlend{VoiceBlend::Max};
 
-        /* @brief An impulse landed, now. */
+        /// An impulse landed now.
         void trigger() { triggerAt(0.0f); }
 
-        /* @brief An impulse landed `secondsAgo` ago.
-        *
-        * For anything that knows when the event really happened rather than
-        * when we got round to asking. A beat lands anywhere inside a frame, so
-        * starting its curve at the frame boundary instead would quantise every
-        * pass to the frame grid and put a swing on it that the source does not
-        * have.
-        */
+        /// An impulse landed `secondsAgo` ago. Use this when the event's real
+        /// time is known, so a beat inside a frame is not quantised to it.
         void triggerAt(float secondsAgo);
 
-        /* @brief Back to rest, with nothing playing. */
+        /// Back to rest, nothing playing.
         void reset();
 
         // Tickable interface
@@ -184,25 +140,17 @@ namespace eanim
 
         bool isPlaying() const;
 
-        /* @brief Seconds into the newest pass, or a negative number if nothing is playing. */
+        /// Seconds into the newest pass, or negative when nothing is playing.
         float getTimeSinceTrigger() const;
 
     private:
-        /* @brief One pass of the curve. `previous` is where the last frame left it,
-        * which is what makes the peak-across-a-frame read possible.
-        */
         struct Voice
         {
             bool bActive{false};
             float time{0.0f};
             float previousTime{0.0f};
-
-            /* @brief Set by a trigger, cleared by the first tick after it.
-            *
-            * `time` is already at the impulse for that first frame, so it must
-            * not also advance by a delta - that would count the frame twice and
-            * run every pass a frame ahead of the event that started it.
-            */
+            /// set by a trigger, cleared by the first tick after it: that
+            /// tick reads the voice where it is instead of advancing it
             bool bFresh{false};
         };
 
@@ -213,7 +161,7 @@ namespace eanim
 
         float value{0.0f};
 
-        /* @brief RestartHold's floor: the level to hold until the new pass beats it. */
+        /// RestartHold's floor until the new pass beats it
         float holdLevel{0.0f};
         bool bHolding{false};
     };

@@ -144,6 +144,14 @@ class _JobObject:
 def _spawn_linux(args, popen_kwargs) -> subprocess.Popen:
     import ctypes
     import signal
+    import threading
+
+    # The death signal watches the *thread* that forked, not the process: a
+    # show started from a worker thread would be killed when that thread
+    # ended. Only the main thread's children get it; the rest rely on the
+    # stdin-closes rule, as before.
+    if threading.current_thread() is not threading.main_thread():
+        return subprocess.Popen(args, **popen_kwargs)
 
     PR_SET_PDEATHSIG = 1
     try:

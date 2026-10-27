@@ -12,12 +12,10 @@
 
 namespace eanim
 {
-    /* @brief One particle: a position and motion in the 2d space, plus the
-    * life bookkeeping.
+    /* @brief One moving point in the 2d stage space.
     *
-    * What a particle *means* - its colour, its shape on the pixels, what
-    * happens when it dies - belongs to the look that owns the system. This
-    * carries only what every moving point needs.
+    * Colour and shape are the owning look's business; this is only
+    * position, motion and life.
     */
     struct Particle
     {
@@ -26,42 +24,33 @@ namespace eanim
         ecore::Coordinate position;
         ecore::Coordinate velocity;
 
-        /// how far the particle's glow reaches, in stage units
+        /// how far the glow reaches, in stage units
         float radius{1.0f};
 
         float age{0.0f};
         /// seconds to live; zero or less means until the look kills it
         float lifetime{0.0f};
 
-        /// stable per-particle noise seed, set at spawn - for hashes that
-        /// must hold still across the particle's whole life
+        /// per-particle noise seed, fixed at spawn
         uint32_t seed{0};
     };
 
 
-    /* @brief A fixed pool of particles: spawn, integrate, expire.
+    /* @brief A fixed pool of particles.
     *
-    * Fixed capacity and no allocation after construction, because this
-    * compiles for the microcontrollers - same deal as AutomationCurve. The
-    * system owns motion: tick() integrates velocity, ages everyone, and
-    * expires the mortal. Everything else is the owning look's business,
-    * which is what keeps this simple enough to be worth sharing.
-    *
-    * glowAt() is the one rendering favour it does: the soft radial falloff
-    * of a particle at a point, which is what makes a particle a *position
-    * in the plane* - readable by a ring's arc and an obelisk's runs alike -
-    * rather than an index on some strip.
+    * tick() moves and ages them and expires the mortal; the look reads all()
+    * to draw them, usually through glowAt().
     */
     class ParticleSystem
     {
     public:
         explicit ParticleSystem(int inCapacity);
 
-        /// integrates positions, ages everyone, expires the mortal
+        /// Integrates velocity, ages everyone, expires the mortal.
         void tick(float deltaTime);
 
-        /// a dead slot brought to life, or nullptr when the pool is full.
-        /// The slot comes back zeroed except for a fresh seed.
+        /// A dead slot brought to life, zeroed except for a fresh seed, or
+        /// nullptr when the pool is full.
         Particle* spawn();
 
         void clear();
@@ -71,8 +60,8 @@ namespace eanim
 
         int aliveCount() const;
 
-        /* @brief The particle's glow at a point: 1 at the centre, 0 at the
-        * radius, squared so the edge lands softly. Zero for the dead. */
+        /// The particle's glow at a point: 1 at the centre falling to 0 at
+        /// the radius, squared for a soft edge. Zero for a dead particle.
         static float glowAt(const Particle& particle, const ecore::Coordinate& at);
 
     private:
