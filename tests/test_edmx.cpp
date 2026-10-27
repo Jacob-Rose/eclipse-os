@@ -134,6 +134,11 @@ TEST(edmx_fixture_map_renders_colours_dimmer_and_parks)
     map.render(colors, 0.5f, 0.0f, buffer);
     CHECK(buffer.getChannel(2) >= 127 && buffer.getChannel(2) <= 128);
 
+    // dimmed all the way out, the dimmer closes too
+    map.render(colors, 0.0f, 0.0f, buffer);
+    CHECK_EQ(buffer.getChannel(1), 0);
+    CHECK_EQ(buffer.getChannel(2), 0);
+
     // a missing colour renders dark but still parks
     map.render({}, 1.0f, 0.0f, buffer);
     CHECK_EQ(buffer.getChannel(2), 0);

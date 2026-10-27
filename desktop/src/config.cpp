@@ -314,6 +314,7 @@ namespace
         device.output.baud            = output["baud"].asInt(device.output.baud);
         device.output.fps             = output["fps"].asFloat(device.output.fps);
         device.output.consoleChannels = output["console_channels"].asInt(device.output.consoleChannels);
+        device.output.frameChannels = output["frame_channels"].asInt(device.output.frameChannels);
         device.output.start           = output["start"].asString(device.output.start);
 
         if (device.output.start != "streaming" && device.output.start != "released")
@@ -948,6 +949,10 @@ bool edesk::loadConfig(const std::string& path, Config& outConfig, std::string& 
             }
 
             device.brightness = std::clamp(entry["brightness"].asFloat(1.0f), 0.0f, 1.0f);
+            if (entry["latency_ms"].isNumber())
+            {
+                device.latencyMs = entry["latency_ms"].asFloat(0.0f);
+            }
             if (entry["gamma"].isNumber())
             {
                 device.gamma = entry["gamma"].asFloat(device.gamma);
@@ -964,6 +969,7 @@ bool edesk::loadConfig(const std::string& path, Config& outConfig, std::string& 
                 device.output.baud            = output["baud"].asInt(device.output.baud);
                 device.output.fps             = output["fps"].asFloat(device.output.fps);
                 device.output.consoleChannels = output["console_channels"].asInt(device.output.consoleChannels);
+                device.output.frameChannels = output["frame_channels"].asInt(device.output.frameChannels);
                 device.output.start           = output["start"].asString(device.output.start);
 
                 if (device.output.start != "streaming" && device.output.start != "released")

@@ -86,10 +86,16 @@ namespace obelisk
         /// the look the sculpture boots on - the seasons field generalised,
         /// two colours the desk can pick
         shared_ptr<State_GenericHSV> blobsPatternState;
+        /// the golden key's looks, in the order it steps them - see
+        /// Pattern_Obelisk_RainbowBlobs and Pattern_Obelisk_Prism
+        shared_ptr<State_GenericHSV> rainbowPatternState;
+        shared_ptr<State_GenericHSV> prismPatternState;
         int mainPatternId{0};
         int theaterPatternId{0};
         int testPatternId{0};
         int blobsPatternId{0};
+        int rainbowPatternId{0};
+        int prismPatternId{0};
 
         // The scanner's looks, keyed by the exact state tags afterglow's
         // python game uses, so the scanner can mirror its state machine here

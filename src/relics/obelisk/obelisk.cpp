@@ -118,10 +118,23 @@ ObeliskCore::ObeliskCore() : RelicCore()
     blobsPatternState->setGenerator(std::make_shared<Pattern_Obelisk_Blobs>());
     blobsPatternState->init();
 
+    // the golden key's looks: its first scan takes the field rainbow, its
+    // second sweeps it round the tower. The scanner cues each with
+    // `state <look> <seconds>` and the last one stays
+    rainbowPatternState = std::make_shared<State_GenericHSV>("rainbowState", coreIO.get());
+    rainbowPatternState->setGenerator(std::make_shared<Pattern_Obelisk_RainbowBlobs>());
+    rainbowPatternState->init();
+
+    prismPatternState = std::make_shared<State_GenericHSV>("prismState", coreIO.get());
+    prismPatternState->setGenerator(std::make_shared<Pattern_Obelisk_Prism>());
+    prismPatternState->init();
+
     mainPatternId = stateManager->addState(mainPatternState);
     theaterPatternId = stateManager->addState(theaterPatternState);
     testPatternId = stateManager->addState(testPatternState);
     blobsPatternId = stateManager->addState(blobsPatternState);
+    rainbowPatternId = stateManager->addState(rainbowPatternState);
+    prismPatternId = stateManager->addState(prismPatternState);
 
     // The scanner's looks, one state per afterglow state tag. The variants the
     // python picks with save-file flags (emergency lock, broken device, newly
@@ -142,6 +155,8 @@ ObeliskCore::ObeliskCore() : RelicCore()
     looksByName["theater"] = theaterPatternState;
     looksByName["mono"]    = testPatternState;
     looksByName["blobs"]   = blobsPatternState;
+    looksByName["rainbow_blobs"] = rainbowPatternState;
+    looksByName["prism"]   = prismPatternState;
 
     using namespace scanner;
 
@@ -161,7 +176,9 @@ ObeliskCore::ObeliskCore() : RelicCore()
     addScannerState("scan_item_success_secret",        make_shared<Pattern_Scanner_Solid>(HSV(120.0f, 1.0f, 0.392f)));
     addScannerState("scan_item_failure",               make_shared<Pattern_Scanner_Solid>(HSV(0.0f, 1.0f, 0.471f)));   // rgb(120,0,0)
     addScannerState("audio_playback_mushroom",         make_shared<Pattern_Scanner_PlaybackMushroom>());
-    addScannerState("audio_playback_generic",          make_shared<Pattern_Scanner_PlaybackGeneric>());
+    addScannerState("audio_playback_generic",          make_shared<Pattern_Scanner_SecretRain>());
+    addScannerState("secret_alien",                    make_shared<Pattern_Scanner_SecretAlien>());
+    addScannerState("secret_frog",                     make_shared<Pattern_Scanner_SecretForest>());
     addScannerState("audio_playback_seed",             make_shared<Pattern_Scanner_Solid>(HSV(120.0f, 1.0f, 0.392f)));
     addScannerState("audio_playback_seed_bad",         make_shared<Pattern_Scanner_Solid>(HSV(0.0f, 1.0f, 0.392f)));   // rgb(100,0,0)
     addScannerState("audio_playback_rest",             make_shared<Pattern_Scanner_Solid>(HSV(0.0f, 0.0f, 0.0f)));
@@ -169,8 +186,9 @@ ObeliskCore::ObeliskCore() : RelicCore()
     // The recording flow and the void stone - same table as
     // makeScannerStateMachine() in the desktop build, kept in step so a cue
     // works wherever it lands.
-    // the amber breath, fading into the tower's own picture by height
-    addScannerState("record_arm",                      make_shared<Pattern_Scanner_SinePulse>(HSV(45.0f, 1.0f, 1.0f), 4.0f, 0.15f, 0.5f, 1.0f));   // CRGB(1.0, 0.75, 0.0)
+    // the fire over the tower's own picture, doused on the game's cue as
+    // the rock lands
+    addScannerState("record_arm",                      make_shared<Pattern_Scanner_ArmFire>());
     addScannerState("record_countdown",                make_shared<Pattern_Scanner_RecordCountdown>());
     addScannerState("record_active",                   make_shared<Pattern_Scanner_RecordComet>());
     addScannerState("record_saved",                    make_shared<Pattern_Scanner_SinePulse>(HSV(132.0f, 1.0f, 1.0f), 6.0f, 0.4f, 0.6f));   // CRGB(0.0, 1.0, 0.2)
@@ -178,9 +196,13 @@ ObeliskCore::ObeliskCore() : RelicCore()
     addScannerState("scan_item_detected_recording",    make_shared<Pattern_Scanner_DetectedWave>(HSV(33.3f, 0.9f, 1.0f)));                   // CRGB(1.0, 0.6, 0.1)
     addScannerState("audio_playback_recording",        make_shared<Pattern_Scanner_DetectedWave>(HSV(33.3f, 0.9f, 1.0f)));
     addScannerState("void",                            make_shared<Pattern_Scanner_SinePulse>(HSV(282.0f, 1.0f, 0.5f), 2.0f, 0.0f, 0.6f));   // CRGB(0.35, 0.0, 0.5)
-    // the cleanse: the fire over the tower's own picture, doused on the
-    // game's cue as the rock lands; done is a cool breath
-    addScannerState("cleanse_arm",                     make_shared<Pattern_Scanner_CleanseFire>());
+    // the cleanse: a pale orange breath, fading into the tower's own picture
+    // by height; done is a cool breath
+    addScannerState("cleanse_arm",                     make_shared<Pattern_Scanner_SinePulse>(HSV(30.0f, 0.55f, 1.0f), 4.0f, 0.15f, 0.5f, 1.0f));   // CRGB(1.0, 0.73, 0.45)
+    // the golden key: a gold breath on the ring while the tower blends into
+    // prism (the desk leaves its tower to the shadow; here, where there is
+    // no shadow, the breath is the whole of it)
+    addScannerState("golden",                          make_shared<Pattern_Scanner_SinePulse>(HSV(45.0f, 0.85f, 1.0f), 3.0f, 0.35f, 0.65f));
     addScannerState("cleanse_done",                    make_shared<Pattern_Scanner_SinePulse>(HSV(200.0f, 0.6f, 1.0f), 6.0f, 0.4f, 0.6f));
 
     // Start State Machine, on the blobs
@@ -341,6 +363,8 @@ bool obelisk::ObeliskCore::handleCommand(string msg)
         else if (wanted == "theater")                  target = theaterPatternState;
         else if (wanted == "mono" || wanted == "test") target = testPatternState;
         else if (wanted == "blobs")                    target = blobsPatternState;
+        else if (wanted == "rainbow_blobs")            target = rainbowPatternState;
+        else if (wanted == "prism")                    target = prismPatternState;
         else
         {
             auto it = scannerStates.find(wanted);
@@ -352,9 +376,24 @@ bool obelisk::ObeliskCore::handleCommand(string msg)
 
         if (target)
         {
+            const bool ambient = scannerStates.find(wanted) == scannerStates.end();
+            if (ambient && getLink().ownsPixels())
+            {
+                // The desk is drawing, and blending its own copy of us (its
+                // shadow) into this look. Nothing here is on the strip to
+                // blend, and a transition left pending would not run until
+                // the handback and then play the change a second time - so
+                // the look lands now, its clock runs on under the takeover
+                // (tickWhileLinked), and the handback is to the picture the
+                // desk's copy was showing.
+                if (target != stateMachine->getActiveState())
+                {
+                    stateMachine->setActiveState(target);
+                }
+            }
             // The scanner resends its current state on reconnects; arriving
             // where we already are is success, not an error log.
-            if (target != stateMachine->getActiveState() && target != stateMachine->getNextState())
+            else if (target != stateMachine->getActiveState() && target != stateMachine->getNextState())
             {
                 stateMachine->setNextState(target);
             }
@@ -421,7 +460,7 @@ bool obelisk::ObeliskCore::handleCommand(string msg)
 
     if (msg == "states")
     {
-        string reply = "EOSLINK states blobs seasons theater mono";
+        string reply = "EOSLINK states blobs rainbow_blobs prism seasons theater mono";
         for (const auto& entry : scannerStates)
         {
             reply += " " + entry.first;

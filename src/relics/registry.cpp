@@ -11,6 +11,8 @@
 #include "mythos26/mythos26_looks.h"
 #include "obelisk/state_obelisk.h"
 #include "scanner/generic_patterns.h"
+#include "scanner/osc_patterns.h"
+#include "scanner/recording_patterns.h"
 #include "scanner/scanner_patterns.h"
 
 namespace
@@ -41,6 +43,8 @@ void registerRelicGenerators(eanim::GeneratorRegistry& registry)
     add<Pattern_Obelisk_Theater>(registry, "obelisk_theater");
     add<Pattern_Obelisk_Monocolor>(registry, "obelisk_mono");
     add<Pattern_Obelisk_Blobs>(registry, "obelisk_blobs");
+    add<Pattern_Obelisk_RainbowBlobs>(registry, "obelisk_rainbow_blobs");
+    add<Pattern_Obelisk_Prism>(registry, "obelisk_prism");
 
     // scanner
     add<scanner::Pattern_Scanner_PowerUp>(registry, "scanner_power_up");
@@ -54,6 +58,19 @@ void registerRelicGenerators(eanim::GeneratorRegistry& registry)
     add<scanner::Pattern_Scanner_SuccessMushroom>(registry, "scanner_success_mushroom");
     add<scanner::Pattern_Scanner_PlaybackMushroom>(registry, "scanner_playback_mushroom");
     add<scanner::Pattern_Scanner_PlaybackGeneric>(registry, "scanner_playback_generic");
+    add<scanner::Pattern_Scanner_Loading>(registry, "scanner_loading");
+    add<scanner::Pattern_Scanner_ArmFire>(registry, "scanner_arm_fire");
+    add<scanner::Pattern_Scanner_SecretRain>(registry, "scanner_secret_rain");
+    add<scanner::Pattern_Scanner_SecretAlien>(registry, "scanner_secret_alien");
+    add<scanner::Pattern_Scanner_SecretForest>(registry, "scanner_secret_forest");
+
+    // OSC mode's looks: another host's colours and audio, off the bus
+    add<scanner::Pattern_Osc_Wash>(registry, "scanner_osc_wash");
+    add<scanner::Pattern_Osc_Bloom>(registry, "scanner_osc_bloom");
+    add<scanner::Pattern_Osc_Meter>(registry, "scanner_osc_meter");
+    add<scanner::Pattern_Osc_Chase>(registry, "scanner_osc_chase");
+    add<scanner::Pattern_Osc_Steps>(registry, "scanner_osc_steps");
+    add<scanner::Pattern_Osc_Spectrum>(registry, "scanner_osc_spectrum");
 
     // the generic looks every rig can run
     add<scanner::Pattern_Generic_Rainbow>(registry, "generic_rainbow");

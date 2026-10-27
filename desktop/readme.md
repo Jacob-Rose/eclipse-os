@@ -2419,6 +2419,31 @@ reference anyone is listening to.
 
 The click is streamed raw to `pw-cat`, `pacat` or `aplay`, whichever opens
 first, so nothing needs installing on a machine that already plays sound.
+
+##### one device at a time
+
+The lamps do not all answer at the same speed - a DMX truss, a relic on USB
+and a ring painted on the pi each have their own road - so one number can
+land some of them on the click and not the rest. `[d]` steps from the whole
+rig to each device alone, the others held dark; the number, the rounds and
+`[s]` are then that device's, and `[s]` writes `latency_ms` into its entry in
+`devices`:
+
+```json
+{ "device": "uking_par36_x10", "name": "pars", "latency_ms": 38 }
+```
+
+A device without one runs at `midi.latency_ms`. The clock can only be read
+early by one amount, so it leads by the slowest device's latency and every
+quicker device is held back by the difference - a delay line blended between
+frames, so the hold-back is in ms rather than whole frames. On the protocol it
+is `latency <device> <ms>`, `latency <device> nudge <ms>`, and
+`latency <device> off` to put it back on the show's.
+
+Measure the whole rig first, then each device on its own: the whole-rig
+number is only what the devices without their own run at. The beep round is
+kept across `[d]` - it measures the click and you, not a lamp - so tap it once
+and only the flash round per device.
 `--no-click` runs the screen without it, for a bench.
 
 ### gamma
@@ -2437,7 +2462,7 @@ stdout. Logs go to stderr, so the two are separable when it is being piped.
 pattern <name>            speed <float>          width <float>
 brightness <float>        master <float>         color <#rrggbb | h s v>
 palette <name|#a,#b,...>  blackout <on|off>      status
-quit
+dim <device> <float>      quit
 
 state <name> [s] [blend]  states                 input <a|b> <on|off>
 blend [name]              params                 params dump
@@ -2457,6 +2482,10 @@ layer <name> params [dump]
 layer <name> param <k> <v>    layer <name> curve <k> <t:v...>
 layer <name> trigger <tag>
 ```
+
+`dim` is one device's dimmer on the wire, on top of its config brightness -
+for a show that brings a device in and out (afterglow's pars, dark until its
+OSC mode). The frame stream still carries the look.
 
 `state`, `blend` and `input` need a state machine pattern; the rest work on
 anything. A `state` cue can carry how long its fade is and how it looks -
@@ -2843,6 +2872,28 @@ two clocks.
 Parity — the shadow drawing the same pixel as the relic, given the same
 answer — is checked by `--link-selftest` against the real `ObeliskCore`, pixel
 for pixel.
+
+### changing the look underneath: `base`
+
+```
+base prism 4         # the relic's own look -> prism, blended over 4 seconds
+```
+
+The look under the desk's is the relic's, so changing it is a cue to the
+relic *and* to its shadow at once. `base <look> [seconds] [blend]` sends the
+relic `state <look> <seconds> [blend]` and then `sim`, and blends the shadow's
+copy into the same look over the same seconds (`RelicShadow::blendTo`, the
+relic's own state machine doing it on the desk). Every look that composes over
+the tower — the idle pulse, the arm's fire, a look left to the underlay —
+composes over that blend, because it is just what the underlay now draws.
+
+Under a takeover the relic is not drawing, so a `state` naming one of its
+ambient looks lands at once rather than queueing a blend it would only play
+at the handback; its clock then runs from there like any look's, and the
+shadow's copy, resynced from the next `sim`, is in step with it. An answer to
+a `sim` asked before the cue still names the old look; mid-blend the shadow
+ignores it rather than cutting back. Released, the relic blends itself, as
+`state` always has. The afterglow game sends `base prism` for its golden key.
 
 ### the wire
 

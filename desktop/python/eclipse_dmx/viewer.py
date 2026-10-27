@@ -96,6 +96,7 @@ STATE_GROUPS: List[Tuple[str, List[Tuple[str, Tuple[str, str]]]]] = [
     # authority on the names and TheAudioMeter pins the two together.
     ("audio", [
         ("level", ("state", "level")),
+        ("sub", ("state", "sub")),
         ("bass", ("state", "bass")),
         ("mid", ("state", "mid")),
         ("midhigh", ("state", "midhigh")),
@@ -250,7 +251,7 @@ PATTERN_BUTTONS: List[Tuple[str, Tuple[str, str]]] = [
     # first: it is the way back from the others. `generic` is the WLED
     # recreations and the other free-standing stage looks (matrix rain,
     # fire, flow, lake, rainbow, chase, ...); `obelisk` is the sculpture's
-    # own ambient looks (seasons, blobs, mono).
+    # own ambient looks (seasons, blobs, prism, mono).
     ("scanner", ("pattern", "scanner")),
     ("generic", ("pattern", "generic")),
     ("obelisk", ("pattern", "obelisk")),

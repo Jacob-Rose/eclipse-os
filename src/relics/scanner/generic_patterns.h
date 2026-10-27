@@ -82,6 +82,8 @@ namespace scanner
         float flicker = 0.4f;
         /// glyph changes per second
         float churnRate = 8.0f;
+        /// where the drops' hues start, degrees: the film's green by default
+        float baseHue = 120.0f;
         /// how far each drop's hue strays from the green, as a share of the
         /// wheel: 0 is the film's monochrome, 1 is every drop its own colour.
         /// Per drop rather than per glyph - a streak that changed colour

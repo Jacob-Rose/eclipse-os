@@ -23,6 +23,7 @@
 #include <cstdlib>
 #include <cctype>
 #include <cstring>
+#include <deque>
 #include <iostream>
 #include <memory>
 #include <mutex>
@@ -872,6 +873,92 @@ namespace
             check("shadow: and is cleared", shadow.isLive() ? 1 : 0, 0);
         }
 
+        // ---- a base change: the relic cued into prism, the shadow after it --
+        //
+        // What `base prism 1` does: the relic gets `state prism 1` and blends
+        // itself, the shadow blends its copy over the same second. An answer
+        // to a `sim` asked before the cue still names blobs, and must not cut
+        // the copy back mid-blend; once both have landed, the relic's answer
+        // puts the copy in step pixel for pixel, as for any look.
+        {
+            obelisk::ObeliskCore core;
+            LoopbackTransport wire;
+            core.getLink().setTransport(&wire);
+            core.runTick();
+            core.runTick();
+
+            const eio::HSVStrip* strip = nullptr;
+            if (core.getIO())
+            {
+                auto found = core.getIO()->strips.find(0);
+                if (found != core.getIO()->strips.end())
+                {
+                    strip = found->second.get();
+                }
+            }
+
+            auto askSim = [&]() {
+                wire.said.clear();
+                core.handleCommand("sim");
+                for (const std::string& said : wire.said)
+                {
+                    if (said.rfind("EOSLINK sim ", 0) == 0)
+                    {
+                        return said.substr(std::string("EOSLINK sim ").size());
+                    }
+                }
+                return std::string();
+            };
+
+            RelicShadow shadow;
+            shadow.setProfile(findShadowProfile("obelisk"));
+            std::string error;
+            const std::string before = askSim();
+            check("base: synced to blobs first", shadow.applySim(before, error) ? 1 : 0, 1);
+
+            core.handleCommand("state prism 1.0");
+            check("base: the shadow takes the blend", shadow.blendTo("prism", 1.0f, "", error) ? 1 : 0, 1);
+            check("base: it is blending", shadow.isBlending() ? 1 : 0, 1);
+            check("base: toward prism", shadow.getLookName() == "prism" ? 1 : 0, 1);
+
+            check("base: a stale blobs answer is taken", shadow.applySim(before, error) ? 1 : 0, 1);
+            check("base: and does not cut back", shadow.getLookName() == "prism" ? 1 : 0, 1);
+            check("base: the blend runs on", shadow.isBlending() ? 1 : 0, 1);
+
+            for (int frame = 0; frame < 30; ++frame)
+            {
+                core.tick(0.05f);
+                shadow.tick(0.05f);
+            }
+            check("base: the relic landed on prism", core.activeLookName() == "prism" ? 1 : 0, 1);
+            check("base: so did the shadow", shadow.isBlending() ? 1 : 0, 0);
+
+            const std::string after = askSim();
+            check("base: the relic answers prism", after.rfind("prism ", 0) == 0 ? 1 : 0, 1);
+            check("base: with the spin's clock", after.find(" spin.time=") != std::string::npos ? 1 : 0, 1);
+            check("base: the shadow re-syncs", shadow.applySim(after, error) ? 1 : 0, 1);
+
+            if (strip)
+            {
+                int different = 0;
+                const std::vector<ecore::HSV>& theirs = const_cast<eio::HSVStrip*>(strip)->getStripHSV();
+                for (uint16_t i = 0; i < shadow.pixelCount() && i < theirs.size(); ++i)
+                {
+                    const ecore::HSV mine = shadow.colorAt(i);
+                    if (mine.getHueAs16() != theirs[i].getHueAs16()
+                        || mine.getSatAs8() != theirs[i].getSatAs8()
+                        || mine.getValAs8() != theirs[i].getValAs8())
+                    {
+                        ++different;
+                    }
+                }
+                check("base: every pixel matches the relic", different, 0);
+            }
+
+            check("base: an unknown look is refused", shadow.blendTo("nowhere", 1.0f, "", error) ? 1 : 0, 0);
+            check("base: and the running look is kept", shadow.getLookName() == "prism" ? 1 : 0, 1);
+        }
+
         // ---- a look that leaves the tower to the layer under it -------------
         //
         // A dark solid in ObeliskMode::Leave, on the obelisk's own nodes,
@@ -1243,6 +1330,25 @@ namespace
                       static_cast<double>(seen[1].origin == MidiMessage::Origin::Pads), 1.0, 0.0);
                 check("monitor.other_note_is_unknown",
                       static_cast<double>(seen[2].origin == MidiMessage::Origin::Unknown), 1.0, 0.0);
+            }
+
+            // A pad controller named but not plugged in: the map is still
+            // its alone. Mixxx's VU note 65 is the UV rainbow pad, and with
+            // the Launchpad in the case it was holding the UV on.
+            midi.setPads({"Launchpad"});
+            midi.setMonitor(true);
+            midi.handleMessage(0x90, 65, 40, end + 0.30);                     // Mixxx's VU, not a clock note
+            midi.handleMessage(0x90, 65, 127, end + 0.31, /*fromPads*/ true); // the UV rainbow pad
+            const std::vector<MidiMessage> named = midi.drainMonitor(droppedLines);
+            midi.setMonitor(false);
+            midi.setPads({});
+            check("monitor.named_two_lines", static_cast<double>(named.size()), 2.0, 0.0);
+            if (named.size() == 2)
+            {
+                check("monitor.named_pads_unplugged_vu_is_the_beats",
+                      static_cast<double>(named[0].origin == MidiMessage::Origin::Beat), 1.0, 0.0);
+                check("monitor.named_pads_pad_is_pads",
+                      static_cast<double>(named[1].origin == MidiMessage::Origin::Pads), 1.0, 0.0);
             }
 
             // Half a beat later the envelope should be half a beat in, which is
@@ -2053,6 +2159,27 @@ namespace
         float fps{40.0f};
         double nextSendAt{0.0};
 
+        /// The device's dimmer at runtime, `dim <device> <0..1>`, on top of
+        /// the config's brightness. A room's trim belongs in the config; this
+        /// is for a show that brings one device in and out - afterglow keeps
+        /// the pars dark until its OSC mode, and fades them up for it. Only
+        /// the wire: the frame stream and the viewer still show the look.
+        float level{1.0f};
+
+        /// This device's own latency in seconds, `latency <device> <ms>`;
+        /// unset follows the show's. Starts from the config's `latency_ms`.
+        std::optional<double> latency;
+
+        /// How long this device is held back so it lands with the slowest
+        /// one - see applyLatencies() - and the frames it is held back over.
+        double delay{0.0};
+        struct HeldFrame
+        {
+            double at{0.0};
+            std::vector<uint8_t> bytes;
+        };
+        std::deque<HeldFrame> held;
+
         /// Why this device has no wire, or empty when it has one.
         ///
         /// A rig that is not plugged in must not stop the show. Half of what
@@ -2119,11 +2246,27 @@ namespace
         ///
         /// Written by the command handler and read by the render loop, both on
         /// the render thread - the stdin reader only queues lines, it does not
-        /// interpret them - so this needs no lock. Several F lines can arrive
-        /// between two renders; each overwrites this, and the newest is the
-        /// one that gets painted, which is what a dropped frame should mean.
+        /// interpret them - so this needs no lock.
         std::vector<Rgb8> sinkFrame;
         bool sinkPainted{false};
+
+        /// `midi.latency_ms` and `latency <ms>`, in seconds: what a device
+        /// with no latency of its own runs at. The clock's own lead is
+        /// whatever applyLatencies() makes of this and the devices'.
+        double showLatency{0.0};
+
+        /// The far end of client mode: frames arrive painted and nothing here
+        /// renders or holds anything back.
+        bool sinkMode{false};
+
+        /// F lines not yet painted, oldest first. One is played per render
+        /// rather than the newest winning: ssh off a pty leaves Nagle on, so
+        /// frames land in clumps, and a beat's flash that is two or three
+        /// frames long was being overwritten inside one clump and never
+        /// reaching a wire - the pars lit every other beat. Capped at
+        /// kSinkBacklog so a clump costs at most a frame of lag, not a
+        /// standing queue.
+        std::deque<std::string> sinkQueue;
 
         /// Tempo in, when there is any. The beat itself lives in
         /// sharedBeatClock(), which is what patterns read; this is only the
@@ -3417,6 +3560,98 @@ namespace
         show.sinkPainted = true;
     }
 
+    /// How many unpainted frames a sink holds before it starts dropping the
+    /// oldest. Two rides out a clump off the link; at the desk's 30 a second
+    /// against this end's 30 the queue is empty between clumps, so it adds
+    /// no lag to a link that is behaving.
+    constexpr size_t kSinkBacklog = 2;
+
+    /// The next frame off the link, if one is waiting, into sinkFrame.
+    void playNextSinkFrame(ShowState& show)
+    {
+        while (show.sinkQueue.size() > kSinkBacklog)
+        {
+            show.sinkQueue.pop_front();
+        }
+        if (!show.sinkQueue.empty())
+        {
+            applySinkFrame(show, show.sinkQueue.front());
+            show.sinkQueue.pop_front();
+        }
+    }
+
+    double latencyOf(const ShowState& show, const DeviceRuntime& device)
+    {
+        return device.latency ? *device.latency : show.showLatency;
+    }
+
+    /// Pays every device's latency at once. The clock can only be read early
+    /// by one amount - a look renders the whole rig from one reading, and a
+    /// look that watches the beat change would see it change twice if it were
+    /// rendered at two - so it leads by the slowest device's latency, and
+    /// every quicker device is held back by the difference. Holding back is a
+    /// delay line, which costs a quick device nothing it was not already
+    /// going to wait for. In a sink nothing renders and nothing is held: the
+    /// desk already paid it in the frames it sends.
+    void applyLatencies(ShowState& show)
+    {
+        double lead = show.showLatency;
+        bool any = false;
+        for (const DeviceRuntime& device : show.devices)
+        {
+            lead = any ? std::max(lead, latencyOf(show, device)) : latencyOf(show, device);
+            any = true;
+        }
+        sharedBeatClock().setLatency(lead);
+        for (DeviceRuntime& device : show.devices)
+        {
+            device.delay = show.sinkMode ? 0.0 : std::max(0.0, lead - latencyOf(show, device));
+            if (device.delay <= 0.0)
+            {
+                device.held.clear();
+            }
+        }
+    }
+
+    /// The universe as it was `device.delay` ago, blended between the two
+    /// frames either side of that moment so the hold-back is in ms rather
+    /// than in whole frames. Until there is that much history the oldest
+    /// frame stands in.
+    void delayUniverse(DeviceRuntime& device, double now)
+    {
+        if (device.delay <= 0.0)
+        {
+            return;
+        }
+        const uint8_t* data = device.universe.data();
+        device.held.push_back({now, std::vector<uint8_t>(data, data + device.universe.size())});
+
+        const double target = now - device.delay;
+        while (device.held.size() >= 2 && device.held[1].at <= target)
+        {
+            device.held.pop_front();
+        }
+
+        const DeviceRuntime::HeldFrame& from = device.held.front();
+        if (device.held.size() < 2 || from.at >= target)
+        {
+            for (size_t i = 0; i < from.bytes.size(); ++i)
+            {
+                device.universe.setChannel(static_cast<int>(i) + 1, from.bytes[i]);
+            }
+            return;
+        }
+        const DeviceRuntime::HeldFrame& to = device.held[1];
+        const double span = to.at - from.at;
+        const double t = span > 0.0 ? (target - from.at) / span : 1.0;
+        for (size_t i = 0; i < from.bytes.size() && i < to.bytes.size(); ++i)
+        {
+            const double value = from.bytes[i] + (to.bytes[i] - from.bytes[i]) * t;
+            device.universe.setChannel(static_cast<int>(i) + 1,
+                                       static_cast<uint8_t>(std::lround(value)));
+        }
+    }
+
     /// One line of the control protocol, applied. `arrivedAt` is when it
     /// landed on the reader thread, for the commands that mean *now* - a
     /// beat, an align - and are read a frame later; everything else takes
@@ -3442,7 +3677,7 @@ namespace
         // the buffer.
         if (line.size() > 1 && line[0] == 'F' && line[1] == ' ')
         {
-            applySinkFrame(show, line);
+            show.sinkQueue.push_back(std::move(line));
             return;
         }
 
@@ -3687,6 +3922,68 @@ namespace
             emitStates(show);
             emitParams(show);
             emit("OK pattern " + next.name);
+            return;
+        }
+
+        // `base <look> [seconds] [blend]`: change the relic's own look - the
+        // picture under the scanner's - and keep the shadow of it in step.
+        // The relic gets the `state` line (it blends itself when it is
+        // drawing, and switches at once under a takeover, where it is not);
+        // the shadow blends its copy over the same seconds, so every look
+        // composing over the tower composes over the blend. Then `sim`, so
+        // the copy's clocks are the relic's as soon as it answers.
+        if (command == "base")
+        {
+            if (words.size() < 2)
+            {
+                emit("ERR base needs a look");
+                return;
+            }
+            const std::vector<RelicUsbOutput*> relics = relicLinks(show);
+            if (relics.empty())
+            {
+                emit("ERR base needs a device with a relic_usb output; this show has "
+                   + describeOutputs(show));
+                return;
+            }
+
+            const std::string& look = words[1];
+            float seconds = 1.0f;
+            std::string blend;
+            for (size_t i = 2; i < words.size(); ++i)
+            {
+                char* end = nullptr;
+                const float requested = std::strtof(words[i].c_str(), &end);
+                if (end != nullptr && *end == '\0')
+                {
+                    seconds = std::max(requested, 0.0f);
+                }
+                else
+                {
+                    blend = words[i];
+                }
+            }
+
+            std::string cue = "state " + look + " " + std::to_string(seconds);
+            if (!blend.empty())
+            {
+                cue += " " + blend;
+            }
+            std::string error;
+            for (RelicUsbOutput* relic : relics)
+            {
+                if (!relic->sendCommand(cue, error) || !relic->sendCommand("sim", error))
+                {
+                    emit("ERR link " + error);
+                    return;
+                }
+            }
+
+            if (show.shadow.getProfile() != nullptr && !show.shadow.blendTo(look, seconds, blend, error))
+            {
+                emit("WARN shadow: " + error);
+            }
+            emit("OK base " + look);
             return;
         }
 
@@ -4276,22 +4573,51 @@ namespace
             //   latency              report it
             //   latency 45           set it - negative is allowed
             //   latency nudge -1     move it, which is what a knob sends
+            //   latency pars ...     the same, for one device; `off` puts it
+            //                        back on the show's
             //
             // Relative moves are a word rather than a sign because `-1` is a
             // perfectly good absolute value here.
-            BeatClock& clock = sharedBeatClock();
-
-            if (words.size() >= 2)
+            size_t at = 1;
+            DeviceRuntime* device = nullptr;
+            float probe = 0.0f;
+            if (words.size() >= 2 && words[1] != "nudge" && !parseFloatArg(words[1], probe))
             {
-                const bool nudge = (words[1] == "nudge");
-                if (nudge && words.size() < 3)
+                for (DeviceRuntime& each : show.devices)
+                {
+                    if (each.name() == words[1])
+                    {
+                        device = &each;
+                    }
+                }
+                if (device == nullptr)
+                {
+                    std::string known;
+                    for (const DeviceRuntime& each : show.devices)
+                    {
+                        known += (known.empty() ? "" : ", ") + each.name();
+                    }
+                    emit("ERR latency: '" + words[1] + "' is not a number or a device (have: " + known + ")");
+                    return;
+                }
+                at = 2;
+            }
+
+            if (device != nullptr && words.size() > at && words[at] == "off")
+            {
+                device->latency.reset();
+            }
+            else if (words.size() > at)
+            {
+                const bool nudge = (words[at] == "nudge");
+                if (nudge && words.size() < at + 2)
                 {
                     emit("ERR latency nudge needs a value, in ms");
                     return;
                 }
 
                 float value = 0.0f;
-                const std::string& text = words[nudge ? 2 : 1];
+                const std::string& text = words[nudge ? at + 1 : at];
                 if (!parseFloatArg(text, value))
                 {
                     emit("ERR latency: '" + text + "' is not a number");
@@ -4299,11 +4625,24 @@ namespace
                 }
 
                 const double seconds = static_cast<double>(value) / 1000.0;
-                clock.setLatency(nudge ? (clock.getLatency() + seconds) : seconds);
+                const double current = device ? latencyOf(show, *device) : show.showLatency;
+                const double next = std::clamp(nudge ? current + seconds : seconds, -2.0, 2.0);
+                if (device != nullptr)
+                {
+                    device->latency = next;
+                }
+                else
+                {
+                    show.showLatency = next;
+                }
             }
+            applyLatencies(show);
 
-            char reply[64];
-            std::snprintf(reply, sizeof(reply), "OK latency %.1f", clock.getLatency() * 1000.0);
+            const double shown = device ? latencyOf(show, *device) : show.showLatency;
+            char reply[128];
+            std::snprintf(reply, sizeof(reply), "OK latency %s%s%.1f",
+                          device ? device->name().c_str() : "", device ? " " : "",
+                          shown * 1000.0);
             emit(reply);
             return;
         }
@@ -4786,6 +5125,40 @@ namespace
             else                              show.masterBrightness = std::clamp(value, 0.0f, 1.0f);
 
             emit("OK " + command + " " + words[1]);
+            return;
+        }
+
+        if (command == "dim")
+        {
+            if (words.size() < 3)
+            {
+                emit("ERR dim needs a device and a level 0..1");
+                return;
+            }
+
+            float value = 0.0f;
+            if (!parseFloatArg(words[2], value))
+            {
+                emit("ERR dim " + words[1] + ": '" + words[2] + "' is not a number");
+                return;
+            }
+
+            for (DeviceRuntime& device : show.devices)
+            {
+                if (device.name() == words[1])
+                {
+                    device.level = std::clamp(value, 0.0f, 1.0f);
+                    emit("OK dim " + words[1] + " " + words[2]);
+                    return;
+                }
+            }
+
+            std::string known;
+            for (const DeviceRuntime& device : show.devices)
+            {
+                known += (known.empty() ? "" : ", ") + device.name();
+            }
+            emit("ERR dim: no device '" + words[1] + "' (have: " + known + ")");
             return;
         }
 
@@ -5293,7 +5666,8 @@ int main(int argc, char** argv)
 
         if (device.output)
         {
-            device.output->setUniverseLength(config.fixtures.highestChannel());
+            device.output->setUniverseLength(std::max(config.fixtures.highestChannel(),
+                                                      config.output.frameChannels));
             if (RelicUsbOutput* relic = device.output->asRelicLink())
             {
                 relic->setStartReleased(config.output.start == "released");
@@ -5408,7 +5782,16 @@ int main(int argc, char** argv)
     // some. See edesk/beat_clock.h.
     sharedBeatClock().setBpm(show.config.midi.bpm, BeatSource::Internal, nowSeconds());
     sharedBeatClock().setFreeRun(show.config.midi.freeRun);
-    sharedBeatClock().setLatency(static_cast<double>(show.config.midi.latencyMs) / 1000.0);
+    show.sinkMode = sinkMode;
+    show.showLatency = static_cast<double>(show.config.midi.latencyMs) / 1000.0;
+    for (DeviceRuntime& device : show.devices)
+    {
+        if (device.config->latencyMs)
+        {
+            device.latency = static_cast<double>(*device.config->latencyMs) / 1000.0;
+        }
+    }
+    applyLatencies(show);
 
     applyOscConfig(show, configPath);
 
@@ -5657,7 +6040,11 @@ int main(int argc, char** argv)
         // the pattern here would only fight it. Ticked past entirely rather
         // than rendered-and-discarded, so a look with a clock does not run a
         // second, unseen copy of itself on the far end of the link.
-        if (!sinkMode)
+        if (sinkMode)
+        {
+            playNextSinkFrame(show);
+        }
+        else
         {
             // The bus, into the knobs, before anything reads them. A look does
             // not know it is being modulated: `intensity` is just its own field
@@ -5671,11 +6058,16 @@ int main(int argc, char** argv)
         // rig of their own and writes the result over what the show put
         // there. The UV par flashing on the beat while the truss around it
         // follows the scanner is one layer of one fixture.
+        // Under the metronome there are none: the beep test is measuring every
+        // lamp, and a layer holding one - the UV, parked off by its cue - is a
+        // lamp that never flashes.
+        const bool layersPaint = !sinkMode
+            && std::strcmp(show.pattern->getName(), "metronome") != 0;
         for (ShowState::Layer& layer : show.layers)
         {
-            if (sinkMode)
+            if (!layersPaint)
             {
-                break;  // the desk already composed its layers into the frame
+                break;
             }
             applyMods(*layer.pattern, layer.mods, sharedAudioLevel(), audioNow, deltaTime);
             layer.pattern->tick(deltaTime);
@@ -5808,9 +6200,10 @@ int main(int argc, char** argv)
 
             device.universe.clear();
             device.config->fixtures.render(device.strip->getStripHSV(),
-                                           master * device.config->brightness,
+                                           master * device.config->brightness * device.level,
                                            device.config->gamma > 0.0f ? device.config->gamma : show.config.master.gamma,
                                            device.universe);
+            delayUniverse(device, frameSeconds);
 
             if (sinkMode)
             {

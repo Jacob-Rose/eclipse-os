@@ -492,7 +492,7 @@ void Pattern_Scanner_SinePulse::reflect(ecore::PropertyBag& bag)
 {
     PatternScanner::reflect(bag);
     // The breath's independent handles - the states that share this class
-    // (record_arm, record_saved, void, cleanse_done) differ only in these
+    // (cleanse_arm, record_saved, void, cleanse_done) differ only in these
     // numbers and the colour, so the knobs *are* the state's identity,
     // worth curves each. The shadow fade is the tower's alone.
     bag.add("rate", rate, 0.5f, 12.0f);
@@ -550,6 +550,46 @@ void Pattern_Scanner_RecordComet::reflect(ecore::PropertyBag& bag)
     PatternScanner::reflect(bag);
     bag.add("orbit_rate", revsPerSecond, 0.05f, 2.0f);
     bag.add("tail", tailFraction, 0.02f, 1.0f);
+}
+
+void Pattern_Scanner_Loading::render(HSVStripNode* inNode, HSV& inOutColor) const
+{
+    if (leavesAlone(inNode))
+    {
+        return;
+    }
+
+    // the bearing round the ring's centre, 0 at the top and on round the
+    // way the pixels are numbered (see Pattern_Scanner_RecordComet); a bare
+    // strip answers with its place along itself
+    float orbit;
+    if (inNode->GetStripNodeType() != StripNodeType::MAPPED2D)
+    {
+        orbit = stripAlpha(inNode);
+    }
+    else
+    {
+        const Coordinate at = nodeCoord(inNode);
+        orbit = frac(std::atan2(at.x - kRingCenterX, at.y - kRingCenterY) / (2.0f * kPi));
+    }
+
+    const float turn = frac(timeActive * revsPerSecond);
+    // the wheel's colours turn with the head, so it spins rather than a
+    // light running over a fixed rainbow
+    const float hue = frac(orbit - turn);
+    const float behind = frac(turn - orbit);
+    const float tail = clamp01(1.0f - behind / std::max(tailFraction, 1e-3f));
+    const float brightness = floorLevel + (1.0f - floorLevel) * tail * tail;
+
+    inOutColor = HSV(hue * 360.0f, 1.0f, 1.0f);
+    inOutColor.setBrightnessAlpha(brightness);
+}
+
+void Pattern_Scanner_Loading::reflect(ecore::PropertyBag& bag)
+{
+    bag.add("spin_rate", revsPerSecond, 0.1f, 3.0f);
+    bag.add("tail", tailFraction, 0.05f, 1.0f);
+    bag.add("floor", floorLevel, 0.0f, 1.0f);
 }
 
 Pattern_Scanner_RecordCountdown::Pattern_Scanner_RecordCountdown()
@@ -617,8 +657,11 @@ void Pattern_Scanner_RecordCountdown::render(HSVStripNode* inNode, HSV& inOutCol
         // at 1.0 would leave it at a fraction
         const float total = secondsPerCount * static_cast<float>(totalCounts);
         const float fill = clamp01(timeActive / std::max(total, 0.01f)) * (1.0f + edgeWidth);
-        const float lit = clamp01((fill - ringAlpha(inNode)) / std::max(edgeWidth, 1e-3f));
-        inOutColor = HSV(0.0f, 0.0f, std::max(floorLevel, lit));
+        const float alpha = ringAlpha(inNode);
+        const float lit = clamp01((fill - alpha) / std::max(edgeWidth, 1e-3f));
+        // a rainbow once round the ring, by where the pixel sits: the hue
+        // comes back to where it started at the top, so the wrap is seamless
+        inOutColor = HSV(alpha * 360.0f, 1.0f, std::max(floorLevel, lit));
         return;
     }
 

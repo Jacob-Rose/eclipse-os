@@ -359,9 +359,14 @@ void FixtureMap::render(const std::vector<ecore::HSV>& colors,
             buffer.setChannel(entry.first, entry.second);
         }
 
+        // dim in HSV before converting: scaling the rgb bytes would drift the hue
+        const float scale = std::clamp(master * fixture.brightness, 0.0f, 1.0f);
+
+        // dimmed all the way out, close the dimmer too: one corrupted byte on
+        // the wire then cannot flash a fixture the rig is holding dark
         if (fixture.dimmerChannel > 0)
         {
-            buffer.setChannel(fixture.dimmerChannel, fixture.dimmerValue);
+            buffer.setChannel(fixture.dimmerChannel, scale > 0.0f ? fixture.dimmerValue : 0);
         }
 
         ecore::HSV color;
@@ -370,8 +375,6 @@ void FixtureMap::render(const std::vector<ecore::HSV>& colors,
             color = colors[idx];
         }
 
-        // dim in HSV before converting: scaling the rgb bytes would drift the hue
-        const float scale = std::clamp(master * fixture.brightness, 0.0f, 1.0f);
         color.setBrightnessAlpha(color.getValFloat() * scale);
 
         Rgb8 rgb = hsvToRgb8(color);

@@ -45,6 +45,11 @@ namespace edesk
         float fps{40.0f};               ///< DMX refresh rate; 40 is the spec's max
         int consoleChannels{12};        ///< how many channels the console output prints
 
+        /// The shortest frame a DMX widget sends, in channels; 0 sends up to
+        /// the highest one the fixtures use. Some cheap fixtures drop short
+        /// frames that DMX allows - QLC+ always sends all 512.
+        int frameChannels{0};
+
         /// relic_usb only: "streaming" (the default) takes the relic's pixels
         /// on the first frame; "released" opens the cable but leaves the
         /// sculpture on its own looks until a `link take`. For a show that
@@ -190,7 +195,7 @@ namespace edesk
     {
         /// "mixxx"       - the VU notes on the MIDI cable fill `level`,
         ///                 `level_instant`, `level_average` and
-        ///                 `level_meter`. The other eighteen channels stay
+        ///                 `level_meter`. The other nineteen channels stay
         ///                 dark, which is what they have always done.
         /// "synesthesia" - the visualiser's audio uniforms fill `level` and
         ///                 the bands over OSC. The MIDI VU notes still land
@@ -390,6 +395,13 @@ namespace edesk
 
         /// Per-device trim, on top of the show's master.
         float brightness{1.0f};
+
+        /// How late this device's lamps are, in ms, when it is not the same
+        /// as the rest of the rig - `midi.latency_ms` when unset. A DMX truss,
+        /// a relic on USB and a ring painted on another machine do not answer
+        /// a frame at the same speed, and one number cannot land all three on
+        /// the beat. See applyLatencies() in main.cpp for how it is paid.
+        std::optional<float> latencyMs;
 
         /// This device's gamma, or 0 for the master's. A relic driven in
         /// pixel mode lights what it is sent straight, and lights its *own*

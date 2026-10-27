@@ -277,7 +277,14 @@ namespace edesk
         /// since both reach the one published port. A Launchpad X sends note
         /// 52 for the pad that happens to sit there, and 52 off Mixxx is the
         /// tempo; only the source says which.
-        void setPads(const std::vector<std::string>& fragments) { pads = fragments; }
+        ///
+        /// Naming one also gives the map to it alone: with the controller
+        /// unplugged, a note off any other source is still the beat's.
+        void setPads(const std::vector<std::string>& fragments)
+        {
+            pads = fragments;
+            padsNamed.store(!fragments.empty());
+        }
 
         /// The pad controller this input is reading, or empty. For status.
         const std::string& getPadsName() const { return padsName; }
@@ -323,6 +330,7 @@ namespace edesk
         std::string padsName;
         std::atomic<int> padsClient{-1};
         std::atomic<bool> allPads{false};
+        std::atomic<bool> padsNamed{false};
 
         std::atomic<bool> followClock{true};
         std::atomic<bool> followNotes{true};

@@ -617,8 +617,10 @@ void MidiInput::handleMessage(const emidi::Message& message, double when, bool f
     // the monitor sees every channel message, pads included, with its origin
     if (monitoring.load() && message.isChannel())
     {
+        // with pads named, everything that is not theirs is the beat's, plugged in or not
         const bool pads = fromPads || allPads.load();
-        unsigned int origin = pads ? 1u : (padsClient.load() >= 0 ? 2u : 0u);
+        const bool padsOnly = padsClient.load() >= 0 || padsNamed.load();
+        unsigned int origin = pads ? 1u : (padsOnly ? 2u : 0u);
         if (origin == 0u && isClockNote(message))
         {
             origin = 2u;

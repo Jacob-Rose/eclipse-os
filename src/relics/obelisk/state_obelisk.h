@@ -108,6 +108,79 @@ public:
     virtual void reflect(ecore::PropertyBag& bag) override;
 };
 
+/*
+* The golden key's look: the blobs field gone rainbow, with a sweep that
+* spins round the tower.
+*
+* The base is the blobs' look with the rainbow for its gradient: the same
+* Perlin field, drifting the same way, but where blobs blends two colours
+* across it this runs it through `hue_spread` of the colour wheel - the
+* field stretched by `contrast` so its bunched-up middle reaches the whole
+* span - and the whole wheel drifts round once every `hue_cycle` seconds.
+*
+* Over it, `arms` bright sweeps go round the four sides by column, each
+* trailing a tail `tail` of a turn long. Their speed is an LFO: they
+* accelerate from a near stop to full speed and back down over
+* `loop_seconds`, `laps` turns in each loop (rounded to whole laps, so the
+* loop wraps seamlessly). The spin is one clock, `spin.time`, so `sim`
+* carries all of it.
+*/
+class Pattern_Obelisk_Prism : public GeneratorHSV
+{
+public:
+    Pattern_Obelisk_Prism();
+
+    PerlinNoiseGenerator2D noise;
+
+    float scale = 0.05f;         // noise frequency: smaller is bigger blobs
+    float hueSpread = 1.0f;      // how much of the wheel the field's gradient spans, 0..1
+    float contrast = 1.6f;       // stretches the field: noise sits near its middle, this spreads it
+    float hueCycle = 40.0f;      // seconds for the wheel to drift round once
+    float baseLevel = 0.65f;     // the field's brightness under the sweeps
+
+    float loopSeconds = 16.0f;   // one acceleration and slowdown
+    float laps = 3.0f;           // turns in a loop, rounded: whole, so it wraps clean
+    float depth = 0.6f;          // 0 steady speed, 1 the slow end is a full stop
+    float arms = 2.0f;           // sweeps, evenly round the tower (rounded)
+    float tail = 0.4f;           // a sweep's tail, as a fraction of a turn
+    float lead = 0.15f;          // its soft leading edge, a fraction of a turn: wider
+                                 // than a column (an eighth), so it fades across
+                                 // the columns instead of stepping onto each
+    float whiten = 0.2f;         // how far the head washes toward white
+    float twist = 0.0f;          // turns of lag from foot to tip: a spiral
+    bool sweeps = true;          // off, the field alone - rainbow_blobs
+
+    virtual void tick(float deltaTime) override;
+    virtual void render(HSVStripNode* inNode, HSV& inOutColor) const override;
+    virtual void reflect(ecore::PropertyBag& bag) override;
+
+private:
+    /// the loop's own clock, 0..loopSeconds
+    float spinTime{0.0f};
+    /// the hue's drift, 0..1
+    float hueTime{0.0f};
+    /// where the first sweep's head is this frame, in turns 0..1 - worked
+    /// out once per tick from spinTime, not per pixel
+    float headTurn{0.0f};
+
+    void updateHead();
+};
+
+/*
+* The golden key's first step: prism's rainbow field without the sweeps -
+* the blobs gone rainbow, at the blobs' full brightness. The key's second
+* scan brings the spin (prism), and the third goes home to the blobs.
+*/
+class Pattern_Obelisk_RainbowBlobs : public Pattern_Obelisk_Prism
+{
+public:
+    Pattern_Obelisk_RainbowBlobs()
+    {
+        sweeps = false;
+        baseLevel = 1.0f;
+    }
+};
+
 class Pattern_Obelisk_Theater : public GeneratorHSV
 {
 public:

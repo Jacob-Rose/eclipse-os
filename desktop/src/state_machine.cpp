@@ -29,7 +29,7 @@
 
 // The generic looks - free-standing stage patterns, grouped as a machine.
 #include "relics/scanner/generic_patterns.h"
-// the recording flow's looks built on a generic one: cleanse_arm's fire
+// the recording flow's looks built on a generic one: record_arm's fire
 #include "relics/scanner/recording_patterns.h"
 
 // The obelisk's own looks, for their machine and a borrowed generic cue.
@@ -38,6 +38,7 @@
 // Written here rather than borrowed from a relic: the static looks, which are
 // stage looks like the rest of the generic list and sit in it.
 #include "edesk/mythos26.h"
+#include "relics/scanner/osc_patterns.h"
 
 using namespace edesk;
 
@@ -577,7 +578,12 @@ std::unique_ptr<StateMachinePattern> edesk::makeScannerStateMachine()
         scannerSolid("scan_item_success_secret", HSV(120.0f, 1.0f, 0.392f)),
         scannerSolid("scan_item_failure", HSV(0.0f, 1.0f, 0.471f)),     // rgb(120,0,0)
         scannerLook<Pattern_Scanner_PlaybackMushroom>("audio_playback_mushroom"),
-        scannerLook<Pattern_Scanner_PlaybackGeneric>("audio_playback_generic"),
+        // the secret playback: rain in the old ramp's orange-to-green
+        scannerLook<Pattern_Scanner_SecretRain>("audio_playback_generic"),
+        // the secret items with a look of their own, scan through playback
+        // with no YES between - afterglow's item data names them (`look`)
+        scannerLook<Pattern_Scanner_SecretAlien>("secret_alien"),
+        scannerLook<Pattern_Scanner_SecretForest>("secret_frog"),
         scannerSolid("audio_playback_seed", HSV(120.0f, 1.0f, 0.392f)),
         scannerSolid("audio_playback_seed_bad", HSV(0.0f, 1.0f, 0.392f)), // rgb(100,0,0)
         // the rest after a scan is the ring's dark, like `none`: the tower
@@ -588,12 +594,14 @@ std::unique_ptr<StateMachinePattern> edesk::makeScannerStateMachine()
 
         // The recording flow and the void stone - the last looks the game
         // rendered in python, so every state the scanner has is now here.
-        // waiting for the rock: the amber breath, whole at the foot of the
-        // tower and fading out to the sculpture's own picture at the tip
-        scannerLookWith<Pattern_Scanner_SinePulse>("record_arm",
-            HSV(45.0f, 1.0f, 1.0f), 4.0f, 0.15f, 0.5f, 1.0f),           // CRGB(1.0, 0.75, 0.0)
+        // waiting for the rock: the fire burns over the tower's own picture,
+        // doused on the game's cue as the rock lands (scanner.arm.douse)
+        scannerLook<Pattern_Scanner_ArmFire>("record_arm"),
         scannerLook<Pattern_Scanner_RecordCountdown>("record_countdown"),
         scannerLook<Pattern_Scanner_RecordComet>("record_active"),
+        // the take is in: a rainbow loading wheel on the ring while the
+        // game shapes, levels and saves it, the tower its own picture
+        overUnderlay(scannerLook<Pattern_Scanner_Loading>("record_processing")),
         scannerLookWith<Pattern_Scanner_SinePulse>("record_saved",
             HSV(132.0f, 1.0f, 1.0f), 6.0f, 0.4f, 0.6f),                 // CRGB(0.0, 1.0, 0.2)
         // One recording look, not two: detected_recording flows straight into
@@ -607,13 +615,30 @@ std::unique_ptr<StateMachinePattern> edesk::makeScannerStateMachine()
         scannerLookWith<Pattern_Scanner_SinePulse>("void",
             HSV(282.0f, 1.0f, 0.5f), 2.0f, 0.0f, 0.6f),                 // CRGB(0.35, 0.0, 0.5)
 
-        // The cleanse: a rock shown to an armed cleanse loses its take. The
-        // fire burns over the tower's own picture while it waits, doused on
-        // the game's cue as the rock lands (scanner.cleanse.douse); done is
-        // a cool breath, the rock void again.
-        scannerLook<Pattern_Scanner_CleanseFire>("cleanse_arm"),
+        // The cleanse: a rock shown to an armed cleanse loses its take. While
+        // it waits, a pale orange breath, whole at the foot of the tower and
+        // fading out to the sculpture's own picture at the tip; done is a
+        // cool breath, the rock void again.
+        scannerLookWith<Pattern_Scanner_SinePulse>("cleanse_arm",
+            HSV(30.0f, 0.55f, 1.0f), 4.0f, 0.15f, 0.5f, 1.0f),          // CRGB(1.0, 0.73, 0.45)
+        // The golden key: a gold breath on the ring, and the tower left to
+        // the shadow, so what shows there is the sculpture's own look
+        // blending into the key's next one (`base rainbow_blobs`, then
+        // `base prism`, sent with it) under the scan.
+        overUnderlay(scannerLookWith<Pattern_Scanner_SinePulse>("golden",
+            HSV(45.0f, 0.85f, 1.0f), 3.0f, 0.35f, 0.65f)),
         scannerLookWith<Pattern_Scanner_SinePulse>("cleanse_done",
             HSV(200.0f, 0.6f, 1.0f), 6.0f, 0.4f, 0.6f),
+
+        // The OSC mode: another host drives the rig, and a rock steps
+        // through these. They read the audio bus, which only a host fills,
+        // so the obelisk's own table does not carry them; see osc_patterns.h.
+        scannerLook<Pattern_Osc_Wash>("osc_wash"),
+        scannerLook<Pattern_Osc_Bloom>("osc_bloom"),
+        scannerLook<Pattern_Osc_Meter>("osc_meter"),
+        scannerLook<Pattern_Osc_Chase>("osc_chase"),
+        scannerLook<Pattern_Osc_Steps>("osc_steps"),
+        scannerLook<Pattern_Osc_Spectrum>("osc_spectrum"),
     };
 
     // The looks read the strip index, not coordinates, so the frame is the
@@ -671,6 +696,8 @@ std::shared_ptr<eanim::GeneratorHSV> edesk::makeObeliskLook(const std::string& n
     if (name == "theater")                   return std::make_shared<Pattern_Obelisk_Theater>();
     if (name == "mono" || name == "test")    return std::make_shared<Pattern_Obelisk_Monocolor>();
     if (name == "blobs")                     return std::make_shared<Pattern_Obelisk_Blobs>();
+    if (name == "rainbow_blobs")             return std::make_shared<Pattern_Obelisk_RainbowBlobs>();
+    if (name == "prism")                     return std::make_shared<Pattern_Obelisk_Prism>();
     return nullptr;
 }
 
@@ -683,6 +710,10 @@ std::unique_ptr<StateMachinePattern> edesk::makeObeliskStateMachine()
         plainLook<Pattern_Obelisk_FourSeasons>("seasons"),
         // the seasons field generalised: one field, two pickable colours
         plainLook<Pattern_Obelisk_Blobs>("blobs"),
+        // the golden key's, in its order: the field gone rainbow, then
+        // swept round the tower
+        plainLook<Pattern_Obelisk_RainbowBlobs>("rainbow_blobs"),
+        plainLook<Pattern_Obelisk_Prism>("prism"),
         plainLook<Pattern_Obelisk_Monocolor>("mono"),
     };
 

@@ -24,7 +24,7 @@ const char* ebeat::describeVuSource(VuSource source)
 namespace
 {
     const char* const kAudioChannelNames[kAudioChannelCount] = {
-        "level", "bass", "mid", "midhigh", "high",
+        "level", "sub", "bass", "mid", "midhigh", "high",
         "hits", "bass_hits", "mid_hits", "midhigh_hits", "high_hits",
         "presence", "bass_presence", "mid_presence", "midhigh_presence", "high_presence",
         "beat", "bpm", "bpm_confidence", "intensity",

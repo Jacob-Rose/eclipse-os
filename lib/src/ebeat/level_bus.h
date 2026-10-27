@@ -28,6 +28,7 @@ namespace ebeat
     enum class AudioChannel
     {
         Level,          ///< the whole spectrum
+        Sub,            ///< below the bass: a mic's sub band
         Bass,
         Mid,
         MidHigh,

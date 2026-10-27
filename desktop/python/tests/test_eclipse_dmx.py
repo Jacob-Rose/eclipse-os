@@ -1353,9 +1353,10 @@ class TheAudioBus(ShowTest):
             self.assertIn(channel, AUDIO_CHANNELS)
 
         # Everything except the three Mixxx-only meters, which no visualiser
-        # sends: those are the cable's, on the bus under this source too.
+        # sends: those are the cable's, on the bus under this source too. And
+        # `sub`, which Synesthesia has no band for - sync swim's map fills it.
         self.assertEqual(set(AUDIO_CHANNELS) - set(filled),
-                         {"level_instant", "level_average", "level_meter"})
+                         {"level_instant", "level_average", "level_meter", "sub"})
 
         # `/audio/level/raw` is deliberately unbound: it is the unsmoothed
         # level beside `/audio/level/all`, and binding both would put two
@@ -5881,14 +5882,153 @@ class ScannerKnobs(ShowTest):
         show = self._show()
 
         # the breath, and how much of the tower it gives to the shadow
-        self.cue(show, "record_arm", ["rate", "floor", "gain", "shadow"])
+        self.cue(show, "cleanse_arm", ["rate", "floor", "gain", "shadow"])
 
         # the fire's own knobs, plus the douse the game cues
-        self.cue(show, "cleanse_arm",
+        self.cue(show, "record_arm",
                  ["cooling", "sparking", "spread", "rise", "emitter", "douse"])
 
         self.cue(show, "record_active", ["orbit_rate", "tail"])
         self.cue(show, "record_countdown", ["sweep", "edge", "floor"])
+
+    OSC_KNOBS = ["hue_a", "sat_a", "hue_b", "sat_b", "bright_a", "bright_b",
+                 "amount_a", "amount_b", "tick", "cut", "kick", "gain", "floor", "slew",
+                 "follow", "cut_lift", "cut_seconds", "calm", "presence_slew"]
+    OSC_WASH = OSC_KNOBS + ["swell", "glitter"]
+    OSC_BLOOM = OSC_KNOBS + ["reach", "shell", "spin", "attack", "release"]
+    OSC_CHASE = OSC_KNOBS + ["stripes", "turns", "beats_per_stripe", "pulse", "climb", "attack", "release"]
+
+    def test_the_osc_looks_offer_the_hosts_knobs(self):
+        show = self._show()
+        self.cue(show, "osc_wash", self.OSC_WASH)
+        self.cue(show, "osc_bloom", self.OSC_BLOOM)
+        self.cue(show, "osc_meter", self.OSC_KNOBS + ["fall", "attack", "release"])
+        self.cue(show, "osc_chase", self.OSC_CHASE)
+        self.cue(show, "osc_steps", self.OSC_KNOBS + ["flash", "attack", "release"])
+        self.cue(show, "osc_spectrum", self.OSC_KNOBS + ["flash", "attack", "release",
+                                                        "kick_attack", "kick_release"])
+
+    def test_the_osc_colours_carry_from_one_look_to_the_next(self):
+        """The host's colours are one pair for every OSC look, so the golden
+        key stepping looks does not drop them until the host restates them."""
+        frames = []
+        show = self._show(on_frame=frames.append)
+        self.cue(show, "osc_wash", self.OSC_WASH)
+        for name, value in (("hue_a", 0.0), ("sat_a", 1.0), ("hue_b", 0.0), ("sat_b", 1.0),
+                            ("floor", 1.0)):
+            show.set_param(name, value)
+
+        def lit_red():
+            pixel = frames[-1][0] if frames else (0, 0, 0)
+            return pixel[0] > 200 and pixel[1] < 40 and pixel[2] < 40
+        self.settle_until(lit_red, timeout=6.0, message="the wash in the host's red")
+
+        # the next look in the host's colours, colours never sent again:
+        # still red, once its floor is up far enough to see
+        self.cue(show, "osc_chase", self.OSC_CHASE)
+        show.set_param("floor", 1.0)
+        self.settle_until(lambda: frames and frames[-1][0][0] > 200 and frames[-1][0][2] < 40,
+                          timeout=6.0, message="the chase in the same red")
+
+    def _play(self, show, seconds, kicks):
+        """`seconds` of a loud room, restated the way a host does (the bus
+        goes stale in a third of a second), and with `kicks` a steady kick
+        twice a second on `bass_hits` - jumping to 1 and decaying, as sync
+        swim sends it. The sender's beat clock stays silent: the looks do not
+        wait on it."""
+        end = time.monotonic() + seconds
+        last_kick = time.monotonic() - 1.0
+        while time.monotonic() < end:
+            for channel in ("level", "sub", "bass", "mid", "high"):
+                show.command(f"audio {channel} 1.0", expect_reply=False)
+            if kicks:
+                if time.monotonic() - last_kick >= 0.5:
+                    last_kick = time.monotonic()
+                decay = max(0.0, 1.0 - (time.monotonic() - last_kick) / 0.2)
+                show.command(f"audio bass_hits {decay:.3f}", expect_reply=False)
+            self.settle(0.05)
+
+    @staticmethod
+    def _brightness(frame):
+        return sum(sum(pixel) for pixel in frame) / max(len(frame), 1)
+
+    def test_the_osc_looks_hold_back_until_the_beat_kicks_in(self):
+        """A jam's room before the drummer comes in runs the look at `calm`;
+        a run of steady kicks brings it up to full."""
+        frames = []
+        show = self._show(on_frame=frames.append)
+        self.cue(show, "osc_wash", self.OSC_WASH)
+        for name, value in (("sat_a", 0.0), ("sat_b", 0.0), ("floor", 0.0), ("glitter", 0.0)):
+            show.set_param(name, value)
+        self._play(show, 2.0, kicks=False)
+        calm = self._brightness(frames[-1])
+        self._play(show, 4.0, kicks=True)
+        grooved = self._brightness(frames[-1])
+        self.assertGreater(calm, 0.0)
+        self.assertGreater(grooved, calm * 1.5)
+
+    def test_the_hosts_kick_trigger_lands_a_step(self):
+        """sync swim's /syncswim/kick, the moment it hears one, is a kick to
+        the beat looks on its own - no bass_hits level behind it, which is
+        only sampled 30 times a second."""
+        frames = []
+        show = self._show(on_frame=frames.append)
+        self.cue(show, "osc_steps", self.OSC_KNOBS + ["flash", "attack", "release"])
+        # full power, as if the groove were already in
+        for name, value in (("sat_a", 0.0), ("sat_b", 0.0), ("floor", 0.0), ("calm", 1.0)):
+            show.set_param(name, value)
+        self.settle(0.5)
+        dark = self._brightness(frames[-1])
+        show.set_param("kick", 1.0)
+        self.settle_until(lambda: self._brightness(frames[-1]) > dark + 5, timeout=2.0,
+                          message="a step lit by the kick trigger")
+
+    def _steady_wash(self, show, frames):
+        """The wash held flat: no level, no glitter, a floor to see by."""
+        self.cue(show, "osc_wash", self.OSC_WASH)
+        for name, value in (("sat_a", 0.0), ("sat_b", 0.0), ("floor", 0.8),
+                            ("glitter", 0.0), ("bright_a", 1.0), ("bright_b", 1.0)):
+            show.set_param(name, value)
+        # through the output's gamma, a floor of 0.8 sits near 150 of 255
+        self.settle_until(lambda: frames and frames[-1][0][0] > 100, timeout=6.0,
+                          message="the wash up at its floor")
+        self.settle(0.5)
+        return frames[-1][0][0]
+
+    def test_the_hosts_screen_going_dark_takes_the_osc_looks_down(self):
+        """A break on the host's screen (both colours' brightness at 0) dims
+        the rig by `follow`, and its light coming back brings the rig back."""
+        frames = []
+        show = self._show(on_frame=frames.append)
+        lit = self._steady_wash(show, frames)
+        show.set_param("bright_a", 0.0)
+        show.set_param("bright_b", 0.0)
+        self.settle_until(lambda: frames[-1][0][0] < lit * 0.6, timeout=4.0,
+                          message="the wash dimmed with the host's screen")
+        show.set_param("bright_a", 1.0)
+        self.settle_until(lambda: frames[-1][0][0] >= lit - 2, timeout=4.0,
+                          message="the wash back up with the screen")
+
+    def test_a_new_video_on_the_host_lifts_the_osc_look_once(self):
+        """`cut` (the host's video/start) lifts the stage and fades back, and
+        the look takes the knob back to 0 so the next cut lifts it again."""
+        frames = []
+        show = self._show(on_frame=frames.append)
+        lit = self._steady_wash(show, frames)
+        for _ in range(2):
+            show.set_param("cut", 1.0)
+            self.settle_until(lambda: frames[-1][0][0] > lit + 40, timeout=2.0,
+                              message="the cut's lift")
+            self.settle_until(lambda: frames[-1][0][0] <= lit + 2, timeout=3.0,
+                              message="the lift fading back")
+
+    def test_dim_takes_one_device_by_name(self):
+        """afterglow keeps the pars dark outside its OSC mode with this."""
+        show = self.running_show(STAGE, midi="")
+        self.assertIn("OK dim pars 0", show.command("dim pars 0"))
+        with self.assertRaises(ShowError):
+            show.command("dim nowhere 1")
+        self.assertTrue(show.is_running)
 
     def test_a_scanner_knob_reaches_the_render(self):
         """floor 1, gain 0 flattens record_saved's breath to a steady green."""
@@ -5931,10 +6071,10 @@ class ScannerKnobs(ShowTest):
         self.settle_until(lambda: frames[-1][34][0] > 200, timeout=6.0,
                           message="the ring to fill")
 
-        self.cue(show, "cleanse_arm",
+        self.cue(show, "record_arm",
                  ["cooling", "sparking", "spread", "rise", "emitter", "douse"])
         self.settle(1.0)             # let the fire catch before dousing it
-        show.trigger("scanner.cleanse.douse")
+        show.trigger("scanner.arm.douse")
 
         # Nothing new ignites after the douse, so this is the longest flame
         # already alight burning out - real time, and no event to wait on.
@@ -7254,7 +7394,17 @@ class TheLookPresets(unittest.TestCase):
 
 class TheLatency(ShowTest):
     """The lead on the beat clock: over the protocol, from the config, and
-    what it does to a flash."""
+    what it does to a flash.
+
+    CUES is the real show, and it carries the rig's calibrated latencies
+    per device (the ring's, the obelisk's and the pars'). The tests that
+    run on it put every device back on the show's latency first, so the
+    numbers they check are their own and not whatever the rig last
+    calibrated to."""
+
+    # each device back on the show's latency, ahead of a test's own commands
+    CLEAR_DEVICES = ["latency scanner_ring off", "latency obelisk off",
+                     "latency pars off", "latency synesthesia off"]
 
     def test_set_reported_nudged_and_in_status(self):
         lines = run_show(["latency 45", "latency", "latency nudge -3.5",
@@ -7289,6 +7439,49 @@ class TheLatency(ShowTest):
         self.assertEqual(show.set_latency(12), 12.0)
         self.assertEqual(show.nudge_latency(-2), 10.0)
         self.assertEqual(show.get_latency(), 10.0)
+
+    def test_a_device_carries_its_own(self):
+        lines = run_show(self.CLEAR_DEVICES
+                         + ["latency 40", "latency pars", "latency pars 25",
+                            "latency pars nudge 5", "latency pars off", "latency nope 3"],
+                         config=CUES)
+        replies = [line for line in lines if line.startswith(("OK latency", "ERR latency"))]
+        replies = replies[len(self.CLEAR_DEVICES):]
+        self.assertEqual(replies[:5], ["OK latency 40.0", "OK latency pars 40.0",
+                                       "OK latency pars 25.0", "OK latency pars 30.0",
+                                       "OK latency pars 40.0"])
+        self.assertTrue(replies[5].startswith("ERR latency: 'nope' is not a number or a device"), replies[5])
+
+    def test_the_clock_leads_by_the_slowest_device(self):
+        lines = run_show(self.CLEAR_DEVICES + ["latency 10", "latency obelisk 50", "status"], config=CUES)
+        status = [line for line in lines if line.startswith("STATUS")][-1]
+        self.assertIn(" latency=50.0ms", status)
+        self.assertIn("OK latency 10.0", lines)
+
+    def test_a_quicker_device_is_held_back_by_the_difference(self):
+        """The obelisk at 0 beside a show at 200: the pars lead by 200 and
+        the obelisk is held back by all of it, so its flash lands 200ms after
+        theirs - give or take the frame the stream is cut into."""
+        stamped = []
+        show = self.running_show(CUES, pattern="metronome", midi="", bpm=120.0,
+                                 on_frame=lambda frame: stamped.append((time.monotonic(), frame)),
+                                 emit_rate=60.0)
+        par = next(d for d in show.devices if d.name == "pars").first
+        obelisk = next(d for d in show.devices if d.name == "obelisk").first
+        show.set_latency(200)
+        show.set_device_latency("pars", None)
+        show.set_device_latency("obelisk", 0)
+        time.sleep(0.6)
+        start = time.monotonic()
+        time.sleep(3.0)
+
+        def onsets(slot):
+            seen = [(at, max(frame[slot]) > 0) for at, frame in stamped if at > start]
+            return [at for i, (at, lit) in enumerate(seen) if lit and i > 0 and not seen[i - 1][1]]
+
+        gaps = [(o - p) for p, o in zip(onsets(par), onsets(obelisk))]
+        self.assertGreaterEqual(len(gaps), 3, "the rig did not flash")
+        self.assertAlmostEqual(sum(gaps) / len(gaps), 0.2, delta=0.05)
 
     def _flash_phases(self, latency_ms, seconds=3.0):
         """Where the metronome's flashes land against a beat tapped from here,
@@ -7410,6 +7603,32 @@ class TheLatencyInTheConfig(unittest.TestCase):
         with self.assertRaises((ConfigError, ValueError)):
             write_midi_latency(path, 30)
         self.assertEqual(path.read_text(encoding="utf-8"), "{ not json")
+
+    def test_a_device_is_written_into_its_own_entry(self):
+        from eclipse_dmx.config import write_device_latency
+
+        path = self.copy(CUES)
+        self.assertEqual(write_device_latency(path, "pars", 30), '"latency_ms": 30')
+        write_device_latency(path, "obelisk", 12)
+        lines_once = path.read_text(encoding="utf-8").count("\n")
+        write_device_latency(path, "pars", 35.5)
+        write_device_latency(path, "obelisk", 13)
+        write_device_latency(path, "obelisk", 12)
+        after = path.read_text(encoding="utf-8")
+        devices = {d.get("name") or d["device"]: d
+                   for d in json.loads(_strip(after))["devices"]}
+        self.assertEqual(devices["pars"]["latency_ms"], 35.5)
+        self.assertEqual(devices["obelisk"]["latency_ms"], 12)
+        self.assertEqual(after.count("\n"), lines_once, "replaced, not added twice")
+
+    def test_a_device_that_is_not_there_is_refused(self):
+        from eclipse_dmx.config import write_device_latency
+
+        path = self.copy(CUES)
+        before = path.read_text(encoding="utf-8")
+        with self.assertRaises(ConfigError):
+            write_device_latency(path, "nope", 30)
+        self.assertEqual(path.read_text(encoding="utf-8"), before)
 
     def test_whole_numbers_are_written_whole(self):
         from eclipse_dmx.config import format_latency_ms

@@ -1488,8 +1488,27 @@ class ShowController:
         return self._latency_reply(self.command(f"latency nudge {milliseconds:g}"))
 
     def get_latency(self) -> float:
-        """The latency as the clock has it, in milliseconds."""
+        """The show's latency, in milliseconds: what a device with none of its
+        own runs at."""
         return self._latency_reply(self.command("latency"))
+
+    def set_device_latency(self, device: str, milliseconds: Optional[float]) -> float:
+        """One device's own latency, for a rig whose lamps do not all answer
+        at the same speed; None puts it back on the show's. Returns what it
+        runs at now. The quicker devices are held back to land with the
+        slowest - see applyLatencies() in main.cpp."""
+        value = "off" if milliseconds is None else f"{milliseconds:g}"
+        return self._latency_reply(self.command(f"latency {device} {value}"))
+
+    def nudge_device_latency(self, device: str, milliseconds: float) -> float:
+        return self._latency_reply(self.command(f"latency {device} nudge {milliseconds:g}"))
+
+    def get_device_latency(self, device: str) -> float:
+        return self._latency_reply(self.command(f"latency {device}"))
+
+    def dim(self, device: str, level: float) -> None:
+        """One device's dimmer on the wire, 0..1, over the config's trim."""
+        self.command(f"dim {device} {level:g}")
 
     @staticmethod
     def _latency_reply(reply: str) -> float:

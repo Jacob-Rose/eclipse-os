@@ -1,0 +1,538 @@
+{
+  "version": 1,
+  "bindings": [
+    {
+      "label": "primary hue -> hue_a",
+      "trigger": {
+        "pattern": "*/color/primary/hue",
+        "exclude": [],
+        "argument": 0
+      },
+      "mode": "value",
+      "range": {
+        "low": 0.0,
+        "high": 360.0,
+        "threshold": 0.5
+      },
+      "limit": {
+        "interval": 0.03333333333333333,
+        "change": 0.002,
+        "keepalive": 0.2
+      },
+      "action": "param",
+      "params": {
+        "name": "hue_a",
+        "low": 0.0,
+        "high": 360.0,
+        "layer": ""
+      },
+      "enabled": true
+    },
+    {
+      "label": "primary sat -> sat_a",
+      "trigger": {
+        "pattern": "*/color/primary/sat",
+        "exclude": [],
+        "argument": 0
+      },
+      "mode": "value",
+      "range": {
+        "low": 0.0,
+        "high": 1.0,
+        "threshold": 0.5
+      },
+      "limit": {
+        "interval": 0.03333333333333333,
+        "change": 0.01,
+        "keepalive": 0.2
+      },
+      "action": "param",
+      "params": {
+        "name": "sat_a",
+        "low": 0.0,
+        "high": 1.0,
+        "layer": ""
+      },
+      "enabled": true
+    },
+    {
+      "label": "primary brightness -> bright_a",
+      "trigger": {
+        "pattern": "*/color/primary/brightness",
+        "exclude": [],
+        "argument": 0
+      },
+      "mode": "value",
+      "range": {
+        "low": 0.0,
+        "high": 1.0,
+        "threshold": 0.5
+      },
+      "limit": {
+        "interval": 0.03333333333333333,
+        "change": 0.01,
+        "keepalive": 0.2
+      },
+      "action": "param",
+      "params": {
+        "name": "bright_a",
+        "low": 0.0,
+        "high": 1.0,
+        "layer": ""
+      },
+      "enabled": true
+    },
+    {
+      "label": "primary amount -> amount_a",
+      "trigger": {
+        "pattern": "*/color/primary/amount",
+        "exclude": [],
+        "argument": 0
+      },
+      "mode": "value",
+      "range": {
+        "low": 0.0,
+        "high": 1.0,
+        "threshold": 0.5
+      },
+      "limit": {
+        "interval": 0.03333333333333333,
+        "change": 0.01,
+        "keepalive": 0.2
+      },
+      "action": "param",
+      "params": {
+        "name": "amount_a",
+        "low": 0.0,
+        "high": 1.0,
+        "layer": ""
+      },
+      "enabled": true
+    },
+    {
+      "label": "secondary hue -> hue_b",
+      "trigger": {
+        "pattern": "*/color/secondary/hue",
+        "exclude": [],
+        "argument": 0
+      },
+      "mode": "value",
+      "range": {
+        "low": 0.0,
+        "high": 360.0,
+        "threshold": 0.5
+      },
+      "limit": {
+        "interval": 0.03333333333333333,
+        "change": 0.002,
+        "keepalive": 0.2
+      },
+      "action": "param",
+      "params": {
+        "name": "hue_b",
+        "low": 0.0,
+        "high": 360.0,
+        "layer": ""
+      },
+      "enabled": true
+    },
+    {
+      "label": "secondary sat -> sat_b",
+      "trigger": {
+        "pattern": "*/color/secondary/sat",
+        "exclude": [],
+        "argument": 0
+      },
+      "mode": "value",
+      "range": {
+        "low": 0.0,
+        "high": 1.0,
+        "threshold": 0.5
+      },
+      "limit": {
+        "interval": 0.03333333333333333,
+        "change": 0.01,
+        "keepalive": 0.2
+      },
+      "action": "param",
+      "params": {
+        "name": "sat_b",
+        "low": 0.0,
+        "high": 1.0,
+        "layer": ""
+      },
+      "enabled": true
+    },
+    {
+      "label": "secondary brightness -> bright_b",
+      "trigger": {
+        "pattern": "*/color/secondary/brightness",
+        "exclude": [],
+        "argument": 0
+      },
+      "mode": "value",
+      "range": {
+        "low": 0.0,
+        "high": 1.0,
+        "threshold": 0.5
+      },
+      "limit": {
+        "interval": 0.03333333333333333,
+        "change": 0.01,
+        "keepalive": 0.2
+      },
+      "action": "param",
+      "params": {
+        "name": "bright_b",
+        "low": 0.0,
+        "high": 1.0,
+        "layer": ""
+      },
+      "enabled": true
+    },
+    {
+      "label": "secondary amount -> amount_b",
+      "trigger": {
+        "pattern": "*/color/secondary/amount",
+        "exclude": [],
+        "argument": 0
+      },
+      "mode": "value",
+      "range": {
+        "low": 0.0,
+        "high": 1.0,
+        "threshold": 0.5
+      },
+      "limit": {
+        "interval": 0.03333333333333333,
+        "change": 0.01,
+        "keepalive": 0.2
+      },
+      "action": "param",
+      "params": {
+        "name": "amount_b",
+        "low": 0.0,
+        "high": 1.0,
+        "layer": ""
+      },
+      "enabled": true
+    },
+    {
+      "label": "clock bpm -> bpm",
+      "trigger": {
+        "pattern": "*/clock/bpm",
+        "exclude": [],
+        "argument": 0
+      },
+      "mode": "value",
+      "range": {
+        "low": 50.0,
+        "high": 220.0,
+        "threshold": 0.5
+      },
+      "limit": {
+        "interval": 0.02,
+        "change": 0.002,
+        "keepalive": 0.2
+      },
+      "action": "audio",
+      "params": {
+        "channel": "bpm",
+        "low": 0.0,
+        "high": 1.0
+      },
+      "enabled": true
+    },
+    {
+      "label": "clock beat -> beat",
+      "trigger": {
+        "pattern": "*/clock/beat",
+        "exclude": [],
+        "argument": 0
+      },
+      "mode": "value",
+      "range": {
+        "low": 0.0,
+        "high": 1.0,
+        "threshold": 0.5
+      },
+      "limit": {
+        "interval": 0.02,
+        "change": 0.01,
+        "keepalive": 0.2
+      },
+      "action": "audio",
+      "params": {
+        "channel": "beat",
+        "low": 0.0,
+        "high": 1.0
+      },
+      "enabled": true
+    },
+    {
+      "label": "mic level -> level",
+      "trigger": {
+        "pattern": "*/mic/level",
+        "exclude": [],
+        "argument": 0
+      },
+      "mode": "value",
+      "range": {
+        "low": 0.0,
+        "high": 1.0,
+        "threshold": 0.5
+      },
+      "limit": {
+        "interval": 0.02,
+        "change": 0.01,
+        "keepalive": 0.2
+      },
+      "action": "audio",
+      "params": {
+        "channel": "level",
+        "low": 0.0,
+        "high": 1.0
+      },
+      "enabled": true
+    },
+    {
+      "label": "mic sub -> sub",
+      "trigger": {
+        "pattern": "*/mic/sub",
+        "exclude": [],
+        "argument": 0
+      },
+      "mode": "value",
+      "range": {
+        "low": 0.0,
+        "high": 1.0,
+        "threshold": 0.5
+      },
+      "limit": {
+        "interval": 0.02,
+        "change": 0.01,
+        "keepalive": 0.2
+      },
+      "action": "audio",
+      "params": {
+        "channel": "sub",
+        "low": 0.0,
+        "high": 1.0
+      },
+      "enabled": true
+    },
+    {
+      "label": "mic bass -> bass",
+      "trigger": {
+        "pattern": "*/mic/bass",
+        "exclude": [],
+        "argument": 0
+      },
+      "mode": "value",
+      "range": {
+        "low": 0.0,
+        "high": 1.0,
+        "threshold": 0.5
+      },
+      "limit": {
+        "interval": 0.02,
+        "change": 0.01,
+        "keepalive": 0.2
+      },
+      "action": "audio",
+      "params": {
+        "channel": "bass",
+        "low": 0.0,
+        "high": 1.0
+      },
+      "enabled": true
+    },
+    {
+      "label": "mic mid -> mid",
+      "trigger": {
+        "pattern": "*/mic/mid",
+        "exclude": [],
+        "argument": 0
+      },
+      "mode": "value",
+      "range": {
+        "low": 0.0,
+        "high": 1.0,
+        "threshold": 0.5
+      },
+      "limit": {
+        "interval": 0.02,
+        "change": 0.01,
+        "keepalive": 0.2
+      },
+      "action": "audio",
+      "params": {
+        "channel": "mid",
+        "low": 0.0,
+        "high": 1.0
+      },
+      "enabled": true
+    },
+    {
+      "label": "mic high -> high",
+      "trigger": {
+        "pattern": "*/mic/high",
+        "exclude": [],
+        "argument": 0
+      },
+      "mode": "value",
+      "range": {
+        "low": 0.0,
+        "high": 1.0,
+        "threshold": 0.5
+      },
+      "limit": {
+        "interval": 0.02,
+        "change": 0.01,
+        "keepalive": 0.2
+      },
+      "action": "audio",
+      "params": {
+        "channel": "high",
+        "low": 0.0,
+        "high": 1.0
+      },
+      "enabled": true
+    },
+    {
+      "label": "mic onset -> hits",
+      "trigger": {
+        "pattern": "*/mic/onset",
+        "exclude": [],
+        "argument": 0
+      },
+      "mode": "value",
+      "range": {
+        "low": 0.0,
+        "high": 1.0,
+        "threshold": 0.5
+      },
+      "limit": {
+        "interval": 0.02,
+        "change": 0.01,
+        "keepalive": 0.2
+      },
+      "action": "audio",
+      "params": {
+        "channel": "hits",
+        "low": 0.0,
+        "high": 1.0
+      },
+      "enabled": true
+    },
+    {
+      "label": "mic kick -> bass_hits",
+      "trigger": {
+        "pattern": "*/mic/kick",
+        "exclude": [],
+        "argument": 0
+      },
+      "mode": "value",
+      "range": {
+        "low": 0.0,
+        "high": 1.0,
+        "threshold": 0.5
+      },
+      "limit": {
+        "interval": 0.02,
+        "change": 0.01,
+        "keepalive": 0.2
+      },
+      "action": "audio",
+      "params": {
+        "channel": "bass_hits",
+        "low": 0.0,
+        "high": 1.0
+      },
+      "enabled": true
+    },
+    {
+      "label": "tick -> tick",
+      "trigger": {
+        "pattern": "*/tick",
+        "exclude": [],
+        "argument": 0
+      },
+      "mode": "value",
+      "range": {
+        "low": 0.0,
+        "high": 16000000.0,
+        "threshold": 0.5
+      },
+      "limit": {
+        "interval": 0.0,
+        "change": 0.0,
+        "keepalive": 0.0
+      },
+      "action": "param",
+      "params": {
+        "name": "tick",
+        "low": 0.0,
+        "high": 16000000.0,
+        "layer": ""
+      },
+      "enabled": true
+    },
+    {
+      "label": "kick trigger -> kick",
+      "trigger": {
+        "pattern": "*/kick",
+        "exclude": [
+          "*/mic/kick"
+        ],
+        "argument": 0
+      },
+      "mode": "value",
+      "range": {
+        "low": 0.0,
+        "high": 1.0,
+        "threshold": 0.5
+      },
+      "limit": {
+        "interval": 0.0,
+        "change": 0.0,
+        "keepalive": 0.0
+      },
+      "action": "param",
+      "params": {
+        "name": "kick",
+        "low": 0.0,
+        "high": 1.0,
+        "layer": ""
+      },
+      "enabled": true
+    },
+    {
+      "label": "video start -> cut",
+      "trigger": {
+        "pattern": "*/video/start",
+        "exclude": [],
+        "argument": 0
+      },
+      "mode": "value",
+      "range": {
+        "low": 0.0,
+        "high": 1.0,
+        "threshold": 0.5
+      },
+      "limit": {
+        "interval": 0.0,
+        "change": 0.0,
+        "keepalive": 0.0
+      },
+      "action": "param",
+      "params": {
+        "name": "cut",
+        "low": 0.0,
+        "high": 1.0,
+        "layer": ""
+      },
+      "enabled": true
+    }
+  ]
+}
