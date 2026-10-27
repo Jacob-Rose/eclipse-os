@@ -18,12 +18,14 @@ the numbers a look wants and the ones this rig has no way to compute.
 Where the work happens
 ----------------------
 In the executable. The socket, the packet decoder and the bindings are the
-library's (`enet`, `eosc`), and the map file below is loaded there: a binding
-whose action is `audio` fills the bus in process, sixty times a second, with
-no pipe in the way. Everything else that fires comes back as one line,
-``OSC-FIRE "label" value``, and the `Dispatcher` here runs the action the map
-named - the same registry as the MIDI mappings, on purpose. A pad and a bass
-drum should be able to do the same things.
+library's (`enet`, `eosc`), and the map file below is loaded there into
+eosc binding sets. A binding whose action is `audio` lands on the bus as the
+message arrives, and one whose action is `param` (with a `name`) lands on the
+running look's knob - or `layer`'s look - once a frame, each in the knob's own
+range (ecore::landUnit), with no pipe in the way. Everything else that fires
+comes back as one line, ``OSC-FIRE "label" value``, and the `Dispatcher` here
+runs the action the map named - the same registry as the MIDI mappings, on
+purpose. A pad and a bass drum should be able to do the same things.
 
 What arrives, and the one thing to check
 ----------------------------------------

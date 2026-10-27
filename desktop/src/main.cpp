@@ -2600,24 +2600,39 @@ namespace
         return nullptr;
     }
 
-    /// A native OSC `param` onto the running look, or a layer's. Quiet when
-    /// the look has no such knob: a map is written for a family of looks, and
-    /// the rest of the show is not wrong for lacking one.
-    void landOscProperty(ShowState& show, const OscPropertySet& set)
+    /// A pattern as an ecore::Reflectable, for a bag that nests it by name.
+    struct ReflectPattern : public ecore::Reflectable
     {
-        Pattern* pattern = show.pattern.get();
-        if (!set.layer.empty())
-        {
-            ShowState::Layer* layer = findLayer(show, set.layer);
-            pattern = layer ? layer->pattern.get() : nullptr;
-        }
-        if (pattern == nullptr)
+        Pattern& pattern;
+        explicit ReflectPattern(Pattern& inPattern) : pattern(inPattern) {}
+        void reflect(ecore::PropertyBag& bag) override { pattern.reflect(bag); }
+    };
+
+    /// The OSC map's knob bindings onto the running look, and each layer's
+    /// look under its name. A knob the look lacks is passed over quietly: a
+    /// map is written for a family of looks, not the one that happens to run.
+    void landOscKnobs(ShowState& show)
+    {
+        if (!show.osc.hasArrived())
         {
             return;
         }
         ecore::PropertyBag bag;
-        pattern->reflect(bag);
-        bag.set(set.property, set.value);
+        if (show.pattern)
+        {
+            show.pattern->reflect(bag);
+        }
+        std::vector<ReflectPattern> layers;
+        layers.reserve(show.layers.size());
+        for (ShowState::Layer& layer : show.layers)
+        {
+            if (layer.pattern)
+            {
+                layers.emplace_back(*layer.pattern);
+                bag.reflect(layer.name.c_str(), layers.back());
+            }
+        }
+        show.osc.land(bag);
     }
 
     /// Resolves the coordinate frame for whatever pattern is running.
@@ -6395,7 +6410,7 @@ int main(int argc, char** argv)
                 emit("MIDI-IN dropped " + std::to_string(dropped));
             }
         }
-        for (const OscPropertySet& set : show.osc.takePropertySets()) landOscProperty(show, set);
+        landOscKnobs(show);
         for (const std::string& line : show.osc.drain()) emit(line);
         for (const std::string& line : show.oscOut.drain()) emit(line);
 

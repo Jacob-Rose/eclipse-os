@@ -252,6 +252,11 @@ namespace
     };
 }
 
+OscInput::OscInput() : busLevels(sharedAudioLevel())
+{
+    busBag.reflect("audio", busLevels);
+}
+
 OscInput::~OscInput()
 {
     close();
@@ -323,36 +328,43 @@ void OscInput::handleMessage(const eosc::Message& message, double when)
         push("OSC-IN " + message.address + " " + oscArgsJson(message));
     }
 
-    for (OscMapEntry& entry : map)
+    busLevels.when = when;
+    const int landed = toBus.apply(message, when, busBag);
+    const int fired = reported.handle(message, when, [this](const eosc::Binding& binding, float value)
     {
-        float value = 0.0f;
-        if (!entry.binding.fires(message, when, value))
+        push("OSC-FIRE " + jsonString(binding.label) + " " + number(value));
+    });
+    fires.fetch_add(static_cast<unsigned long long>(landed + fired));
+
+    // the knobs belong to the frame loop: what one of them wants waits for it
+    for (const eosc::Binding& binding : toLooks.all())
+    {
+        if (binding.enabled && binding.matches(message.address))
         {
-            continue;
+            if (arrived.size() < kMaxArrived) arrived.push_back({message, when});
+            else ++dropped;
+            break;
         }
-        fires.fetch_add(1);
-        if (entry.native)
-        {
-            const float scaled = entry.low + (entry.high - entry.low) * value;
-            if (!entry.property.empty())
-            {
-                if (propertySets.size() < kMaxLines) propertySets.push_back({entry.layer, entry.property, scaled});
-                else ++dropped;
-                continue;
-            }
-            sharedAudioLevel().set(entry.channel, scaled, when);
-            continue;
-        }
-        push("OSC-FIRE " + jsonString(entry.binding.label) + " " + number(value));
     }
 }
 
-std::vector<OscPropertySet> OscInput::takePropertySets()
+bool OscInput::hasArrived() const
 {
     std::lock_guard<std::mutex> guard(lock);
-    std::vector<OscPropertySet> out;
-    out.swap(propertySets);
-    return out;
+    return !arrived.empty();
+}
+
+int OscInput::land(ecore::PropertyBag& looks)
+{
+    std::lock_guard<std::mutex> guard(lock);
+    int landed = 0;
+    for (const Arrived& one : arrived)
+    {
+        landed += toLooks.apply(one.message, one.when, looks);
+    }
+    arrived.clear();
+    fires.fetch_add(static_cast<unsigned long long>(landed));
+    return landed;
 }
 
 std::vector<std::string> OscInput::drain()
@@ -402,12 +414,6 @@ std::vector<std::string> OscInput::announces() const
     return announce;
 }
 
-std::vector<OscMapEntry> OscInput::entries() const
-{
-    std::lock_guard<std::mutex> guard(lock);
-    return map;
-}
-
 std::string OscInput::getMapPath() const
 {
     std::lock_guard<std::mutex> guard(lock);
@@ -417,7 +423,10 @@ std::string OscInput::getMapPath() const
 void OscInput::clearMap()
 {
     std::lock_guard<std::mutex> guard(lock);
-    map.clear();
+    toBus.clear();
+    toLooks.clear();
+    reported.clear();
+    arrived.clear();
     mapPath.clear();
 }
 
@@ -437,12 +446,13 @@ bool OscInput::loadMap(const std::string& path, std::string& outError, int& outL
         return false;
     }
 
-    std::vector<OscMapEntry> loaded;
+    eosc::BindingSet bus;
+    eosc::BindingSet looks;
+    eosc::BindingSet rest;
     for (size_t i = 0; i < list.size(); ++i)
     {
         const JsonValue& item = list[i];
-        OscMapEntry entry;
-        eosc::Binding& binding = entry.binding;
+        eosc::Binding binding;
         binding.label = item["label"].asString("binding");
         const JsonValue& trigger = item["trigger"];
         binding.pattern = trigger["pattern"].asString("*");
@@ -463,65 +473,63 @@ bool OscInput::loadMap(const std::string& path, std::string& outError, int& outL
         binding.minChange = limit["change"].asNumber(0.01);
         binding.maxInterval = limit["keepalive"].asNumber(0.2);
         binding.enabled = item["enabled"].asBool(true);
-        entry.action = item["action"].asString("param");
+
+        // A native binding lands in its property's own range (ecore::landUnit),
+        // so the map's params.low/high, which python's `param` scales by, are
+        // not read here: the shipped maps write the knob's range there.
+        const std::string action = item["action"].asString("param");
         const JsonValue& params = item["params"];
-        if (params.isObject())
-        {
-            for (const std::string& key : params.keys())
-            {
-                const JsonValue& value = params[key];
-                entry.params[key] = value.isString() ? value.asString() : number(value.asNumber());
-            }
-        }
-        if (entry.action == "audio")
+        if (action == "audio")
         {
             AudioChannel channel;
             std::string name = params["channel"].asString("");
             std::transform(name.begin(), name.end(), name.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
             if (findAudioChannel(name, channel))
             {
-                entry.native = true;
-                entry.channel = channel;
-                entry.low = params["low"].asFloat(0.0f);
-                entry.high = params["high"].asFloat(1.0f);
-                ++outNative;
+                binding.property = std::string("audio.") + audioChannelName(channel);
+                bus.add(binding);
+                continue;
             }
         }
-        else if (entry.action == "param" && !params["name"].asString("").empty())
+        else if (action == "param" && !params["name"].asString("").empty())
         {
-            entry.native = true;
-            entry.property = params["name"].asString("");
-            entry.layer = params["layer"].asString("");
-            entry.low = params["low"].asFloat(0.0f);
-            entry.high = params["high"].asFloat(1.0f);
-            ++outNative;
+            const std::string layer = params["layer"].asString("");
+            binding.property = (layer.empty() ? "" : layer + ".") + params["name"].asString("");
+            looks.add(binding);
+            continue;
         }
-        loaded.push_back(entry);
+        rest.add(binding);
     }
 
     std::lock_guard<std::mutex> guard(lock);
-    map.swap(loaded);
+    toBus = std::move(bus);
+    toLooks = std::move(looks);
+    reported = std::move(rest);
+    arrived.clear();
     mapPath = path;
-    outLoaded = static_cast<int>(map.size());
+    outNative = static_cast<int>(toBus.size() + toLooks.size());
+    outLoaded = outNative + static_cast<int>(reported.size());
     return true;
 }
 
 std::string OscInput::describe(double now) const
 {
     std::lock_guard<std::mutex> guard(lock);
-    int native = 0;
+    const size_t native = toBus.size() + toLooks.size();
     int live = 0;
-    for (const OscMapEntry& entry : map)
+    for (const eosc::BindingSet* set : {&toBus, &toLooks, &reported})
     {
-        if (entry.native) ++native;
-        if (entry.binding.enabled) ++live;
+        for (const eosc::Binding& binding : set->all())
+        {
+            if (binding.enabled) ++live;
+        }
     }
     std::ostringstream out;
     out << "listening=" << (running.load() ? "yes" : "no")
         << " host=" << (host.empty() ? "-" : host)
         << " port=" << port
         << " map=" << (mapPath.empty() ? "-" : mapPath)
-        << " bindings=" << map.size() << " live=" << live << " native=" << native
+        << " bindings=" << (native + reported.size()) << " live=" << live << " native=" << native
         << " packets=" << oscPort.getPackets() << " messages=" << messages.load()
         << " undecodable=" << oscPort.getUndecodable() << " fires=" << fires.load()
         << " addresses=" << seenByAddress.size();

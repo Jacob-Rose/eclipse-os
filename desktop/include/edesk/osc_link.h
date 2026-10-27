@@ -17,15 +17,17 @@
 #include <eosc/message.h>
 #include <eosc/transport.h>
 #include <ebeat/level_bus.h>
+#include <ecore/property.h>
 
 
 ///
-/// OSC in and out, for the desk. The protocol is the library's (eosc), the
-/// socket is the library's (enet::HostUdp); this is the desk's use of them:
-/// a map of bindings run on the input thread, with the audio bus filled in
-/// process and everything else reported as a line for the python side to act
-/// on, and an output that streams one fixture's colour to a visualiser and
-/// sends whatever else it is asked to.
+/// OSC in and out, for the desk. The protocol, the bindings and the socket
+/// are the library's (eosc, enet::HostUdp); this is the desk's use of them: a
+/// map file read into eosc::BindingSets - the audio bindings landed on the
+/// bus as messages arrive, the knob bindings landed on the running look by
+/// the frame loop, and the rest reported as a line for the python side to
+/// act on - and an output that streams one fixture's colour to a visualiser
+/// and sends whatever else it is asked to.
 ///
 
 namespace edesk
@@ -42,40 +44,10 @@ namespace edesk
         double lastAt{-1.0};
     };
 
-    /// A binding as the map file names it: the library binding, plus the
-    /// action the python side runs when it fires. `audio` is run here.
-    struct OscMapEntry
-    {
-        eosc::Binding binding;
-        std::string action;
-        std::map<std::string, std::string> params;
-        /// `audio` with a channel the bus has, or `param` with a knob named:
-        /// run in process, never a line.
-        bool native{false};
-        ebeat::AudioChannel channel{ebeat::AudioChannel::Level};
-        /// The knob a native `param` lands on, and the layer whose look has
-        /// it (empty for the show's own); `channel` is unused then.
-        std::string property;
-        std::string layer;
-        float low{0.0f};
-        float high{1.0f};
-    };
-
-    /* @brief A knob a native `param` binding has set, waiting for the frame
-    * loop to land it on the look. The value is in the knob's own units: the
-    * map's `low`..`high`.
-    */
-    struct OscPropertySet
-    {
-        std::string layer;
-        std::string property;
-        float value{0.0f};
-    };
-
     class OscInput
     {
     public:
-        OscInput() = default;
+        OscInput();
         ~OscInput();
         OscInput(const OscInput&) = delete;
         OscInput& operator=(const OscInput&) = delete;
@@ -88,10 +60,11 @@ namespace edesk
         std::string getHost() const { return host; }
 
         /// Loads a map file (the python side's BindingSet format). Replaces
-        /// the current map. `outNative` says how many are run in process.
+        /// the current map. `outNative` says how many are run in process: an
+        /// `audio` binding with a channel the bus has, and a `param` binding
+        /// naming a knob (on `params.layer`'s look when it names one).
         bool loadMap(const std::string& path, std::string& outError, int& outLoaded, int& outNative);
         void clearMap();
-        std::vector<OscMapEntry> entries() const;
 
         /// Report every message as an `OSC-IN` line. Off by default.
         void setWatch(bool enable) { watching.store(enable); }
@@ -106,9 +79,13 @@ namespace edesk
         /// drop count. Called from the frame loop.
         std::vector<std::string> drain();
 
-        /// The knobs native `param` bindings have set since the last call,
-        /// oldest first. Called from the frame loop, which owns the looks.
-        std::vector<OscPropertySet> takePropertySets();
+        /// Lands the knob bindings on the messages that arrived since the
+        /// last call, oldest first, onto `looks`: the running look's knobs,
+        /// and each layer's under `<layer>.`. Called from the frame loop,
+        /// which owns the looks. Returns how many landed.
+        int land(ecore::PropertyBag& looks);
+        /// Whether land() has anything to do.
+        bool hasArrived() const;
 
         /// Every address seen since the port opened, or since forget().
         std::vector<OscSeen> seen() const;
@@ -131,8 +108,15 @@ namespace edesk
         void read();
         void push(const std::string& line);
 
+        struct Arrived
+        {
+            eosc::Message message;
+            double when{0.0};
+        };
+
         static constexpr size_t kMaxLines = 512;
         static constexpr size_t kMaxSeen = 512;
+        static constexpr size_t kMaxArrived = 2048;
 
         enet::HostUdp socket;
         eosc::OscPort oscPort;
@@ -142,11 +126,15 @@ namespace edesk
         int port{0};
 
         mutable std::mutex lock;
-        std::vector<OscMapEntry> map;
+        eosc::BindingSet toBus;
+        eosc::BindingSet toLooks;
+        eosc::BindingSet reported;
+        ebeat::AudioLevelProperties busLevels;
+        ecore::PropertyBag busBag;
         std::string mapPath;
         std::vector<std::string> announce;
         std::vector<std::string> lines;
-        std::vector<OscPropertySet> propertySets;
+        std::vector<Arrived> arrived;
         unsigned long long dropped{0};
         std::map<std::string, OscSeen> seenByAddress;
         unsigned long long seenOverflow{0};

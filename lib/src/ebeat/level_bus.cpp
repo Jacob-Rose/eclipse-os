@@ -8,6 +8,8 @@
 #include <algorithm>
 #include <cstdio>
 
+#include <ecore/property.h>
+
 using namespace ebeat;
 
 const char* ebeat::describeVuSource(VuSource source)
@@ -138,4 +140,14 @@ std::string AudioLevel::describeLive(double now) const
         text += one;
     }
     return text.empty() ? std::string("none") : text;
+}
+
+void AudioLevelProperties::reflect(ecore::PropertyBag& bag)
+{
+    for (int index = 0; index < kAudioChannelCount; ++index)
+    {
+        const AudioChannel channel = static_cast<AudioChannel>(index);
+        bag.add(audioChannelName(channel), values[index], 0.0f, 1.0f,
+                [this, channel, index]() { bus.set(channel, values[index], when); });
+    }
 }

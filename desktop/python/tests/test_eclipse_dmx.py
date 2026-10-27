@@ -414,6 +414,32 @@ class OscInputListening(ShowTest):
             listener.close()
         self.assertEqual(lines, [])
 
+    def test_a_param_binding_with_a_layer_lands_on_that_layers_look(self):
+        show = self.running_show(LAYERS)
+        bindings = osc_input.BindingSet([
+            osc_input.Binding(label="ring level", pattern="*/ring", min_interval=0.0, min_change=0.0,
+                              action="param", params={"name": "level", "layer": "hit_ring"}),
+        ])
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "map.json"
+            bindings.save(path)
+            listener = osc_input.OscListener(show, 0, host="127.0.0.1", map_path=path)
+        self.assertEqual(listener.native, 1)
+        sender = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
+        def level():
+            show.command("layer hit_ring params")
+            layer = show.layers.get("hit_ring")
+            return next((p.value for p in layer.params if p.name == "level"), None) if layer else None
+
+        try:
+            sender.sendto(osc_packet("/bench/ring", 0.6), ("127.0.0.1", listener.port))
+            self.settle_until(lambda: level() is not None and abs(level() - 0.6) < 1e-3,
+                              message="the layer's level never landed")
+        finally:
+            sender.close()
+            listener.close()
+
     def test_a_stray_packet_does_not_stop_the_port(self):
         show = self.running_show(DESKTOP / "config" / "synesthesia_test.json", midi="")
         seen = []

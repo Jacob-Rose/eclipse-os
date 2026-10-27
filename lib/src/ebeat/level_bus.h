@@ -8,6 +8,8 @@
 #include <atomic>
 #include <string>
 
+#include <ecore/reflectable.h>
+
 namespace ebeat
 {
     /// The three loudness signals a DJ app sends as notes: instantaneous,
@@ -109,5 +111,30 @@ namespace ebeat
             std::atomic<unsigned long long> updates{0};
         };
         Reading readings[kAudioChannelCount];
+    };
+
+    /* @brief The bus as properties, one per channel under its name, 0..1, so
+    * a binding (eosc, emidi, edmx) lands on it as it would on a look's knob.
+    * A set reaches the bus stamped with `when`, which the caller moves to the
+    * time of what it is landing.
+    *
+    *     AudioLevelProperties levels(sharedAudioLevel());
+    *     ecore::PropertyBag bag;
+    *     bag.reflect("audio", levels);           // audio.bass, audio.hits, ...
+    *     levels.when = message's time;
+    *     map.apply(message, levels.when, bag);
+    */
+    class AudioLevelProperties : public ecore::Reflectable
+    {
+    public:
+        explicit AudioLevelProperties(AudioLevel& inBus) : bus(inBus) {}
+
+        double when{0.0};
+
+        void reflect(ecore::PropertyBag& bag) override;
+
+    private:
+        AudioLevel& bus;
+        float values[kAudioChannelCount]{};
     };
 }
