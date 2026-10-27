@@ -20,7 +20,7 @@ class StateMachine_GenericHSV;
 
 namespace esm { class StateManager; }
 
-namespace edmx
+namespace edesk
 {
     /// What a shadow needs to know about one kind of relic to run its looks
     /// here: the sculpture's own IO layer for its geometry, its looks by the

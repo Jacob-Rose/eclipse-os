@@ -12,14 +12,14 @@
 #include "lib/ecore/coord.h"
 #include "lib/ecore/hsv.h"
 
-#include "edmx/fixture.h"
+#include "edesk/dmx_output.h"
 
 ///
 /// The config file. This is the contract between the python wrapper and the
 /// executable, and the only input the executable needs to light a rig.
 ///
 
-namespace edmx
+namespace edesk
 {
     /// Where the frames go. One per device.
     ///
@@ -58,7 +58,7 @@ namespace edmx
         float gamma{2.2f};
     };
 
-    /// Where the beat comes from. See edmx/beat_clock.h and edmx/midi_input.h.
+    /// Where the beat comes from. See edesk/beat_clock.h and edesk/midi_input.h.
     ///
     /// Everything here is optional. With no `midi` block at all the rig runs on
     /// its own internal tempo, which is what you want at a bench and is a
@@ -103,7 +103,7 @@ namespace edmx
         /// Which note is the beat, and which carries the tempo as velocity+50.
         /// These default to Mixxx's numbering; -1 on beatNote means any note,
         /// and -1 on bpmNote means measure the tempo instead of being told it.
-        /// See the message table in edmx/midi_input.h.
+        /// See the message table in edesk/midi_input.h.
         int beatNote{50};
         int bpmNote{52};
 
@@ -111,7 +111,7 @@ namespace edmx
         /// any of them ignores it.
         ///
         /// All three are read and kept apart, because they behave differently
-        /// and a look picks the one it wants by name — see edmx::VuSource.
+        /// and a look picks the one it wants by name — see edesk::VuSource.
         /// These are Mixxx's numbering: 64 instantaneous (every 40ms, peaks on
         /// every kick), 68 the two-second average (the loudness of the track),
         /// 69 the first meter bar (quantised).
@@ -264,7 +264,7 @@ namespace edmx
         /// Overrides for the coordinate frame a pattern is rendered in. Unset
         /// means "whatever the pattern asked for", which is almost always
         /// right — a relic look knows the space it was tuned in. See
-        /// edmx::CoordFrame.
+        /// edesk::CoordFrame.
         std::optional<float> coordOriginX;
         std::optional<float> coordOriginY;
         std::optional<float> coordSpanX;

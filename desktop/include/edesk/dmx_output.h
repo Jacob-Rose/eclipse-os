@@ -5,119 +5,51 @@
 
 #pragma once
 
-#include <algorithm>
-#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
 
+#include "lib/edmx/fixture.h"
+#include "lib/edmx/output.h"
+#include "lib/edmx/universe.h"
 #include "lib/elink/frame.h"
 
-#include "edmx/serial_port.h"
+#include "edesk/serial_port.h"
 
 ///
-/// DMX universe buffer and the outputs that can push it at hardware.
+/// The desk's DMX transports: USB widgets, a relic over elink, a console.
+/// The buffer and the output interface they implement are the library's
+/// (src/lib/edmx).
 ///
 
-namespace edmx
+namespace edesk
 {
-    static constexpr int DMX_CHANNEL_COUNT = 512;
+    using edmx::DMX_CHANNEL_COUNT;
+    using edmx::ChannelBuffer;
+    using edmx::DmxUniverse;
 
-    /// The frame buffer: every channel the rig owns, addressed the way fixture
-    /// manuals number them, 1..N, and stored 0-based behind that.
-    ///
-    /// N is the *rig's*, not DMX's. On a DMX universe it is 512 and nothing
-    /// ever asks for more. But the same buffer is what a relic's LED strip is
-    /// rendered into, and the obelisk is 344 pixels at three slots each — 1032.
-    /// A pixel rig is not sending DMX512 and is not bound by its slot count, so
-    /// the limit lives on the outputs that actually speak DMX (they clamp at
-    /// DMX_CHANNEL_COUNT) rather than on the buffer they read from.
-    class DmxUniverse
+    // the patch model, from the library too
+    using edmx::Rgb8;
+    using edmx::hsvToRgb8;
+    using edmx::applyGamma;
+    using edmx::Fixture;
+    using edmx::resolveChannelOrder;
+    using edmx::fixtureHighestChannel;
+    using edmx::FixtureProfile;
+    using edmx::lookupBuiltinProfile;
+    using edmx::builtinProfileNames;
+    using edmx::describeProfile;
+    using edmx::instantiateProfile;
+    using edmx::validateProfile;
+    using edmx::FixtureMap;
+
+    /* @brief An edmx::DmxOutput the show runner can ask whether it is a relic
+    * on a USB cable, so cues can be forwarded to it. A virtual rather than a
+    * cast: no RTTI, same as the library.
+    */
+    class ShowOutput : public edmx::DmxOutput
     {
     public:
-        DmxUniverse() : DmxUniverse(DMX_CHANNEL_COUNT) {}
-
-        explicit DmxUniverse(int inChannelCount)
-        {
-            resize(inChannelCount);
-        }
-
-        /// Sizes the buffer to a rig. Clamped to at least one DMX universe, so
-        /// a rig smaller than 512 still hands a full universe to a DMX widget.
-        void resize(int inChannelCount)
-        {
-            channels.assign(static_cast<size_t>(std::max(inChannelCount, DMX_CHANNEL_COUNT)), 0);
-        }
-
-        void clear() { std::fill(channels.begin(), channels.end(), uint8_t{0}); }
-
-        void setChannel(int channel1Based, uint8_t value)
-        {
-            if (channel1Based < 1 || static_cast<size_t>(channel1Based) > channels.size())
-            {
-                return;
-            }
-            channels[static_cast<size_t>(channel1Based - 1)] = value;
-        }
-
-        uint8_t getChannel(int channel1Based) const
-        {
-            if (channel1Based < 1 || static_cast<size_t>(channel1Based) > channels.size())
-            {
-                return 0;
-            }
-            return channels[static_cast<size_t>(channel1Based - 1)];
-        }
-
-        const uint8_t* data() const { return channels.data(); }
-        size_t size() const { return channels.size(); }
-
-    private:
-        std::vector<uint8_t> channels;
-    };
-
-
-    /// Anything that can take a universe and put it on a wire (or on stdout).
-    class DmxOutput
-    {
-    public:
-        virtual ~DmxOutput() = default;
-
-        virtual bool open(std::string& outError) = 0;
-        virtual void close() = 0;
-        virtual bool isOpen() const = 0;
-
-        /// Push one frame. Returning false ends the show with outError.
-        virtual bool sendFrame(const DmxUniverse& universe, std::string& outError) = 0;
-
-        /// Send only the first `channels` slots, instead of all 512.
-        ///
-        /// A DMX frame does not have to carry the whole universe: a receiver
-        /// takes what arrives and keeps what it already had. A rig using 70
-        /// channels has no use for the 442 zeros behind them, and sending them
-        /// anyway is the difference between a 519-byte frame and a 77-byte one
-        /// — which on a serial link is most of the reason a rig cannot keep up.
-        ///
-        /// Clamped to a sane floor: some fixtures dislike very short frames.
-        virtual void setUniverseLength(int channels) { (void)channels; }
-
-        /// Frames per second this output can actually sustain, or 0 for "no
-        /// limit worth enforcing".
-        ///
-        /// This matters more than it looks. A serial widget can only carry so
-        /// many bytes a second, and asking for frames faster than that does not
-        /// give a faster rig — it grows an unbounded backlog in the driver
-        /// until the widget's parser loses sync, and the fixtures strobe on
-        /// half-read frames. Better to render slower and correctly.
-        virtual float maxFrameRate() const { return 0.0f; }
-
-        virtual std::string describe() const = 0;
-
-        /// Non-null when this output is a relic on a USB cable, so the command
-        /// layer can forward cues to it. A virtual rather than a dynamic_cast
-        /// for the same reason Pattern::asStateMachine is one: the library
-        /// builds without RTTI on the microcontroller side and there is no
-        /// reason for the two to diverge.
         virtual class RelicUsbOutput* asRelicLink() { return nullptr; }
     };
 
@@ -129,7 +61,7 @@ namespace edmx
     ///
     ///   0x7E | label 6 | len lo | len hi | start code + 512 channels | 0xE7
     ///
-    class EnttecProOutput : public DmxOutput
+    class EnttecProOutput : public ShowOutput
     {
     public:
         EnttecProOutput(const std::string& inPort, int inBaud);
@@ -137,7 +69,7 @@ namespace edmx
         bool open(std::string& outError) override;
         void close() override;
         bool isOpen() const override;
-        bool sendFrame(const DmxUniverse& universe, std::string& outError) override;
+        bool sendFrame(const edmx::ChannelBuffer& universe, std::string& outError) override;
         std::string describe() const override;
         float maxFrameRate() const override;
         void setUniverseLength(int channels) override;
@@ -160,7 +92,7 @@ namespace edmx
     /// the data out at DMX's native 250k 8N2. Timing is therefore at the mercy
     /// of the OS scheduler, which is exactly why the PRO exists. Supported
     /// because the hardware is cheap and common, but the PRO is the better path.
-    class EnttecOpenOutput : public DmxOutput
+    class EnttecOpenOutput : public ShowOutput
     {
     public:
         explicit EnttecOpenOutput(const std::string& inPort);
@@ -168,7 +100,7 @@ namespace edmx
         bool open(std::string& outError) override;
         void close() override;
         bool isOpen() const override;
-        bool sendFrame(const DmxUniverse& universe, std::string& outError) override;
+        bool sendFrame(const edmx::ChannelBuffer& universe, std::string& outError) override;
         std::string describe() const override;
         float maxFrameRate() const override;
         void setUniverseLength(int channels) override;
@@ -193,7 +125,7 @@ namespace edmx
         double frameSeconds{0.0};
 
 #if !defined(_WIN32)
-        /// libftdi's context, when we got one. See edmx/ftdi_dmx.h for why this
+        /// libftdi's context, when we got one. See edesk/ftdi_dmx.h for why this
         /// is preferred over the serial port rather than the other way around:
         /// the tty layer cannot say when a frame has left the chip, so the
         /// break lands inside the previous frame and the rig stays dark while
@@ -205,7 +137,7 @@ namespace edmx
 
     /// Renders frames to stderr instead of hardware. This is what makes the
     /// whole chain testable with no widget plugged in.
-    class ConsoleOutput : public DmxOutput
+    class ConsoleOutput : public ShowOutput
     {
     public:
         explicit ConsoleOutput(int inChannelsShown);
@@ -213,7 +145,7 @@ namespace edmx
         bool open(std::string& outError) override;
         void close() override;
         bool isOpen() const override;
-        bool sendFrame(const DmxUniverse& universe, std::string& outError) override;
+        bool sendFrame(const edmx::ChannelBuffer& universe, std::string& outError) override;
         std::string describe() const override;
 
     private:
@@ -239,7 +171,7 @@ namespace edmx
     ///
     /// Cues are sent in either mode: arming the look a relic will fall back to
     /// is exactly what you want set before a stream drops.
-    class RelicUsbOutput : public DmxOutput
+    class RelicUsbOutput : public ShowOutput
     {
     public:
         enum class Mode
@@ -254,7 +186,7 @@ namespace edmx
         bool open(std::string& outError) override;
         void close() override;
         bool isOpen() const override;
-        bool sendFrame(const DmxUniverse& universe, std::string& outError) override;
+        bool sendFrame(const edmx::ChannelBuffer& universe, std::string& outError) override;
         std::string describe() const override;
         void setUniverseLength(int channels) override;
 
@@ -269,7 +201,7 @@ namespace edmx
 
         /// Starts sending frames again after a release, or after opening
         /// released. The takeover is the first frame; what that frame
-        /// carries is the show's business - see edmx::RelicShadow for how a
+        /// carries is the show's business - see edesk::RelicShadow for how a
         /// look makes it the relic's own picture.
         void take() { streaming = true; }
 
@@ -320,7 +252,7 @@ namespace edmx
     /// `console` would do the job but prints a line per frame to stderr, which
     /// buries the log of a show you are actually watching in the viewer; and
     /// unlike `console` this does not pretend the rig is a DMX one.
-    class PreviewOutput : public DmxOutput
+    class PreviewOutput : public ShowOutput
     {
     public:
         explicit PreviewOutput(std::string inWhat) : what(std::move(inWhat)) {}
@@ -328,7 +260,7 @@ namespace edmx
         bool open(std::string& outError) override;
         void close() override;
         bool isOpen() const override;
-        bool sendFrame(const DmxUniverse& universe, std::string& outError) override;
+        bool sendFrame(const edmx::ChannelBuffer& universe, std::string& outError) override;
         std::string describe() const override;
 
     private:
@@ -340,7 +272,7 @@ namespace edmx
     /// Builds the output named by `type` ("enttec_pro", "enttec_open",
     /// "console", "preview"). Returns nullptr and fills outError on an unknown
     /// type.
-    std::unique_ptr<DmxOutput> makeDmxOutput(const std::string& type,
+    std::unique_ptr<ShowOutput> makeDmxOutput(const std::string& type,
                                              const std::string& port,
                                              int baud,
                                              int consoleChannels,

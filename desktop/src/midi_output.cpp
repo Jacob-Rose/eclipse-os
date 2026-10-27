@@ -3,16 +3,16 @@
 // This file is part of project eclipse-os
 // See readme.md for full license details.
 
-#include "edmx/midi_output.h"
+#include "edesk/midi_output.h"
 
 #include <algorithm>
 #include <cctype>
 
 #if !defined(_WIN32)
-#include "edmx/alsa_seq.h"
+#include "edesk/alsa_seq.h"
 #endif
 
-using namespace edmx;
+using namespace edesk;
 
 namespace
 {

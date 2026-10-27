@@ -46,7 +46,7 @@
 /// at half time is on the `half` trigger, so half time is one decision for the
 /// rig instead of one per look that happened to agree.
 ///
-namespace edmx
+namespace edesk
 {
     class BeatClock;
 

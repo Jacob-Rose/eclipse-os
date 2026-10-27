@@ -3,7 +3,7 @@
 // This file is part of project eclipse-os
 // See readme.md for full license details.
 
-#include "edmx/config.h"
+#include "edesk/config.h"
 
 #include <algorithm>
 #include <fstream>
@@ -13,12 +13,12 @@
 #include <string>
 #include <utility>
 
-#include "edmx/beat_clock.h"
-#include "edmx/json.h"
+#include "edesk/beat_clock.h"
+#include "edesk/json.h"
 
 #include "kits/palettes.h"
 
-using namespace edmx;
+using namespace edesk;
 
 namespace
 {
@@ -119,7 +119,7 @@ namespace
     }
 }
 
-bool edmx::parseColorString(const std::string& text, ecore::HSV& outColor)
+bool edesk::parseColorString(const std::string& text, ecore::HSV& outColor)
 {
     std::string hex = text;
     if (!hex.empty() && hex[0] == '#')
@@ -155,7 +155,7 @@ bool edmx::parseColorString(const std::string& text, ecore::HSV& outColor)
     return true;
 }
 
-bool edmx::lookupNamedPalette(const std::string& name, ecore::HSVPalette& outPalette)
+bool edesk::lookupNamedPalette(const std::string& name, ecore::HSVPalette& outPalette)
 {
     for (const NamedPalette& entry : namedPalettes())
     {
@@ -168,7 +168,7 @@ bool edmx::lookupNamedPalette(const std::string& name, ecore::HSVPalette& outPal
     return false;
 }
 
-std::vector<std::string> edmx::builtinPaletteNames()
+std::vector<std::string> edesk::builtinPaletteNames()
 {
     std::vector<std::string> names;
     for (const NamedPalette& entry : namedPalettes())
@@ -566,7 +566,7 @@ namespace
     }
 }
 
-bool edmx::loadDevice(const std::string& path, Device& outDevice, std::string& outError,
+bool edesk::loadDevice(const std::string& path, Device& outDevice, std::string& outError,
                       std::vector<std::string>* outWarnings)
 {
     JsonValue root;
@@ -605,7 +605,7 @@ bool edmx::loadDevice(const std::string& path, Device& outDevice, std::string& o
     return true;
 }
 
-bool edmx::loadConfig(const std::string& path, Config& outConfig, std::string& outError)
+bool edesk::loadConfig(const std::string& path, Config& outConfig, std::string& outError)
 {
     JsonValue root;
     if (!parseJsonFile(path, root, outError))

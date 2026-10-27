@@ -41,7 +41,7 @@
 /// compiles on a machine with no `alsa/seq.h` anywhere on it.
 ///
 
-namespace edmx
+namespace edesk
 {
     /// The subset of alsa-lib's sequencer API this rig uses, as function
     /// pointers. Named after the alsa symbols with the prefix dropped.

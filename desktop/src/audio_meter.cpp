@@ -3,12 +3,12 @@
 // This file is part of project eclipse-os
 // See readme.md for full license details.
 
-#include "edmx/audio_meter.h"
+#include "edesk/audio_meter.h"
 
 #include <algorithm>
 #include <cmath>
 
-using namespace edmx;
+using namespace edesk;
 
 // ============================================================================
 // Pattern_Audio_Meter
@@ -173,7 +173,7 @@ namespace
     }
 }
 
-std::unique_ptr<StateMachinePattern> edmx::makeAudioStateMachine()
+std::unique_ptr<StateMachinePattern> edesk::makeAudioStateMachine()
 {
     // Built from the enum, not from a list written here. A channel added to
     // AudioChannel becomes a cue on the rig and a row in the surface's table

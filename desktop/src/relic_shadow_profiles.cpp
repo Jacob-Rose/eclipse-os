@@ -9,9 +9,9 @@
 // makeXLook(). Kept out of relic_shadow.cpp so that file stays free of any
 // particular sculpture.
 
-#include "edmx/relic_shadow.h"
+#include "edesk/relic_shadow.h"
 
-#include "edmx/state_machine.h"
+#include "edesk/state_machine.h"
 #include "relics/obelisk/obelisk.h"
 
 namespace
@@ -23,19 +23,19 @@ namespace
         return std::unique_ptr<eio::RelicIO>(io.release());
     }
 
-    const edmx::RelicShadowProfile kObelisk = {
+    const edesk::RelicShadowProfile kObelisk = {
         "obelisk",
         eio::NodeSpace::Obelisk,
         &makeObeliskIO,
-        &edmx::makeObeliskLook,
+        &edesk::makeObeliskLook,
     };
 
-    const edmx::RelicShadowProfile* const kProfiles[] = {
+    const edesk::RelicShadowProfile* const kProfiles[] = {
         &kObelisk,
     };
 }
 
-const edmx::RelicShadowProfile* edmx::findShadowProfile(const std::string& relic)
+const edesk::RelicShadowProfile* edesk::findShadowProfile(const std::string& relic)
 {
     for (const RelicShadowProfile* profile : kProfiles)
     {

@@ -20,9 +20,9 @@
 #include "relics/scanner/generic_patterns.h"
 #include "relics/scanner/scanner_patterns.h"
 
-#include "edmx/beat_clock.h"
-#include "edmx/beat_trigger.h"
-#include "edmx/state_machine.h"
+#include "edesk/beat_clock.h"
+#include "edesk/beat_trigger.h"
+#include "edesk/state_machine.h"
 
 ///
 /// mythos26 — the show.
@@ -47,7 +47,7 @@
 /// special case in the show runner.
 ///
 
-namespace edmx
+namespace edesk
 {
 
     /// The whole rig swelling on the beat.
@@ -74,7 +74,7 @@ namespace edmx
     /// **It does not decide when it hits.** It binds to one of the rig's shared
     /// triggers — `rate` is which one — and fires its envelope on the frame that
     /// trigger says a hit landed, at the sub-frame offset the trigger reports.
-    /// Everything about *when* lives in edmx::TriggerRack, and the reason it
+    /// Everything about *when* lives in edesk::TriggerRack, and the reason it
     /// lives there rather than here is that four looks each working it out
     /// privately is four looks that drift apart. See beat_trigger.h.
     class Pattern_Mythos_BeatPulse : public eanim::GeneratorHSV
@@ -125,12 +125,12 @@ namespace edmx
         float getDecaySeconds() const { return decaySeconds; }
 
         /// The four rates, which are also the four triggers — see
-        /// edmx::triggerNameForRate(). Kept spelled here as well because a look
+        /// edesk::triggerNameForRate(). Kept spelled here as well because a look
         /// reads them as its own vocabulary, and they were here first.
-        static constexpr float kQuarterTime{edmx::kQuarterTime};
-        static constexpr float kHalfTime{edmx::kHalfTime};
-        static constexpr float kOnBeat{edmx::kOnBeat};
-        static constexpr float kDoubleTime{edmx::kDoubleTime};
+        static constexpr float kQuarterTime{edesk::kQuarterTime};
+        static constexpr float kHalfTime{edesk::kHalfTime};
+        static constexpr float kOnBeat{edesk::kOnBeat};
+        static constexpr float kDoubleTime{edesk::kDoubleTime};
 
         /// Hits per beat: 0.25 once a bar, 0.5 half time, 1 on the beat, 2
         /// double time.
@@ -797,7 +797,7 @@ namespace edmx
         /// A swell rather than a snap: 0.05s up was the strobe.
         float attackSeconds{0.12f};
         float decaySeconds{0.45f};
-        float pulseRate{edmx::kOnBeat};
+        float pulseRate{edesk::kOnBeat};
         float rainbow{0.0f};
     };
 
@@ -898,7 +898,7 @@ namespace edmx
         /// Long enough to be seen on every beat: 0.12s was three frames,
         /// and a beat that fell between them was a beat the rig missed.
         float decaySeconds{0.22f};
-        float pulseRate{edmx::kOnBeat};
+        float pulseRate{edesk::kOnBeat};
         float strobe{0.0f};
     };
 
@@ -1284,7 +1284,7 @@ namespace edmx
         TriggerRack* triggers{nullptr};
         float attackSeconds{0.06f};
         float decaySeconds{0.38f};
-        float pulseRate{edmx::kOnBeat};
+        float pulseRate{edesk::kOnBeat};
         float pulse{0.0f};
         /// Where the struts are, in struts: the beat clock's position times
         /// the rate, so the sweep is the tempo's and survives a tempo change

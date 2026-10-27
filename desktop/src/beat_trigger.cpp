@@ -3,17 +3,17 @@
 // This file is part of project eclipse-os
 // See readme.md for full license details.
 
-#include "edmx/beat_trigger.h"
+#include "edesk/beat_trigger.h"
 
 #include <algorithm>
 #include <cmath>
 #include <sstream>
 
-#include "edmx/beat_clock.h"
+#include "edesk/beat_clock.h"
 
-using namespace edmx;
+using namespace edesk;
 
-float edmx::snapPulseRate(float pulsesPerBeat)
+float edesk::snapPulseRate(float pulsesPerBeat)
 {
     // Snap to the nearest of the four rather than clamping to the range. A
     // slider spans 0.25..2 and will hand over 1.37 on the way past; the musical
@@ -24,7 +24,7 @@ float edmx::snapPulseRate(float pulsesPerBeat)
     return kOnBeat;
 }
 
-const char* edmx::triggerNameForRate(float pulsesPerBeat)
+const char* edesk::triggerNameForRate(float pulsesPerBeat)
 {
     const float rate = snapPulseRate(pulsesPerBeat);
     if (rate == kQuarterTime) return "bar";
@@ -182,7 +182,7 @@ std::string TriggerRack::describe(double now) const
     return out.str();
 }
 
-TriggerRack& edmx::sharedTriggerRack()
+TriggerRack& edesk::sharedTriggerRack()
 {
     static TriggerRack rack;
     return rack;

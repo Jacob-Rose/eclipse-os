@@ -3,7 +3,7 @@
 // This file is part of project eclipse-os
 // See readme.md for full license details.
 
-#include "edmx/pattern.h"
+#include "edesk/pattern.h"
 
 #include <algorithm>
 #include <cmath>
@@ -17,12 +17,12 @@
 #include "relics/scanner/generic_patterns.h"
 #include "relics/scanner/scanner_patterns.h"
 
-#include "edmx/audio_meter.h"
-#include "edmx/beat_clock.h"
-#include "edmx/mythos26.h"
-#include "edmx/state_machine.h"
+#include "edesk/audio_meter.h"
+#include "edesk/beat_clock.h"
+#include "edesk/mythos26.h"
+#include "edesk/state_machine.h"
 
-using namespace edmx;
+using namespace edesk;
 
 namespace
 {
@@ -326,7 +326,7 @@ void GeneratorPattern::reflect(ecore::PropertyBag& bag)
     }
 }
 
-std::shared_ptr<eio::HSVStripNode_Mapped2D> edmx::makeStripNode(const PatternContext& context,
+std::shared_ptr<eio::HSVStripNode_Mapped2D> edesk::makeStripNode(const PatternContext& context,
                                                                 eio::HSVStripSegment* segment,
                                                                 size_t idx)
 {
@@ -365,7 +365,7 @@ void GeneratorPattern::ensureNodes(const PatternContext& context)
 
     for (size_t idx = 0; idx < context.fixtureCount; ++idx)
     {
-        auto node = edmx::makeStripNode(context, segment.get(), idx);
+        auto node = edesk::makeStripNode(context, segment.get(), idx);
 
         if (idx < context.nodeCoords.size())
         {
@@ -553,7 +553,7 @@ namespace
         };
 
         // --- the audio bus, as cues: one per channel -----------------------
-        // An instrument rather than a show - see edmx/audio_meter.h. Grouped
+        // An instrument rather than a show - see edesk/audio_meter.h. Grouped
         // as a state machine for the same reason mythos26 is: the desk gets a
         // cue list and the surface gets a page, with nothing here per channel.
         table["audio"] = []() {
@@ -572,13 +572,13 @@ namespace
     }
 }
 
-void edmx::registerPattern(const std::string& name, PatternFactory factory)
+void edesk::registerPattern(const std::string& name, PatternFactory factory)
 {
     ensureBuiltinsRegistered();
     registry()[name] = std::move(factory);
 }
 
-ecore::HSVPalette edmx::resolvePalette(const PatternConfig& config)
+ecore::HSVPalette edesk::resolvePalette(const PatternConfig& config)
 {
     // Explicit stops win over a name: if someone listed colours, honour them.
     if (config.palette.size() >= 2)
@@ -599,7 +599,7 @@ ecore::HSVPalette edmx::resolvePalette(const PatternConfig& config)
     });
 }
 
-std::vector<std::string> edmx::patternNames()
+std::vector<std::string> edesk::patternNames()
 {
     ensureBuiltinsRegistered();
 
@@ -611,7 +611,7 @@ std::vector<std::string> edmx::patternNames()
     return names;
 }
 
-std::unique_ptr<Pattern> edmx::makePattern(const std::string& name,
+std::unique_ptr<Pattern> edesk::makePattern(const std::string& name,
                                            const PatternConfig& config,
                                            std::string& outError)
 {

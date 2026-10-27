@@ -11,7 +11,7 @@
 #include <thread>
 #include <vector>
 
-#include "edmx/beat_clock.h"
+#include "edesk/beat_clock.h"
 
 ///
 /// MIDI in, for tempo.
@@ -68,12 +68,12 @@
 ///
 /// So on Linux this publishes a sequencer port of its own — `eclipse-dmx IN` —
 /// and Mixxx is pointed straight at it. There is no virtual cable to install,
-/// because on this platform *we are the cable*. See edmx/alsa_seq.h for how
+/// because on this platform *we are the cable*. See edesk/alsa_seq.h for how
 /// libasound gets loaded without becoming a build dependency, and the readme
 /// for the two-minute version of the setup.
 ///
 
-namespace edmx
+namespace edesk
 {
     /// Which world a port belongs to. They are opened in completely different
     /// ways, so a resolved port has to carry its own.

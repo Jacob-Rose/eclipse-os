@@ -3,7 +3,7 @@
 // This file is part of project eclipse-os
 // See readme.md for full license details.
 
-#include "edmx/mythos26.h"
+#include "edesk/mythos26.h"
 
 #include <algorithm>
 #include <cmath>
@@ -12,11 +12,11 @@
 
 #include "lib/ecore/math.h"
 
-#include "edmx/beat_clock.h"
-#include "edmx/beat_trigger.h"
-#include "edmx/color_mix.h"
+#include "edesk/beat_clock.h"
+#include "edesk/beat_trigger.h"
+#include "edesk/color_mix.h"
 
-using namespace edmx;
+using namespace edesk;
 
 namespace
 {
@@ -177,7 +177,7 @@ void ShowModes::resetMode()
 // the truss as a row
 // ============================================================================
 
-bool edmx::trussRowCoord(const eio::HSVStripNode* node, float row, ecore::Coordinate& outAt)
+bool edesk::trussRowCoord(const eio::HSVStripNode* node, float row, ecore::Coordinate& outAt)
 {
     const eio::HSVStripNode_Space* spaced = eio::spaceOf(node);
     if (spaced == nullptr || spaced->space != eio::NodeSpace::Truss)
@@ -1322,7 +1322,7 @@ void Pattern_Mythos_Nova::tick(float deltaTime)
         triggers = &sharedTriggerRack();
     }
     sinceRing += std::max(deltaTime, 0.0f);
-    const BeatTrigger& beat = triggers->forRate(edmx::kOnBeat);
+    const BeatTrigger& beat = triggers->forRate(edesk::kOnBeat);
     if (beat.fired)
     {
         sinceRing = beat.sinceHit;
@@ -2037,7 +2037,7 @@ void Pattern_Mythos_Solid::reflect(ecore::PropertyBag& bag)
     bag.add("level", level, 0.0f, 1.0f);
 }
 
-StateDef edmx::beatPulseState()
+StateDef edesk::beatPulseState()
 {
     // The same numbers the show's cue opened on - a 0.15s rise into a 0.60s
     // fall, on the beat - because the look is unchanged; only the list holding
@@ -2045,7 +2045,7 @@ StateDef edmx::beatPulseState()
     return beatLook<Pattern_Mythos_BeatPulse>("beat_pulse", 0.15f, 0.60f, 1.0f);
 }
 
-std::unique_ptr<StateMachinePattern> edmx::makeUvStateMachine()
+std::unique_ptr<StateMachinePattern> edesk::makeUvStateMachine()
 {
     // The UV par's three modes, as a layer's machine. `flash` is the show's
     // beat pulse - the same envelope, drawable at the desk, the same rate
@@ -2095,7 +2095,7 @@ std::unique_ptr<StateMachinePattern> edmx::makeUvStateMachine()
         "uv", std::move(states), 0, frame, 1.0f));
 }
 
-std::unique_ptr<StateMachinePattern> edmx::makeFlashStateMachine()
+std::unique_ptr<StateMachinePattern> edesk::makeFlashStateMachine()
 {
     // The bpm flash, as a layer over the whole rig. The same beat pulse the
     // UV runs, white unless its `color` knob says otherwise, and off until a
@@ -2115,7 +2115,7 @@ std::unique_ptr<StateMachinePattern> edmx::makeFlashStateMachine()
         "flash", std::move(states), 0, frame, 0.15f));
 }
 
-std::unique_ptr<StateMachinePattern> edmx::makeMythos26StateMachine()
+std::unique_ptr<StateMachinePattern> edesk::makeMythos26StateMachine()
 {
     // ------------------------------------------------------------------
     // The show, one line per cue, in the order a UI shows them - and the
@@ -2342,8 +2342,8 @@ std::unique_ptr<StateMachinePattern> edmx::makeMythos26StateMachine()
             look.swirl = 0.3f;
             look.trussInvert = 0.6f;
         }, {
-            [](Strobe& look) { look.follow = 0.0f; look.setPulseRate(edmx::kHalfTime); },
-            [](Strobe& look) { look.follow = 0.0f; look.setPulseRate(edmx::kDoubleTime); },
+            [](Strobe& look) { look.follow = 0.0f; look.setPulseRate(edesk::kHalfTime); },
+            [](Strobe& look) { look.follow = 0.0f; look.setPulseRate(edesk::kDoubleTime); },
         }),
         // 10. the canyon fly-through - the bands eased into one another and
         //     half the loop on the rig at once, so it is a gradient and not
@@ -2351,8 +2351,8 @@ std::unique_ptr<StateMachinePattern> edmx::makeMythos26StateMachine()
         //     whole loop on the rig and the rainbow once a bar; 3 fast, the
         //     rainbow in double.
         showLook<Canyon>("canyon", {}, {
-            [](Canyon& look) { look.speed = 0.05f; look.waves = 1.0f; look.setPulseRate(edmx::kQuarterTime); },
-            [](Canyon& look) { look.speed = 0.30f; look.setPulseRate(edmx::kDoubleTime); },
+            [](Canyon& look) { look.speed = 0.05f; look.waves = 1.0f; look.setPulseRate(edesk::kQuarterTime); },
+            [](Canyon& look) { look.speed = 0.30f; look.setPulseRate(edesk::kDoubleTime); },
         }),
         // 11. the scaffold flying past: cyan and red-orange struts
         //     sweeping down the stage, one past any point per beat on the

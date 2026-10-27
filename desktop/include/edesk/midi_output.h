@@ -40,7 +40,7 @@
 /// There is no struct to get wrong.
 ///
 
-namespace edmx
+namespace edesk
 {
     /// One MIDI output the machine can see.
     struct MidiOutPortInfo

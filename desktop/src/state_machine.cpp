@@ -3,7 +3,7 @@
 // This file is part of project eclipse-os
 // See readme.md for full license details.
 
-#include "edmx/state_machine.h"
+#include "edesk/state_machine.h"
 
 #include <algorithm>
 
@@ -37,9 +37,9 @@
 
 // Written here rather than borrowed from a relic: the static looks, which are
 // stage looks like the rest of the generic list and sit in it.
-#include "edmx/mythos26.h"
+#include "edesk/mythos26.h"
 
-using namespace edmx;
+using namespace edesk;
 
 // ============================================================================
 // HostRelicIO
@@ -62,7 +62,7 @@ void HostRelicIO::build(const PatternContext& context, uint8_t segmentId)
         // The same node GeneratorPattern builds - spaced when the rig said
         // what each node is part of - so a scanner look asking which object
         // it is lighting gets the same answer in a machine as bare.
-        auto node = edmx::makeStripNode(context, segment.get(), idx);
+        auto node = edesk::makeStripNode(context, segment.get(), idx);
 
         if (idx < context.nodeCoords.size())
         {
@@ -412,7 +412,7 @@ namespace
     }
 }
 
-std::unique_ptr<StateMachinePattern> edmx::makeJacketStateMachine()
+std::unique_ptr<StateMachinePattern> edesk::makeJacketStateMachine()
 {
     // ------------------------------------------------------------------
     // The looks. Adding one is a single line.
@@ -574,7 +574,7 @@ namespace
     }
 }
 
-std::unique_ptr<StateMachinePattern> edmx::makeScannerStateMachine()
+std::unique_ptr<StateMachinePattern> edesk::makeScannerStateMachine()
 {
     using namespace scanner;
     using ecore::HSV;
@@ -659,7 +659,7 @@ std::unique_ptr<StateMachinePattern> edmx::makeScannerStateMachine()
         "scanner", std::move(states), 0, frame, 1.0f));
 }
 
-std::unique_ptr<StateMachinePattern> edmx::makeGenericStateMachine()
+std::unique_ptr<StateMachinePattern> edesk::makeGenericStateMachine()
 {
     using namespace scanner;
 
@@ -698,7 +698,7 @@ std::unique_ptr<StateMachinePattern> edmx::makeGenericStateMachine()
         "generic", std::move(states), 0, frame, 1.0f));
 }
 
-std::shared_ptr<eanim::GeneratorHSV> edmx::makeObeliskLook(const std::string& name)
+std::shared_ptr<eanim::GeneratorHSV> edesk::makeObeliskLook(const std::string& name)
 {
     if (name == "seasons" || name == "main") return std::make_shared<Pattern_Obelisk_FourSeasons>();
     if (name == "theater")                   return std::make_shared<Pattern_Obelisk_Theater>();
@@ -707,7 +707,7 @@ std::shared_ptr<eanim::GeneratorHSV> edmx::makeObeliskLook(const std::string& na
     return nullptr;
 }
 
-std::unique_ptr<StateMachinePattern> edmx::makeObeliskStateMachine()
+std::unique_ptr<StateMachinePattern> edesk::makeObeliskStateMachine()
 {
     // The obelisk's own ambient looks, as one machine. The default frame is
     // already the space they were tuned in - 8 x 43 from the origin - which

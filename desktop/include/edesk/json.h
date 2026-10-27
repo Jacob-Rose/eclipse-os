@@ -19,7 +19,7 @@
 /// never contain.
 ///
 
-namespace edmx
+namespace edesk
 {
     class JsonValue
     {

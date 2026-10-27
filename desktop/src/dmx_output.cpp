@@ -3,17 +3,17 @@
 // This file is part of project eclipse-os
 // See readme.md for full license details.
 
-#include "edmx/dmx_output.h"
+#include "edesk/dmx_output.h"
 
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <thread>
 
-#include "edmx/beat_clock.h"   // nowSeconds
+#include "edesk/beat_clock.h"   // nowSeconds
 
 #if !defined(_WIN32)
-#  include "edmx/ftdi_dmx.h"
+#  include "edesk/ftdi_dmx.h"
 #endif
 
 namespace
@@ -39,7 +39,7 @@ namespace
     }
 }
 
-using namespace edmx;
+using namespace edesk;
 
 namespace
 {
@@ -118,7 +118,7 @@ bool EnttecProOutput::isOpen() const
     return serial.isOpen();
 }
 
-bool EnttecProOutput::sendFrame(const DmxUniverse& universe, std::string& outError)
+bool EnttecProOutput::sendFrame(const edmx::ChannelBuffer& universe, std::string& outError)
 {
     if (!serial.isOpen())
     {
@@ -126,7 +126,10 @@ bool EnttecProOutput::sendFrame(const DmxUniverse& universe, std::string& outErr
         return false;
     }
 
-    std::copy(universe.data(), universe.data() + universeLength, packet.begin() + 5);
+    // a buffer shorter than the universe sends zeros for the rest
+    const size_t carried = std::min(universe.size(), static_cast<size_t>(universeLength));
+    std::fill(packet.begin() + 5, packet.begin() + 5 + universeLength, uint8_t{0});
+    std::copy(universe.data(), universe.data() + carried, packet.begin() + 5);
     return serial.write(packet.data(), packet.size(), outError);
 }
 
@@ -171,7 +174,7 @@ bool EnttecOpenOutput::open(std::string& outError)
 
 #if !defined(_WIN32)
     // libftdi first. Not a preference - the tty path does not work on these
-    // widgets, for the reason set out at length in edmx/ftdi_dmx.h.
+    // widgets, for the reason set out at length in edesk/ftdi_dmx.h.
     if (const FtdiApi* api = FtdiApi::get())
     {
         void* context = api->newContext();
@@ -254,7 +257,7 @@ bool EnttecOpenOutput::isOpen() const
     return serial.isOpen();
 }
 
-bool EnttecOpenOutput::sendFrame(const DmxUniverse& universe, std::string& outError)
+bool EnttecOpenOutput::sendFrame(const edmx::ChannelBuffer& universe, std::string& outError)
 {
     if (!isOpen())
     {
@@ -268,7 +271,9 @@ bool EnttecOpenOutput::sendFrame(const DmxUniverse& universe, std::string& outEr
     // scheduler off for the whole of it rather than just the break.
     TimeCriticalSection timeCritical;
 
-    std::copy(universe.data(), universe.data() + universeLength, packet.begin() + 1);
+    const size_t carried = std::min(universe.size(), static_cast<size_t>(universeLength));
+    std::fill(packet.begin() + 1, packet.begin() + 1 + universeLength, uint8_t{0});
+    std::copy(universe.data(), universe.data() + carried, packet.begin() + 1);
     return sendVia(outError);
 }
 
@@ -400,7 +405,7 @@ bool ConsoleOutput::isOpen() const
     return opened;
 }
 
-bool ConsoleOutput::sendFrame(const DmxUniverse& universe, std::string& outError)
+bool ConsoleOutput::sendFrame(const edmx::ChannelBuffer& universe, std::string& outError)
 {
     (void)outError;
 
@@ -536,7 +541,7 @@ bool RelicUsbOutput::sendRaw(const uint8_t* inPayload, uint16_t length, uint8_t 
     return false;
 }
 
-bool RelicUsbOutput::sendFrame(const DmxUniverse& universe, std::string& outError)
+bool RelicUsbOutput::sendFrame(const edmx::ChannelBuffer& universe, std::string& outError)
 {
     if (mode == Mode::Cue)
     {
@@ -677,7 +682,7 @@ bool PreviewOutput::isOpen() const
     return opened;
 }
 
-bool PreviewOutput::sendFrame(const DmxUniverse& universe, std::string& outError)
+bool PreviewOutput::sendFrame(const edmx::ChannelBuffer& universe, std::string& outError)
 {
     (void)universe;
     (void)outError;
@@ -693,7 +698,7 @@ std::string PreviewOutput::describe() const
 // Factory
 // ============================================================================
 
-std::unique_ptr<DmxOutput> edmx::makeDmxOutput(const std::string& type,
+std::unique_ptr<ShowOutput> edesk::makeDmxOutput(const std::string& type,
                                                const std::string& port,
                                                int baud,
                                                int consoleChannels,
@@ -701,11 +706,11 @@ std::unique_ptr<DmxOutput> edmx::makeDmxOutput(const std::string& type,
 {
     if (type == "console" || type == "none" || type == "null")
     {
-        return std::unique_ptr<DmxOutput>(new ConsoleOutput(consoleChannels));
+        return std::unique_ptr<ShowOutput>(new ConsoleOutput(consoleChannels));
     }
     if (type == "preview")
     {
-        return std::unique_ptr<DmxOutput>(new PreviewOutput("watch it with --emit-frames"));
+        return std::unique_ptr<ShowOutput>(new PreviewOutput("watch it with --emit-frames"));
     }
     if (type == "relic_usb" || type == "relic_usb_cue")
     {
@@ -717,7 +722,7 @@ std::unique_ptr<DmxOutput> edmx::makeDmxOutput(const std::string& type,
         const RelicUsbOutput::Mode mode = (type == "relic_usb_cue")
             ? RelicUsbOutput::Mode::Cue
             : RelicUsbOutput::Mode::Pixels;
-        return std::unique_ptr<DmxOutput>(new RelicUsbOutput(port, baud, mode));
+        return std::unique_ptr<ShowOutput>(new RelicUsbOutput(port, baud, mode));
     }
     if (type == "enttec_pro")
     {
@@ -726,13 +731,13 @@ std::unique_ptr<DmxOutput> edmx::makeDmxOutput(const std::string& type,
             outError = "no serial port for enttec_pro (set device.port, or plug the widget in for \"auto\")";
             return nullptr;
         }
-        return std::unique_ptr<DmxOutput>(new EnttecProOutput(port, baud));
+        return std::unique_ptr<ShowOutput>(new EnttecProOutput(port, baud));
     }
     if (type == "enttec_open")
     {
         // An empty port is fine when libftdi is available: the widget is found
         // on the USB bus rather than by device node, and while libftdi holds
-        // the chip there is no device node to find. See edmx/ftdi_dmx.h.
+        // the chip there is no device node to find. See edesk/ftdi_dmx.h.
         bool byUsb = false;
 #if !defined(_WIN32)
         byUsb = (FtdiApi::get() != nullptr);
@@ -742,7 +747,7 @@ std::unique_ptr<DmxOutput> edmx::makeDmxOutput(const std::string& type,
             outError = "no serial port for enttec_open (set device.port, or plug the widget in for \"auto\")";
             return nullptr;
         }
-        return std::unique_ptr<DmxOutput>(new EnttecOpenOutput(port));
+        return std::unique_ptr<ShowOutput>(new EnttecOpenOutput(port));
     }
 
     outError = "unknown device type '" + type
@@ -751,7 +756,7 @@ std::unique_ptr<DmxOutput> edmx::makeDmxOutput(const std::string& type,
     return nullptr;
 }
 
-std::vector<RelicProbe> edmx::probeRelicPorts(int baud, int millisecondsEach)
+std::vector<RelicProbe> edesk::probeRelicPorts(int baud, int millisecondsEach)
 // millisecondsEach is the listen window *after* the settle above, so the wall
 // clock cost per port is CDC_SETTLE_MS + however long the relic takes to
 // answer, which on a 30ms tick is one or two.
@@ -837,13 +842,13 @@ std::vector<RelicProbe> edmx::probeRelicPorts(int baud, int millisecondsEach)
     return found;
 }
 
-std::string edmx::autoDetectRelicPort(int baud)
+std::string edesk::autoDetectRelicPort(int baud)
 {
     const std::vector<RelicProbe> found = probeRelicPorts(baud);
     return found.empty() ? std::string() : found.front().port;
 }
 
-std::string edmx::autoDetectPort()
+std::string edesk::autoDetectPort()
 {
     for (const SerialPortInfo& info : SerialPort::enumeratePorts())
     {

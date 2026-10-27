@@ -18,7 +18,7 @@
 #include "lib/eio/hsv_strip.h"
 #include "lib/eio/strip_projection.h"
 
-#include "edmx/config.h"
+#include "edesk/config.h"
 
 ///
 /// Patterns.
@@ -29,7 +29,7 @@
 /// same library, not a reimplementation of it.
 ///
 
-namespace edmx
+namespace edesk
 {
     /// Where a rig sits in the coordinate space a relic pattern expects.
     ///
@@ -142,7 +142,7 @@ namespace edmx
 
         /// The layer under this pattern, on a relic the show has taken over:
         /// the sculpture's own look, running here in step with it (see
-        /// edmx::RelicShadow). Rendered into the nodes before the pattern's
+        /// edesk::RelicShadow). Rendered into the nodes before the pattern's
         /// own looks each frame, so a look that joins the sculpture finds its
         /// picture in hand. Null when nothing is underneath. Not owned. The
         /// default keeps nothing, for a pattern with no looks that compose.

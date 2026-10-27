@@ -24,7 +24,7 @@ CXX="${CXX:-g++}"
 CXXFLAGS=(-std=c++17 -O1 -Wall -Wextra -DUSE_ARDUINO=0 -Isrc/lib -Itests)
 
 # the same portable slice desktop/CMakeLists.txt builds: everything but button.cpp
-LIB_SOURCES=(src/lib/ecore/*.cpp src/lib/eanim/*.cpp src/lib/esm/*.cpp src/lib/elink/*.cpp
+LIB_SOURCES=(src/lib/ecore/*.cpp src/lib/eanim/*.cpp src/lib/esm/*.cpp src/lib/elink/*.cpp src/lib/edmx/*.cpp
              src/lib/eio/hsv_strip.cpp src/lib/eio/relic.cpp src/lib/eio/screen_drawer.cpp src/lib/eio/strip_projection.cpp
              src/lib/external/easing.cpp)
 TEST_SOURCES=(tests/*.cpp)

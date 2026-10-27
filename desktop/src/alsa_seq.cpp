@@ -3,14 +3,14 @@
 // This file is part of project eclipse-os
 // See readme.md for full license details.
 
-#include "edmx/alsa_seq.h"
+#include "edesk/alsa_seq.h"
 
 #if !defined(_WIN32)
 
 #include <dlfcn.h>
 #include <type_traits>
 
-using namespace edmx;
+using namespace edesk;
 
 namespace
 {

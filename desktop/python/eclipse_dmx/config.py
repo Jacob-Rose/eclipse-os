@@ -26,7 +26,7 @@ DMX_CHANNEL_COUNT = 512
 DMX_WIRE_TYPES = ("enttec_pro", "enttec_open")
 
 #: Types that drive an eclipse-os relic over its own USB cable, rather than a
-#: DMX widget. The frame buffer is the pixel buffer; see edmx::RelicUsbOutput.
+#: DMX widget. The frame buffer is the pixel buffer; see edesk::RelicUsbOutput.
 RELIC_TYPES = ("relic_usb", "relic_usb_cue")
 
 DEVICE_TYPES = (
@@ -40,8 +40,8 @@ DEVICE_TYPES = (
     "null",
 )
 
-#: How a fixture's `position` is read. Must stay in step with edmx::CoordSpace
-#: in desktop/include/edmx/config.h.
+#: How a fixture's `position` is read. Must stay in step with edesk::CoordSpace
+#: in desktop/include/edesk/config.h.
 COORD_SPACES = ("normalized", "literal")
 
 PATTERN_NAMES = (
@@ -423,7 +423,7 @@ class MidiConfig:
 
     Optional in every sense: leave it alone and the rig keeps its own time at
     ``bpm``, which is what you want at a bench and a serviceable fallback on
-    stage. Must stay in step with MidiConfig in desktop/include/edmx/config.h.
+    stage. Must stay in step with MidiConfig in desktop/include/edesk/config.h.
 
     The note numbers default to what Mixxx's MIDI-for-light mapping sends:
     note 50 on each beat, note 52 carrying the tempo as velocity + 50. Setting
@@ -863,7 +863,7 @@ class Device:
     A device owns its geometry, how its numbers are read, and its own way onto a
     wire. It does not own a pattern or a tempo - those belong to the show, and
     every device in an environment shares them. Must stay in step with
-    edmx::Device in desktop/include/edmx/config.h.
+    edmx::Device in desktop/include/edesk/config.h.
     """
 
     name: str = "rig"
@@ -878,7 +878,7 @@ class Device:
     #: What the `position` fields mean. "normalized" spreads the rig across
     #: 0..1 and lets the pattern's coordinate frame stretch it; "literal" hands
     #: the numbers to the pattern as written, which is what a relic describing
-    #: its own geometry wants. See edmx::CoordSpace.
+    #: its own geometry wants. See edesk::CoordSpace.
     coord_space: str = "normalized"
 
     #: What the device *is* - "ring", "obelisk", "truss" - for a look that
@@ -1289,12 +1289,12 @@ class Config:
     #: the show - the UV par with its own off / flash / on machine. Kept as
     #: the file's own dicts (name, fixtures, pattern, state); the executable
     #: is the authority on what they mean. See LayerConfig in
-    #: desktop/include/edmx/config.h.
+    #: desktop/include/edesk/config.h.
     layers: List[Dict[str, Any]] = field(default_factory=list)
 
     #: Knobs on the show's own look driven by the audio bus, as the file's own
     #: dicts (param, channel, low, high, slew). The layers carry their own in
-    #: their entries. See ModConfig in desktop/include/edmx/config.h.
+    #: their entries. See ModConfig in desktop/include/edesk/config.h.
     mods: List[Dict[str, Any]] = field(default_factory=list)
 
     #: The cue table: what each state of the show asks of the rest of the

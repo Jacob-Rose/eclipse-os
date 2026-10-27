@@ -3,7 +3,7 @@
 // This file is part of project eclipse-os
 // See readme.md for full license details.
 
-#include "edmx/fixture.h"
+#include "fixture.h"
 
 #include <algorithm>
 #include <cctype>
@@ -14,10 +14,7 @@ using namespace edmx;
 
 Rgb8 edmx::hsvToRgb8(const ecore::HSV& hsv)
 {
-    // Standard HSV -> RGB sector walk. We pull floats out of the library's
-    // fixed-point representation here rather than reimplementing the fixed
-    // point maths: this runs once per fixture per frame on a desktop CPU, so
-    // the precision is worth far more than the cycles.
+    // the standard sector walk, in float: once per fixture per frame
     const float h = hsv.getHueFloat();   // 0..360
     const float s = hsv.getSatFloat();   // 0..1
     const float v = hsv.getValFloat();   // 0..1
@@ -112,25 +109,17 @@ bool edmx::resolveChannelOrder(Fixture& fixture, std::string& outError)
 
 namespace
 {
-    /// The shipped profiles.
-    ///
-    /// `park` entries are what makes these worth having: a cheap par will sit
-    /// dark, or strobe, or run its own colour macro and ignore you entirely,
-    /// until its mode channels are pinned. Encoding that per model means it is
-    /// solved once instead of every time someone patches a rig.
+    /// The shipped profiles. The `park` entries are what make a cheap par
+    /// obey its colour channels instead of running its own macro.
     const std::vector<FixtureProfile>& builtinProfiles()
     {
         static const std::vector<FixtureProfile> profiles = []() {
             std::vector<FixtureProfile> out;
 
             {
-                // U'King Par 36, 7-channel mode.
+                // U'King Par 36, 7-channel mode:
                 //   1 master dimmer   2 red   3 green   4 blue
                 //   5 strobe          6 mode  7 colour selection
-                //
-                // Parking 5-7 is the part that decides whether a cheap par
-                // works at all: leave the mode channel floating and the fixture
-                // runs its own colour macro and ignores you.
                 FixtureProfile profile;
                 profile.name = "uking_par36";
                 profile.footprint = 7;
@@ -167,8 +156,7 @@ namespace
             }
 
             {
-                // The other very common cheap-par layout: colour first, then
-                // dimmer, strobe and a macro channel.
+                // Colour first, then dimmer, strobe and a macro channel.
                 FixtureProfile profile;
                 profile.name = "rgb7_par";
                 profile.footprint = 7;
@@ -299,16 +287,14 @@ Fixture edmx::instantiateProfile(const FixtureProfile& profile,
     Fixture fixture;
     fixture.name = name;
 
-    // startChannel is the fixture's own address and the colour offsets are
-    // relative to it, which lets a profile place r/g/b anywhere in the
-    // footprint rather than requiring them to be three in a row.
+    // the colour offsets are relative to the address, so a profile can place
+    // r/g/b anywhere in the footprint
     fixture.startChannel = address;
     fixture.offsetR = profile.redOffset - 1;
     fixture.offsetG = profile.greenOffset - 1;
     fixture.offsetB = profile.blueOffset - 1;
 
-    // channelOrder is only a display string once a profile is driving things;
-    // keep it honest for logs.
+    // a display string once a profile is driving things; kept honest for logs
     fixture.channelOrder = "profile:" + profile.name;
 
     if (profile.dimmerOffset > 0)
@@ -327,8 +313,6 @@ Fixture edmx::instantiateProfile(const FixtureProfile& profile,
 
 int edmx::fixtureHighestChannel(const Fixture& fixture)
 {
-    // the colour offsets are not necessarily 0/1/2 once a profile is placing
-    // them, so take the actual maximum rather than assuming three in a row
     int highest = fixture.startChannel + std::max(fixture.offsetR,
                                                   std::max(fixture.offsetG, fixture.offsetB));
     highest = std::max(highest, fixture.dimmerChannel);
@@ -361,7 +345,7 @@ float FixtureMap::normalizedPosition(size_t idx) const
 void FixtureMap::render(const std::vector<ecore::HSV>& colors,
                         float masterBrightness,
                         float gamma,
-                        DmxUniverse& universe) const
+                        ChannelBuffer& buffer) const
 {
     const float master = std::clamp(masterBrightness, 0.0f, 1.0f);
 
@@ -369,16 +353,15 @@ void FixtureMap::render(const std::vector<ecore::HSV>& colors,
     {
         const Fixture& fixture = fixtures[idx];
 
-        // Park the mode/strobe channels first so a fixture that needs one held
-        // at a value gets it even on the very first frame.
+        // parked channels and the dimmer first, so they hold from the first frame
         for (const auto& entry : fixture.staticChannels)
         {
-            universe.setChannel(entry.first, entry.second);
+            buffer.setChannel(entry.first, entry.second);
         }
 
         if (fixture.dimmerChannel > 0)
         {
-            universe.setChannel(fixture.dimmerChannel, fixture.dimmerValue);
+            buffer.setChannel(fixture.dimmerChannel, fixture.dimmerValue);
         }
 
         ecore::HSV color;
@@ -387,8 +370,7 @@ void FixtureMap::render(const std::vector<ecore::HSV>& colors,
             color = colors[idx];
         }
 
-        // Scale in HSV before the conversion: dimming value keeps the hue
-        // intact, where scaling the rgb bytes afterwards would drift it.
+        // dim in HSV before converting: scaling the rgb bytes would drift the hue
         const float scale = std::clamp(master * fixture.brightness, 0.0f, 1.0f);
         color.setBrightnessAlpha(color.getValFloat() * scale);
 
@@ -397,9 +379,9 @@ void FixtureMap::render(const std::vector<ecore::HSV>& colors,
         rgb.g = applyGamma(rgb.g, gamma);
         rgb.b = applyGamma(rgb.b, gamma);
 
-        universe.setChannel(fixture.startChannel + fixture.offsetR, rgb.r);
-        universe.setChannel(fixture.startChannel + fixture.offsetG, rgb.g);
-        universe.setChannel(fixture.startChannel + fixture.offsetB, rgb.b);
+        buffer.setChannel(fixture.startChannel + fixture.offsetR, rgb.r);
+        buffer.setChannel(fixture.startChannel + fixture.offsetG, rgb.g);
+        buffer.setChannel(fixture.startChannel + fixture.offsetB, rgb.b);
     }
 }
 

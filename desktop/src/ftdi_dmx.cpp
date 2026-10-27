@@ -3,7 +3,7 @@
 // This file is part of project eclipse-os
 // See readme.md for full license details.
 
-#include "edmx/ftdi_dmx.h"
+#include "edesk/ftdi_dmx.h"
 
 #if !defined(_WIN32)
 
@@ -12,7 +12,7 @@
 #include <fstream>
 #include <type_traits>
 
-using namespace edmx;
+using namespace edesk;
 
 namespace
 {
@@ -87,7 +87,7 @@ const FtdiApi* FtdiApi::get()
     return loaded;
 }
 
-std::string edmx::ftdi::serialForTtyPath(const std::string& path)
+std::string edesk::ftdi::serialForTtyPath(const std::string& path)
 {
     // /dev/ttyUSB0 -> /sys/class/tty/ttyUSB0/device, which is the *interface*.
     // The serial number lives on the USB device two levels up. Walking there

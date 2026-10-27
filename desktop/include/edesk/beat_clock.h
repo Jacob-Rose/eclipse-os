@@ -49,7 +49,7 @@
 /// it stays until the next miscount moves it back. See markBeat().
 ///
 
-namespace edmx
+namespace edesk
 {
     /// Seconds on a monotonic clock, zeroed at first use.
     ///

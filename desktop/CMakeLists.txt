@@ -32,6 +32,7 @@ set(ECLIPSE_SRC  "${ECLIPSE_ROOT}/src")
 # someone adds a file.
 # ---------------------------------------------------------------------------
 set(ECLIPSE_CORE_SOURCES
+    ${ECLIPSE_SRC}/lib/edmx/fixture.cpp
     ${ECLIPSE_SRC}/lib/ecore/coord.cpp
     ${ECLIPSE_SRC}/lib/ecore/hsv.cpp
     ${ECLIPSE_SRC}/lib/ecore/logging.cpp
@@ -80,7 +81,7 @@ set(ECLIPSE_CORE_SOURCES
 # of a physical strip.
 #
 # These are the actual relic patterns, not copies. A pattern is a GeneratorHSV,
-# so anything written for a relic runs here through edmx::GeneratorPattern with
+# so anything written for a relic runs here through edesk::GeneratorPattern with
 # no porting at all. Add a pattern source here, register it in pattern.cpp,
 # done.
 set(ECLIPSE_RELIC_SOURCES
@@ -172,16 +173,15 @@ target_compile_definitions(eclipse_core PUBLIC
 )
 
 # ---------------------------------------------------------------------------
-# edmx: the DMX output layer
+# edesk: the show runner's own code (its namespace, too)
 # ---------------------------------------------------------------------------
-add_library(edmx STATIC
+add_library(edesk STATIC
     src/beat_clock.cpp
     src/beat_trigger.cpp
     src/config.cpp
     src/dmx_output.cpp
     src/relic_shadow.cpp
     src/relic_shadow_profiles.cpp
-    src/fixture.cpp
     src/json.cpp
     src/midi_input.cpp
     src/midi_output.cpp
@@ -192,26 +192,26 @@ add_library(edmx STATIC
     src/state_machine.cpp
 )
 
-target_include_directories(edmx PUBLIC
+target_include_directories(edesk PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-target_link_libraries(edmx PUBLIC eclipse_core)
+target_link_libraries(edesk PUBLIC eclipse_core)
 # the shadow spawns the sculpture's own IO layer (ObeliskIO, for its
 # geometry) - the firmware, built for the host, same as --link-selftest
-target_link_libraries(edmx PUBLIC eclipse_relic_firmware)
+target_link_libraries(edesk PUBLIC eclipse_relic_firmware)
 
 # ---------------------------------------------------------------------------
 # the executable
 # ---------------------------------------------------------------------------
 add_executable(eclipse-dmx src/main.cpp)
-target_link_libraries(eclipse-dmx PRIVATE edmx eclipse_relic_firmware)
+target_link_libraries(eclipse-dmx PRIVATE edesk eclipse_relic_firmware)
 
 # ---------------------------------------------------------------------------
 # platform bits
 # ---------------------------------------------------------------------------
 find_package(Threads REQUIRED)
-target_link_libraries(edmx PUBLIC Threads::Threads)
+target_link_libraries(edesk PUBLIC Threads::Threads)
 
 # 32-bit ARM - a Raspberry Pi - has no inline 64-bit atomics. The beat clock's
 # atomic doubles and counters compile into __atomic_load_8 calls that live in
@@ -233,14 +233,14 @@ if(NOT ECLIPSE_ATOMIC64_BUILTIN)
     if(NOT ECLIPSE_ATOMIC64_VIA_LIBATOMIC)
         message(FATAL_ERROR "64-bit atomics do not link, with or without libatomic")
     endif()
-    target_link_libraries(edmx PUBLIC atomic)
+    target_link_libraries(edesk PUBLIC atomic)
 endif()
 
 if(WIN32)
     # RegOpenKeyEx / RegEnumValue for port enumeration
-    target_link_libraries(edmx PUBLIC advapi32)
+    target_link_libraries(edesk PUBLIC advapi32)
     # midiIn* for tempo in. winmm is part of Windows; nothing to install.
-    target_link_libraries(edmx PUBLIC winmm)
+    target_link_libraries(edesk PUBLIC winmm)
 else()
     # The ALSA sequencer, which is where DJ software on Linux publishes its
     # MIDI - Mixxx owns no hardware, so it has no device node to read.
@@ -255,8 +255,8 @@ else()
     # cannot say when a frame has left the chip, so the break lands inside the
     # previous frame and an Open DMX rig stays dark while every diagnostic
     # reports success. Driving the chip directly is what QLC+ and OLA do.
-    target_sources(edmx PRIVATE src/alsa_seq.cpp src/ftdi_dmx.cpp)
-    target_link_libraries(edmx PUBLIC ${CMAKE_DL_LIBS})
+    target_sources(edesk PRIVATE src/alsa_seq.cpp src/ftdi_dmx.cpp)
+    target_link_libraries(edesk PUBLIC ${CMAKE_DL_LIBS})
 endif()
 
 if(MINGW)
@@ -272,11 +272,11 @@ endif()
 
 if(MSVC)
     target_compile_options(eclipse_core PRIVATE /W3)
-    target_compile_options(edmx PRIVATE /W3)
+    target_compile_options(edesk PRIVATE /W3)
     # the library leans on a few things MSVC flags as unsafe-but-standard
     target_compile_definitions(eclipse_core PUBLIC _CRT_SECURE_NO_WARNINGS)
 else()
-    target_compile_options(edmx PRIVATE -Wall -Wextra)
+    target_compile_options(edesk PRIVATE -Wall -Wextra)
 
     # FastNoiseLite's 3D cellular path trips -Waggressive-loop-optimizations at
     # -O2. It is vendored third-party code and we only ever call the 2D entry

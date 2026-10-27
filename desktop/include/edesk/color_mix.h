@@ -22,7 +22,7 @@
 /// saturated colours should stay).
 ///
 
-namespace edmx
+namespace edesk
 {
     struct Rgb
     {

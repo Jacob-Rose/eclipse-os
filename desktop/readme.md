@@ -1204,7 +1204,7 @@ The `obelisk_*` entries are not reimplementations. They are
 
 A relic pattern is a `GeneratorHSV`: it reads a node's 2D coordinate and writes
 a colour, and it has no idea whether the node is an LED on a strip or a par on
-a truss. `edmx::GeneratorPattern` builds one `HSVStripNode_Mapped2D` per
+a truss. `edesk::GeneratorPattern` builds one `HSVStripNode_Mapped2D` per
 fixture, hands them to the generator, and the look renders. Adding another relic
 pattern is one source file in `ECLIPSE_RELIC_SOURCES` and one line in
 `ensureBuiltinsRegistered()`.
@@ -1344,7 +1344,7 @@ left behind them. One clock: the pulse leaves the foot *on* the ring's flash,
 which a beam on a rotation of its own never did.
 
 The plumbing is `PatternContext::nodeMappings`, filled beside `nodeCoords`
-from each device's locals before placement, and `edmx::makeStripNode`, which
+from each device's locals before placement, and `edesk::makeStripNode`, which
 both `GeneratorPattern` and the state machine's `HostRelicIO` build their
 nodes through — so a look gets the same answer bare or in a machine.
 
@@ -1901,7 +1901,7 @@ print(show.dump_params())      # {"attack": 0.15, "decay": 0.9, ...}
 
 ### the beat
 
-Beat-driven looks read `edmx::BeatClock`, one per process. Something upstream
+Beat-driven looks read `edesk::BeatClock`, one per process. Something upstream
 says "beat now" and how fast; patterns ask how far into the beat it is, every
 frame.
 
@@ -2598,7 +2598,7 @@ the host generates the DMX break and clocks the frame out itself.
 On **Linux this goes through libftdi rather than the serial port**, and that is
 not a preference — the tty path does not work on these widgets. See
 [the widget that would not light](#the-widget-that-would-not-light) below, which
-is worth reading before debugging one, and `include/edmx/ftdi_dmx.h` for the
+is worth reading before debugging one, and `include/edesk/ftdi_dmx.h` for the
 mechanism. It is `dlopen`'d, so a machine without libftdi still builds and runs
 and falls back to the serial port.
 
@@ -3206,7 +3206,7 @@ test asked for, so the geometry tests all quietly ran at one tile size.
 
 ```
 desktop/
-  include/edmx/    json, serial_port, dmx_output, fixture, config, pattern
+  include/edesk/    json, serial_port, dmx_output, fixture, config, pattern
   src/             implementations, plus main.cpp (the show runner)
   devices/         one file per physical thing: the obelisk, the truss of pars
   config/          environments — rooms with devices in them, and the show

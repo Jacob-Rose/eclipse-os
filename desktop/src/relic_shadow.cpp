@@ -3,13 +3,13 @@
 // This file is part of project eclipse-os
 // See readme.md for full license details.
 
-#include "edmx/relic_shadow.h"
+#include "edesk/relic_shadow.h"
 
 #include "lib/ecore/property.h"
 #include "lib/esm/state.h"
 #include "lib/esm/state_generic.h"
 
-using namespace edmx;
+using namespace edesk;
 
 RelicShadow::RelicShadow() = default;
 

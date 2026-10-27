@@ -3,7 +3,7 @@
 // This file is part of project eclipse-os
 // See readme.md for full license details.
 
-#include "edmx/serial_port.h"
+#include "edesk/serial_port.h"
 
 #include <algorithm>
 #include <chrono>
@@ -26,7 +26,7 @@
     #include <vector>
 #endif
 
-using namespace edmx;
+using namespace edesk;
 
 // ============================================================================
 // TimeCriticalSection

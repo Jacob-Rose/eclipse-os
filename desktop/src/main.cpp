@@ -45,24 +45,23 @@
 #include "relics/obelisk/obelisk.h"
 #include "relics/obelisk/state_obelisk.h"
 
-#include "edmx/beat_clock.h"
-#include "edmx/beat_trigger.h"
-#include "edmx/color_mix.h"
-#include "edmx/config.h"
-#include "edmx/dmx_output.h"
-#include "edmx/relic_shadow.h"
-#include "edmx/fixture.h"
+#include "edesk/beat_clock.h"
+#include "edesk/beat_trigger.h"
+#include "edesk/color_mix.h"
+#include "edesk/config.h"
+#include "edesk/dmx_output.h"
+#include "edesk/relic_shadow.h"
 #if !defined(_WIN32)
-#  include "edmx/ftdi_dmx.h"
+#  include "edesk/ftdi_dmx.h"
 #endif
-#include "edmx/midi_input.h"
-#include "edmx/midi_output.h"
-#include "edmx/mythos26.h"
-#include "edmx/pattern.h"
-#include "edmx/serial_port.h"
-#include "edmx/state_machine.h"
+#include "edesk/midi_input.h"
+#include "edesk/midi_output.h"
+#include "edesk/mythos26.h"
+#include "edesk/pattern.h"
+#include "edesk/serial_port.h"
+#include "edesk/state_machine.h"
 
-using namespace edmx;
+using namespace edesk;
 
 namespace
 {
@@ -2035,9 +2034,9 @@ namespace
     struct DeviceRuntime
     {
         const Device* config{nullptr};
-        std::unique_ptr<DmxOutput> output;
+        std::unique_ptr<ShowOutput> output;
         std::unique_ptr<eio::HSVStrip> strip;
-        DmxUniverse universe;
+        edmx::ChannelBuffer universe;
 
         /// Where this device's fixtures sit in the show-wide run, which is the
         /// order the pattern renders in and the frame stream reports.
@@ -2142,7 +2141,7 @@ namespace
 
         /// The linked relic's own look, running here in step with it - what
         /// a look that joins the sculpture composes over. Spawned from the
-        /// relic's answer to `sim`; see edmx::RelicShadow. One, because the
+        /// relic's answer to `sim`; see edesk::RelicShadow. One, because the
         /// show has one sculpture with a look of its own; a second would
         /// want a shadow per relic device.
         RelicShadow shadow;
@@ -4942,7 +4941,7 @@ int main(int argc, char** argv)
             // frequently does not have one: libftdi takes the chip off
             // ftdi_sio to talk to it, which removes /dev/ttyUSBn for as long as
             // it holds it. Leaving the port empty lets the output find the
-            // widget by USB instead. See edmx/ftdi_dmx.h.
+            // widget by USB instead. See edesk/ftdi_dmx.h.
             const bool findsItsOwnWidget = (config.output.type == "enttec_open")
                                         && ftdiCanSeeAWidget();
 
@@ -5044,7 +5043,9 @@ int main(int argc, char** argv)
         // Sized whether or not there is a wire: an offline device still renders
         // into its buffer, which is what keeps it in the frame stream and on
         // the viewer's screen.
-        device.universe.resize(config.fixtures.highestChannel());
+        // never shorter than one universe: a DMX widget sends 512 whatever
+        // the patch uses, and a pixel rig is as long as its pixels
+        device.universe.resize(std::max(config.fixtures.highestChannel(), edmx::DMX_CHANNEL_COUNT));
 
         attachWire(device, /*announce=*/true);
 
@@ -5082,7 +5083,7 @@ int main(int argc, char** argv)
     // Set up before the first frame whether or not there is a MIDI device: the
     // clock free-runs, so a beat-driven look pulses at the configured tempo on
     // a bench with nothing plugged in, and locks to the music when there is
-    // some. See edmx/beat_clock.h.
+    // some. See edesk/beat_clock.h.
     sharedBeatClock().setBpm(show.config.midi.bpm, BeatSource::Internal);
     sharedBeatClock().setFreeRun(show.config.midi.freeRun);
     sharedBeatClock().setLatency(static_cast<double>(show.config.midi.latencyMs) / 1000.0);
@@ -5319,7 +5320,7 @@ int main(int argc, char** argv)
         // Which of this frame's beats are hits is one question with one
         // answer, and every look that fires on the beat is about to read it.
         // Working it out per look is what used to let the UV and the truss
-        // fall out of step - see edmx/beat_trigger.h.
+        // fall out of step - see edesk/beat_trigger.h.
         sharedTriggerRack().tick(audioNow);
 
         // The sculpture's own look, beside the show, for the looks that

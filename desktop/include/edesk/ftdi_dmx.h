@@ -47,12 +47,12 @@
 ///     `/dev/ttyUSBn` it happened to land on this boot.
 ///
 /// The library is dlopen'd rather than linked, for the same reason libasound is
-/// in edmx/alsa_seq.h: this binary must build and run on a machine that has
+/// in edesk/alsa_seq.h: this binary must build and run on a machine that has
 /// neither. Without it, the serial path is still there — see
 /// EnttecOpenOutput::open, which says so out loud when it falls back.
 ///
 
-namespace edmx
+namespace edesk
 {
     /// The slice of libftdi1 this needs, as function pointers. Named after the
     /// library's own symbols with the `ftdi_` prefix dropped.

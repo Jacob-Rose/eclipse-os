@@ -16,9 +16,9 @@
 #include "lib/esm/state.h"
 #include "lib/esm/state_generic.h"
 
-#include "edmx/pattern.h"
+#include "edesk/pattern.h"
 
-namespace edmx
+namespace edesk
 {
     /// A RelicIO with nothing behind it.
     ///

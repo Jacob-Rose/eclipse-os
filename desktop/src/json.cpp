@@ -3,7 +3,7 @@
 // This file is part of project eclipse-os
 // See readme.md for full license details.
 
-#include "edmx/json.h"
+#include "edesk/json.h"
 
 #include <cctype>
 #include <cmath>
@@ -14,7 +14,7 @@
 #include <stdexcept>
 #include <utility>
 
-using namespace edmx;
+using namespace edesk;
 
 const JsonValue& JsonValue::nullValue()
 {
@@ -99,7 +99,7 @@ std::string JsonValue::asString(const std::string& fallback) const
     return (type == Type::String) ? stringValue : fallback;
 }
 
-namespace edmx
+namespace edesk
 {
     class JsonParser
     {
@@ -461,7 +461,7 @@ namespace edmx
     };
 }
 
-bool edmx::parseJson(const std::string& text, JsonValue& outValue, std::string& outError)
+bool edesk::parseJson(const std::string& text, JsonValue& outValue, std::string& outError)
 {
     JsonParser parser(text);
     if (!parser.parse(outValue))
@@ -472,7 +472,7 @@ bool edmx::parseJson(const std::string& text, JsonValue& outValue, std::string& 
     return true;
 }
 
-bool edmx::parseJsonFile(const std::string& path, JsonValue& outValue, std::string& outError)
+bool edesk::parseJsonFile(const std::string& path, JsonValue& outValue, std::string& outError)
 {
     std::ifstream file(path, std::ios::binary);
     if (!file)

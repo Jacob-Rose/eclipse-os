@@ -3,23 +3,23 @@
 // This file is part of project eclipse-os
 // See readme.md for full license details.
 
-#include "edmx/beat_clock.h"
+#include "edesk/beat_clock.h"
 
 #include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
 
-using namespace edmx;
+using namespace edesk;
 
-double edmx::nowSeconds()
+double edesk::nowSeconds()
 {
     using clock = std::chrono::steady_clock;
     static const clock::time_point origin = clock::now();
     return std::chrono::duration<double>(clock::now() - origin).count();
 }
 
-const char* edmx::describeBeatSource(BeatSource source)
+const char* edesk::describeBeatSource(BeatSource source)
 {
     switch (source)
     {
@@ -412,7 +412,7 @@ std::string BeatClock::describe(double now) const
     return std::string(text);
 }
 
-BeatClock& edmx::sharedBeatClock()
+BeatClock& edesk::sharedBeatClock()
 {
     static BeatClock instance;
     return instance;
@@ -422,7 +422,7 @@ BeatClock& edmx::sharedBeatClock()
 // AudioLevel
 // ============================================================================
 
-const char* edmx::describeVuSource(VuSource source)
+const char* edesk::describeVuSource(VuSource source)
 {
     switch (source)
     {
@@ -448,7 +448,7 @@ namespace
     };
 }
 
-const char* edmx::audioChannelName(AudioChannel channel)
+const char* edesk::audioChannelName(AudioChannel channel)
 {
     const int index = static_cast<int>(channel);
     if (index < 0 || index >= kAudioChannelCount)
@@ -458,7 +458,7 @@ const char* edmx::audioChannelName(AudioChannel channel)
     return kAudioChannelNames[index];
 }
 
-bool edmx::findAudioChannel(const std::string& name, AudioChannel& outChannel)
+bool edesk::findAudioChannel(const std::string& name, AudioChannel& outChannel)
 {
     for (int index = 0; index < kAudioChannelCount; ++index)
     {
@@ -563,7 +563,7 @@ std::string AudioLevel::describeLive(double now) const
     return text.empty() ? std::string("none") : text;
 }
 
-AudioLevel& edmx::sharedAudioLevel()
+AudioLevel& edesk::sharedAudioLevel()
 {
     static AudioLevel instance;
     return instance;

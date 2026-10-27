@@ -10,8 +10,8 @@
 #include "lib/eanim/generator_hsv.h"
 #include "lib/ecore/hsv.h"
 
-#include "edmx/beat_clock.h"
-#include "edmx/state_machine.h"
+#include "edesk/beat_clock.h"
+#include "edesk/state_machine.h"
 
 ///
 /// The audio bus, on the rig: one cue per channel, for reading it with your
@@ -39,7 +39,7 @@
 /// thing everywhere and cannot be misread by standing somewhere else.
 ///
 
-namespace edmx
+namespace edesk
 {
     /// One channel of the bus, as light.
     ///

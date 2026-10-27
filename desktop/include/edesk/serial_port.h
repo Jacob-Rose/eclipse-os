@@ -19,7 +19,7 @@
 /// to bang out the DMX break itself.
 ///
 
-namespace edmx
+namespace edesk
 {
     struct SerialPortInfo
     {
