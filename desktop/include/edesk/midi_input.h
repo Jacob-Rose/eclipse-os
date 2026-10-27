@@ -11,8 +11,8 @@
 #include <thread>
 #include <vector>
 
-#include "lib/emidi/clock.h"
-#include "lib/emidi/parser.h"
+#include <emidi/clock.h>
+#include <emidi/parser.h>
 
 #include "edesk/beat_clock.h"
 

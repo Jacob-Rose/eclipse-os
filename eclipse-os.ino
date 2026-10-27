@@ -57,11 +57,12 @@
   #error "The link and the serial MQTT bridge cannot share one port. Pick one."
 #endif
 
-#include "src/lib/ecore/core.h"
-#include "src/lib/ecore/logging.h"
+// the library's front door: this one include is what makes the Arduino build
+// pick up lib/ and put its modules on the include path
+#include <eclipse-os.h>
 
 #if USE_RELIC_LINK
-  #include "src/lib/elink/serial_transport.h"
+  #include <elink/serial_transport.h>
 #endif
 
 #if RELIC == RELIC_OBELISK
@@ -71,14 +72,14 @@
 #endif
 
 #if USE_MQTT
-  #include "src/lib/emqtt/mqtt_client.h"
+  #include <emqtt/mqtt_client.h>
   #include "secrets.h"
 
   #if USE_SERIAL_MQTT
-    #include "src/lib/emqtt/mqtt_transport_serial.h"
+    #include <emqtt/mqtt_transport_serial.h>
   #else
-    #include "src/lib/ewifi/wifi_manager.h"
-    #include "src/lib/emqtt/mqtt_transport_wifi.h"
+    #include <ewifi/wifi_manager.h>
+    #include <emqtt/mqtt_transport_wifi.h>
   #endif
 #endif
 

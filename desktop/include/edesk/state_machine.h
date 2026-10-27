@@ -10,11 +10,11 @@
 #include <string>
 #include <vector>
 
-#include "lib/eanim/generator_hsv.h"
-#include "lib/eio/relic.h"
-#include "lib/eio/strip_projection.h"
-#include "lib/esm/state.h"
-#include "lib/esm/state_generic.h"
+#include <eanim/generator_hsv.h>
+#include <eio/relic.h>
+#include <eio/strip_projection.h>
+#include <esm/state.h>
+#include <esm/state_generic.h>
 
 #include "edesk/pattern.h"
 

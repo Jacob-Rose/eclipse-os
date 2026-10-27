@@ -7,8 +7,8 @@
 
 #include <memory>
 
-#include "lib/eanim/generator_hsv.h"
-#include "lib/ecore/hsv.h"
+#include <eanim/generator_hsv.h>
+#include <ecore/hsv.h>
 
 #include "edesk/beat_clock.h"
 #include "edesk/state_machine.h"

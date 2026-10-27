@@ -4,8 +4,8 @@
 // See readme.md for full license details.
 #include "state_gloves.h"
 
-#include "../../lib/ecore/math.h"
-#include "../../lib/ecore/logging.h"
+#include <ecore/math.h>
+#include <ecore/logging.h>
 #include "../../kits/palettes.h"
 
 #include "../../imgs/eclipse.h"

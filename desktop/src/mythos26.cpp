@@ -10,7 +10,7 @@
 #include <initializer_list>
 #include <vector>
 
-#include "lib/ecore/math.h"
+#include <ecore/math.h>
 
 #include "edesk/beat_clock.h"
 #include "edesk/beat_trigger.h"

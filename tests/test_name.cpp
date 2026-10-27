@@ -5,7 +5,7 @@
 
 #include "eclipse_test.h"
 
-#include "ecore/name.h"
+#include <ecore/name.h>
 
 using namespace ecore;
 

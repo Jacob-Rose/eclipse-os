@@ -4,11 +4,11 @@
 // See readme.md for full license details.
 #include "state_enchantedforest.h"
 
-#include "../../../lib/ecore/math.h"
-#include "../../../lib/ecore/hsv.h"
-#include "../../../lib/ecore/logging.h"
-#include "../../../lib/eio/relic.h"
-#include "../../../lib/eio/strip_projection.h"
+#include <ecore/math.h>
+#include <ecore/hsv.h>
+#include <ecore/logging.h>
+#include <eio/relic.h>
+#include <eio/strip_projection.h>
 
 #include "../jacket_io.h"
 

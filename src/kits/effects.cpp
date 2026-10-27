@@ -7,8 +7,8 @@
 
 #include <cmath>
 
-#include "../lib/ecore/logging.h"
-#include "../lib/ecore/math.h"
+#include <ecore/logging.h>
+#include <ecore/math.h>
 
 using namespace ecore;
 using namespace eanim;

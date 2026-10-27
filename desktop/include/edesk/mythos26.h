@@ -13,9 +13,9 @@
 #include <utility>
 #include <vector>
 
-#include "lib/eanim/automation_curve.h"
-#include "lib/eanim/generator_hsv.h"
-#include "lib/ecore/hsv.h"
+#include <eanim/automation_curve.h>
+#include <eanim/generator_hsv.h>
+#include <ecore/hsv.h>
 
 #include "relics/scanner/generic_patterns.h"
 #include "relics/scanner/scanner_patterns.h"

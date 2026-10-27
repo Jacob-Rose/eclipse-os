@@ -5,7 +5,7 @@
 
 #include "eclipse_test.h"
 
-#include "eanim/generator_hsv.h"
+#include <eanim/generator_hsv.h>
 
 using namespace ecore;
 using namespace eanim;

@@ -10,13 +10,13 @@
 #include <string>
 #include <vector>
 
-#include "lib/ecore/hsv.h"
-#include "lib/ecore/tickable.h"
-#include "lib/eanim/lfo.h"
-#include "lib/eanim/generator_float.h"
-#include "lib/eanim/generator_hsv.h"
-#include "lib/eio/hsv_strip.h"
-#include "lib/eio/strip_projection.h"
+#include <ecore/hsv.h>
+#include <ecore/tickable.h>
+#include <eanim/lfo.h>
+#include <eanim/generator_float.h>
+#include <eanim/generator_hsv.h>
+#include <eio/hsv_strip.h>
+#include <eio/strip_projection.h>
 
 #include "edesk/config.h"
 

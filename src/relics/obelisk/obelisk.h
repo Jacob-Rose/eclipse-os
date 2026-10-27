@@ -5,12 +5,12 @@
 
 #pragma once
 
-#include "../../lib/ecore/core.h"
-#include "../../lib/ecore/timer.h"
-#include "../../lib/esm/state.h"
-#include "../../lib/esm/state_generic.h"
+#include <ecore/core.h>
+#include <ecore/timer.h>
+#include <esm/state.h>
+#include <esm/state_generic.h>
 
-#include "../../lib/eio/relic.h"
+#include <eio/relic.h>
 #include "../wiring.h"
 
 #include "../scanner/scanner_patterns.h"

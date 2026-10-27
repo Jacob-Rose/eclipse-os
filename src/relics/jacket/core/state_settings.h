@@ -7,7 +7,7 @@
 
 #include "../../pendant/pendant_generic_state.h"
 
-#include "../../../lib/eanim/lfo.h"
+#include <eanim/lfo.h>
 
 class Pattern_Settings : public GeneratorHSV
 {

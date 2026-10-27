@@ -5,7 +5,7 @@
 
 #include "pendant.h"
 
-#include "../../lib/eio/strip_projection.h"
+#include <eio/strip_projection.h>
 
 using namespace eio;
 

@@ -10,10 +10,10 @@
 #include <memory>
 #include <string>
 
-#include "lib/eanim/generator_hsv.h"
-#include "lib/ecore/hsv.h"
-#include "lib/eio/relic.h"
-#include "lib/eio/strip_projection.h"
+#include <eanim/generator_hsv.h>
+#include <ecore/hsv.h>
+#include <eio/relic.h>
+#include <eio/strip_projection.h>
 
 class State_GenericHSV;
 class StateMachine_GenericHSV;

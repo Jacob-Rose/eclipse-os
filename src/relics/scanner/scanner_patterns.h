@@ -9,12 +9,12 @@
 #include <string>
 #include <vector>
 
-#include "../../lib/ecore/hsv.h"
-#include "../../lib/ecore/math.h"
-#include "../../lib/eanim/automation_curve.h"
-#include "../../lib/ecore/property.h"
-#include "../../lib/eanim/generator_hsv.h"
-#include "../../lib/esm/state_generic.h"
+#include <ecore/hsv.h>
+#include <ecore/math.h>
+#include <eanim/automation_curve.h>
+#include <ecore/property.h>
+#include <eanim/generator_hsv.h>
+#include <esm/state_generic.h>
 
 using namespace ecore;
 using namespace eanim;

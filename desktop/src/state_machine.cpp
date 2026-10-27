@@ -7,7 +7,7 @@
 
 #include <algorithm>
 
-#include "lib/ecore/coord.h"
+#include <ecore/coord.h>
 
 // The jacket's looks, compiled for the host. Same files the jacket runs.
 #include "relics/jacket/jacket_io.h"

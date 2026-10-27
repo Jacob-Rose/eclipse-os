@@ -4,7 +4,7 @@
 // See readme.md for full license details.
 #include "state_warpturbines.h"
 
-#include "../../../lib/ecore/logging.h"
+#include <ecore/logging.h>
 #include "../jacket_io.h"
 
 

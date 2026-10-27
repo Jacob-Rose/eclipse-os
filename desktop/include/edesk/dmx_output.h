@@ -9,10 +9,10 @@
 #include <string>
 #include <vector>
 
-#include "lib/edmx/fixture.h"
-#include "lib/edmx/output.h"
-#include "lib/edmx/universe.h"
-#include "lib/elink/frame.h"
+#include <edmx/fixture.h>
+#include <edmx/output.h>
+#include <edmx/universe.h>
+#include <elink/frame.h>
 
 #include "edesk/serial_port.h"
 

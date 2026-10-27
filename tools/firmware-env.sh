@@ -23,7 +23,7 @@
 # Deploy is the build that lives on a wall for a month: DEPLOYMENT=1 for the
 # sketch's tighter loop, and DEBUG_LOGGING_ENABLED=0 for *every* translation
 # unit - the sketch's own define never reached the library, so a "deploy" build
-# used to keep logging from everything under src/lib.
+# used to keep logging from everything under lib/src.
 #
 # These land in compiler.cpp.extra_flags rather than build.extra_flags: the
 # Pico W board puts its CYW43 (WiFi) defines in the latter, and a
@@ -66,7 +66,10 @@ if [ "$DEPLOY" = 1 ]; then
     FIRMWARE_DEFINES="$FIRMWARE_DEFINES -DDEBUG_LOGGING_ENABLED=0"
 fi
 
-BUILD_ARGS=(-b "$FQBN" --build-property "compiler.cpp.extra_flags=$FIRMWARE_DEFINES")
+# The library is an Arduino library at lib/, handed to the build by path:
+# nothing to install, and an edit is live on the next build.
+LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib"
+BUILD_ARGS=(-b "$FQBN" --library "$LIB_DIR" --build-property "compiler.cpp.extra_flags=$FIRMWARE_DEFINES")
 
 # The whiteboard cannot build without its credentials, and the compiler's way
 # of saying so is a missing-header error four includes deep.

@@ -5,8 +5,8 @@
 
 #include "eclipse_test.h"
 
-#include "ecore/fp.h"
-#include "ecore/hsv.h"
+#include <ecore/fp.h>
+#include <ecore/hsv.h>
 
 using namespace efp;
 using namespace ecore;

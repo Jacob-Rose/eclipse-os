@@ -5,15 +5,15 @@
 
 #pragma once
 
-#include "../../lib/ecore/core.h"
-#include "../../lib/ecore/timer.h"
-#include "../../lib/esm/state.h"
-#include "../../lib/esm/state_generic.h"
-#include "../../lib/eio/relic.h"
+#include <ecore/core.h>
+#include <ecore/timer.h>
+#include <esm/state.h>
+#include <esm/state_generic.h>
+#include <eio/relic.h>
 #include "../wiring.h"
-#include "../../lib/emqtt/mqtt_client.h"
-#include "../../lib/emqtt/mqtt_handler.h"
-#include "../../lib/emqtt/ha_discovery.h"
+#include <emqtt/mqtt_client.h>
+#include <emqtt/mqtt_handler.h>
+#include <emqtt/ha_discovery.h>
 
 using namespace ecore;
 using namespace eio;

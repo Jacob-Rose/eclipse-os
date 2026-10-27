@@ -5,12 +5,12 @@
 
 #include "eclipse_test.h"
 
-#include "ecore/property.h"
-#include "ecore/reflectable.h"
-#include "edmx/binding.h"
-#include "edmx/fixture.h"
-#include "edmx/output.h"
-#include "edmx/universe.h"
+#include <ecore/property.h>
+#include <ecore/reflectable.h>
+#include <edmx/binding.h>
+#include <edmx/fixture.h>
+#include <edmx/output.h>
+#include <edmx/universe.h>
 
 using namespace ecore;
 using namespace edmx;

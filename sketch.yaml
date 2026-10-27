@@ -1,0 +1,23 @@
+# Build profiles for arduino-cli and Arduino IDE 2: the board, the exact core,
+# the index libraries with versions, and this repo's own library by path.
+#
+#   arduino-cli compile --profile obelisk
+#
+# fetches everything it needs into a profile-local folder; nothing is installed
+# globally and nothing has to be re-installed after a change. The build scripts
+# pass the relic and deploy flags on top (tools/firmware-env.sh); a bare
+# profile build is the obelisk, dev.
+profiles:
+  obelisk:
+    fqbn: rp2040:rp2040:rpipicow
+    platforms:
+      - platform: rp2040:rp2040 (6.3.1)
+        platform_index_url: https://github.com/earlephilhower/arduino-pico/releases/download/global/package_rp2040_index.json
+    libraries:
+      - dir: lib
+      - Adafruit NeoPixel (1.15.5)
+      - Adafruit GC9A01A (1.2.0)
+      - Adafruit GFX Library (1.13.0)
+      - Adafruit BusIO (1.17.4)
+      - FastLED (3.10.8)
+      - PubSubClient (2.8)

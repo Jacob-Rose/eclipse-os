@@ -23,6 +23,8 @@ endif()
 
 set(ECLIPSE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/..")
 set(ECLIPSE_SRC  "${ECLIPSE_ROOT}/src")
+# the library proper: an Arduino library at lib/, its sources under lib/src
+set(ECLIPSE_LIB  "${ECLIPSE_ROOT}/lib/src")
 
 # ---------------------------------------------------------------------------
 # The portable slice of eclipse-os.
@@ -32,47 +34,47 @@ set(ECLIPSE_SRC  "${ECLIPSE_ROOT}/src")
 # someone adds a file.
 # ---------------------------------------------------------------------------
 set(ECLIPSE_CORE_SOURCES
-    ${ECLIPSE_SRC}/lib/edmx/binding.cpp
-    ${ECLIPSE_SRC}/lib/edmx/fixture.cpp
-    ${ECLIPSE_SRC}/lib/emidi/binding.cpp
-    ${ECLIPSE_SRC}/lib/emidi/clock.cpp
-    ${ECLIPSE_SRC}/lib/emidi/parser.cpp
-    ${ECLIPSE_SRC}/lib/ecore/coord.cpp
-    ${ECLIPSE_SRC}/lib/ecore/hsv.cpp
-    ${ECLIPSE_SRC}/lib/ecore/logging.cpp
-    ${ECLIPSE_SRC}/lib/ecore/math.cpp
-    ${ECLIPSE_SRC}/lib/ecore/property.cpp
-    ${ECLIPSE_SRC}/lib/ecore/range.cpp
-    ${ECLIPSE_SRC}/lib/ecore/tickable.cpp
-    ${ECLIPSE_SRC}/lib/ecore/timer.cpp
-    ${ECLIPSE_SRC}/lib/ecore/utils.cpp
+    ${ECLIPSE_LIB}/edmx/binding.cpp
+    ${ECLIPSE_LIB}/edmx/fixture.cpp
+    ${ECLIPSE_LIB}/emidi/binding.cpp
+    ${ECLIPSE_LIB}/emidi/clock.cpp
+    ${ECLIPSE_LIB}/emidi/parser.cpp
+    ${ECLIPSE_LIB}/ecore/coord.cpp
+    ${ECLIPSE_LIB}/ecore/hsv.cpp
+    ${ECLIPSE_LIB}/ecore/logging.cpp
+    ${ECLIPSE_LIB}/ecore/math.cpp
+    ${ECLIPSE_LIB}/ecore/property.cpp
+    ${ECLIPSE_LIB}/ecore/range.cpp
+    ${ECLIPSE_LIB}/ecore/tickable.cpp
+    ${ECLIPSE_LIB}/ecore/timer.cpp
+    ${ECLIPSE_LIB}/ecore/utils.cpp
 
-    ${ECLIPSE_SRC}/lib/eanim/attribute_float.cpp
-    ${ECLIPSE_SRC}/lib/eanim/automation_curve.cpp
-    ${ECLIPSE_SRC}/lib/eanim/generator_float.cpp
-    ${ECLIPSE_SRC}/lib/eanim/generator_hsv.cpp
-    ${ECLIPSE_SRC}/lib/eanim/lfo.cpp
-    ${ECLIPSE_SRC}/lib/eanim/noise.cpp
-    ${ECLIPSE_SRC}/lib/eanim/particles.cpp
-    ${ECLIPSE_SRC}/lib/eanim/processor_float.cpp
+    ${ECLIPSE_LIB}/eanim/attribute_float.cpp
+    ${ECLIPSE_LIB}/eanim/automation_curve.cpp
+    ${ECLIPSE_LIB}/eanim/generator_float.cpp
+    ${ECLIPSE_LIB}/eanim/generator_hsv.cpp
+    ${ECLIPSE_LIB}/eanim/lfo.cpp
+    ${ECLIPSE_LIB}/eanim/noise.cpp
+    ${ECLIPSE_LIB}/eanim/particles.cpp
+    ${ECLIPSE_LIB}/eanim/processor_float.cpp
 
     # The wire between a desk and a relic. Built here as well as on the
     # microcontroller, and for the same reason the patterns are: one definition
     # of the format, so the two ends cannot drift. It also means the frame
     # parser that runs on the sculpture is the one the tests run.
-    ${ECLIPSE_SRC}/lib/elink/frame.cpp
-    ${ECLIPSE_SRC}/lib/elink/relic_link.cpp
+    ${ECLIPSE_LIB}/elink/frame.cpp
+    ${ECLIPSE_LIB}/elink/relic_link.cpp
 
-    ${ECLIPSE_SRC}/lib/eio/hsv_strip.cpp
-    ${ECLIPSE_SRC}/lib/eio/relic.cpp
-    ${ECLIPSE_SRC}/lib/eio/screen_drawer.cpp
-    ${ECLIPSE_SRC}/lib/eio/strip_projection.cpp
+    ${ECLIPSE_LIB}/eio/hsv_strip.cpp
+    ${ECLIPSE_LIB}/eio/relic.cpp
+    ${ECLIPSE_LIB}/eio/screen_drawer.cpp
+    ${ECLIPSE_LIB}/eio/strip_projection.cpp
 
-    ${ECLIPSE_SRC}/lib/esm/state.cpp
-    ${ECLIPSE_SRC}/lib/esm/state_generic.cpp
-    ${ECLIPSE_SRC}/lib/esm/state_blend.cpp
+    ${ECLIPSE_LIB}/esm/state.cpp
+    ${ECLIPSE_LIB}/esm/state_generic.cpp
+    ${ECLIPSE_LIB}/esm/state_blend.cpp
 
-    ${ECLIPSE_SRC}/lib/external/easing.cpp
+    ${ECLIPSE_LIB}/external/easing.cpp
 
     ${ECLIPSE_SRC}/kits/effects.cpp
 )
@@ -125,7 +127,7 @@ set(ECLIPSE_RELIC_SOURCES
 
     # Buttons never fire on a host - digitalRead is shimmed to "not pressed" -
     # but the jacket states link against them.
-    ${ECLIPSE_SRC}/lib/eio/button.cpp
+    ${ECLIPSE_LIB}/eio/button.cpp
 )
 
 list(APPEND ECLIPSE_CORE_SOURCES ${ECLIPSE_RELIC_SOURCES})
@@ -160,10 +162,11 @@ add_library(eclipse_core STATIC ${ECLIPSE_CORE_SOURCES})
 add_library(eclipse_relic_firmware STATIC
     ${ECLIPSE_SRC}/relics/obelisk/obelisk.cpp
 )
-target_include_directories(eclipse_relic_firmware PUBLIC ${ECLIPSE_SRC})
+target_include_directories(eclipse_relic_firmware PUBLIC ${ECLIPSE_LIB} ${ECLIPSE_SRC})
 target_link_libraries(eclipse_relic_firmware PUBLIC eclipse_core)
 
 target_include_directories(eclipse_core PUBLIC
+    ${ECLIPSE_LIB}
     ${ECLIPSE_SRC}
 )
 

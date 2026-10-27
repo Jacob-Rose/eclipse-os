@@ -5,16 +5,16 @@
 
 #pragma once
 
-#include "../lib/ecore/core.h"
-#include "../lib/ecore/hsv.h"
+#include <ecore/core.h>
+#include <ecore/hsv.h>
 
-#include "../lib/eio/strip_projection.h"
+#include <eio/strip_projection.h>
 
 #include "palettes.h"
 #include "effects.h"
 
-#include "../lib/eanim/noise.h"
-#include "../lib/external/FastNoiseLite.h"
+#include <eanim/noise.h>
+#include <external/FastNoiseLite.h>
 
 ///
 /// Patterns are made to be a drag/drop solution to reuse complex patterns later

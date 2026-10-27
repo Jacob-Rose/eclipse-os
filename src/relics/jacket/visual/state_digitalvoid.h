@@ -5,10 +5,10 @@
 
 #pragma once
 
-#include "../../../lib/eanim/lfo.h"
-#include "../../../lib/eanim/noise.h"
-#include "../../../lib/eanim/generator_hsv.h"
-#include "../../../lib/eanim/processor_float.h"
+#include <eanim/lfo.h>
+#include <eanim/noise.h>
+#include <eanim/generator_hsv.h>
+#include <eanim/processor_float.h>
 
 #include "../../../relics/pendant/pendant_generic_state.h"
 

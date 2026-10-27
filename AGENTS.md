@@ -12,7 +12,7 @@
 
 ## Code Style Guidelines
 - **File headers**: Include copyright header with "Copyright 2024 | Jake Rose" and license reference
-- **Includes**: Use relative paths with "../../" for lib includes, group by category
+- **Includes**: library headers by module, `<ecore/hsv.h>`, `<eanim/generator_hsv.h>`, from anywhere (a sketch includes `<eclipse-os.h>` once first); same-directory includes in quotes; sketch-internal includes between relics, kits and images stay relative
 - **Namespaces**: Use explicit namespace declarations (e.g., `using namespace ecore;`)
 - **Standard library**: the library is C++20 on every toolchain. Use `std::lerp`, `std::clamp`, `std::min`/`max` qualified; never `using namespace std` in a header, and never an unqualified `lerp` (the rp2040 core's libstdc++ exports `std::lerp` globally, which makes one ambiguous)
 - **Naming**: CamelCase classes, snake_case files/functions, descriptive variable names
@@ -21,7 +21,7 @@
 - **Comments**: headers document how to use the thing, not why it was built that way. A `/* @brief ... */` block on each class, struct and enum, with a short usage note or a code example when the signature does not say enough; `///` one-liners on members; `@see` for cross-references; `@param`/`@return` only where the signature is ambiguous. Design rationale belongs in the commit message or the readme. Inline comments in .cpp files stay minimal and say "why"
 
 ## Architecture
-- **Structure**: `/src/lib/` for core libraries, `/src/relics/` for device-specific code
+- **Structure**: `/lib/` is the library (an Arduino library; sources under `/lib/src/<module>/`), `/src/relics/` is device-specific code, `/src/kits/` is content. The scripts hand `lib/` to arduino-cli by path (`--library`), `sketch.yaml` carries a profile for the IDE and for anyone without the scripts
 - **State pattern**: Inherit from State base classes, implement tick() and init() methods
 - **IO abstraction**: Use RelicIO base classes for hardware interaction
 - **Patterns**: Factory pattern for state creation, observer pattern for transitions

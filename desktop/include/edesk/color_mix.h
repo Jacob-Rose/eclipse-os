@@ -8,7 +8,7 @@
 #include <algorithm>
 #include <cmath>
 
-#include "lib/ecore/hsv.h"
+#include <ecore/hsv.h>
 
 ///
 /// Colour mixing for the desktop, in float.

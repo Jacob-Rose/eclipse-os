@@ -9,7 +9,7 @@
 #include <cmath>
 #include <map>
 
-#include "lib/ecore/math.h"
+#include <ecore/math.h>
 
 // The relic's own pattern source, compiled for the host. Not a copy: this is
 // the same file the obelisk runs, and it needed no changes to get here.

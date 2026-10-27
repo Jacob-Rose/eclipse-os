@@ -9,7 +9,7 @@
 #   tests/run.sh            build and run everything in tests/
 #   tests/run.sh hsv        run only the cases whose name contains "hsv"
 #
-# The portable library (ecore, eanim, esm, elink, eio minus pins) is compiled with USE_ARDUINO=0, the
+# The library (lib/src: ecore, eanim, esm, elink, edmx, emidi, eio minus pins) is compiled with USE_ARDUINO=0, the
 # same switch the desktop build uses, so what runs here is the same code the
 # relics run minus the pin-level IO. Needs g++ on PATH.
 
@@ -21,12 +21,12 @@ OUT=build-tests
 mkdir -p "$OUT"
 
 CXX="${CXX:-g++}"
-CXXFLAGS=(-std=c++20 -O1 -Wall -Wextra -DUSE_ARDUINO=0 -Isrc/lib -Itests)
+CXXFLAGS=(-std=c++20 -O1 -Wall -Wextra -DUSE_ARDUINO=0 -Ilib/src -Itests)
 
 # the same portable slice desktop/CMakeLists.txt builds: everything but button.cpp
-LIB_SOURCES=(src/lib/ecore/*.cpp src/lib/eanim/*.cpp src/lib/esm/*.cpp src/lib/elink/*.cpp src/lib/edmx/*.cpp src/lib/emidi/*.cpp
-             src/lib/eio/hsv_strip.cpp src/lib/eio/relic.cpp src/lib/eio/screen_drawer.cpp src/lib/eio/strip_projection.cpp
-             src/lib/external/easing.cpp)
+LIB_SOURCES=(lib/src/ecore/*.cpp lib/src/eanim/*.cpp lib/src/esm/*.cpp lib/src/elink/*.cpp lib/src/edmx/*.cpp lib/src/emidi/*.cpp
+             lib/src/eio/hsv_strip.cpp lib/src/eio/relic.cpp lib/src/eio/screen_drawer.cpp lib/src/eio/strip_projection.cpp
+             lib/src/external/easing.cpp)
 TEST_SOURCES=(tests/*.cpp)
 
 "$CXX" "${CXXFLAGS[@]}" "${LIB_SOURCES[@]}" "${TEST_SOURCES[@]}" -o "$OUT/eclipse-tests"

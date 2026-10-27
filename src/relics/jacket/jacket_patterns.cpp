@@ -4,9 +4,9 @@
 // See readme.md for full license details.
 #include "jacket_patterns.h"
 
-#include "../../lib/ecore/math.h"
-#include "../../lib/ecore/logging.h"
-#include "../../lib/eio/strip_projection.h"
+#include <ecore/math.h>
+#include <ecore/logging.h>
+#include <eio/strip_projection.h>
 #include "../../kits/palettes.h"
 
 #include "jacket_io.h"

@@ -8,7 +8,7 @@
 #include <algorithm>
 
 // HSVStripNode_Space, for the obelisk's nodes
-#include "../../lib/eio/strip_projection.h"
+#include <eio/strip_projection.h>
 
 using namespace scanner;
 

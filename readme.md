@@ -15,7 +15,7 @@ I see this as a generic abstract layer to handle modules for these microcontroll
 
 # The Library
 
-Everything under `src/lib` is a module, and the modules are genuinely optional: a relic takes the ones it needs and the rest never compile into it. Every module depends on `ecore` and nothing depends on a module above it in this table, so you can stop at any row.
+The library is an Arduino library at `lib/` (sources under `lib/src`), and everything in it is a module: a relic takes the ones it needs and the rest never compile into it. Every module depends on `ecore` and nothing depends on a module above it in this table, so you can stop at any row. A sketch includes `<eclipse-os.h>` once, which puts the library on the include path, and then names modules directly: `<ecore/hsv.h>`, `<eanim/generator_hsv.h>`, `<edmx/fixture.h>`.
 
 | module | what it gives you | depends on | needs Arduino? |
 | ------ | ----------------- | ---------- | -------------- |
@@ -64,7 +64,7 @@ MIDI for both. The message model, a byte-stream `Parser` (running status, interl
 A WiFi manager that keeps secrets out of the tree, and a Home Assistant integration over MQTT that advertises a relic's controls by discovery. Only the whiteboard uses them today; `tools/check-ha.py` proves the integration from your machine after a flash.
 
 ### external
-Vendored third-party code, each with its licence beside it: FastNoiseLite, an easing library, homog2d, and AnimatedGIF with a one-block fix for the arduino-pico core (`external/AnimatedGIF/README.eclipse-os.md`).
+Vendored third-party code, each with its licence beside it: FastNoiseLite, an easing library, homog2d, and AnimatedGIF with a one-block fix for the arduino-pico core (`lib/src/external/AnimatedGIF/README.eclipse-os.md`).
 
 ## Relics
 
@@ -100,7 +100,18 @@ If terminals are scary, the IDE instructions should work. I recommend the CLI.
 
 ### First-time setup
 
-You need the [arduino-cli](https://arduino.github.io/arduino-cli/), the RP2040 core, and a handful of libraries. This was last verified with **arduino-cli 1.5.1** and the versions noted below. The library is C++20.
+The short way: `sketch.yaml` carries a build profile with the board, the exact
+core and library versions, and this repo's own library by path. One command
+fetches all of it into a profile-local folder, installs nothing globally, and
+needs nothing re-installed after a change:
+
+```sh
+arduino-cli compile --profile obelisk
+```
+
+The long way, if you want the core and libraries in your global Arduino folder
+(this is what the build scripts use). Last verified with **arduino-cli 1.5.1**
+and the versions noted below. The library is C++20.
 
 1. Add the arduino-pico (earlephilhower) board index and install the core:
 
@@ -114,7 +125,8 @@ You need the [arduino-cli](https://arduino.github.io/arduino-cli/), the RP2040 c
 
    ```sh
    arduino-cli lib install "Adafruit GC9A01A" "Adafruit NeoPixel" "FastLED" "PubSubClient"
-   # AnimatedGIF is vendored under src/lib/external and needs no install or patch
+   # AnimatedGIF is vendored under lib/src/external and needs no install or patch
+   # eclipse-os itself is never installed: the scripts pass lib/ to the build by path
    ```
 
    (Adafruit GFX + BusIO come along as dependencies.)
@@ -202,11 +214,17 @@ only through arduino-cli.
 
 ## Arduino IDE Setup (alternative)
 
-1. Install Arduino IDE
+1. Install Arduino IDE 2
 2. Install RP2040 support for Arduino IDE
    >  [Arduino-Pico GitHub w/ Install Instructions](https://github.com/earlephilhower/arduino-pico)
 3. Install the Adafruit GC9A01A, Adafruit NeoPixel, FastLED and PubSubClient libraries from the Library Manager
-4. That is all: no library needs patching any more (see **Library Patches**).
+4. Make the repo's `lib/` folder visible to the IDE. Recent IDE 2 versions read
+   `sketch.yaml` and find it there; otherwise link it once into your Arduino
+   libraries folder (`ln -s <repo>/lib ~/Arduino/libraries/eclipse-os`, or
+   `mklink /D` on Windows). A link means an edit in the repo is live on the
+   next build - nothing to re-install.
+5. Pick the relic with the `#define`s at the top of `eclipse-os.ino`; the IDE
+   has no way to pass the `-D` flags the scripts use.
 
 ## Library Patches
 
@@ -215,7 +233,7 @@ None. Two used to be needed, and both are worth knowing about:
 - **AnimatedGIF** skips `#include <Arduino.h>` whenever `PICO_BUILD` is defined,
   which the arduino-pico core does, and then calls `millis()` and `delay()`
   undeclared. Still the case upstream as of 2.2.0, so the library is vendored
-  with the fix in the tree: `src/lib/external/AnimatedGIF`, with a
+  with the fix in the tree: `lib/src/external/AnimatedGIF`, with a
   `README.eclipse-os.md` beside it. Do not install it from the library manager;
   every include names the vendored copy, so an installed one is never used.
 
@@ -224,7 +242,7 @@ None. Two used to be needed, and both are worth knowing about:
   included it - and then Arduino's own `byte` was ambiguous, with the error
   appearing deep inside `SPI.h` where nothing looked wrong. The core builds at
   `-std=gnu++23`, where `std` also has `lerp`, so the headers here never open
-  `std` and every `lerp` is `std::lerp`. See the note in `src/lib/ecore/name.h`.
+  `std` and every `lerp` is `std::lerp`. See the note in `lib/src/ecore/name.h`.
 
 ### Raspberry Pico / This software Programming Tips
 

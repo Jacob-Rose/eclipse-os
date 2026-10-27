@@ -5,7 +5,7 @@
 
 #include "state_rainbowroad.h"
 
-#include "../../../lib/ecore/logging.h"
+#include <ecore/logging.h>
 #include "../../../imgs/kirby.h"
 
 #include "../jacket_io.h"

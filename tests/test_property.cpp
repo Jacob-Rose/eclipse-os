@@ -5,9 +5,9 @@
 
 #include "eclipse_test.h"
 
-#include "ecore/property.h"
-#include "ecore/reflectable.h"
-#include "eanim/automation_curve.h"
+#include <ecore/property.h>
+#include <ecore/reflectable.h>
+#include <eanim/automation_curve.h>
 
 using namespace ecore;
 

@@ -5,7 +5,7 @@
 
 #include "patterns.h"
 
-#include "../lib/ecore/logging.h"
+#include <ecore/logging.h>
 
 
 void Pattern_SpaceDust::init()

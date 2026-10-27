@@ -5,7 +5,7 @@
 
 #pragma once
 
-#include "../lib/eio/hsv_strip.h"
+#include <eio/hsv_strip.h>
 
 // ---------------------------------------------------------------------------
 // Where each sculpture's pixels are plugged in.

@@ -8,8 +8,8 @@
 #include <cstdlib>
 #include <string>
 
-#include "../../lib/eio/strip_projection.h"
-#include "../../lib/ecore/logging.h"
+#include <eio/strip_projection.h>
+#include <ecore/logging.h>
 
 #include "state_obelisk.h"
 #include "../scanner/recording_patterns.h"

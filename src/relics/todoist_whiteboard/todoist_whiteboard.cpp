@@ -7,10 +7,10 @@
 
 #include <string>
 
-#include "../../lib/eio/strip_projection.h"
-#include "../../lib/ecore/logging.h"
-#include "../../lib/eanim/noise.h"
-#include "../../lib/eanim/lfo.h"
+#include <eio/strip_projection.h>
+#include <ecore/logging.h>
+#include <eanim/noise.h>
+#include <eanim/lfo.h>
 #include "../../kits/palettes.h"
 
 using namespace todoist_whiteboard;

@@ -5,9 +5,9 @@
 
 #pragma once
 
-#include "../../lib/esm/state.h"
-#include "../../lib/esm/state_generic.h"
-#include "../../lib/eio/relic.h"
+#include <esm/state.h>
+#include <esm/state_generic.h>
+#include <eio/relic.h>
 #include "../pendant/pendant.h"
 
 using namespace ecore;

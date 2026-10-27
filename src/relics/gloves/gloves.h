@@ -7,7 +7,7 @@
 
 #include <memory>
 
-#include "../../lib/eio/relic.h"
+#include <eio/relic.h>
 
 using namespace ecore;
 using namespace eio;

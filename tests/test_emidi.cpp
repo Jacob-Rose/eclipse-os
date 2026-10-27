@@ -7,12 +7,12 @@
 
 #include <deque>
 
-#include "ecore/property.h"
-#include "emidi/binding.h"
-#include "emidi/clock.h"
-#include "emidi/message.h"
-#include "emidi/parser.h"
-#include "emidi/transport.h"
+#include <ecore/property.h>
+#include <emidi/binding.h>
+#include <emidi/clock.h>
+#include <emidi/message.h>
+#include <emidi/parser.h>
+#include <emidi/transport.h>
 
 using namespace ecore;
 using namespace emidi;

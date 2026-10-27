@@ -12,7 +12,7 @@
 #include "../../lib/j/janim.h"
 #include "../../lib/j/jpalettes.h"
 
-#include "../../../lib/external/AnimatedGIF/AnimatedGIF.h"
+#include <external/AnimatedGIF/AnimatedGIF.h>
 
 
 

@@ -9,8 +9,8 @@
 #include <string>
 #include <vector>
 
-#include "lib/ecore/coord.h"
-#include "lib/ecore/hsv.h"
+#include <ecore/coord.h>
+#include <ecore/hsv.h>
 
 #include "edesk/dmx_output.h"
 

@@ -33,12 +33,12 @@
 #include <utility>
 #include <vector>
 
-#include "lib/eanim/lfo.h"
-#include "lib/eanim/noise.h"
-#include "lib/ecore/hsv.h"
-#include "lib/eio/hsv_strip.h"
-#include "lib/eio/relic.h"
-#include "lib/elink/relic_link.h"
+#include <eanim/lfo.h>
+#include <eanim/noise.h>
+#include <ecore/hsv.h>
+#include <eio/hsv_strip.h>
+#include <eio/relic.h>
+#include <elink/relic_link.h>
 
 // The relic's own device layer, built for the host so --link-selftest can drive
 // the code the sculpture actually runs. Nothing else here touches it.

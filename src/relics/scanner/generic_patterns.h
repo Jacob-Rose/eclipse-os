@@ -5,7 +5,7 @@
 
 #pragma once
 
-#include "../../lib/eanim/particles.h"
+#include <eanim/particles.h>
 
 #include "scanner_patterns.h"
 

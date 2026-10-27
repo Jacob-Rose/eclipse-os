@@ -158,7 +158,7 @@ Ubuntu, `sudo apt install python3-tk`.
 
 `[e]`, or the **curves** button in the band, unfolds a timeline between the
 picture and the buttons: an editor for the `AutomationCurve` shapes the relics
-play from an impulse (`src/lib/eanim/automation_curve.h`). The window grows by
+play from an impulse (`lib/src/eanim/automation_curve.h`). The window grows by
 the band rather than the desk shrinking by it, because the rig picture is what
 a curve is being shaped against.
 
@@ -1773,7 +1773,7 @@ envelope.curve.addKey(0.20f, 1.0f, easing_functions::EaseOutCubic);
 envelope.curve.addKey(0.80f, 0.0f);
 ```
 
-The curve lives in `src/lib/eanim/`, not in the desktop tree, so the relics get
+The curve lives in `lib/src/eanim/`, not in the desktop tree, so the relics get
 it too — it is a `FloatAttribute`, which means anything that already takes one
 of those takes a trigger.
 
@@ -1896,7 +1896,7 @@ show.params                    # the whole set, replaced on every cue change
 print(show.dump_params())      # {"attack": 0.15, "decay": 0.9, ...}
 ```
 
-`ecore::PropertyBag` is in `src/lib/ecore/`, and `reflect()` is a virtual on
+`ecore::PropertyBag` is in `lib/src/ecore/`, and `reflect()` is a virtual on
 `eanim::GeneratorHSV`, so this is available to the relics and not only here.
 
 ### the beat
@@ -2846,7 +2846,7 @@ for pixel.
 
 ### the wire
 
-One format, `src/lib/elink/`, compiled into both ends — the desk builds frames
+One format, `lib/src/elink/`, compiled into both ends — the desk builds frames
 with it and the relic parses them with it, so there is no second definition to
 drift. Same reason the patterns are shared rather than ported.
 
@@ -3218,7 +3218,7 @@ desktop/
   CMakeLists.txt   builds only the slice of the library that is off-Arduino clean
 ```
 
-The library changes that made this possible are in `src/lib/`: platform
+The library changes that made this possible are in `lib/src/`: platform
 includes are now behind `USE_ARDUINO`, and `ecore/platform_host.h` supplies the
 few Arduino symbols the portable code leans on. The microcontroller build is
 unaffected.

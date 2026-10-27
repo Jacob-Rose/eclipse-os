@@ -5,9 +5,9 @@
 #include <cmath>
 #include "state_breathewithme.h"
 
-#include "../../../lib/ecore/logging.h"
+#include <ecore/logging.h>
 
-#include "../../../lib/ecore/math.h"
+#include <ecore/math.h>
 
 
 #include "../jacket_io.h"

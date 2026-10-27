@@ -10,7 +10,7 @@
 #include <cstdint>
 
 // HSVStripNode_Mapped2D, for nodeCoord's read of the stage
-#include "../../lib/eio/strip_projection.h"
+#include <eio/strip_projection.h>
 
 using namespace scanner;
 

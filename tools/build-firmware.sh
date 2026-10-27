@@ -46,7 +46,7 @@ if [ $status -ne 0 ]; then
     echo
     echo "Build failed. The usual cause:" >&2
     echo "  * 'byte'/'lerp' is ambiguous -> a header has opened std at global" >&2
-    echo "                                  scope again; see src/lib/ecore/name.h" >&2
+    echo "                                  scope again; see lib/src/ecore/name.h" >&2
     exit $status
 fi
 

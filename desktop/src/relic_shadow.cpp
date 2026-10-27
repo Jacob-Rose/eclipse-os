@@ -5,9 +5,9 @@
 
 #include "edesk/relic_shadow.h"
 
-#include "lib/ecore/property.h"
-#include "lib/esm/state.h"
-#include "lib/esm/state_generic.h"
+#include <ecore/property.h>
+#include <esm/state.h>
+#include <esm/state_generic.h>
 
 using namespace edesk;
 
