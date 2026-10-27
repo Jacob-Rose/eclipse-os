@@ -61,7 +61,9 @@ case "$RELIC" in
         ;;
 esac
 
-FIRMWARE_DEFINES="-DRELIC=$RELIC_DEFINE -DDEPLOYMENT=$DEPLOY"
+# The library is C++20 (AGENTS.md). Said here rather than left to the core: a
+# 5.x rp2040 core compiles gnu++17, and extra_flags land after its own -std.
+FIRMWARE_DEFINES="-std=gnu++20 -DRELIC=$RELIC_DEFINE -DDEPLOYMENT=$DEPLOY"
 if [ "$DEPLOY" = 1 ]; then
     FIRMWARE_DEFINES="$FIRMWARE_DEFINES -DDEBUG_LOGGING_ENABLED=0"
 fi
