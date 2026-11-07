@@ -5,6 +5,11 @@
 
 #include "mqtt_client.h"
 
+#include <cstdio>
+#include <cstring>
+
+#include <ecore/core.h>
+
 using namespace emqtt;
 
 MqttClient::MqttClient(std::unique_ptr<IMqttTransport> inTransport)
@@ -12,8 +17,6 @@ MqttClient::MqttClient(std::unique_ptr<IMqttTransport> inTransport)
     , config("", "")
     , status(ConnectionStatus::DISCONNECTED)
     , bAutoReconnect(true)
-    , reconnectInterval(5.0f)
-    , timeSinceLastReconnect(0.0f)
 {
     transport->setCallback([this](const char* topic, uint8_t* payload, unsigned int length) {
         if (userCallback)
@@ -151,24 +154,28 @@ ConnectionStatus MqttClient::getStatus() const
 
 void MqttClient::tick(float deltaTime)
 {
+    (void)deltaTime;
+
     if (isConnected())
     {
         transport->loop();
         status = ConnectionStatus::CONNECTED;
+        return;
     }
-    else
+
+    status = ConnectionStatus::DISCONNECTED;
+
+    const uint32_t now = millis();
+    if (bAutoReconnect && retry.due(now))
     {
-        status = ConnectionStatus::DISCONNECTED;
-
-        if (bAutoReconnect)
+        attemptReconnect();
+        if (isConnected())
         {
-            timeSinceLastReconnect += deltaTime;
-
-            if (timeSinceLastReconnect >= reconnectInterval)
-            {
-                timeSinceLastReconnect = 0.0f;
-                attemptReconnect();
-            }
+            retry.succeeded();
+        }
+        else
+        {
+            retry.failed(now);
         }
     }
 }

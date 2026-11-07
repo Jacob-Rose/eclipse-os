@@ -8,6 +8,7 @@
 #include <memory>
 #include <functional>
 
+#include <ecore/backoff.h>
 #include <ecore/tickable.h>
 #include <ecore/logging.h>
 #include "mqtt_config.h"
@@ -38,7 +39,8 @@ namespace emqtt
 
         virtual void tick(float deltaTime) override;
 
-        void setReconnectInterval(float seconds) { reconnectInterval = seconds; }
+        /// The first wait after a failed connect; each further failure doubles it.
+        void setReconnectInterval(float seconds) { retry.setBase(static_cast<uint32_t>(seconds * 1000.0f)); }
         void setAutoReconnect(bool enabled) { bAutoReconnect = enabled; }
 
     private:
@@ -53,7 +55,6 @@ namespace emqtt
 
         ConnectionStatus status;
         bool bAutoReconnect;
-        float reconnectInterval;
-        float timeSinceLastReconnect;
+        Backoff retry;
     };
 }

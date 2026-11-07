@@ -3,6 +3,7 @@
 // This file is part of project necklace_code_c
 // See readme.md for full license details.
 
+#include <atomic>
 #include <string>
 
 // ---------------------------------------------------------------------------
@@ -55,6 +56,10 @@
   #define USE_MQTT 0
   #define USE_SERIAL_MQTT 0
 #endif
+
+// The relic renders on core 1 and the network stays on core 0 with the WiFi
+// driver. A relic needs a tickNetwork() and no network calls from runTick().
+#define USE_RENDER_CORE (RELIC == RELIC_WHITEBOARD)
 
 #if USE_RELIC_LINK && USE_SERIAL_MQTT
   #error "The link and the serial MQTT bridge cannot share one port. Pick one."
@@ -124,6 +129,14 @@ using namespace ecore::log;
 
 #if USE_RELIC_LINK
 static elink::SerialLinkTransport linkTransport;
+#endif
+
+#if USE_RENDER_CORE
+// Core 1 starts before setup() runs, so it waits on this for a finished relic.
+static std::atomic<bool> relicReady{false};
+
+// The looks need more stack than the core's default for core 1.
+bool core1_separate_stack = true;
 #endif
 
 #if USE_LED_FOR_TICK
@@ -214,13 +227,8 @@ void setup() {
   wifiManager->setAutoReconnect(WIFI_AUTO_RECONNECT);
   wifiManager->setReconnectInterval(WIFI_RECONNECT_INTERVAL);
 
-  if (wifiManager->connect(WIFI_MAX_CONNECT_ATTEMPTS)) {
-    Serial.println("WiFi connected!");
-    Serial.print("IP address: ");
-    Serial.println(wifiManager->getLocalIP());
-  } else {
-    Serial.println("WiFi connection failed!");
-  }
+  wifiManager->setConnectTimeout(WIFI_MAX_CONNECT_ATTEMPTS * 0.5f);
+  wifiManager->begin();
 
   // Setup WiFi MQTT transport
   auto transport = make_unique<MqttTransportWiFi>(wifiManager->getClient());
@@ -228,13 +236,6 @@ void setup() {
 
   mqttClient->init(createMqttConfig());
   configureMqttClient(*mqttClient);
-
-  Serial.println("Connecting to MQTT broker...");
-  if (mqttClient->connect()) {
-    Serial.println("MQTT connected successfully!");
-  } else {
-    Serial.println("MQTT connection failed - discovery will retry on reconnect");
-  }
 #endif
 #endif
 
@@ -259,30 +260,17 @@ void setup() {
 #endif
 
 #if USE_MQTT
-    // Set HA config - will publish discovery now or retry on reconnect
+    // Set HA config - tickNetwork() publishes discovery once MQTT is up
     relic->setHomeAssistantConfig(createHomeAssistantConfig());
+#endif
+
+#if USE_RENDER_CORE
+    relicReady.store(true, std::memory_order_release);
 #endif
   }
 }
 
-void loop() {
-
-#if USE_MQTT && !USE_SERIAL_MQTT
-  // Tick WiFi manager for auto-reconnect (only needed for WiFi mode)
-  if(wifiManager)
-  {
-    wifiManager->tick(0.03f);  // ~30ms tick
-  }
-#endif
-
-#if USE_MQTT
-  // Tick MQTT client for connection management
-  if(mqttClient)
-  {
-    mqttClient->tick(0.03f);  // ~30ms tick
-  }
-#endif
-
+static void renderFrame() {
   if(relic)
   {
     // runTick reads the link, applies whatever the desk sent, and skips the
@@ -313,13 +301,56 @@ void loop() {
   }
 }
 
+void loop() {
+
+#if USE_MQTT && !USE_SERIAL_MQTT
+  // Tick WiFi manager for auto-reconnect (only needed for WiFi mode)
+  if(wifiManager)
+  {
+    wifiManager->tick(0.03f);  // ~30ms tick
+  }
+#endif
+
+#if USE_MQTT
+  // Tick MQTT client for connection management. Over WiFi, only once there is
+  // a network to reach the broker on.
+#if !USE_SERIAL_MQTT
+  if(mqttClient && wifiManager && wifiManager->isConnected())
+#else
+  if(mqttClient)
+#endif
+  {
+    mqttClient->tick(0.03f);  // ~30ms tick
+  }
+#endif
+
+#if USE_RENDER_CORE
+  if(relicReady.load(std::memory_order_acquire))
+  {
+    relic->tickNetwork();
+  }
+  delay(5);
+#else
+  renderFrame();
+#endif
+}
+
 void setup1()
 {
 }
 
 void loop1()
 {
-#if RELIC == RELIC_JACKET
+#if USE_RENDER_CORE
+  if(relicReady.load(std::memory_order_acquire))
+  {
+    renderFrame();
+  }
+  else
+  {
+    delay(1);
+  }
+#elif RELIC == RELIC_JACKET
   // the pendant's screen, drawn off the LED core
   if(relic.get())
   {

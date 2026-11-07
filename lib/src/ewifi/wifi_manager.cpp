@@ -5,18 +5,26 @@
 
 #include "wifi_manager.h"
 
+#if USE_ARDUINO
+
 using namespace ewifi;
 using namespace ecore::log;
+
+namespace
+{
+    constexpr int kSocketTimeoutMs = 1500;
+    constexpr uint32_t kMaxRetryWaitMs = 300000;
+}
 
 WiFiManager::WiFiManager()
     : ssid(nullptr)
     , password(nullptr)
     , status(WiFiStatus::DISCONNECTED)
     , bAutoReconnect(true)
-    , reconnectInterval(30.0f)
-    , timeSinceLastReconnect(0.0f)
 {
     ipAddressBuffer[0] = '\0';
+    retry.setBase(30000);
+    retry.setCap(kMaxRetryWaitMs);
 }
 
 void WiFiManager::init(const char* inSsid, const char* inPassword)
@@ -27,14 +35,20 @@ void WiFiManager::init(const char* inSsid, const char* inPassword)
     dbgLog("WiFi manager initialized", Verbosity::Display, Category::IO);
 }
 
-bool WiFiManager::connect(int maxAttempts)
+void WiFiManager::begin()
 {
-    if (isConnected())
-    {
-        return true;
-    }
+    // A publish waits on nothing but its own buffer, and a broker that does
+    // not answer costs this long rather than the client's default 5s.
+    WiFiClient::setDefaultSync(false);
+    wifiClient.setTimeout(kSocketTimeoutMs);
 
+    startJoin(millis());
+}
+
+void WiFiManager::startJoin(uint32_t now)
+{
     status = WiFiStatus::CONNECTING;
+    joinStartedAt = now;
     dbgLog("Connecting to WiFi...", Verbosity::Display, Category::IO);
 
     WiFi.mode(WIFI_STA);
@@ -45,33 +59,21 @@ bool WiFiManager::connect(int maxAttempts)
     // mains has no battery to save. Before begin(), which is where the
     // driver reads it.
     WiFi.noLowPowerMode();
-    WiFi.begin(ssid, password);
-    
-    int attempts = 0;
-    while (WiFi.status() != WL_CONNECTED && attempts < maxAttempts)
-    {
-        delay(500);
-        attempts++;
-    }
-    
-    if (WiFi.status() == WL_CONNECTED)
-    {
-        status = WiFiStatus::CONNECTED;
-        
-        IPAddress ip = WiFi.localIP();
-        snprintf(ipAddressBuffer, sizeof(ipAddressBuffer), "%d.%d.%d.%d", 
-                 ip[0], ip[1], ip[2], ip[3]);
-        
-        dbgLog("WiFi connected", Verbosity::Display, Category::IO);
-        
-        return true;
-    }
-    else
-    {
-        status = WiFiStatus::FAILED;
-        dbgLog("WiFi connection failed", Verbosity::Error, Category::IO);
-        return false;
-    }
+
+    // Not begin(), which waits up to twice WiFi's 15s timeout for the join.
+    WiFi.beginNoBlock(ssid, password);
+}
+
+void WiFiManager::onJoined()
+{
+    status = WiFiStatus::CONNECTED;
+    retry.succeeded();
+
+    IPAddress ip = WiFi.localIP();
+    snprintf(ipAddressBuffer, sizeof(ipAddressBuffer), "%d.%d.%d.%d",
+             ip[0], ip[1], ip[2], ip[3]);
+
+    dbgLog("WiFi connected", Verbosity::Display, Category::IO);
 }
 
 void WiFiManager::disconnect()
@@ -105,29 +107,40 @@ WiFiClient& WiFiManager::getClient()
 
 void WiFiManager::tick(float deltaTime)
 {
+    (void)deltaTime;
+
     if (isConnected())
     {
-        status = WiFiStatus::CONNECTED;
+        if (status != WiFiStatus::CONNECTED)
+        {
+            onJoined();
+        }
+        return;
     }
-    else
+
+    const uint32_t now = millis();
+
+    if (status == WiFiStatus::CONNECTING)
+    {
+        if (now - joinStartedAt < connectTimeoutMs)
+        {
+            return;
+        }
+        status = WiFiStatus::FAILED;
+        retry.failed(now);
+        dbgLog("WiFi connection failed", Verbosity::Error, Category::IO);
+    }
+    else if (status == WiFiStatus::CONNECTED)
     {
         status = WiFiStatus::DISCONNECTED;
-        
-        if (bAutoReconnect)
-        {
-            timeSinceLastReconnect += deltaTime;
-            
-            if (timeSinceLastReconnect >= reconnectInterval)
-            {
-                timeSinceLastReconnect = 0.0f;
-                attemptReconnect();
-            }
-        }
+        ipAddressBuffer[0] = '\0';
+        dbgLog("WiFi lost", Verbosity::Warning, Category::IO);
+    }
+
+    if (bAutoReconnect && retry.due(now))
+    {
+        startJoin(now);
     }
 }
 
-void WiFiManager::attemptReconnect()
-{
-    dbgLog("Attempting to reconnect to WiFi", Verbosity::Display, Category::IO);
-    connect();
-}
+#endif

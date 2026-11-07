@@ -4,6 +4,8 @@
 // See readme.md for full license details.
 
 #include "mqtt_transport_wifi.h"
+
+#if USE_ARDUINO
 #include <ecore/logging.h>
 
 using namespace emqtt;
@@ -24,6 +26,9 @@ MqttTransportWiFi::MqttTransportWiFi(Client& client)
 
     // Set buffer size for larger messages (HA discovery payloads can be 500-1500 bytes)
     mqttClient.setBufferSize(2048);
+
+    // Waiting on a CONNACK or a packet: the library's default is 15s.
+    mqttClient.setSocketTimeout(3);
 
     dbgLog("MQTT buffer size set to 2048 bytes", Verbosity::Display, Category::IO);
 }
@@ -152,3 +157,5 @@ void MqttTransportWiFi::internalCallback(char* topic, uint8_t* payload, unsigned
         instance->userCallback(topic, payload, length);
     }
 }
+
+#endif

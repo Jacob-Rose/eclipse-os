@@ -5,6 +5,10 @@
 
 #pragma once
 
+#include <ecore/core.h>
+
+#if USE_ARDUINO
+
 #include "mqtt_transport.h"
 #include <PubSubClient.h>
 #include <Client.h>
@@ -46,3 +50,5 @@ namespace emqtt
         static MqttTransportWiFi* instance;
     };
 }
+
+#endif

@@ -180,6 +180,8 @@ WhiteboardCore::WhiteboardCore(MqttClient& mqtt)
 
     stateMachine->setActiveState(noiseState);
     stateMachine->init();
+
+    brightnessByte.store(getEBrightnessAsByte(coreIO->getGlobalBrightness()));
 }
 
 // The topics the light advertises in its discovery config - see
@@ -235,6 +237,9 @@ void WhiteboardCore::publishDiscovery()
     // Publish select entity for mode control
     std::vector<std::string> modes = {"noise", "monocolor", "rainbow", "fire"};
     haDiscovery->publishSelectDiscovery("whiteboard_mode", "Whiteboard Mode", modes);
+
+    publishedStateRevision = stateRevision.load(std::memory_order_acquire);
+    publishedModeRevision = modeRevision.load(std::memory_order_acquire);
 
     // The subscriptions, the availability and the state: everything the
     // broker forgot while we were away.
@@ -299,22 +304,34 @@ void WhiteboardCore::subscribeTopics()
     mqttClient.subscribe(haTopic(kModeId, "set").c_str());
 }
 
+void WhiteboardCore::queueCommand(WhiteboardCommand::Kind kind, int value)
+{
+    WhiteboardCommand command;
+    command.kind = kind;
+    command.value = value;
+    if (!commands.push(command))
+    {
+        dbgLog("Command queue full, dropping a command", Verbosity::Warning, Category::Relic);
+    }
+}
+
 void WhiteboardCore::onPatternCommand(const std::string& payload)
 {
     dbgLog(("Pattern command: " + payload).c_str(), Verbosity::Display, Category::Relic);
 
+    WhiteboardPattern pattern;
     if (payload == "noise") {
-        setPattern(WhiteboardPattern::Noise);
+        pattern = WhiteboardPattern::Noise;
     } else if (payload == "monocolor") {
-        setPattern(WhiteboardPattern::Monocolor);
+        pattern = WhiteboardPattern::Monocolor;
     } else if (payload == "rainbow") {
-        setPattern(WhiteboardPattern::Rainbow);
+        pattern = WhiteboardPattern::Rainbow;
     } else if (payload == "fire") {
-        setPattern(WhiteboardPattern::Fire);
+        pattern = WhiteboardPattern::Fire;
+    } else {
+        return;
     }
-    // setPattern has told both entities. Saying it again here put a second,
-    // identical echo on the wire after every command, and a checker waiting
-    // for the *next* answer would take the stale one.
+    queueCommand(WhiteboardCommand::Kind::Pattern, static_cast<int>(pattern));
 }
 
 void WhiteboardCore::onBrightnessCommand(const std::string& payload)
@@ -322,17 +339,9 @@ void WhiteboardCore::onBrightnessCommand(const std::string& payload)
     int brightness;
     if (!PayloadParser::parseInt(payload, brightness))
         return;
-    
+
     dbgLog(("Brightness command: " + std::to_string(brightness)).c_str(), Verbosity::Display, Category::Relic);
-
-    if (brightness >= 192)
-        coreIO->setGlobalBrightness(EBrightness::HIGH);
-    else if (brightness >= 64)
-        coreIO->setGlobalBrightness(EBrightness::MED);
-    else
-        coreIO->setGlobalBrightness(EBrightness::MIN);
-
-    publishState();
+    queueCommand(WhiteboardCommand::Kind::Brightness, brightness);
 }
 
 void WhiteboardCore::onPowerCommand(const std::string& payload)
@@ -343,35 +352,58 @@ void WhiteboardCore::onPowerCommand(const std::string& payload)
     if (!PayloadParser::parseBool(payload, newPowerState))
         return;
 
-    bPowerOn = newPowerState;
-
-    if (bPowerOn) {
-        coreIO->setGlobalBrightness(EBrightness::HIGH);
-    } else {
-        coreIO->setGlobalBrightness(EBrightness::NIGHTTRIP);
-    }
-
-    publishState();
+    queueCommand(WhiteboardCommand::Kind::Power, newPowerState ? 1 : 0);
 }
 
 void WhiteboardCore::onModeCommand(const std::string& payload)
 {
-    dbgLog(("Mode command: " + payload).c_str(), Verbosity::Display, Category::Relic);
+    onPatternCommand(payload);
+}
 
-    if (payload == "noise") {
-        setPattern(WhiteboardPattern::Noise);
-    } else if (payload == "monocolor") {
-        setPattern(WhiteboardPattern::Monocolor);
-    } else if (payload == "rainbow") {
-        setPattern(WhiteboardPattern::Rainbow);
-    } else if (payload == "fire") {
-        setPattern(WhiteboardPattern::Fire);
+void WhiteboardCore::applyCommands()
+{
+    WhiteboardCommand command;
+    while (commands.pop(command))
+    {
+        switch (command.kind)
+        {
+            case WhiteboardCommand::Kind::Pattern:
+                setPattern(static_cast<WhiteboardPattern>(command.value));
+                break;
+
+            case WhiteboardCommand::Kind::Brightness:
+                if (command.value >= 192)
+                    coreIO->setGlobalBrightness(EBrightness::HIGH);
+                else if (command.value >= 64)
+                    coreIO->setGlobalBrightness(EBrightness::MED);
+                else
+                    coreIO->setGlobalBrightness(EBrightness::MIN);
+                markStateChanged();
+                break;
+
+            case WhiteboardCommand::Kind::Power:
+                bPowerOn.store(command.value != 0);
+                coreIO->setGlobalBrightness(command.value != 0 ? EBrightness::HIGH : EBrightness::NIGHTTRIP);
+                markStateChanged();
+                break;
+        }
     }
+}
+
+void WhiteboardCore::markStateChanged()
+{
+    brightnessByte.store(getEBrightnessAsByte(coreIO->getGlobalBrightness()));
+    stateRevision.store(stateRevision.load(std::memory_order_relaxed) + 1, std::memory_order_release);
+}
+
+void WhiteboardCore::markModeChanged()
+{
+    modeRevision.store(modeRevision.load(std::memory_order_relaxed) + 1, std::memory_order_release);
 }
 
 const char* WhiteboardCore::patternName() const
 {
-    switch (currentPattern) {
+    switch (currentPattern.load()) {
         case WhiteboardPattern::Noise:     return "noise";
         case WhiteboardPattern::Monocolor: return "monocolor";
         case WhiteboardPattern::Rainbow:   return "rainbow";
@@ -382,13 +414,13 @@ const char* WhiteboardCore::patternName() const
 
 void WhiteboardCore::publishState()
 {
-    const char* power = bPowerOn ? "ON" : "OFF";
+    const char* power = bPowerOn.load() ? "ON" : "OFF";
     mqttClient.publish(haTopic(kLightId, "state").c_str(), power);
     mqttClient.publish(haTopic(kLightId, "effect").c_str(), patternName());
 
     // What the slider should sit at: the byte the strip is actually on.
     char brightness[4];
-    snprintf(brightness, sizeof(brightness), "%u", getEBrightnessAsByte(coreIO->getGlobalBrightness()));
+    snprintf(brightness, sizeof(brightness), "%u", static_cast<unsigned>(brightnessByte.load()));
     mqttClient.publish(haTopic(kLightId, "brightness").c_str(), brightness);
 
     // The older names, kept for anything already listening.
@@ -425,15 +457,25 @@ void WhiteboardCore::setPattern(WhiteboardPattern pattern)
     dbgLog(("Pattern switched to: " + std::to_string(static_cast<int>(pattern))).c_str(), Verbosity::Display, Category::Relic);
 
     // Both entities show the pattern, so both hear about it, whichever asked.
-    publishModeState();
-    publishState();
+    markModeChanged();
+    markStateChanged();
 }
 
 void WhiteboardCore::tick(float deltaTime)
 {
     RelicCore::tick(deltaTime);
+    applyCommands();
     stateMachine->tick(deltaTime);
+}
 
+void WhiteboardCore::tickWhileLinked(float deltaTime)
+{
+    (void)deltaTime;
+    applyCommands();
+}
+
+void WhiteboardCore::tickNetwork()
+{
     // A reconnect is a new session: the broker has forgotten our
     // subscriptions and HA may have restarted and forgotten the device. Say
     // it all again. Before this, one WiFi blip on the wall and HA could see
@@ -445,16 +487,35 @@ void WhiteboardCore::tick(float deltaTime)
     }
     bWasConnected = connected;
 
-    if (bHasHAConfig && !bDiscoveryPublished && connected)
+    if (!connected)
+    {
+        return;
+    }
+
+    if (bHasHAConfig && !bDiscoveryPublished)
     {
         publishDiscovery();
+    }
+
+    const uint32_t state = stateRevision.load(std::memory_order_acquire);
+    if (state != publishedStateRevision)
+    {
+        publishedStateRevision = state;
+        publishState();
+    }
+
+    const uint32_t mode = modeRevision.load(std::memory_order_acquire);
+    if (mode != publishedModeRevision)
+    {
+        publishedModeRevision = mode;
+        publishModeState();
     }
 }
 
 bool WhiteboardCore::handleCommand(string msg)
 {
     if (strcmp(msg.c_str(), "next") == 0) {
-        int nextPattern = (static_cast<int>(currentPattern) + 1) % static_cast<int>(WhiteboardPattern::MAX);
+        int nextPattern = (static_cast<int>(currentPattern.load()) + 1) % static_cast<int>(WhiteboardPattern::MAX);
         setPattern(static_cast<WhiteboardPattern>(nextPattern));
         return true;
     }
