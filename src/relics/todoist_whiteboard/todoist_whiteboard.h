@@ -27,6 +27,7 @@ using namespace emqtt;
 
 class Pattern_Whiteboard_Monocolor;
 class Pattern_Whiteboard_Noise;
+class Pattern_Whiteboard_MatrixColor;
 
 namespace todoist_whiteboard
 {
@@ -37,6 +38,8 @@ namespace todoist_whiteboard
         RainbowChristmas,
         RainbowGradient,
         Fire,
+        MatrixRainbow,
+        MatrixColor,
         MAX
     };
 
@@ -119,6 +122,9 @@ namespace todoist_whiteboard
         shared_ptr<State_GenericHSV> rainbowChristmasState;
         shared_ptr<State_GenericHSV> rainbowGradientState;
         shared_ptr<State_GenericHSV> fireState;
+        shared_ptr<State_GenericHSV> matrixRainbowState;
+        shared_ptr<State_GenericHSV> matrixColorState;
+        shared_ptr<Pattern_Whiteboard_MatrixColor> matrixColorPattern;
         shared_ptr<Pattern_Whiteboard_Monocolor> monoPattern;
         shared_ptr<Pattern_Whiteboard_Noise> noisePattern;
 

@@ -6,6 +6,7 @@
 #include "todoist_whiteboard.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <iterator>
 #include <string>
@@ -13,9 +14,21 @@
 
 #include <eio/strip_projection.h>
 #include <ecore/logging.h>
+#include <ecore/math.h>
 #include <eanim/noise.h>
 #include <eanim/lfo.h>
+#include <eanim/particles.h>
 #include "../../kits/palettes.h"
+
+// The strip's 2d map, exported from tools/mapper/mapper.html as
+// whiteboard_map.h into this folder. Without one the lights are a row, one
+// unit a pixel.
+#if __has_include("whiteboard_map.h")
+#include "whiteboard_map.h"
+#define WHITEBOARD_HAS_MAP 1
+#else
+#define WHITEBOARD_HAS_MAP 0
+#endif
 
 using namespace todoist_whiteboard;
 using namespace ecore;
@@ -34,13 +47,38 @@ namespace
     constexpr uint32_t kDefaultAccentRgb = 0x190063;
 
     /// By WhiteboardPattern. What HA shows, and what it sends back.
-    constexpr const char* kPatternNames[] = {"noise", "monocolor", "rainbow-christmas", "rainbow-gradient", "fire"};
+    constexpr const char* kPatternNames[] = {"noise", "monocolor", "rainbow-christmas", "rainbow-gradient", "fire",
+                                           "matrix-rainbow", "matrix-color"};
     static_assert(sizeof(kPatternNames) / sizeof(kPatternNames[0]) == static_cast<size_t>(WhiteboardPattern::MAX),
                   "a name for every pattern");
 
     HSV colorFromRgb(uint32_t rgb)
     {
         return HSV::fromRGB((rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF);
+    }
+
+    /// The extent of the whiteboard's map, in node coordinates.
+    struct MapBounds
+    {
+        float minX{0.0f}, maxX{1.0f}, minY{0.0f}, maxY{1.0f};
+    };
+
+    MapBounds mapBounds(const RelicIO& io)
+    {
+        MapBounds bounds{INFINITY, -INFINITY, INFINITY, -INFINITY};
+        for (const auto& segment : io.strip_segments)
+        {
+            for (const auto& node : segment.second->getNodes())
+            {
+                if (node->GetStripNodeType() != StripNodeType::MAPPED2D) continue;
+                const Coord& at = static_cast<const HSVStripNode_Mapped2D*>(node.get())->coord;
+                bounds.minX = std::min(bounds.minX, at.x); bounds.maxX = std::max(bounds.maxX, at.x);
+                bounds.minY = std::min(bounds.minY, at.y); bounds.maxY = std::max(bounds.maxY, at.y);
+            }
+        }
+        if (!(bounds.maxX > bounds.minX)) { bounds.minX = 0.0f; bounds.maxX = 1.0f; }
+        if (!(bounds.maxY > bounds.minY)) { bounds.minY = 0.0f; bounds.maxY = 1.0f; }
+        return bounds;
     }
 
     std::vector<std::string> patternNames()
@@ -70,6 +108,13 @@ void WhiteboardIO::init()
     );
     
     if (segmentInserted) {
+#if WHITEBOARD_HAS_MAP
+        static_assert(std::size(mapping::kWhiteboard) == wiring::kWhiteboard.length,
+                      "whiteboard_map.h and relics/wiring.h disagree on the strip length: re-export the map");
+        // scaled to one unit a pixel, so the noise looks keep the density they had on the row
+        HSVStripNodeFactory::GenerateFromTable(segmentIt->second.get(), 0, mapping::kWhiteboard, wiring::kWhiteboard.length);
+        dbgLog("WhiteboardIO::init: 2d map from whiteboard_map.h", Verbosity::Display, Category::Relic);
+#else
         HSVStripNodeFactory::GenerateAxisRow(
             segmentIt->second.get(), 
             0, 
@@ -77,6 +122,7 @@ void WhiteboardIO::init()
             Coord(0, 0), 
             Coord(1.f, 0)
         );
+#endif
     }
 
     dbgLog("WhiteboardIO::init", Verbosity::Verbose, Category::Relic);
@@ -140,32 +186,37 @@ public:
 
     virtual void render(HSVStripNode* inNode, HSV& inOutColor) const override
     {
-        HSVStripNode_Mapped2D* castedNode = static_cast<HSVStripNode_Mapped2D*>(inNode);
-        float hue = lfo.evaluate(castedNode->coord.x) * 360.0f;
+        // along the wiring, not across the wall: neighbours alternate however the strip is hung
+        float hue = lfo.evaluate(static_cast<float>(inNode->getStripIdx())) * 360.0f;
         inOutColor = HSV(hue, 1.0f, 1.0f);
     }
 };
 
-// The hue wheel laid along the strip a few times over, drifting slowly.
+// The hue wheel laid across the board, left to right, scrolling right to left.
 class Pattern_Whiteboard_RainbowGradient : public GeneratorHSV
 {
 public:
-    static constexpr float kHueRepeats = 3.0f;
-    static constexpr float kSecondsPerCycle = 22.5f;
+    /// boards a second; negative moves the rainbow right to left
+    static constexpr float kSpeed = -1.0f / 22.5f;
 
-    float phase = 0.0f; // 0-1, and it wraps, so it stays precise however long it runs
+    explicit Pattern_Whiteboard_RainbowGradient(const MapBounds& inBounds) : bounds(inBounds) {}
+
+    float offset = 0.0f; // 0-1, and it wraps, so it stays precise however long it runs
 
     virtual void tick(float deltaTime) override
     {
-        phase = std::fmod(phase + deltaTime / kSecondsPerCycle, 1.0f);
+        offset = std::fmod(offset + kSpeed * deltaTime + 1.0f, 1.0f);
     }
 
     virtual void render(HSVStripNode* inNode, HSV& inOutColor) const override
     {
-        HSVStripNode_Mapped2D* castedNode = static_cast<HSVStripNode_Mapped2D*>(inNode);
-        const float along = castedNode->coord.x / wiring::kWhiteboard.length;
-        inOutColor = HSV(std::fmod(along * kHueRepeats + phase, 1.0f) * 360.0f, 1.0f, 1.0f);
+        const Coord& at = static_cast<HSVStripNode_Mapped2D*>(inNode)->coord;
+        const float across = (at.x - bounds.minX) / (bounds.maxX - bounds.minX);
+        inOutColor = HSV(std::fmod(across - offset + 1.0f, 1.0f) * 360.0f, 1.0f, 1.0f);
     }
+
+private:
+    MapBounds bounds;
 };
 
 class Pattern_Whiteboard_Fire : public GeneratorHSV
@@ -191,6 +242,130 @@ public:
         HSVStripNode_Mapped2D* castedNode = static_cast<HSVStripNode_Mapped2D*>(inNode);
         float noiseAlpha = coreNoise.evaluate(castedNode->coord.x, castedNode->coord.y);
         inOutColor = palette.getColor(noiseAlpha);
+    }
+};
+
+/* @brief Digital rain down the wall: drops are particles that spawn above
+* the board at random across it and fall straight down, each a pale head and
+* a tail that fades above it, on black. Distances are node units, about one a
+* pixel.
+*
+* A subclass says what colour a drop is from its own random 0-1 pick; the
+* head is always paler than that colour.
+*/
+class Pattern_Whiteboard_Matrix : public GeneratorHSV
+{
+public:
+    static constexpr int kMaxDrops = 24;
+    static constexpr float kDropsPerSecond = 5.0f;
+    static constexpr float kColumnHalfWidth = 1.1f;   // catches the up and down run of one column
+    static constexpr float kMinSpeed = 4.0f, kMaxSpeed = 9.0f;   // units a second
+    static constexpr float kMinTail = 3.0f, kMaxTail = 7.0f;     // units
+    static constexpr float kHeadLength = 0.8f;
+
+    explicit Pattern_Whiteboard_Matrix(const MapBounds& inBounds) : bounds(inBounds), drops(kMaxDrops)
+    {
+        // a board's worth already falling, so the first second is not empty
+        const float height = bounds.maxY - bounds.minY;
+        for (int idx = 0; idx < kMaxDrops / 2; ++idx)
+        {
+            spawnDrop(get_random_float_in_range(bounds.minY, bounds.maxY + height * 0.5f));
+        }
+    }
+
+    virtual void tick(float deltaTime) override
+    {
+        drops.tick(deltaTime);
+
+        spawnDebt += kDropsPerSecond * deltaTime;
+        while (spawnDebt >= 1.0f)
+        {
+            spawnDebt -= 1.0f;
+            spawnDrop(bounds.maxY + get_random_float_in_range(0.0f, kMaxTail));
+        }
+    }
+
+    virtual void render(HSVStripNode* inNode, HSV& inOutColor) const override
+    {
+        const Coord& at = static_cast<HSVStripNode_Mapped2D*>(inNode)->coord;
+
+        float best = 0.0f;
+        const Particle* lit = nullptr;
+        for (const Particle& drop : drops.all())
+        {
+            if (!drop.bAlive || std::fabs(at.x - drop.position.x) > drop.radius) continue;
+            const float tail = tailOf(drop);
+            const float behind = at.y - drop.position.y;   // the tail is above the head
+            if (behind < -kHeadLength * 0.5f || behind > tail) continue;
+            const float fade = 1.0f - std::max(0.0f, behind) / tail;
+            const float level = fade * fade;
+            if (level > best) { best = level; lit = &drop; }
+        }
+
+        if (lit == nullptr)
+        {
+            inOutColor = HSV(0.0f, 0.0f, 0.0f);
+            return;
+        }
+
+        const HSV colour = dropColor(valueOf(*lit));
+        const bool head = at.y - lit->position.y < kHeadLength;
+        inOutColor = HSV(colour.getHueFloat(), colour.getSatFloat() * (head ? 0.35f : 1.0f),
+                         colour.getValFloat() * best);
+    }
+
+protected:
+    /// The drop's colour from its random 0-1 pick, fixed for its fall.
+    virtual HSV dropColor(float value) const = 0;
+
+private:
+    static float valueOf(const Particle& drop) { return hash01(drop.seed); }
+    static float tailOf(const Particle& drop) { return kMinTail + hash01(drop.seed ^ 0x9E3779B9u) * (kMaxTail - kMinTail); }
+
+    void spawnDrop(float y)
+    {
+        Particle* drop = drops.spawn();
+        if (drop == nullptr) return;
+
+        const float speed = get_random_float_in_range(kMinSpeed, kMaxSpeed);
+        drop->position = Coord(get_random_float_in_range(bounds.minX, bounds.maxX), y);
+        drop->velocity = Coord(0.0f, -speed);
+        drop->radius = kColumnHalfWidth;
+        // gone once the tail has cleared the foot of the board
+        drop->lifetime = (y - bounds.minY + tailOf(*drop)) / speed;
+    }
+
+    MapBounds bounds;
+    ParticleSystem drops;
+    float spawnDebt = 0.0f;
+};
+
+// Matrix rain where each drop picks a random hue.
+class Pattern_Whiteboard_MatrixRainbow : public Pattern_Whiteboard_Matrix
+{
+public:
+    using Pattern_Whiteboard_Matrix::Pattern_Whiteboard_Matrix;
+
+protected:
+    virtual HSV dropColor(float value) const override
+    {
+        return HSV(value * 360.0f, 1.0f, 1.0f);
+    }
+};
+
+// Matrix rain in the programmed colours: each drop picks a random point on
+// the main -> accent gradient and keeps it all the way down.
+class Pattern_Whiteboard_MatrixColor : public Pattern_Whiteboard_Matrix
+{
+public:
+    using Pattern_Whiteboard_Matrix::Pattern_Whiteboard_Matrix;
+
+    HSVPalette palette {colorFromRgb(kDefaultColorRgb), colorFromRgb(kDefaultAccentRgb)};
+
+protected:
+    virtual HSV dropColor(float value) const override
+    {
+        return palette.getColor(value);
     }
 };
 
@@ -226,19 +401,32 @@ WhiteboardCore::WhiteboardCore(MqttClient& mqtt)
     rainbowChristmasState->setGenerator(std::make_shared<Pattern_Whiteboard_RainbowChristmas>());
     rainbowChristmasState->init();
 
+    const MapBounds bounds = mapBounds(*coreIO);
+
     rainbowGradientState = std::make_shared<State_GenericHSV>("rainbowGradientState", coreIO.get());
-    rainbowGradientState->setGenerator(std::make_shared<Pattern_Whiteboard_RainbowGradient>());
+    rainbowGradientState->setGenerator(std::make_shared<Pattern_Whiteboard_RainbowGradient>(bounds));
     rainbowGradientState->init();
 
     fireState = std::make_shared<State_GenericHSV>("fireState", coreIO.get());
     fireState->setGenerator(std::make_shared<Pattern_Whiteboard_Fire>());
     fireState->init();
 
+    matrixRainbowState = std::make_shared<State_GenericHSV>("matrixRainbowState", coreIO.get());
+    matrixRainbowState->setGenerator(std::make_shared<Pattern_Whiteboard_MatrixRainbow>(bounds));
+    matrixRainbowState->init();
+
+    matrixColorState = std::make_shared<State_GenericHSV>("matrixColorState", coreIO.get());
+    matrixColorPattern = std::make_shared<Pattern_Whiteboard_MatrixColor>(bounds);
+    matrixColorState->setGenerator(matrixColorPattern);
+    matrixColorState->init();
+
     stateManager->addState(noiseState);
     stateManager->addState(monoState);
     stateManager->addState(rainbowChristmasState);
     stateManager->addState(rainbowGradientState);
     stateManager->addState(fireState);
+    stateManager->addState(matrixRainbowState);
+    stateManager->addState(matrixColorState);
 
     stateMachine->setActiveState(noiseState);
     stateMachine->init();
@@ -472,6 +660,7 @@ void WhiteboardCore::updateNoiseColors()
 {
     const HSV main = colorFromRgb(colorRgb.load());
     noisePattern->palette = HSVPalette{main, bAccentOn.load() ? colorFromRgb(accentRgb.load()) : main};
+    matrixColorPattern->palette = noisePattern->palette;
 }
 
 void WhiteboardCore::applyCommands()
@@ -629,6 +818,12 @@ void WhiteboardCore::setPattern(WhiteboardPattern pattern)
             break;
         case WhiteboardPattern::Fire:
             stateMachine->setNextState(fireState);
+            break;
+        case WhiteboardPattern::MatrixRainbow:
+            stateMachine->setNextState(matrixRainbowState);
+            break;
+        case WhiteboardPattern::MatrixColor:
+            stateMachine->setNextState(matrixColorState);
             break;
         default:
             break;
