@@ -4,6 +4,8 @@
 // See readme.md for full license details.
 
 #include "mqtt_transport_serial.h"
+
+#if USE_ARDUINO
 #include <ecore/logging.h>
 
 using namespace emqtt;
@@ -214,3 +216,5 @@ bool MqttTransportSerial::parseJsonArray(const char* json, char* outTopic, char*
 
     return (fieldIndex >= 1);
 }
+
+#endif

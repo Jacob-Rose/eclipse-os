@@ -30,7 +30,7 @@ set(ECLIPSE_LIB  "${ECLIPSE_ROOT}/lib/src")
 # The portable slice of eclipse-os.
 #
 # Listed explicitly rather than globbed: everything here has been checked to
-# build off-Arduino, and a glob would quietly pull in emqtt/ewifi the moment
+# build off-Arduino, and a glob would quietly pull in ewifi the moment
 # someone adds a file.
 # ---------------------------------------------------------------------------
 set(ECLIPSE_CORE_SOURCES
@@ -38,6 +38,11 @@ set(ECLIPSE_CORE_SOURCES
     ${ECLIPSE_LIB}/edmx/fixture.cpp
     ${ECLIPSE_LIB}/emidi/binding.cpp
     ${ECLIPSE_LIB}/enet/host_udp.cpp
+    ${ECLIPSE_LIB}/emqtt/ha_discovery.cpp
+    ${ECLIPSE_LIB}/emqtt/mqtt_client.cpp
+    ${ECLIPSE_LIB}/emqtt/mqtt_handler.cpp
+    ${ECLIPSE_LIB}/emqtt/mqtt_packet.cpp
+    ${ECLIPSE_LIB}/emqtt/mqtt_transport_host.cpp
     ${ECLIPSE_LIB}/eosc/address.cpp
     ${ECLIPSE_LIB}/eosc/binding.cpp
     ${ECLIPSE_LIB}/eosc/packet.cpp

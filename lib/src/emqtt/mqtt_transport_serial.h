@@ -5,6 +5,10 @@
 
 #pragma once
 
+#include <ecore/core.h>
+
+#if USE_ARDUINO
+
 #include "mqtt_transport.h"
 #include <Arduino.h>
 
@@ -42,3 +46,5 @@ namespace emqtt
         String receiveBuffer;
     };
 }
+
+#endif
