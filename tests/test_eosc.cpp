@@ -5,6 +5,7 @@
 
 #include "eclipse_test.h"
 
+#include <algorithm>
 #include <cstring>
 #include <deque>
 
@@ -251,6 +252,36 @@ namespace
             return true;
         }
     };
+}
+
+namespace
+{
+    /// A sender that never stops - Synesthesia's audio stream, as far as a
+    /// reader is concerned.
+    struct EndlessTransport : public enet::DatagramTransport
+    {
+        std::vector<uint8_t> packet = Packet::encode(Message("/audio/level").add(0.5f));
+        int handed = 0;
+        int receive(uint8_t* buffer, size_t capacity) override
+        {
+            if (++handed > 10000) return 0;   // a test that fails, not one that hangs
+            std::memcpy(buffer, packet.data(), std::min(capacity, packet.size()));
+            return static_cast<int>(packet.size());
+        }
+    };
+}
+
+TEST(eosc_port_tick_can_stop_short_of_a_stream_that_never_ends)
+{
+    EndlessTransport wire;
+    OscPort port;
+    port.setTransport(&wire);
+    Recorder sink;
+
+    CHECK_EQ(port.tick(0.0, sink, 1), 1);
+    CHECK_EQ(wire.handed, 1);
+    CHECK_EQ(port.tick(0.0, sink, 3), 3);
+    CHECK_EQ(wire.handed, 4);
 }
 
 TEST(eosc_port_pumps_a_transport_and_sends_back)

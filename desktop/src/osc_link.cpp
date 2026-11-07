@@ -294,8 +294,11 @@ void OscInput::read()
     IntoInput sink(*this);
     while (running.load())
     {
-        // the socket parks up to its timeout, so this loop idles cheaply
-        oscPort.tick(nowSeconds(), sink);
+        // the socket parks up to its timeout, so this loop idles cheaply. One
+        // datagram a turn: a sender that never pauses - Synesthesia's audio,
+        // every frame - would otherwise keep a drain from ever returning, and
+        // close() would wait on this thread for good.
+        oscPort.tick(nowSeconds(), sink, 1);
     }
 }
 

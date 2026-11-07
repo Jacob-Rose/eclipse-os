@@ -21,6 +21,12 @@ namespace eosc
     *     OscPort port;
     *     port.setTransport(&udp);              // an enet::ArduinoUdp or HostUdp
     *     port.tick(now, sink);                 // once a frame, or from a thread
+    *
+    * A reader thread over a blocking transport passes a `maxDatagrams`, so it
+    * gets back to its own loop - and sees a stop - while a sender keeps the
+    * socket from ever going quiet:
+    *
+    *     while (running) port.tick(now, sink, 1);
     *     port.send(Message("/lamp").add(1.0f));
     */
     class OscPort
@@ -32,12 +38,15 @@ namespace eosc
         void setTransport(enet::DatagramTransport* inTransport) { transport = inTransport; }
         enet::DatagramTransport* getTransport() const { return transport; }
 
-        /// Drains the transport. Returns how many messages were handed on.
-        int tick(double when, MessageSink& sink)
+        /// Drains the transport, or takes at most `maxDatagrams` from it when
+        /// that is above 0. Returns how many messages were handed on.
+        int tick(double when, MessageSink& sink, int maxDatagrams = 0)
         {
             int messages = 0;
-            while (transport != nullptr)
+            int taken = 0;
+            while (transport != nullptr && (maxDatagrams <= 0 || taken < maxDatagrams))
             {
+                ++taken;
                 const int length = transport->receive(buffer, kDatagramCapacity);
                 if (length == 0) break;
                 if (length < 0)
