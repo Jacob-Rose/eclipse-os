@@ -26,6 +26,7 @@ using namespace esm;
 using namespace emqtt;
 
 class Pattern_Whiteboard_Monocolor;
+class Pattern_Whiteboard_Noise;
 
 namespace todoist_whiteboard
 {
@@ -33,7 +34,8 @@ namespace todoist_whiteboard
     {
         Noise,
         Monocolor,
-        Rainbow,
+        RainbowChristmas,
+        RainbowGradient,
         Fire,
         MAX
     };
@@ -46,12 +48,12 @@ namespace todoist_whiteboard
     };
 
     /* @brief Something MQTT asked for, on its way to the render core.
-    * `value` is a WhiteboardPattern, a 0-255 brightness, 0/1 for power, or a
-    * colour as 0xRRGGBB.
+    * `value` is a WhiteboardPattern, a 0-255 brightness, 0/1 for a power, or
+    * a colour as 0xRRGGBB.
     */
     struct WhiteboardCommand
     {
-        enum class Kind : uint8_t { Pattern, Brightness, Power, Color };
+        enum class Kind : uint8_t { Pattern, Brightness, Power, Color, AccentColor, AccentPower };
 
         Kind kind{Kind::Pattern};
         int value{0};
@@ -95,7 +97,12 @@ namespace todoist_whiteboard
         void onPowerCommand(const std::string& payload);
         void onModeCommand(const std::string& payload);
         void onColorCommand(const std::string& payload);
+        void onAccentColorCommand(const std::string& payload);
+        void onAccentPowerCommand(const std::string& payload);
         void applyCommands();
+        void updateNoiseColors();
+        void markAccentChanged();
+        void publishAccentState();
         void startBrightnessFade();
         void tickBrightness(float deltaTime);
         void queueCommand(WhiteboardCommand::Kind kind, int value);
@@ -109,9 +116,11 @@ namespace todoist_whiteboard
 
         shared_ptr<State_GenericHSV> noiseState;
         shared_ptr<State_GenericHSV> monoState;
-        shared_ptr<State_GenericHSV> rainbowState;
+        shared_ptr<State_GenericHSV> rainbowChristmasState;
+        shared_ptr<State_GenericHSV> rainbowGradientState;
         shared_ptr<State_GenericHSV> fireState;
         shared_ptr<Pattern_Whiteboard_Monocolor> monoPattern;
+        shared_ptr<Pattern_Whiteboard_Noise> noisePattern;
 
         MqttClient& mqttClient;
         MqttHandler mqttHandler;
@@ -125,8 +134,11 @@ namespace todoist_whiteboard
         std::atomic<bool> bPowerOn;
         std::atomic<uint8_t> brightnessLevel{255};  // Home Assistant's 0-255; kept through an off
         std::atomic<uint32_t> colorRgb;             // 0xRRGGBB
+        std::atomic<uint32_t> accentRgb;            // 0xRRGGBB
+        std::atomic<bool> bAccentOn{true};          // off: the looks use the main colour alone
         std::atomic<uint32_t> stateRevision{0};
         std::atomic<uint32_t> modeRevision{0};
+        std::atomic<uint32_t> accentRevision{0};
 
         // the render core's own
         eanim::Lerper stripFade;
@@ -135,6 +147,7 @@ namespace todoist_whiteboard
         // the network core's own
         uint32_t publishedStateRevision{0};
         uint32_t publishedModeRevision{0};
+        uint32_t publishedAccentRevision{0};
         bool bDiscoveryPublished;
         bool bHasHAConfig;
         bool bWasConnected{false};

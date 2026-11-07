@@ -7,7 +7,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <iterator>
 #include <string>
+#include <vector>
 
 #include <eio/strip_projection.h>
 #include <ecore/logging.h>
@@ -28,7 +30,23 @@ namespace
 
     constexpr float kBrightnessFadeSeconds = 0.75f;
 
-    constexpr uint32_t kDefaultColorRgb = 0x28CCCC;
+    constexpr uint32_t kDefaultColorRgb = 0xFA14D7;
+    constexpr uint32_t kDefaultAccentRgb = 0x190063;
+
+    /// By WhiteboardPattern. What HA shows, and what it sends back.
+    constexpr const char* kPatternNames[] = {"noise", "monocolor", "rainbow-christmas", "rainbow-gradient", "fire"};
+    static_assert(sizeof(kPatternNames) / sizeof(kPatternNames[0]) == static_cast<size_t>(WhiteboardPattern::MAX),
+                  "a name for every pattern");
+
+    HSV colorFromRgb(uint32_t rgb)
+    {
+        return HSV::fromRGB((rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF);
+    }
+
+    std::vector<std::string> patternNames()
+    {
+        return std::vector<std::string>(std::begin(kPatternNames), std::end(kPatternNames));
+    }
 }
 
 WhiteboardIO::WhiteboardIO() : RelicIO()
@@ -78,7 +96,7 @@ public:
     }
 
     PerlinNoiseGenerator2D coreNoise;
-    HSVPalette palette {HSV(309.0f, 0.92f, 0.98f), HSV(255.0f, 1.0f, 0.39f)};
+    HSVPalette palette {colorFromRgb(kDefaultColorRgb), colorFromRgb(kDefaultAccentRgb)};
 
     virtual void tick(float deltaTime) override
     {
@@ -104,10 +122,10 @@ public:
     }
 };
 
-class Pattern_Whiteboard_Rainbow : public GeneratorHSV
+class Pattern_Whiteboard_RainbowChristmas : public GeneratorHSV
 {
 public:
-    Pattern_Whiteboard_Rainbow()
+    Pattern_Whiteboard_RainbowChristmas()
     {
         lfo.speed = 0.2f;
         lfo.width = 5.0f;
@@ -125,6 +143,28 @@ public:
         HSVStripNode_Mapped2D* castedNode = static_cast<HSVStripNode_Mapped2D*>(inNode);
         float hue = lfo.evaluate(castedNode->coord.x) * 360.0f;
         inOutColor = HSV(hue, 1.0f, 1.0f);
+    }
+};
+
+// The hue wheel laid along the strip a few times over, drifting slowly.
+class Pattern_Whiteboard_RainbowGradient : public GeneratorHSV
+{
+public:
+    static constexpr float kHueRepeats = 3.0f;
+    static constexpr float kSecondsPerCycle = 22.5f;
+
+    float phase = 0.0f; // 0-1, and it wraps, so it stays precise however long it runs
+
+    virtual void tick(float deltaTime) override
+    {
+        phase = std::fmod(phase + deltaTime / kSecondsPerCycle, 1.0f);
+    }
+
+    virtual void render(HSVStripNode* inNode, HSV& inOutColor) const override
+    {
+        HSVStripNode_Mapped2D* castedNode = static_cast<HSVStripNode_Mapped2D*>(inNode);
+        const float along = castedNode->coord.x / wiring::kWhiteboard.length;
+        inOutColor = HSV(std::fmod(along * kHueRepeats + phase, 1.0f) * 360.0f, 1.0f, 1.0f);
     }
 };
 
@@ -160,6 +200,7 @@ WhiteboardCore::WhiteboardCore(MqttClient& mqtt)
       currentPattern(WhiteboardPattern::Noise),
       bPowerOn(true),
       colorRgb(kDefaultColorRgb),
+      accentRgb(kDefaultAccentRgb),
       bDiscoveryPublished(false),
       bHasHAConfig(false)
 {
@@ -171,18 +212,23 @@ WhiteboardCore::WhiteboardCore(MqttClient& mqtt)
     stateManager = std::make_unique<StateManager>();
 
     noiseState = std::make_shared<State_GenericHSV>("noiseState", coreIO.get());
-    noiseState->setGenerator(make_shared<Pattern_Whiteboard_Noise>());
+    noisePattern = make_shared<Pattern_Whiteboard_Noise>();
+    noiseState->setGenerator(noisePattern);
     noiseState->init();
 
     monoState = std::make_shared<State_GenericHSV>("monoState", coreIO.get());
     monoPattern = make_shared<Pattern_Whiteboard_Monocolor>();
-    monoPattern->color = HSV::fromRGB((kDefaultColorRgb >> 16) & 0xFF, (kDefaultColorRgb >> 8) & 0xFF, kDefaultColorRgb & 0xFF);
+    monoPattern->color = colorFromRgb(kDefaultColorRgb);
     monoState->setGenerator(monoPattern);
     monoState->init();
 
-    rainbowState = std::make_shared<State_GenericHSV>("rainbowState", coreIO.get());
-    rainbowState->setGenerator(std::make_shared<Pattern_Whiteboard_Rainbow>());
-    rainbowState->init();
+    rainbowChristmasState = std::make_shared<State_GenericHSV>("rainbowChristmasState", coreIO.get());
+    rainbowChristmasState->setGenerator(std::make_shared<Pattern_Whiteboard_RainbowChristmas>());
+    rainbowChristmasState->init();
+
+    rainbowGradientState = std::make_shared<State_GenericHSV>("rainbowGradientState", coreIO.get());
+    rainbowGradientState->setGenerator(std::make_shared<Pattern_Whiteboard_RainbowGradient>());
+    rainbowGradientState->init();
 
     fireState = std::make_shared<State_GenericHSV>("fireState", coreIO.get());
     fireState->setGenerator(std::make_shared<Pattern_Whiteboard_Fire>());
@@ -190,7 +236,8 @@ WhiteboardCore::WhiteboardCore(MqttClient& mqtt)
 
     stateManager->addState(noiseState);
     stateManager->addState(monoState);
-    stateManager->addState(rainbowState);
+    stateManager->addState(rainbowChristmasState);
+    stateManager->addState(rainbowGradientState);
     stateManager->addState(fireState);
 
     stateMachine->setActiveState(noiseState);
@@ -207,6 +254,7 @@ WhiteboardCore::WhiteboardCore(MqttClient& mqtt)
 // light HA showed was never one it could hear; only the Mode select lined up.
 static const char* kLightId = "whiteboard_light_01";
 static const char* kModeId  = "whiteboard_mode";
+static const char* kAccentId = "whiteboard_accent_01";
 
 static std::string haTopic(const char* id, const char* leaf)
 {
@@ -248,23 +296,27 @@ void WhiteboardCore::publishDiscovery()
     dbgLog("Publishing HA discovery messages", Verbosity::Display, Category::Relic);
 
     // Publish light entity with effects
-    std::vector<std::string> effects = {"noise", "monocolor", "rainbow", "fire"};
-    haDiscovery->publishLightDiscovery("whiteboard_light_01", "Todoist Whiteboard", effects);
+    haDiscovery->publishLightDiscovery(kLightId, "Todoist Whiteboard", patternNames());
+
+    // HA has no colour entity of its own, so the accent is a light
+    haDiscovery->publishColorDiscovery(kAccentId, "Accent Color");
 
     // Publish select entity for mode control
-    std::vector<std::string> modes = {"noise", "monocolor", "rainbow", "fire"};
-    haDiscovery->publishSelectDiscovery("whiteboard_mode", "Whiteboard Mode", modes);
+    haDiscovery->publishSelectDiscovery(kModeId, "Whiteboard Mode", patternNames());
 
     publishedStateRevision = stateRevision.load(std::memory_order_acquire);
     publishedModeRevision = modeRevision.load(std::memory_order_acquire);
+    publishedAccentRevision = accentRevision.load(std::memory_order_acquire);
 
     // The subscriptions, the availability and the state: everything the
     // broker forgot while we were away.
     subscribeTopics();
     mqttClient.publish(haTopic(kLightId, "available").c_str(), "online", true);
     mqttClient.publish(haTopic(kModeId, "available").c_str(), "online", true);
+    mqttClient.publish(haTopic(kAccentId, "available").c_str(), "online", true);
     publishState();
     publishModeState();
+    publishAccentState();
 
     bDiscoveryPublished = true;
     dbgLog("HA discovery published successfully", Verbosity::Display, Category::Relic);
@@ -289,6 +341,12 @@ void WhiteboardCore::setupMQTT()
     });
     mqttHandler.registerHandler(haTopic(kLightId, "rgb/set"), [this](const std::string& payload) {
         onColorCommand(payload);
+    });
+    mqttHandler.registerHandler(haTopic(kAccentId, "rgb/set"), [this](const std::string& payload) {
+        onAccentColorCommand(payload);
+    });
+    mqttHandler.registerHandler(haTopic(kAccentId, "set"), [this](const std::string& payload) {
+        onAccentPowerCommand(payload);
     });
     mqttHandler.registerHandler("whiteboard/pattern", [this](const std::string& payload) {
         onPatternCommand(payload);
@@ -319,6 +377,8 @@ void WhiteboardCore::subscribeTopics()
     mqttClient.subscribe(haTopic(kLightId, "brightness/set").c_str());
     mqttClient.subscribe(haTopic(kLightId, "effect/set").c_str());
     mqttClient.subscribe(haTopic(kLightId, "rgb/set").c_str());
+    mqttClient.subscribe(haTopic(kAccentId, "rgb/set").c_str());
+    mqttClient.subscribe(haTopic(kAccentId, "set").c_str());
     mqttClient.subscribe("whiteboard/pattern");
     mqttClient.subscribe("whiteboard/brightness");
     mqttClient.subscribe("whiteboard/power");
@@ -340,19 +400,15 @@ void WhiteboardCore::onPatternCommand(const std::string& payload)
 {
     dbgLog(("Pattern command: " + payload).c_str(), Verbosity::Display, Category::Relic);
 
-    WhiteboardPattern pattern;
-    if (payload == "noise") {
-        pattern = WhiteboardPattern::Noise;
-    } else if (payload == "monocolor") {
-        pattern = WhiteboardPattern::Monocolor;
-    } else if (payload == "rainbow") {
-        pattern = WhiteboardPattern::Rainbow;
-    } else if (payload == "fire") {
-        pattern = WhiteboardPattern::Fire;
-    } else {
+    // "rainbow" is the name before rainbow-christmas, for anything still using it
+    const std::string name = payload == "rainbow" ? "rainbow-christmas" : payload;
+
+    const auto found = std::find(std::begin(kPatternNames), std::end(kPatternNames), name);
+    if (found == std::end(kPatternNames))
+    {
         return;
     }
-    queueCommand(WhiteboardCommand::Kind::Pattern, static_cast<int>(pattern));
+    queueCommand(WhiteboardCommand::Kind::Pattern, static_cast<int>(found - std::begin(kPatternNames)));
 }
 
 void WhiteboardCore::onBrightnessCommand(const std::string& payload)
@@ -392,6 +448,32 @@ void WhiteboardCore::onColorCommand(const std::string& payload)
     queueCommand(WhiteboardCommand::Kind::Color, (red << 16) | (green << 8) | blue);
 }
 
+void WhiteboardCore::onAccentColorCommand(const std::string& payload)
+{
+    dbgLog(("Accent color command: " + payload).c_str(), Verbosity::Display, Category::Relic);
+
+    uint8_t red, green, blue;
+    if (!PayloadParser::parseRGB(payload, red, green, blue))
+        return;
+
+    queueCommand(WhiteboardCommand::Kind::AccentColor, (red << 16) | (green << 8) | blue);
+}
+
+void WhiteboardCore::onAccentPowerCommand(const std::string& payload)
+{
+    bool enabled;
+    if (!PayloadParser::parseBool(payload, enabled))
+        return;
+
+    queueCommand(WhiteboardCommand::Kind::AccentPower, enabled ? 1 : 0);
+}
+
+void WhiteboardCore::updateNoiseColors()
+{
+    const HSV main = colorFromRgb(colorRgb.load());
+    noisePattern->palette = HSVPalette{main, bAccentOn.load() ? colorFromRgb(accentRgb.load()) : main};
+}
+
 void WhiteboardCore::applyCommands()
 {
     WhiteboardCommand command;
@@ -422,8 +504,21 @@ void WhiteboardCore::applyCommands()
 
             case WhiteboardCommand::Kind::Color:
                 colorRgb.store(static_cast<uint32_t>(command.value));
-                monoPattern->color = HSV::fromRGB((command.value >> 16) & 0xFF, (command.value >> 8) & 0xFF, command.value & 0xFF);
-                setPattern(WhiteboardPattern::Monocolor);
+                monoPattern->color = colorFromRgb(static_cast<uint32_t>(command.value));
+                updateNoiseColors();
+                markStateChanged();
+                break;
+
+            case WhiteboardCommand::Kind::AccentColor:
+                accentRgb.store(static_cast<uint32_t>(command.value));
+                updateNoiseColors();
+                markAccentChanged();
+                break;
+
+            case WhiteboardCommand::Kind::AccentPower:
+                bAccentOn.store(command.value != 0);
+                updateNoiseColors();
+                markAccentChanged();
                 break;
         }
     }
@@ -460,6 +555,11 @@ void WhiteboardCore::markStateChanged()
     stateRevision.store(stateRevision.load(std::memory_order_relaxed) + 1, std::memory_order_release);
 }
 
+void WhiteboardCore::markAccentChanged()
+{
+    accentRevision.store(accentRevision.load(std::memory_order_relaxed) + 1, std::memory_order_release);
+}
+
 void WhiteboardCore::markModeChanged()
 {
     modeRevision.store(modeRevision.load(std::memory_order_relaxed) + 1, std::memory_order_release);
@@ -467,13 +567,15 @@ void WhiteboardCore::markModeChanged()
 
 const char* WhiteboardCore::patternName() const
 {
-    switch (currentPattern.load()) {
-        case WhiteboardPattern::Noise:     return "noise";
-        case WhiteboardPattern::Monocolor: return "monocolor";
-        case WhiteboardPattern::Rainbow:   return "rainbow";
-        case WhiteboardPattern::Fire:      return "fire";
-        default:                           return "noise";
-    }
+    return kPatternNames[static_cast<int>(currentPattern.load())];
+}
+
+static std::string rgbPayload(uint32_t rgb)
+{
+    char text[12];
+    snprintf(text, sizeof(text), "%u,%u,%u", static_cast<unsigned>((rgb >> 16) & 0xFF),
+             static_cast<unsigned>((rgb >> 8) & 0xFF), static_cast<unsigned>(rgb & 0xFF));
+    return text;
 }
 
 void WhiteboardCore::publishState()
@@ -488,15 +590,17 @@ void WhiteboardCore::publishState()
     snprintf(brightness, sizeof(brightness), "%u", static_cast<unsigned>(brightnessLevel.load()));
     mqttClient.publish(haTopic(kLightId, "brightness").c_str(), brightness, true);
 
-    const uint32_t rgb = colorRgb.load();
-    char color[12];
-    snprintf(color, sizeof(color), "%u,%u,%u", static_cast<unsigned>((rgb >> 16) & 0xFF),
-             static_cast<unsigned>((rgb >> 8) & 0xFF), static_cast<unsigned>(rgb & 0xFF));
-    mqttClient.publish(haTopic(kLightId, "rgb").c_str(), color, true);
+    mqttClient.publish(haTopic(kLightId, "rgb").c_str(), rgbPayload(colorRgb.load()).c_str(), true);
 
     // The older names, kept for anything already listening.
     mqttClient.publish("whiteboard/state", power);
     mqttClient.publish("whiteboard/pattern/state", patternName());
+}
+
+void WhiteboardCore::publishAccentState()
+{
+    mqttClient.publish(haTopic(kAccentId, "state").c_str(), bAccentOn.load() ? "ON" : "OFF", true);
+    mqttClient.publish(haTopic(kAccentId, "rgb").c_str(), rgbPayload(accentRgb.load()).c_str(), true);
 }
 
 void WhiteboardCore::publishModeState()
@@ -517,8 +621,11 @@ void WhiteboardCore::setPattern(WhiteboardPattern pattern)
         case WhiteboardPattern::Monocolor:
             stateMachine->setNextState(monoState);
             break;
-        case WhiteboardPattern::Rainbow:
-            stateMachine->setNextState(rainbowState);
+        case WhiteboardPattern::RainbowChristmas:
+            stateMachine->setNextState(rainbowChristmasState);
+            break;
+        case WhiteboardPattern::RainbowGradient:
+            stateMachine->setNextState(rainbowGradientState);
             break;
         case WhiteboardPattern::Fire:
             stateMachine->setNextState(fireState);
@@ -576,6 +683,13 @@ void WhiteboardCore::tickNetwork()
     {
         publishedStateRevision = state;
         publishState();
+    }
+
+    const uint32_t accent = accentRevision.load(std::memory_order_acquire);
+    if (accent != publishedAccentRevision)
+    {
+        publishedAccentRevision = accent;
+        publishAccentState();
     }
 
     const uint32_t mode = modeRevision.load(std::memory_order_acquire);

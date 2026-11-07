@@ -170,11 +170,11 @@ def main():
             drives.append((c['rgb_command_topic'], '255,0,0', c['rgb_state_topic'], '255,0,0'))
         if 'effect_command_topic' in c and c.get('effect_list'):
             eff = c['effect_list']
-            drives += [(c['effect_command_topic'], e, c['effect_state_topic'], e) for e in eff[:2]]
+            drives += [(c['effect_command_topic'], e, c['effect_state_topic'], e) for e in eff]
         if 'brightness_command_topic' in c:
             drives.append((c['brightness_command_topic'], '255', c['brightness_state_topic'], None))
         if 'options' in c and 'command_topic' in c:      # a select
-            drives += [(c['command_topic'], o, c['state_topic'], o) for o in c['options'][:2]]
+            drives += [(c['command_topic'], o, c['state_topic'], o) for o in c['options']]
         elif 'command_topic' in c:                      # a light / switch
             drives += [(c['command_topic'], 'OFF', c['state_topic'], 'OFF'),
                        (c['command_topic'], 'ON', c['state_topic'], 'ON')]

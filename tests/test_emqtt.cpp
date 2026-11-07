@@ -230,6 +230,30 @@ TEST(mqtt_handler_routes_a_message_to_its_topic)
     CHECK(heard == "on");
 }
 
+TEST(mqtt_ha_color_discovery_is_a_light_with_rgb_and_no_brightness)
+{
+    FakeTransport::Shared shared;
+    MqttClient client(std::make_unique<FakeTransport>(shared));
+    client.init(MqttConfig("broker", "id"));
+    CHECK(client.connect());
+
+    HomeAssistantConfig config;
+    config.enabled = true;
+    config.deviceName = "Desk";
+    config.deviceId = "desk_01";
+
+    HomeAssistantDiscovery discovery(client);
+    discovery.init(config);
+    CHECK(discovery.publishColorDiscovery("accent", "Accent"));
+
+    CHECK_EQ(shared.published.size(), 1u);
+    const std::string& sent = shared.published[0];
+    CHECK(sent.rfind("homeassistant/light/desk_01/accent/config=", 0) == 0);
+    CHECK(sent.find("\"rgb_command_topic\":\"eclipse/accent/rgb/set\"") != std::string::npos);
+    CHECK(sent.find("\"command_topic\":\"eclipse/accent/set\"") != std::string::npos);
+    CHECK(sent.find("brightness") == std::string::npos);
+}
+
 TEST(mqtt_payload_parser_reads_home_assistants_rgb)
 {
     uint8_t red = 0, green = 0, blue = 0;

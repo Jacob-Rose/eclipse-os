@@ -42,6 +42,10 @@ namespace emqtt
             const char* name
         );
 
+        /// A light that is only a colour picker: on/off and RGB, no brightness.
+        /// HA has no colour entity of its own, so this is how a colour is set.
+        bool publishColorDiscovery(const char* uniqueId, const char* name);
+
         bool publishSelectDiscovery(
             const char* uniqueId,
             const char* name,

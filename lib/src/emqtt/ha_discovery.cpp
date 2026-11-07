@@ -117,6 +117,30 @@ bool HomeAssistantDiscovery::publishSensorDiscovery(
     return mqttClient.publish(topic.c_str(), payload.c_str(), true);
 }
 
+bool HomeAssistantDiscovery::publishColorDiscovery(const char* uniqueId, const char* name)
+{
+    if (!bInitialized)
+    {
+        log::dbgLog("Home Assistant discovery not initialized", log::Verbosity::Error, log::Category::IO);
+        return false;
+    }
+
+    std::ostringstream config;
+    config << "{";
+    config << "\"name\":\"" << escapeJson(name) << "\",";
+    config << "\"unique_id\":\"" << escapeJson(uniqueId) << "\",";
+    config << "\"command_topic\":\"eclipse/" << escapeJson(uniqueId) << "/set\",";
+    config << "\"state_topic\":\"eclipse/" << escapeJson(uniqueId) << "/state\",";
+    config << "\"rgb_command_topic\":\"eclipse/" << escapeJson(uniqueId) << "/rgb/set\",";
+    config << "\"rgb_state_topic\":\"eclipse/" << escapeJson(uniqueId) << "/rgb\",";
+    config << "\"availability_topic\":\"eclipse/" << escapeJson(uniqueId) << "/available\",";
+    config << "\"device\":" << buildDeviceInfo() << ",";
+    config << "\"origin\":" << buildOriginInfo();
+    config << "}";
+
+    return mqttClient.publish(getDiscoveryTopic("light", uniqueId).c_str(), config.str().c_str(), true);
+}
+
 bool HomeAssistantDiscovery::publishSwitchDiscovery(
     const char* uniqueId,
     const char* name)
