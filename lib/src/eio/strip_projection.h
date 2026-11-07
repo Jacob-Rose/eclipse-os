@@ -113,5 +113,23 @@ namespace eio
     public:
         /// `Length` mapped nodes from `startIdx`, placed from `posStart` by `posDeltaPerIdx` each.
         static std::vector<std::shared_ptr<HSVStripNode>> GenerateAxisRow(HSVStripSegment* strip_segment, int startIdx, int Length, const Coordinate& posStart, const Coordinate& posDeltaPerIdx);
+
+        /* @brief `count` mapped nodes from `startIdx`, one at each `coords[idx]`
+        * ({x, y}, the table tools/mapper/mapper.html exports).
+        *
+        * With `pixelSpacing` > 0 the table is scaled about its origin so the
+        * median distance between neighbouring pixels comes out at
+        * `pixelSpacing`: a look tuned on a straight row (one unit a pixel)
+        * keeps its density whatever units the map was exported in. 0 places
+        * the coordinates as written.
+        *
+        *     HSVStripNodeFactory::GenerateFromTable(segment, 0, mapping::kWhiteboard,
+        *                                            wiring::kWhiteboard.length);
+        */
+        static std::vector<std::shared_ptr<HSVStripNode>> GenerateFromTable(HSVStripSegment* strip_segment, int startIdx, const float (*coords)[2], int count, float pixelSpacing = 1.0f);
+
+        /// The median distance between consecutive entries of `coords`; 0
+        /// with fewer than two or when they all sit on one point.
+        static float MedianSpacing(const float (*coords)[2], int count);
     };
 }

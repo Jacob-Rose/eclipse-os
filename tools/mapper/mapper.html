@@ -1,0 +1,922 @@
+<!doctype html>
+<!--
+  Copyright 2024 | Jake Rose
+
+  This file is part of project eclipse-os
+  See readme.md for full license details.
+
+  eclipse-os 2d mapper: open this file in a browser (no server, no install).
+  Load a photo of the lights, click down the strip in wiring order, and
+  export a header for the relic (HSVStripNode_Mapped2D coords) or a device
+  file for the desk. See the help panel at the bottom of the sidebar.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Eclipse Mapper</title>
+<style>
+  :root {
+    --bg: #15161a; --panel: #1d1f25; --line: #2e313a; --text: #e6e7ea; --dim: #9a9fab;
+    --accent: #f5b942; --danger: #ff6b6b; --ok: #6bdc8f; --input: #262931;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font: 13px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  body { display: flex; overflow: hidden; }
+  #stage { flex: 1; position: relative; min-width: 0; }
+  #view { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: crosshair; }
+  #view.panning { cursor: grabbing; }
+  #drop { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    color: var(--dim); font-size: 15px; pointer-events: none; text-align: center; padding: 24px; }
+  #status { position: absolute; left: 10px; bottom: 10px; background: rgba(0,0,0,.65); padding: 4px 8px;
+    border-radius: 4px; font: 12px ui-monospace, monospace; pointer-events: none; }
+  #status:empty { display: none; }
+  #mode { position: absolute; left: 10px; top: 10px; background: var(--accent); color: #000; padding: 4px 10px;
+    border-radius: 4px; font-weight: 600; display: none; }
+  aside { width: 360px; flex: none; background: var(--panel); border-left: 1px solid var(--line);
+    overflow-y: auto; padding: 10px 12px 40px; }
+  h1 { font-size: 15px; margin: 2px 0 10px; }
+  h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--dim);
+    margin: 16px 0 6px; border-top: 1px solid var(--line); padding-top: 12px; }
+  .row { display: flex; gap: 6px; align-items: center; margin: 5px 0; flex-wrap: wrap; }
+  .row > label { color: var(--dim); min-width: 74px; }
+  input, select, button, textarea { font: inherit; color: var(--text); background: var(--input);
+    border: 1px solid var(--line); border-radius: 4px; padding: 4px 6px; }
+  input[type=number] { width: 76px; }
+  input[type=text] { flex: 1; min-width: 0; }
+  input[type=color] { padding: 0 2px; width: 34px; height: 26px; }
+  button { cursor: pointer; }
+  button:hover { border-color: var(--dim); }
+  button.primary { background: var(--accent); color: #000; border-color: var(--accent); font-weight: 600; }
+  button.danger:hover { border-color: var(--danger); color: var(--danger); }
+  button.on { outline: 2px solid var(--accent); }
+  select { flex: 1; min-width: 0; }
+  textarea { width: 100%; height: 160px; font: 11px/1.35 ui-monospace, monospace; resize: vertical; white-space: pre; }
+  .note { color: var(--dim); font-size: 12px; margin: 4px 0; }
+  .warn { color: var(--danger); font-size: 12px; }
+  .good { color: var(--ok); font-size: 12px; }
+  #preview { width: 100%; height: 170px; background: #0e0f12; border: 1px solid var(--line); border-radius: 4px; display: block; }
+  kbd { background: var(--input); border: 1px solid var(--line); border-radius: 3px; padding: 0 4px; font-size: 11px; }
+  .help li { margin: 2px 0; color: var(--dim); }
+  .help { padding-left: 18px; margin: 4px 0; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="view"></canvas>
+  <div id="drop">Drop a photo of the lights here, paste one, or use <b>&nbsp;Load image&nbsp;</b> in the sidebar.</div>
+  <div id="mode"></div>
+  <div id="status"></div>
+</div>
+<aside>
+  <h1>Eclipse Mapper</h1>
+
+  <div class="row">
+    <button id="btnImage" class="primary">Load image</button>
+    <button id="btnOpen">Open project</button>
+    <button id="btnSave">Save project</button>
+  </div>
+  <div class="note" id="imageInfo">No image</div>
+
+  <h2>Strip</h2>
+  <div class="row">
+    <select id="stripSel"></select>
+    <button id="btnAddStrip" title="Add a strip">+</button>
+    <button id="btnDelStrip" class="danger" title="Delete this strip">&minus;</button>
+  </div>
+  <div class="row"><label>Name</label><input type="text" id="stripName"></div>
+  <div class="row"><label>Export as</label><input type="text" id="stripConst" title="The C++ identifier, matching the wiring.h entry"></div>
+  <div class="row">
+    <label>Pixels</label><input type="number" id="stripLength" min="1" max="10000">
+    <input type="color" id="stripColor" title="Display colour">
+  </div>
+
+  <h2>Placing</h2>
+  <div class="row">
+    <label>Next pixel</label><input type="number" id="cursorIdx" min="0">
+    <label style="min-width:0">step</label><input type="number" id="stepIdx" min="1" value="1" style="width:56px">
+  </div>
+  <div class="row">
+    <label>Between</label>
+    <select id="interp">
+      <option value="linear">straight lines</option>
+      <option value="smooth">smooth curve</option>
+    </select>
+  </div>
+  <div class="note" id="progress"></div>
+  <div class="row">
+    <button id="btnUndo">Undo</button>
+    <button id="btnRedo">Redo</button>
+    <button id="btnClearStrip" class="danger">Clear strip</button>
+  </div>
+
+  <h2>Perspective</h2>
+  <div class="note">Click the four corners of something flat and rectangular in the photo (the board, a door frame, a sheet of paper on the wall) and give its real size. Every pixel is then straightened onto that plane, so a photo taken off-axis still maps square.</div>
+  <div class="row">
+    <button id="btnCorners">Set corners</button>
+    <button id="btnClearCorners" class="danger">Clear</button>
+  </div>
+  <div class="row">
+    <label>Real size</label>
+    <input type="number" id="rectW" min="0.001" step="any" value="100" title="width">
+    &times;
+    <input type="number" id="rectH" min="0.001" step="any" value="100" title="height">
+    <input type="text" id="rectUnits" value="cm" style="flex:0 0 46px">
+  </div>
+  <div class="note" id="cornerInfo"></div>
+
+  <h2>Output</h2>
+  <div class="row">
+    <label>Scale</label>
+    <select id="scaleMode">
+      <option value="world">as measured</option>
+      <option value="fit">fit longest side to</option>
+    </select>
+    <input type="number" id="fitSize" value="1" step="any" style="width:64px">
+  </div>
+  <div class="row">
+    <label>Origin</label>
+    <select id="originMode">
+      <option value="frame">rectangle corner (or photo)</option>
+      <option value="bbox">lights' bounding box</option>
+    </select>
+  </div>
+  <div class="row">
+    <label></label>
+    <label style="min-width:0;color:var(--text)"><input type="checkbox" id="yUp" checked> y up (as on the stage)</label>
+  </div>
+  <div class="row"><label>Decimals</label><input type="number" id="decimals" min="0" max="6" value="3"></div>
+  <canvas id="preview"></canvas>
+  <div class="note" id="previewInfo"></div>
+
+  <h2>Export</h2>
+  <div class="row">
+    <select id="exportFmt">
+      <option value="cpp">C++ header for the relic (this strip)</option>
+      <option value="cppall">C++ header for the relic (all strips)</option>
+      <option value="device">desk device file (.json)</option>
+      <option value="csv">CSV (strip, index, x, y)</option>
+    </select>
+  </div>
+  <div id="exportWarn"></div>
+  <textarea id="exportText" readonly spellcheck="false"></textarea>
+  <div class="row">
+    <button id="btnCopy" class="primary">Copy</button>
+    <button id="btnDownload">Download</button>
+    <span class="note" id="copyInfo"></span>
+  </div>
+
+  <h2>Help</h2>
+  <ul class="help">
+    <li><b>Click</b> on the photo to place the next pixel; the index then moves on by <i>step</i>. With step 10 you click every tenth light and the rest are filled in between.</li>
+    <li>Click any lit pixel you can pick out: anchors can be any indices, in any order. Set <i>Next pixel</i> to jump.</li>
+    <li><b>Drag</b> an anchor to move it, <b>right-click</b> it to delete it.</li>
+    <li><kbd>Wheel</kbd> zoom, <b>right-drag</b> pan (also middle-drag or <kbd>Space</kbd>+drag), <kbd>F</kbd> fit.</li>
+    <li><kbd>[</kbd> <kbd>]</kbd> next pixel &minus;/+ step, <kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> undo/redo.</li>
+    <li>Pixels before the first anchor or after the last are unmapped; export pins them to the nearest anchor and warns.</li>
+    <li>Work saves itself in this browser. <i>Save project</i> writes a file you can keep beside the photo and reopen later.</li>
+  </ul>
+</aside>
+<input type="file" id="fileImage" accept="image/*" hidden>
+<input type="file" id="fileProject" accept=".json,application/json" hidden>
+<script>
+"use strict";
+
+// ---------------------------------------------------------------- state
+
+const STRIP_COLOURS = ["#f5b942", "#4fc3f7", "#ff6bcb", "#6bdc8f", "#b388ff", "#ff8a50"];
+
+function newStrip(n) {
+  return {
+    name: n === 0 ? "whiteboard" : "strip " + (n + 1),
+    constName: n === 0 ? "kWhiteboard" : "kStrip" + (n + 1),
+    length: 300,
+    color: STRIP_COLOURS[n % STRIP_COLOURS.length],
+    anchors: {},        // pixel index -> [x, y] in photo pixels
+  };
+}
+
+let project = {
+  version: 1,
+  image: null,          // { name, w, h }
+  corners: null,        // [TL, TR, BR, BL] in photo pixels
+  rect: { w: 100, h: 100, units: "cm" },
+  strips: [newStrip(0)],
+  interp: "linear",
+  output: { scaleMode: "world", fitSize: 1, originMode: "frame", yUp: true, decimals: 3 },
+};
+let current = 0;        // selected strip
+let cursorIdx = 0;
+let step = 1;
+let img = null;         // HTMLImageElement
+let imgDataUrl = null;
+let imageWarn = "";
+let cornerMode = false; // collecting corners
+let pendingCorners = [];
+const view = { scale: 1, ox: 0, oy: 0 };
+const undoStack = [], redoStack = [];
+
+const $ = id => document.getElementById(id);
+const canvas = $("view"), ctx = canvas.getContext("2d");
+const pcanvas = $("preview"), pctx = pcanvas.getContext("2d");
+
+// ---------------------------------------------------------------- geometry
+
+// Homography from four point pairs (src -> dst), as a 3x3 row-major array.
+function homography(src, dst) {
+  const A = [], b = [];
+  for (let i = 0; i < 4; i++) {
+    const [x, y] = src[i], [u, v] = dst[i];
+    A.push([x, y, 1, 0, 0, 0, -u * x, -u * y]); b.push(u);
+    A.push([0, 0, 0, x, y, 1, -v * x, -v * y]); b.push(v);
+  }
+  const h = solve(A, b);
+  if (!h) return null;
+  return [h[0], h[1], h[2], h[3], h[4], h[5], h[6], h[7], 1];
+}
+
+function solve(A, b) {
+  const n = b.length, M = A.map((r, i) => [...r, b[i]]);
+  for (let c = 0; c < n; c++) {
+    let p = c;
+    for (let r = c + 1; r < n; r++) if (Math.abs(M[r][c]) > Math.abs(M[p][c])) p = r;
+    if (Math.abs(M[p][c]) < 1e-12) return null;
+    [M[c], M[p]] = [M[p], M[c]];
+    for (let r = 0; r < n; r++) {
+      if (r === c) continue;
+      const f = M[r][c] / M[c][c];
+      for (let k = c; k <= n; k++) M[r][k] -= f * M[c][k];
+    }
+  }
+  return M.map((r, i) => r[n] / r[i]);
+}
+
+function applyH(H, [x, y]) {
+  const w = H[6] * x + H[7] * y + H[8];
+  return [(H[0] * x + H[1] * y + H[2]) / w, (H[3] * x + H[4] * y + H[5]) / w];
+}
+
+function invert3(m) {
+  const [a, b, c, d, e, f, g, h, i] = m;
+  const A = e * i - f * h, B = -(d * i - f * g), C = d * h - e * g;
+  const det = a * A + b * B + c * C;
+  if (Math.abs(det) < 1e-15) return null;
+  return [A / det, -(b * i - c * h) / det, (b * f - c * e) / det,
+          B / det, (a * i - c * g) / det, -(a * f - c * d) / det,
+          C / det, -(a * h - b * g) / det, (a * e - b * d) / det];
+}
+
+// Photo pixels <-> world (the straightened plane: rectangle units, y down).
+// Without corners, world is just photo pixels.
+let H = null, Hinv = null;
+function updateHomography() {
+  H = Hinv = null;
+  if (project.corners && project.corners.length === 4) {
+    const { w, h } = project.rect;
+    H = homography(project.corners, [[0, 0], [w, 0], [w, h], [0, h]]);
+    if (H) Hinv = invert3(H);
+    if (!Hinv) H = null;
+  }
+}
+const toWorld = p => H ? applyH(H, p) : [p[0], p[1]];
+const toPhoto = p => Hinv ? applyH(Hinv, p) : [p[0], p[1]];
+
+// Every pixel of a strip in world space, interpolated between anchors in
+// index order. Interpolating after straightening keeps evenly spaced lights
+// evenly spaced, which they would not be in the foreshortened photo.
+function resolveStrip(strip) {
+  const keys = Object.keys(strip.anchors).map(Number).filter(i => i < strip.length).sort((a, b) => a - b);
+  const pts = new Array(strip.length).fill(null);
+  if (keys.length === 0) return { pts, missing: strip.length, keys };
+  const W = keys.map(k => toWorld(strip.anchors[k]));
+  keys.forEach((k, j) => { pts[k] = W[j]; });
+  for (let j = 0; j + 1 < keys.length; j++) {
+    const i1 = keys[j], i2 = keys[j + 1], p1 = W[j], p2 = W[j + 1];
+    const span = i2 - i1;
+    let m1 = null, m2 = null;
+    if (project.interp === "smooth") {
+      // Catmull-Rom tangents for uneven index spacing, scaled to this span
+      const tan = (a, ia, c, ic) => [(c[0] - a[0]) / (ic - ia) * span, (c[1] - a[1]) / (ic - ia) * span];
+      m1 = j > 0 ? tan(W[j - 1], keys[j - 1], p2, i2) : [p2[0] - p1[0], p2[1] - p1[1]];
+      m2 = j + 2 < keys.length ? tan(p1, i1, W[j + 2], keys[j + 2]) : [p2[0] - p1[0], p2[1] - p1[1]];
+    }
+    for (let i = i1 + 1; i < i2; i++) {
+      const t = (i - i1) / span;
+      if (!m1) { pts[i] = [p1[0] + (p2[0] - p1[0]) * t, p1[1] + (p2[1] - p1[1]) * t]; continue; }
+      const t2 = t * t, t3 = t2 * t;
+      const h00 = 2 * t3 - 3 * t2 + 1, h10 = t3 - 2 * t2 + t, h01 = -2 * t3 + 3 * t2, h11 = t3 - t2;
+      pts[i] = [h00 * p1[0] + h10 * m1[0] + h01 * p2[0] + h11 * m2[0],
+                h00 * p1[1] + h10 * m1[1] + h01 * p2[1] + h11 * m2[1]];
+    }
+  }
+  return { pts, missing: pts.filter(p => !p).length, keys };
+}
+
+// The world frame every strip shares, for origin and fit.
+function worldFrame(resolved) {
+  if (project.output.originMode === "frame") {
+    if (H) return { minX: 0, minY: 0, maxX: project.rect.w, maxY: project.rect.h };
+    if (project.image) return { minX: 0, minY: 0, maxX: project.image.w, maxY: project.image.h };
+  }
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const r of resolved) for (const p of r.pts) if (p) {
+    minX = Math.min(minX, p[0]); maxX = Math.max(maxX, p[0]);
+    minY = Math.min(minY, p[1]); maxY = Math.max(maxY, p[1]);
+  }
+  if (!isFinite(minX)) return { minX: 0, minY: 0, maxX: 1, maxY: 1 };
+  return { minX, minY, maxX, maxY };
+}
+
+// Final coordinates per strip, with unmapped ends pinned to the nearest anchor.
+function outputCoords() {
+  const resolved = project.strips.map(resolveStrip);
+  const fr = worldFrame(resolved);
+  const o = project.output;
+  const extent = Math.max(fr.maxX - fr.minX, fr.maxY - fr.minY) || 1;
+  const s = o.scaleMode === "fit" ? (Number(o.fitSize) || 1) / extent : 1;
+  const units = o.scaleMode === "fit" ? "units (longest side = " + o.fitSize + ")" : (H ? project.rect.units : "photo pixels");
+  const strips = resolved.map((r, si) => {
+    const first = r.pts.findIndex(p => p);
+    let last = -1; r.pts.forEach((p, i) => { if (p) last = i; });
+    const coords = r.pts.map((p, i) => {
+      if (!p) p = first < 0 ? null : r.pts[i < first ? first : last];
+      if (!p) return [0, 0];
+      const x = (p[0] - fr.minX) * s;
+      const y = o.yUp ? (fr.maxY - p[1]) * s : (p[1] - fr.minY) * s;
+      return [x, y];
+    });
+    return { strip: project.strips[si], coords, missing: r.missing, anchors: r.keys.length };
+  });
+  return { strips, units, frame: { w: (fr.maxX - fr.minX) * s, h: (fr.maxY - fr.minY) * s } };
+}
+
+// ---------------------------------------------------------------- history
+
+function snapshot() { return JSON.stringify({ corners: project.corners, strips: project.strips }); }
+function pushUndo() { undoStack.push(snapshot()); if (undoStack.length > 200) undoStack.shift(); redoStack.length = 0; }
+function restore(s) { const d = JSON.parse(s); project.corners = d.corners; project.strips = d.strips;
+  current = Math.min(current, project.strips.length - 1); changed(true); }
+function undo() { if (!undoStack.length) return; redoStack.push(snapshot()); restore(undoStack.pop()); }
+function redo() { if (!redoStack.length) return; undoStack.push(snapshot()); restore(redoStack.pop()); }
+
+// ---------------------------------------------------------------- persistence
+
+const LS_KEY = "eclipse-mapper.project", LS_IMG = "eclipse-mapper.image";
+function autosave() {
+  try { localStorage.setItem(LS_KEY, JSON.stringify(project)); } catch (e) { /* storage off */ }
+}
+function autoload() {
+  try {
+    const s = localStorage.getItem(LS_KEY);
+    if (s) loadProject(JSON.parse(s), false);
+    const im = localStorage.getItem(LS_IMG);
+    if (im) setImage(im, project.image ? project.image.name : "photo", false);
+  } catch (e) { /* storage off or corrupt: start fresh */ }
+}
+
+function loadProject(p, withImage) {
+  if (!p || !Array.isArray(p.strips) || !p.strips.length) throw new Error("not a mapper project");
+  project = Object.assign({}, project, p);
+  project.output = Object.assign({ scaleMode: "world", fitSize: 1, originMode: "frame", yUp: true, decimals: 3 }, p.output || {});
+  project.rect = Object.assign({ w: 100, h: 100, units: "cm" }, p.rect || {});
+  current = 0; cursorIdx = nextFree(project.strips[0]);
+  if (withImage && p.imageData) setImage(p.imageData, p.image ? p.image.name : "photo", true);
+  delete project.imageData;
+  undoStack.length = redoStack.length = 0;
+  changed(true);
+}
+
+function download(name, text, type) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([text], { type: type || "text/plain" }));
+  a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+// ---------------------------------------------------------------- image
+
+function setImage(src, name, isNew) {
+  const im = new Image();
+  im.onload = () => {
+    const prev = project.image;
+    if (isNew && prev && (prev.w !== im.naturalWidth || prev.h !== im.naturalHeight) && hasAnyAnchors()) {
+      imageWarn = "This photo is a different size from the one the anchors were placed on; they will not line up.";
+    } else if (isNew) imageWarn = "";
+    img = im; imgDataUrl = src;
+    project.image = { name, w: im.naturalWidth, h: im.naturalHeight };
+    $("drop").style.display = "none";
+    try { localStorage.setItem(LS_IMG, src); } catch (e) { /* too big to keep: the project still is */ }
+    fit(); changed(false);
+  };
+  im.src = src;
+}
+function loadImageFile(file) {
+  if (!file || !file.type.startsWith("image/")) return;
+  const r = new FileReader();
+  r.onload = () => setImage(r.result, file.name, true);
+  r.readAsDataURL(file);
+}
+const hasAnyAnchors = () => project.strips.some(s => Object.keys(s.anchors).length);
+
+// ---------------------------------------------------------------- view
+
+function resize() {
+  const dpr = window.devicePixelRatio || 1;
+  for (const c of [canvas, pcanvas]) {
+    const r = c.getBoundingClientRect();
+    c.width = Math.max(1, Math.round(r.width * dpr)); c.height = Math.max(1, Math.round(r.height * dpr));
+  }
+  draw();
+}
+function fit() {
+  if (!img) return;
+  const r = canvas.getBoundingClientRect(), m = 20;
+  view.scale = Math.min((r.width - 2 * m) / img.naturalWidth, (r.height - 2 * m) / img.naturalHeight);
+  view.ox = (r.width - img.naturalWidth * view.scale) / 2;
+  view.oy = (r.height - img.naturalHeight * view.scale) / 2;
+  draw();
+}
+const toScreen = ([x, y]) => [x * view.scale + view.ox, y * view.scale + view.oy];
+const fromScreen = (sx, sy) => [(sx - view.ox) / view.scale, (sy - view.oy) / view.scale];
+
+function draw() {
+  const dpr = window.devicePixelRatio || 1;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const W = canvas.width / dpr, Hh = canvas.height / dpr;
+  ctx.clearRect(0, 0, W, Hh);
+  if (img) {
+    ctx.imageSmoothingEnabled = view.scale < 2;
+    ctx.drawImage(img, view.ox, view.oy, img.naturalWidth * view.scale, img.naturalHeight * view.scale);
+    // dim the photo a little so the dots read
+    ctx.fillStyle = "rgba(0,0,0,0.25)";
+    ctx.fillRect(view.ox, view.oy, img.naturalWidth * view.scale, img.naturalHeight * view.scale);
+  }
+  drawCorners();
+  project.strips.forEach((s, si) => drawStrip(s, si === current));
+  drawGhost();
+  drawPreview();
+}
+
+function drawCorners() {
+  const pts = cornerMode ? pendingCorners : project.corners;
+  if (!pts || !pts.length) return;
+  const sp = pts.map(toScreen);
+  ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 1.5; ctx.setLineDash([6, 4]);
+  ctx.beginPath(); sp.forEach((p, i) => i ? ctx.lineTo(...p) : ctx.moveTo(...p));
+  if (sp.length === 4) ctx.closePath();
+  ctx.stroke(); ctx.setLineDash([]);
+  const names = ["TL", "TR", "BR", "BL"];
+  sp.forEach((p, i) => {
+    ctx.fillStyle = "#fff"; ctx.fillRect(p[0] - 5, p[1] - 5, 10, 10);
+    ctx.fillStyle = "#000"; ctx.font = "bold 9px system-ui"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(names[i][0], p[0], p[1]);
+    ctx.fillStyle = "#fff"; ctx.font = "11px system-ui"; ctx.fillText(names[i], p[0], p[1] - 14);
+  });
+}
+
+function drawStrip(strip, selected) {
+  const r = resolveStrip(strip);
+  const alpha = selected ? 1 : 0.45;
+  ctx.globalAlpha = alpha;
+  // path through every resolved pixel
+  ctx.strokeStyle = strip.color; ctx.lineWidth = selected ? 1.5 : 1;
+  ctx.beginPath(); let pen = false;
+  r.pts.forEach(p => {
+    if (!p) { pen = false; return; }
+    const s = toScreen(toPhoto(p));
+    pen ? ctx.lineTo(...s) : ctx.moveTo(...s); pen = true;
+  });
+  ctx.stroke();
+  // interpolated pixels
+  ctx.fillStyle = strip.color;
+  const rad = Math.max(1.5, Math.min(4, view.scale * 3));
+  r.pts.forEach((p, i) => {
+    if (!p || strip.anchors[i]) return;
+    const s = toScreen(toPhoto(p));
+    ctx.beginPath(); ctx.arc(s[0], s[1], rad, 0, Math.PI * 2); ctx.fill();
+  });
+  // anchors with their index
+  ctx.font = "11px ui-monospace, monospace"; ctx.textAlign = "left"; ctx.textBaseline = "bottom";
+  for (const k of r.keys) {
+    const s = toScreen(strip.anchors[k]);
+    ctx.beginPath(); ctx.arc(s[0], s[1], 6, 0, Math.PI * 2);
+    ctx.fillStyle = strip.color; ctx.fill();
+    ctx.strokeStyle = (hover && hover.kind === "anchor" && hover.strip === strip && hover.idx === k) ? "#fff" : "#000";
+    ctx.lineWidth = 2; ctx.stroke();
+    if (selected) {
+      ctx.fillStyle = "#000"; ctx.fillText(String(k), s[0] + 8, s[1] - 3);
+      ctx.fillStyle = "#fff"; ctx.fillText(String(k), s[0] + 7, s[1] - 4);
+    }
+  }
+  ctx.globalAlpha = 1;
+}
+
+let mouse = null; // last mouse position, screen space
+let hover = null;
+function drawGhost() {
+  if (!mouse || !img || drag || panning) return;
+  if (cornerMode) return;
+  if (hover) return;
+  const strip = project.strips[current];
+  if (cursorIdx >= strip.length) return;
+  ctx.strokeStyle = strip.color; ctx.lineWidth = 1.5; ctx.setLineDash([3, 3]);
+  ctx.beginPath(); ctx.arc(mouse[0], mouse[1], 7, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
+  ctx.fillStyle = "#fff"; ctx.font = "12px ui-monospace, monospace"; ctx.textAlign = "left"; ctx.textBaseline = "bottom";
+  ctx.fillText(String(cursorIdx) + (strip.anchors[cursorIdx] ? " (replace)" : ""), mouse[0] + 10, mouse[1] - 6);
+}
+
+function drawPreview() {
+  const dpr = window.devicePixelRatio || 1;
+  pctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const W = pcanvas.width / dpr, Hh = pcanvas.height / dpr;
+  pctx.clearRect(0, 0, W, Hh);
+  const out = outputCoords();
+  let minX = 0, minY = 0, maxX = out.frame.w || 1, maxY = out.frame.h || 1;
+  for (const s of out.strips) for (const [x, y] of s.coords) {
+    minX = Math.min(minX, x); maxX = Math.max(maxX, x); minY = Math.min(minY, y); maxY = Math.max(maxY, y);
+  }
+  const m = 10, sc = Math.min((W - 2 * m) / ((maxX - minX) || 1), (Hh - 2 * m) / ((maxY - minY) || 1));
+  const ox = (W - (maxX - minX) * sc) / 2, oy = (Hh - (maxY - minY) * sc) / 2;
+  const yUp = project.output.yUp;
+  const P = ([x, y]) => [ox + (x - minX) * sc, yUp ? Hh - oy - (y - minY) * sc : oy + (y - minY) * sc];
+  // the frame
+  const a = P([0, 0]), b = P([out.frame.w, out.frame.h]);
+  pctx.strokeStyle = "#3a3e48"; pctx.strokeRect(Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.abs(b[0] - a[0]), Math.abs(b[1] - a[1]));
+  // origin marker
+  pctx.fillStyle = "#fff"; pctx.beginPath(); pctx.arc(a[0], a[1], 2.5, 0, Math.PI * 2); pctx.fill();
+  out.strips.forEach((s, si) => {
+    if (!s.anchors) return;
+    const n = s.coords.length;
+    s.coords.forEach((c, i) => {
+      const p = P(c);
+      pctx.fillStyle = `hsl(${(i / Math.max(1, n - 1)) * 300}, 90%, 60%)`;
+      pctx.globalAlpha = si === current ? 1 : 0.5;
+      pctx.fillRect(p[0] - 1.5, p[1] - 1.5, 3, 3);
+    });
+  });
+  pctx.globalAlpha = 1;
+  const d = project.output.decimals;
+  $("previewInfo").textContent = `Straightened, as exported: red is pixel 0, violet the last. Frame ${out.frame.w.toFixed(d)} × ${out.frame.h.toFixed(d)} ${out.units}.`;
+}
+
+// ---------------------------------------------------------------- interaction
+
+let drag = null, panning = null, spaceDown = false;
+
+function hitTest(sx, sy) {
+  const near = (p, r) => { const s = toScreen(p); return Math.hypot(s[0] - sx, s[1] - sy) <= r; };
+  if (project.corners && !cornerMode) {
+    for (let i = 0; i < 4; i++) if (near(project.corners[i], 8)) return { kind: "corner", i };
+  }
+  // selected strip first, then the rest
+  const order = [current, ...project.strips.map((_, i) => i).filter(i => i !== current)];
+  for (const si of order) {
+    const strip = project.strips[si];
+    for (const k of Object.keys(strip.anchors).map(Number)) {
+      if (near(strip.anchors[k], 8)) return { kind: "anchor", strip, si, idx: k };
+    }
+  }
+  return null;
+}
+
+function nextFree(strip, from) {
+  let i = from || 0;
+  while (i < strip.length && strip.anchors[i]) i++;
+  return Math.min(i, strip.length - 1);
+}
+
+canvas.addEventListener("contextmenu", e => e.preventDefault());
+
+canvas.addEventListener("mousedown", e => {
+  const r = canvas.getBoundingClientRect(), sx = e.clientX - r.left, sy = e.clientY - r.top;
+  if (e.button === 1 || e.button === 2 || (e.button === 0 && spaceDown)) {
+    // a right-click that never moves is still "delete this anchor"; see mouseup
+    const hit = e.button === 2 && img ? hitTest(sx, sy) : null;
+    panning = { sx, sy, ox: view.ox, oy: view.oy, moved: false, deleteHit: hit && hit.kind === "anchor" ? hit : null }; canvas.classList.add("panning"); e.preventDefault(); return;
+  }
+  if (!img) return;
+  const hit = hitTest(sx, sy);
+  if (e.button !== 0) return;
+  const p = fromScreen(sx, sy);
+  if (cornerMode) {
+    pendingCorners.push(p);
+    if (pendingCorners.length === 4) {
+      pushUndo(); project.corners = pendingCorners; pendingCorners = []; setCornerMode(false); changed(true);
+    } else { setCornerMode(true); draw(); }
+    return;
+  }
+  if (hit) {
+    if (hit.kind === "anchor" && hit.si !== current) { current = hit.si; syncStripUi(); }
+    pushUndo(); drag = hit; return;
+  }
+  const strip = project.strips[current];
+  if (cursorIdx >= strip.length) { flash("Strip is " + strip.length + " pixels long; set Next pixel lower or add pixels."); return; }
+  pushUndo();
+  strip.anchors[cursorIdx] = p;
+  cursorIdx = Math.min(cursorIdx + step, strip.length);
+  changed(true);
+});
+
+window.addEventListener("mousemove", e => {
+  const r = canvas.getBoundingClientRect(), sx = e.clientX - r.left, sy = e.clientY - r.top;
+  const inside = sx >= 0 && sy >= 0 && sx <= r.width && sy <= r.height;
+  mouse = inside ? [sx, sy] : null;
+  if (panning) {
+    if (!panning.moved && Math.hypot(sx - panning.sx, sy - panning.sy) < 4) return;
+    panning.moved = true;
+    view.ox = panning.ox + sx - panning.sx; view.oy = panning.oy + sy - panning.sy; draw(); return; }
+  if (drag) {
+    const p = fromScreen(sx, sy);
+    if (drag.kind === "corner") { project.corners[drag.i] = p; updateHomography(); }
+    else drag.strip.anchors[drag.idx] = p;
+    draw(); updateStatus(sx, sy); return;
+  }
+  hover = inside && img ? hitTest(sx, sy) : null;
+  updateStatus(sx, sy);
+  draw();
+});
+
+window.addEventListener("mouseup", () => {
+  if (panning) {
+    const hit = !panning.moved && panning.deleteHit;
+    panning = null; canvas.classList.remove("panning");
+    if (hit) { pushUndo(); delete hit.strip.anchors[hit.idx]; hover = null; changed(true); }
+  }
+  if (drag) { drag = null; changed(true); }
+});
+
+canvas.addEventListener("wheel", e => {
+  e.preventDefault();
+  const r = canvas.getBoundingClientRect(), sx = e.clientX - r.left, sy = e.clientY - r.top;
+  const f = Math.exp(-e.deltaY * 0.0015);
+  const ns = Math.min(40, Math.max(0.02, view.scale * f));
+  view.ox = sx - (sx - view.ox) * ns / view.scale; view.oy = sy - (sy - view.oy) * ns / view.scale;
+  view.scale = ns; draw();
+}, { passive: false });
+
+window.addEventListener("keydown", e => {
+  if (e.target.matches("input, textarea, select")) return;
+  if (e.code === "Space") { spaceDown = true; e.preventDefault(); return; }
+  const k = e.key.toLowerCase();
+  if ((e.ctrlKey || e.metaKey) && k === "z") { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
+  if ((e.ctrlKey || e.metaKey) && k === "y") { e.preventDefault(); redo(); return; }
+  if (k === "f") fit();
+  if (k === "[") { cursorIdx = Math.max(0, cursorIdx - step); syncCursorUi(); draw(); }
+  if (k === "]") { cursorIdx = Math.min(project.strips[current].length - 1, cursorIdx + step); syncCursorUi(); draw(); }
+  if (k === "escape" && cornerMode) { pendingCorners = []; setCornerMode(false); draw(); }
+});
+window.addEventListener("keyup", e => { if (e.code === "Space") spaceDown = false; });
+
+function updateStatus(sx, sy) {
+  if (!img || !mouse) { $("status").textContent = ""; return; }
+  const p = fromScreen(sx, sy), w = toWorld(p);
+  let s = `photo ${p[0].toFixed(0)}, ${p[1].toFixed(0)}`;
+  if (H) s += `  ·  plane ${w[0].toFixed(1)}, ${w[1].toFixed(1)} ${project.rect.units}`;
+  if (hover && hover.kind === "anchor") s += `  ·  ${hover.strip.name} #${hover.idx} (drag to move, right-click to delete)`;
+  if (hover && hover.kind === "corner") s += `  ·  corner ${["TL", "TR", "BR", "BL"][hover.i]}`;
+  $("status").textContent = s;
+}
+
+function setCornerMode(on) {
+  cornerMode = on;
+  $("btnCorners").classList.toggle("on", on);
+  const names = ["top-left", "top-right", "bottom-right", "bottom-left"];
+  $("mode").style.display = on ? "block" : "none";
+  if (on) $("mode").textContent = `Click the ${names[pendingCorners.length]} corner (${pendingCorners.length + 1}/4) · Esc cancels`;
+}
+
+let flashTimer = 0;
+function flash(msg) {
+  $("mode").style.display = "block"; $("mode").textContent = msg;
+  clearTimeout(flashTimer); flashTimer = setTimeout(() => setCornerMode(cornerMode), 2500);
+}
+
+// ---------------------------------------------------------------- export
+
+const fmtNum = (v, d) => { const s = v.toFixed(d); return s === "-" + (0).toFixed(d) ? (0).toFixed(d) : s; };
+const cIdent = s => (s || "kStrip").replace(/[^A-Za-z0-9_]/g, "_").replace(/^([0-9])/, "_$1");
+
+function cppTable(s, d, units, indent) {
+  const name = cIdent(s.strip.constName);
+  const n = s.coords.length;
+  const w = Math.max(...s.coords.flat().map(v => fmtNum(v, d).length));
+  const lines = [];
+  for (let i = 0; i < n; i += 4) {
+    const row = s.coords.slice(i, i + 4).map(([x, y]) => `{ ${fmtNum(x, d).padStart(w)}f, ${fmtNum(y, d).padStart(w)}f }`).join(", ");
+    lines.push(`${indent}    ${row}${i + 4 < n ? "," : ""} // ${i}`);
+  }
+  return [
+    `${indent}/* @brief Where each pixel of the ${s.strip.name} strip sits in 2d, in wiring order:`,
+    `${indent}* {x, y} in ${units}, ${project.output.yUp ? "y up" : "y down"}. ${n} pixels.`,
+    `${indent}*`,
+    `${indent}*     static_assert(std::size(mapping::${name}) == wiring::${name}.length, "re-export the map: the strip length changed");`,
+    `${indent}*     HSVStripNodeFactory::GenerateFromTable(segment, 0, mapping::${name}, wiring::${name}.length);`,
+    `${indent}*/`,
+    `${indent}constexpr float ${name}[${n}][2] = {`,
+    ...lines,
+    `${indent}};`,
+  ].join("\n");
+}
+
+function buildExport() {
+  const out = outputCoords();
+  const d = Math.max(0, Math.min(6, Number(project.output.decimals) || 0));
+  const fmt = $("exportFmt").value;
+  const chosen = fmt === "cpp" ? [out.strips[current]] : out.strips;
+  const warn = [];
+  for (const s of chosen) {
+    if (!s.anchors) warn.push(`${s.strip.name}: nothing placed yet.`);
+    else if (s.missing) warn.push(`${s.strip.name}: ${s.missing} pixel${s.missing > 1 ? "s" : ""} before the first or after the last anchor, pinned to the nearest one.`);
+  }
+  $("exportWarn").innerHTML = warn.length ? warn.map(w => `<div class="warn">${escapeHtml(w)}</div>`).join("")
+    : '<div class="good">Every pixel mapped.</div>';
+
+  const src = project.image ? project.image.name : "no photo";
+  const date = new Date().toISOString().slice(0, 10);
+  if (fmt === "cpp" || fmt === "cppall") {
+    const text = [
+      "// Copyright 2024 | Jake Rose",
+      "//",
+      "// This file is part of project eclipse-os",
+      "// See readme.md for full license details.",
+      "//",
+      `// Generated by tools/mapper/mapper.html from ${src} on ${date}.`,
+      "// Re-export from the saved project rather than editing by hand.",
+      "",
+      "#pragma once",
+      "",
+      "namespace mapping",
+      "{",
+      chosen.map(s => cppTable(s, d, out.units, "    ")).join("\n\n"),
+      "}",
+      "",
+    ].join("\n");
+    const base = fmt === "cpp" ? cIdent(chosen[0].strip.constName).replace(/^k(?=[A-Z])/, "") : "mapping";
+    return { text, name: snake(base) + "_map.h", type: "text/x-c" };
+  }
+  if (fmt === "device") {
+    let addr = 1;
+    const fixtures = [];
+    for (const s of out.strips) {
+      if (!s.anchors) continue;
+      const pad = String(s.coords.length - 1).length;
+      s.coords.forEach(([x, y], i) => {
+        fixtures.push(`    { "profile": "rgb3", "name": "${jsonStr(snake(s.strip.name))}_${String(i).padStart(pad, "0")}", "address": ${String(addr).padStart(4)}, "position": [${fmtNum(x, d)}, ${fmtNum(y, d)}] }`);
+        addr += 3;
+      });
+    }
+    const name = snake(project.strips[0].name);
+    const text = [
+      "{",
+      `  // Generated by tools/mapper/mapper.html from ${src} on ${date}.`,
+      `  // Positions in ${out.units}, ${project.output.yUp ? "y up" : "y down"}; strips in order: ${out.strips.filter(s => s.anchors).map(s => s.strip.name + " x" + s.coords.length).join(", ")}.`,
+      `  "name": "${jsonStr(name)}",`,
+      `  "coord_space": "literal",`,
+      `  "space": "stage",`,
+      `  "output": { "type": "preview", "fps": 30 },`,
+      `  "fixtures": [`,
+      fixtures.join(",\n"),
+      "  ]",
+      "}",
+      "",
+    ].join("\n");
+    return { text, name: name + ".json", type: "application/json" };
+  }
+  const rows = ["strip,index,x,y"];
+  for (const s of out.strips) s.coords.forEach(([x, y], i) => rows.push(`${csvStr(s.strip.name)},${i},${fmtNum(x, d)},${fmtNum(y, d)}`));
+  return { text: rows.join("\n") + "\n", name: "mapping.csv", type: "text/csv" };
+}
+
+const snake = s => String(s).replace(/([a-z0-9])([A-Z])/g, "$1_$2").replace(/[^A-Za-z0-9]+/g, "_").replace(/^_|_$/g, "").toLowerCase() || "mapping";
+const jsonStr = s => JSON.stringify(String(s)).slice(1, -1);
+const csvStr = s => /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+const escapeHtml = s => s.replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+// ---------------------------------------------------------------- ui sync
+
+function syncStripUi() {
+  const sel = $("stripSel");
+  sel.innerHTML = "";
+  project.strips.forEach((s, i) => {
+    const o = document.createElement("option"); o.value = i; o.textContent = `${i}: ${s.name}`; sel.appendChild(o);
+  });
+  sel.value = current;
+  const s = project.strips[current];
+  $("stripName").value = s.name; $("stripConst").value = s.constName;
+  $("stripLength").value = s.length; $("stripColor").value = s.color;
+  $("btnDelStrip").disabled = project.strips.length < 2;
+  cursorIdx = Math.min(cursorIdx, s.length);
+  syncCursorUi();
+}
+function syncCursorUi() { $("cursorIdx").value = cursorIdx; $("stepIdx").value = step; }
+
+function syncAll() {
+  syncStripUi();
+  $("interp").value = project.interp;
+  $("rectW").value = project.rect.w; $("rectH").value = project.rect.h; $("rectUnits").value = project.rect.units;
+  const o = project.output;
+  $("scaleMode").value = o.scaleMode; $("fitSize").value = o.fitSize; $("originMode").value = o.originMode;
+  $("yUp").checked = o.yUp; $("decimals").value = o.decimals;
+}
+
+function changed(full) {
+  updateHomography();
+  if (full) syncAll(); else syncCursorUi();
+  const s = project.strips[current], r = resolveStrip(s);
+  $("progress").textContent = `${r.keys.length} anchor${r.keys.length === 1 ? "" : "s"} · ${s.length - r.missing} of ${s.length} pixels mapped`;
+  $("cornerInfo").innerHTML = project.corners
+    ? `<span class="good">Straightened onto a ${project.rect.w} × ${project.rect.h} ${escapeHtml(project.rect.units)} plane.</span> Drag a corner to adjust.`
+    : "No correction: coordinates are photo pixels.";
+  $("imageInfo").textContent = project.image ? `${project.image.name} · ${project.image.w} × ${project.image.h}` + (img ? "" : " (reload the photo)") : "No image";
+  if (imageWarn) $("imageInfo").innerHTML += `<div class="warn">${escapeHtml(imageWarn)}</div>`;
+  const ex = buildExport();
+  $("exportText").value = ex.text;
+  draw();
+  autosave();
+}
+
+// ---------------------------------------------------------------- controls
+
+$("btnImage").onclick = () => $("fileImage").click();
+$("fileImage").onchange = e => { loadImageFile(e.target.files[0]); e.target.value = ""; };
+$("btnOpen").onclick = () => $("fileProject").click();
+$("fileProject").onchange = e => {
+  const f = e.target.files[0]; e.target.value = "";
+  if (!f) return;
+  f.text().then(t => { try { loadProject(JSON.parse(t), true); } catch (err) { flash("Could not open: " + err.message); } });
+};
+$("btnSave").onclick = () => {
+  const withImage = imgDataUrl && confirmEmbed();
+  const p = Object.assign({}, project, withImage ? { imageData: imgDataUrl } : {});
+  const base = project.image ? project.image.name.replace(/\.[^.]+$/, "") : "lights";
+  download(base + ".mapper.json", JSON.stringify(p, null, 1), "application/json");
+};
+// The photo makes the project self-contained but large; keep it unless it is huge.
+const confirmEmbed = () => imgDataUrl.length < 12e6;
+
+$("stripSel").onchange = e => { current = Number(e.target.value); cursorIdx = nextFree(project.strips[current]); changed(true); };
+$("btnAddStrip").onclick = () => {
+  pushUndo(); project.strips.push(newStrip(project.strips.length)); current = project.strips.length - 1; cursorIdx = 0; changed(true);
+};
+$("btnDelStrip").onclick = () => {
+  if (project.strips.length < 2) return;
+  pushUndo(); project.strips.splice(current, 1); current = Math.max(0, current - 1); changed(true);
+};
+$("stripName").oninput = e => { project.strips[current].name = e.target.value; changed(false); syncStripUiNames(); };
+$("stripConst").oninput = e => { project.strips[current].constName = e.target.value; changed(false); };
+$("stripLength").onchange = e => { pushUndo(); project.strips[current].length = Math.max(1, Math.round(Number(e.target.value) || 1)); changed(true); };
+$("stripColor").oninput = e => { project.strips[current].color = e.target.value; changed(false); };
+function syncStripUiNames() { const o = $("stripSel").options[current]; if (o) o.textContent = `${current}: ${project.strips[current].name}`; }
+
+$("cursorIdx").onchange = e => { cursorIdx = Math.max(0, Math.min(project.strips[current].length - 1, Math.round(Number(e.target.value) || 0))); syncCursorUi(); draw(); };
+$("stepIdx").onchange = e => { step = Math.max(1, Math.round(Number(e.target.value) || 1)); syncCursorUi(); };
+$("interp").onchange = e => { project.interp = e.target.value; changed(false); };
+$("btnUndo").onclick = undo; $("btnRedo").onclick = redo;
+$("btnClearStrip").onclick = () => { pushUndo(); project.strips[current].anchors = {}; cursorIdx = 0; changed(true); };
+
+$("btnCorners").onclick = () => { if (!img) return; pendingCorners = []; setCornerMode(!cornerMode); draw(); };
+$("btnClearCorners").onclick = () => { if (!project.corners) return; pushUndo(); project.corners = null; changed(true); };
+for (const id of ["rectW", "rectH"]) $(id).onchange = e => {
+  const v = Number(e.target.value); if (v > 0) project.rect[id === "rectW" ? "w" : "h"] = v; changed(true);
+};
+$("rectUnits").oninput = e => { project.rect.units = e.target.value; changed(false); };
+
+$("scaleMode").onchange = e => { project.output.scaleMode = e.target.value; changed(false); };
+$("fitSize").onchange = e => { project.output.fitSize = Number(e.target.value) || 1; changed(false); };
+$("originMode").onchange = e => { project.output.originMode = e.target.value; changed(false); };
+$("yUp").onchange = e => { project.output.yUp = e.target.checked; changed(false); };
+$("decimals").onchange = e => { project.output.decimals = Math.max(0, Math.min(6, Math.round(Number(e.target.value) || 0))); changed(false); };
+$("exportFmt").onchange = () => changed(false);
+
+$("btnCopy").onclick = () => {
+  const t = $("exportText");
+  const done = () => { $("copyInfo").textContent = "Copied"; setTimeout(() => $("copyInfo").textContent = "", 1500); };
+  if (navigator.clipboard && window.isSecureContext !== false) navigator.clipboard.writeText(t.value).then(done, () => { t.select(); document.execCommand("copy"); done(); });
+  else { t.select(); document.execCommand("copy"); done(); }
+};
+$("btnDownload").onclick = () => { const ex = buildExport(); download(ex.name, ex.text, ex.type); };
+
+// drop and paste
+const stage = $("stage");
+stage.addEventListener("dragover", e => e.preventDefault());
+stage.addEventListener("drop", e => {
+  e.preventDefault();
+  const f = e.dataTransfer.files[0];
+  if (!f) return;
+  if (f.type.startsWith("image/")) loadImageFile(f);
+  else f.text().then(t => { try { loadProject(JSON.parse(t), true); } catch (err) { flash("Could not open: " + err.message); } });
+});
+window.addEventListener("paste", e => {
+  const item = [...(e.clipboardData || {}).items || []].find(i => i.type.startsWith("image/"));
+  if (item) loadImageFile(item.getAsFile());
+});
+
+window.addEventListener("resize", resize);
+autoload();
+syncAll();
+resize();
+changed(true);
+</script>
+</body>
+</html>
