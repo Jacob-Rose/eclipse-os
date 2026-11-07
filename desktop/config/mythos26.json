@@ -234,6 +234,20 @@
       "brightness": 1.0
     },
     {
+      // The jacket over the obelisk, as the ring is: the sleeve across the
+      // pillar's x 0..7, shoulder at its top and wrist at its foot, the
+      // pendant on the scanner ring's own circle. The mythos looks draw only
+      // on x 0..7, so this is the one place they reach it. In stage units
+      // already (devices/jacket.json): an offset, never a fit. Taken off the
+      // scanner's USB by name beside the obelisk.
+      "device": "jacket",
+      "offset": [0, 0],
+      "view_scale": [0.9, 1.0],
+
+      // Its firmware limit is 31/255 (MED) on top of this, as the obelisk's.
+      "brightness": 1.0
+    },
+    {
       // The truss, clear of the sculpture. mythos26's own space is flat in x,
       // so without an offset the pars would sit on top of the obelisk; at x 10
       // they are past its 0..7, spanning the same y so the beat hits both.

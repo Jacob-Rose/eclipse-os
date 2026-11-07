@@ -108,6 +108,21 @@
       "brightness": 1.0
     },
     {
+      // No latency_ms yet: it follows the show's until it is calibrated
+      // (python -m eclipse_dmx calibrate, [d]).
+
+      // The jacket over the obelisk, as the ring is: the sleeve across the
+      // pillar's x 0..7, shoulder at its top and wrist at its foot, the
+      // pendant on the scanner ring's own circle. The mythos looks draw only
+      // on x 0..7, so this is the one place they reach it. In stage units
+      // already (devices/jacket.json): an offset, never a fit. Taken off the
+      // scanner's USB by name beside the obelisk.
+      "device": "jacket",
+      "offset": [0, 0],
+      "view_scale": [0.9, 1.0],
+      "brightness": 1.0
+    },
+    {
       // this device's own latency, in ms - python -m eclipse_dmx calibrate, [d]
       "latency_ms": 106,
 

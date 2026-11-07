@@ -17,6 +17,7 @@
     #include <errno.h>
     #include <fcntl.h>
     #include <grp.h>
+    #include <poll.h>
     #include <pwd.h>
     #include <string.h>
     #include <sys/ioctl.h>
@@ -136,6 +137,17 @@ SerialPort::~SerialPort()
 bool SerialPort::isOpen() const
 {
     return handle != nullptr && handle != INVALID_HANDLE_VALUE;
+}
+
+bool SerialPort::hasHungUp() const
+{
+    if (!isOpen())
+    {
+        return false;
+    }
+    // A removed USB device fails every comm call on its handle.
+    DWORD errors = 0;
+    return !::ClearCommError(static_cast<HANDLE>(handle), &errors, nullptr);
 }
 
 bool SerialPort::open(const std::string& path, int baud, std::string& outError, int stopBits, bool assertDtr)
@@ -560,6 +572,20 @@ bool SerialPort::isOpen() const
     return fd >= 0;
 }
 
+bool SerialPort::hasHungUp() const
+{
+    if (fd < 0)
+    {
+        return false;
+    }
+    pollfd probe{fd, 0, 0};
+    if (::poll(&probe, 1, 0) < 0)
+    {
+        return false;
+    }
+    return (probe.revents & (POLLHUP | POLLERR | POLLNVAL)) != 0;
+}
+
 bool SerialPort::open(const std::string& path, int baud, std::string& outError, int stopBits, bool assertDtr)
 {
     close();
@@ -575,6 +601,13 @@ bool SerialPort::open(const std::string& path, int baud, std::string& outError, 
         }
         return false;
     }
+
+    // Ours alone while it is open: another eclipse-dmx probing for relics
+    // gets EBUSY here instead of writing a Hello into this one's frame
+    // stream. Root is exempt, so this does not cover a probe run under sudo.
+#ifdef TIOCEXCL
+    ::ioctl(opened, TIOCEXCL);
+#endif
 
     // Back to blocking now that open() has not stalled on carrier detect.
     const int flags = ::fcntl(opened, F_GETFL, 0);

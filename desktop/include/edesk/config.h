@@ -55,6 +55,16 @@ namespace edesk
         /// sculpture on its own looks until a `link take`. For a show that
         /// wants to join the sculpture rather than seize it.
         std::string start{"streaming"};
+
+        /// relic_usb only, with port "auto": the name the relic answers a
+        /// Hello with ("obelisk", "jacket"). Empty matches the device's own
+        /// name. See edesk::chooseRelic.
+        std::string relic;
+
+        /// relic_usb only: pixels per strip, in the relic's strip-id order -
+        /// the jacket's [220, 28] is its body and then the pendant's rings.
+        /// The fixtures run through them in order. Empty is one strip, 0.
+        std::vector<int> strips;
     };
 
     struct MasterConfig

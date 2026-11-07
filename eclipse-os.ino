@@ -19,6 +19,7 @@
 // ---------------------------------------------------------------------------
 #define RELIC_OBELISK   1
 #define RELIC_WHITEBOARD 2
+#define RELIC_JACKET    3
 
 #ifndef RELIC
   #define RELIC RELIC_OBELISK
@@ -30,7 +31,9 @@
 #ifndef DEBUG_LOGGING_ENABLED
   #define DEBUG_LOGGING_ENABLED (1 && !DEPLOYMENT) // overwrites the one in logging.h - for this file only; the scripts pass it to the whole build
 #endif
-#define USE_LED_FOR_TICK (1 && !DEPLOYMENT)
+// Not on the jacket: it is a Feather, where GP25 is not the LED and GP13 (the
+// LED) is the remote's white button.
+#define USE_LED_FOR_TICK (1 && !DEPLOYMENT && RELIC != RELIC_JACKET)
 
 // The desk's cable. Deliberately *not* gated on DEPLOYMENT: the build that
 // goes on a sculpture for a show is precisely the build a show needs to reach,
@@ -67,6 +70,8 @@
 
 #if RELIC == RELIC_OBELISK
   #include "src/relics/obelisk/obelisk.h"
+#elif RELIC == RELIC_JACKET
+  #include "src/relics/jacket/jacket.h"
 #else
   #include "src/relics/todoist_whiteboard/todoist_whiteboard.h"
 #endif
@@ -107,6 +112,10 @@ using namespace ecore::log;
   static unique_ptr<obelisk::ObeliskCore> relic;
   static const char* RELIC_NAME = "obelisk";
   static constexpr eio::StripWiring RELIC_WIRING = wiring::kObelisk;
+#elif RELIC == RELIC_JACKET
+  static unique_ptr<jacket::JacketCore> relic;
+  static const char* RELIC_NAME = "jacket";
+  static constexpr eio::StripWiring RELIC_WIRING = wiring::kJacket;
 #else
   static unique_ptr<todoist_whiteboard::WhiteboardCore> relic;
   static const char* RELIC_NAME = "todoist_whiteboard";
@@ -232,6 +241,8 @@ void setup() {
   // Create the relic
 #if RELIC == RELIC_OBELISK
   relic = make_unique<obelisk::ObeliskCore>();
+#elif RELIC == RELIC_JACKET
+  relic = make_unique<jacket::JacketCore>();
 #else
   relic = make_unique<todoist_whiteboard::WhiteboardCore>(*mqttClient);
 #endif
@@ -308,8 +319,8 @@ void setup1()
 
 void loop1()
 {
-#if 0
-  //Serial.println("Core 1 running...");
+#if RELIC == RELIC_JACKET
+  // the pendant's screen, drawn off the LED core
   if(relic.get())
   {
     relic->tick2();

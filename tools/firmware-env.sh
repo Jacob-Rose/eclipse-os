@@ -6,8 +6,8 @@
 #
 # and afterwards these are set:
 #
-#   FQBN          the board (rp2040:rp2040:rpipicow unless FQBN was already set)
-#   RELIC         obelisk | whiteboard
+#   FQBN          the board: the relic's own unless FQBN was already set
+#   RELIC         obelisk | whiteboard | jacket
 #   DEPLOY        0 | 1
 #   PORT          a serial port, or empty for "the first one plugged in"
 #   BUILD_ARGS    an array of arduino-cli arguments that carry all of the above
@@ -15,7 +15,8 @@
 #
 # The words, in any order:
 #
-#   obelisk | whiteboard    which sculpture. Default obelisk - the sketch's own
+#   obelisk | whiteboard | jacket
+#                           which sculpture. Default obelisk - the sketch's own
 #                           default, so no words means what it always meant.
 #   deploy | dev            production or development. Default dev.
 #   -p PORT                 the port to upload to / monitor.
@@ -29,7 +30,6 @@
 # Pico W board puts its CYW43 (WiFi) defines in the latter, and a
 # --build-property replaces rather than appends.
 
-FQBN="${FQBN:-rp2040:rp2040:rpipicow}"
 RELIC="${RELIC:-obelisk}"
 DEPLOY="${DEPLOY:-0}"
 PORT="${PORT:-}"
@@ -37,7 +37,7 @@ REST=()
 
 while [ $# -gt 0 ]; do
     case "$1" in
-        obelisk|whiteboard) RELIC="$1" ;;
+        obelisk|whiteboard|jacket) RELIC="$1" ;;
         deploy)             DEPLOY=1 ;;
         dev)                DEPLOY=0 ;;
         -p|--port)          shift; PORT="${1:-}" ;;
@@ -52,14 +52,18 @@ while [ $# -gt 0 ]; do
     shift
 done
 
+# The board follows the relic: the obelisk and the whiteboard are Pico Ws, the
+# jacket is an Adafruit Feather RP2040.
 case "$RELIC" in
-    obelisk)    RELIC_DEFINE=RELIC_OBELISK ;;
-    whiteboard) RELIC_DEFINE=RELIC_WHITEBOARD ;;
+    obelisk)    RELIC_DEFINE=RELIC_OBELISK;    BOARD=rp2040:rp2040:rpipicow ;;
+    whiteboard) RELIC_DEFINE=RELIC_WHITEBOARD; BOARD=rp2040:rp2040:rpipicow ;;
+    jacket)     RELIC_DEFINE=RELIC_JACKET;     BOARD=rp2040:rp2040:adafruit_feather ;;
     *)
-        echo "unknown relic '$RELIC' (obelisk or whiteboard)" >&2
+        echo "unknown relic '$RELIC' (obelisk, whiteboard or jacket)" >&2
         exit 2
         ;;
 esac
+FQBN="${FQBN:-$BOARD}"
 
 # The library is C++20 (AGENTS.md). Said here rather than left to the core: a
 # 5.x rp2040 core compiles gnu++17, and extra_flags land after its own -std.
@@ -93,8 +97,16 @@ firmware_find_port() {
     fi
     local want="${1:-any}"
     local rows
-    rows="$(arduino-cli board list 2>/dev/null)"
-    PORT="$(printf '%s\n' "$rows" | grep -E '^(/dev/ttyACM|/dev/ttyUSB|/dev/cu\.usbmodem|COM)' | head -1 | awk '{print $1}')"
+    # 5s, not the default 1s: a Pi 3B that is busy misses boards that are there
+    rows="$(arduino-cli board list --discovery-timeout 5s 2>/dev/null)"
+    # Only a board of this relic's kind: the scanner carries the obelisk and
+    # the jacket at once, and the first port would flash one with the other's
+    # firmware.
+    # A port's candidate boards run on under it on lines with no port.
+    PORT="$(printf '%s\n' "$rows" | awk -v fqbn=" $FQBN " '
+        /^(\/dev\/ttyACM|\/dev\/ttyUSB|\/dev\/cu\.usbmodem|COM)/ { port = $1 }
+        /^[^ ]/ && !/^(\/dev\/ttyACM|\/dev\/ttyUSB|\/dev\/cu\.usbmodem|COM)/ { port = "" }
+        port != "" && index($0 " ", fqbn) { print port; exit }')"
     if [ -z "$PORT" ] && [ "$want" = any ]; then
         PORT="$(printf '%s\n' "$rows" | awk '$2 == "uf2conv" {print $1; exit}')"
     fi

@@ -1682,7 +1682,7 @@ class TheBindingKeepsTheBusAlive(unittest.TestCase):
         self.assertEqual(again.max_interval, 0.4)
 
 
-class TheOscInputSaysWhenItIsNotLanding(unittest.TestCase):
+class TheOscInputSaysWhenItIsNotLanding(GuiTest):
     """The whole failure mode of this wire is silence.
 
     A binding aimed at an address that never arrives looks exactly like a
@@ -3678,6 +3678,9 @@ class TheShowLooks(ShowTest):
         show.set_state(state, seconds=0)
         return show
 
+    def _pars(self, show):
+        return next(device for device in show.devices if device.name == "pars")
+
     def _peak(self, frames, since, seconds, channel):
         deadline = time.monotonic() + seconds
         peak = 0
@@ -3773,7 +3776,7 @@ class TheShowLooks(ShowTest):
         frames = []
         show = self._show("fire", on_frame=frames.append)
         time.sleep(1.0)
-        pars = show.devices[2]
+        pars = self._pars(show)
         lit = [i for i in range(pars.first, pars.first + 10) if max(frames[-1][i]) > 0]
         self.assertGreater(len(lit), 3, "the fire should reach along the truss")
 
@@ -3916,7 +3919,7 @@ class TheShowLooks(ShowTest):
         pars take a share of the kick."""
         frames = []
         show = self._show("churn", on_frame=frames.append)
-        pars = show.devices[2]
+        pars = self._pars(show)
         par = pars.first + 4
         time.sleep(0.8)
         rest = (max(frames[-1][self.SAMPLE]), max(frames[-1][par]))
@@ -3937,7 +3940,7 @@ class TheShowLooks(ShowTest):
         pars take a share of the kick."""
         frames = []
         show = self._show("churn", on_frame=frames.append)
-        pars = show.devices[2]
+        pars = self._pars(show)
         par = pars.first + 4
         time.sleep(0.8)
         rest = (max(frames[-1][self.SAMPLE]), max(frames[-1][par]))
@@ -3958,7 +3961,7 @@ class TheShowLooks(ShowTest):
         does the rig - a par is lifted as one passes it and falls back."""
         frames = []
         show = self._show("nova", on_frame=frames.append)
-        pars = show.devices[2]
+        pars = self._pars(show)
         par = pars.first + 7
         time.sleep(0.6)
         mark = len(frames)
@@ -4001,7 +4004,7 @@ class TheShowLooks(ShowTest):
         above it - with the clouds passing over it."""
         frames = []
         show = self._show("clouds", on_frame=frames.append)
-        pars = show.devices[2]
+        pars = self._pars(show)
         time.sleep(0.6)
         low = max(max(p) for p in frames[-1][pars.first:pars.first + 10])
 
@@ -4021,7 +4024,7 @@ class TheShowLooks(ShowTest):
         beat. The pars sit lower, and a deal takes them to full."""
         frames = []
         show = self._show("glitch", on_frame=frames.append)
-        pars = show.devices[2]
+        pars = self._pars(show)
         par = pars.first + 4
         time.sleep(0.6)
         self.assertGreater(max(frames[-1][par]), 0, "a par holds a colour between beats")
@@ -4049,7 +4052,7 @@ class TheShowLooks(ShowTest):
         hit and settling back - never dropped to dark."""
         frames = []
         show = self._show("punk", on_frame=frames.append)
-        pars = show.devices[2]
+        pars = self._pars(show)
         par = pars.first + 4
         time.sleep(0.8)
         rest = max(frames[-1][par])

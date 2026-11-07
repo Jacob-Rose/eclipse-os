@@ -3,7 +3,7 @@
 # Builds eclipse-os.ino for the Pico W and leaves a .uf2 you can drag onto the
 # board.
 #
-#   tools/build-firmware.sh [obelisk|whiteboard] [deploy|dev] [output-dir]
+#   tools/build-firmware.sh [obelisk|whiteboard|jacket] [deploy|dev] [output-dir]
 #
 # The words are tools/firmware-env.sh's. The .uf2 is named for what it is -
 # eclipse-os.whiteboard.deploy.uf2 - so two builds in one folder cannot be

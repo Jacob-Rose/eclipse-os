@@ -7,6 +7,7 @@
 
 #include <memory>
 
+#include <ecore/coord.h>
 #include <ecore/core.h>
 #include <eio/button.h>
 #include <eio/relic.h>
@@ -50,8 +51,6 @@ namespace pendant
         Board
     };
 
-    constexpr int RingLEDPin = 11; //GPIO 11
-    constexpr int OutfitLEDPin = 7; // GPIO 6
     constexpr int GreenButtonPin = A3; // GPIO 12
     constexpr int RedButtonPin = A0; // GPIO 13
     constexpr int BlueButtonPin = A1; // GPIO 26
@@ -94,6 +93,15 @@ namespace pendant
         virtual Button* getRemoteBlackButton() const { return remoteBlackButton.get(); }
 
         virtual ScreenDrawer* getScreenDrawer() const { return screenDrawer.get(); }
+
+    protected:
+        /// Where the rings sit in the relic's space: concentric circles about
+        /// `ringCentre`. An outfit that wears the pendant sets these in its
+        /// constructor, before init() maps them. @see jacket::JacketIO
+        ecore::Coord ringCentre{0.5f, 0.5f};
+        ecore::Coord outerRingRadius{0.5f, 0.5f};
+        /// The inner ring's radius as a share of the outer's.
+        float innerRingScale{0.75f};
 
     private:
         std::chrono::duration<double> lastFrameDT;

@@ -30,4 +30,6 @@ namespace wiring
 {
     constexpr eio::StripWiring kObelisk    { 6, 344, NEO_GRB + NEO_KHZ800 }; // 344 = WALL_SIDE_LENGTH * 8, asserted in obelisk.cpp
     constexpr eio::StripWiring kWhiteboard { 5, 300, NEO_BGR + NEO_KHZ800 }; // the string lights on the wall
+    constexpr eio::StripWiring kJacket     { 7, 220, NEO_GRB + NEO_KHZ800 }; // seven rings + the monowire, sums asserted in jacket_io.cpp
+    constexpr eio::StripWiring kPendantRing { 11, 28, NEO_GRB + NEO_KHZ800 }; // the pendant board's own two rings, 12 + 16
 }

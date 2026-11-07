@@ -1,8 +1,8 @@
 # AGENTS.md - Eclipse OS Development Guide
 
 ## Build/Test Commands
-- **Compile**: `./compile.sh [obelisk|whiteboard] [deploy|dev]` (default: obelisk, dev)
-- **Upload**: `./upload.sh [obelisk|whiteboard] [deploy|dev] [-p PORT]` - compiles and flashes the first board found
+- **Compile**: `./compile.sh [obelisk|whiteboard|jacket] [deploy|dev]` (default: obelisk, dev)
+- **Upload**: `./upload.sh [obelisk|whiteboard|jacket] [deploy|dev] [-p PORT]` - compiles and flashes the first board of that relic's kind (by FQBN: the jacket is a Feather RP2040, the others Pico Ws), resetting it into the bootloader over USB
 - **Release .uf2**: `tools/build-firmware.sh whiteboard deploy` -> `build-firmware/eclipse-os.whiteboard.deploy.uf2`
 - The relic/mode words become `-D`s for the whole build via `tools/firmware-env.sh`; never edit the `#define`s in `eclipse-os.ino` to switch relics
 - **After flashing an HA relic**: `tools/check-ha.py` must print `HA CHECK PASS` (drives every advertised MQTT topic from this machine; `--tidy` clears stale discovery). A change to discovery topics, subscriptions or `secrets.h` is not done until it passes

@@ -212,6 +212,11 @@ namespace edesk
         /// waits for take(). Set before open().
         void setStartReleased(bool released) { streaming = !released; }
 
+        /// Pixels per strip, by strip id: a frame goes out as one Pixels frame
+        /// per strip, the patch's pixels running through them in order. Empty
+        /// (the default) sends everything to strip 0.
+        void setStrips(const std::vector<int>& pixelsPerStrip) { stripLengths = pixelsPerStrip; }
+
         /// Reboots the relic into its USB bootloader so it can be reflashed.
         /// The relic does not come back; the port disappears.
         bool rebootToBootloader(std::string& outError);
@@ -222,6 +227,10 @@ namespace edesk
         /// Lines the relic has sent since the last call, log and all. Never
         /// waits; an empty vector means it has not said anything yet.
         std::vector<std::string> drainRelicLines();
+
+        /// True once the cable is gone. Cue mode and a released stream write
+        /// nothing a frame, so no failed write would ever say so.
+        bool hasLostLink() const { return serial.isOpen() && serial.hasHungUp(); }
 
     private:
         bool sendRaw(const uint8_t* payload, uint16_t length, uint8_t type, std::string& outError);
@@ -236,6 +245,7 @@ namespace edesk
         Mode mode;
         bool streaming{true};
         int pixelCount{0};
+        std::vector<int> stripLengths;
         int consecutiveFailures{0};
         SerialPort serial;
 
@@ -287,7 +297,33 @@ namespace edesk
     {
         std::string port;
         std::string identity; ///< what the relic answered, minus the prefix
+
+        /// The relic's name: the identity's first word, "obelisk" out of
+        /// "obelisk strip=0:344 brightness=63".
+        std::string name() const { return identity.substr(0, identity.find(' ')); }
     };
+
+    /* @brief Which answering relic a device takes, or why it takes none.
+    *
+    *     RelicChoice choice = chooseRelic(found, "jacket", true, {"obelisk", "jacket"});
+    *     if (choice.port.empty()) offline(choice.why);
+    *
+    * A relic is matched by name. `want` is the device's `output.relic`, or its
+    * device name when that is unset (`explicitName` false). An implicit name
+    * that nothing answers to still takes a lone relic - a config written for
+    * one sculpture keeps working - unless that relic's name is in `reserved`,
+    * the names the show's other relic devices are waiting for.
+    */
+    struct RelicChoice
+    {
+        std::string port;   ///< empty: none taken
+        std::string why;    ///< why none was taken, for the device's offline line
+    };
+
+    RelicChoice chooseRelic(const std::vector<RelicProbe>& found,
+                            const std::string& want,
+                            bool explicitName,
+                            const std::vector<std::string>& reserved);
 
     /// Asks every attached port whether it is a relic, and reports the ones
     /// that answer.
@@ -306,7 +342,15 @@ namespace edesk
     /// they are data with no break in front of them, which every receiver
     /// ignores by construction — but it is the reason this is a deliberate step
     /// rather than something that happens on every startup.
-    std::vector<RelicProbe> probeRelicPorts(int baud, int millisecondsEach = 250);
+    ///
+    /// `skipPorts` are not opened at all: the ports this process already
+    /// drives, where a Hello would land in the middle of a frame stream.
+    /// False for a port no relic can be on: a USB-serial bridge (ttyUSB,
+    /// cu.usbserial) is a DMX widget, never a Pico's CDC.
+    bool couldBeRelicPort(const std::string& path);
+
+    std::vector<RelicProbe> probeRelicPorts(int baud, int millisecondsEach = 250,
+                                            const std::vector<std::string>& skipPorts = {});
 
     /// First port that answers a Hello. Empty when none do.
     std::string autoDetectRelicPort(int baud);

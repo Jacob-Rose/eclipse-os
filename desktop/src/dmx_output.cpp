@@ -564,18 +564,37 @@ bool RelicUsbOutput::sendFrame(const edmx::ChannelBuffer& universe, std::string&
         return false;
     }
 
-    elink::PixelHeader header;
-    header.strip = 0;
-    header.start = 0;
-    header.count = static_cast<uint16_t>(pixelCount);
-    elink::writePixelHeader(header, payload.data());
+    const std::vector<int> oneStrip{pixelCount};
+    const std::vector<int>& strips = stripLengths.empty() ? oneStrip : stripLengths;
 
-    std::copy(universe.data(),
-              universe.data() + static_cast<size_t>(pixelCount) * 3,
-              payload.begin() + elink::PIXEL_HEADER_SIZE);
+    int first = 0;
+    for (size_t id = 0; id < strips.size() && first < pixelCount; ++id)
+    {
+        const int count = std::min(std::max(strips[id], 0), pixelCount - first);
+        if (count == 0)
+        {
+            continue;
+        }
 
-    return sendRaw(payload.data(), static_cast<uint16_t>(payload.size()),
-                   static_cast<uint8_t>(elink::FrameType::Pixels), outError);
+        elink::PixelHeader header;
+        header.strip = static_cast<uint8_t>(id);
+        header.start = 0;
+        header.count = static_cast<uint16_t>(count);
+        elink::writePixelHeader(header, payload.data());
+
+        std::copy(universe.data() + static_cast<size_t>(first) * 3,
+                  universe.data() + static_cast<size_t>(first + count) * 3,
+                  payload.begin() + elink::PIXEL_HEADER_SIZE);
+
+        const size_t length = elink::PIXEL_HEADER_SIZE + static_cast<size_t>(count) * 3;
+        if (!sendRaw(payload.data(), static_cast<uint16_t>(length),
+                     static_cast<uint8_t>(elink::FrameType::Pixels), outError))
+        {
+            return false;
+        }
+        first += count;
+    }
+    return true;
 }
 
 bool RelicUsbOutput::sendCommand(const std::string& text, std::string& outError)
@@ -757,7 +776,13 @@ std::unique_ptr<ShowOutput> edesk::makeDmxOutput(const std::string& type,
     return nullptr;
 }
 
-std::vector<RelicProbe> edesk::probeRelicPorts(int baud, int millisecondsEach)
+bool edesk::couldBeRelicPort(const std::string& path)
+{
+    return path.rfind("/dev/ttyUSB", 0) != 0 && path.rfind("/dev/cu.usbserial", 0) != 0;
+}
+
+std::vector<RelicProbe> edesk::probeRelicPorts(int baud, int millisecondsEach,
+                                               const std::vector<std::string>& skipPorts)
 // millisecondsEach is the listen window *after* the settle above, so the wall
 // clock cost per port is CDC_SETTLE_MS + however long the relic takes to
 // answer, which on a 30ms tick is one or two.
@@ -779,7 +804,11 @@ std::vector<RelicProbe> edesk::probeRelicPorts(int baud, int millisecondsEach)
         // frame of junk and flash as the show starts. Windows names every
         // port COMn, so there the probe still asks them all.
         const std::string& path = info.path;
-        if (path.rfind("/dev/ttyUSB", 0) == 0 || path.rfind("/dev/cu.usbserial", 0) == 0)
+        if (!couldBeRelicPort(path))
+        {
+            continue;
+        }
+        if (std::find(skipPorts.begin(), skipPorts.end(), path) != skipPorts.end())
         {
             continue;
         }
@@ -853,6 +882,60 @@ std::vector<RelicProbe> edesk::probeRelicPorts(int baud, int millisecondsEach)
     }
 
     return found;
+}
+
+RelicChoice edesk::chooseRelic(const std::vector<RelicProbe>& found,
+                               const std::string& want,
+                               bool explicitName,
+                               const std::vector<std::string>& reserved)
+{
+    RelicChoice choice;
+
+    std::string heard;
+    std::vector<const RelicProbe*> named;
+    for (const RelicProbe& relic : found)
+    {
+        heard += (heard.empty() ? "" : ", ") + relic.name() + " on " + relic.port;
+        if (relic.name() == want)
+        {
+            named.push_back(&relic);
+        }
+    }
+
+    if (named.size() == 1)
+    {
+        choice.port = named.front()->port;
+        return choice;
+    }
+    if (named.size() > 1)
+    {
+        // Two boards flashed as the same relic. Either could be the wrong one,
+        // so neither is taken.
+        choice.why = "more than one relic answers to '" + want + "' (" + heard
+                   + "); reflash one, or name its port";
+        return choice;
+    }
+
+    if (found.empty())
+    {
+        choice.why = "no relic answered on any port";
+        return choice;
+    }
+
+    const bool loneAndFree = found.size() == 1
+        && std::find(reserved.begin(), reserved.end(), found.front().name()) == reserved.end();
+    if (!explicitName && loneAndFree)
+    {
+        choice.port = found.front().port;
+        return choice;
+    }
+
+    choice.why = "no relic named '" + want + "' answered (heard " + heard + ")";
+    if (!explicitName)
+    {
+        choice.why += "; set output.relic to pick one";
+    }
+    return choice;
 }
 
 std::string edesk::autoDetectRelicPort(int baud)

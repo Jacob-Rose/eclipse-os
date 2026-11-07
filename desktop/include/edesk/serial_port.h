@@ -92,6 +92,12 @@ namespace edesk
         /// listen. Returns -1 on a port that has actually failed.
         int readAvailable(uint8_t* out, size_t capacity);
 
+        /// True once the device behind an open port has gone: the cable pulled,
+        /// the board reset. Never waits. A port nobody writes to - a relic on
+        /// its own looks - has no failed write to say so, and a read on a
+        /// hung-up tty is an EOF that looks the same as "nothing yet".
+        bool hasHungUp() const;
+
         /// Holds the line low for `microseconds`, then releases it and idles
         /// (marks) for `markAfterMicroseconds`. Used only by the Open DMX path.
         bool sendBreak(int microseconds, int markAfterMicroseconds, std::string& outError);

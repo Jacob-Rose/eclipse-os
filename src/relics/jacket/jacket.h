@@ -10,6 +10,7 @@
 #include <eio/relic.h>
 
 #include "../pendant/pendant.h"
+#include "../wiring.h"
 
 using namespace ecore;
 using namespace eio;

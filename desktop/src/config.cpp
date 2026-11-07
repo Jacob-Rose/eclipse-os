@@ -23,6 +23,20 @@ using namespace ebeat;
 
 namespace
 {
+    /// output.strips: a list of pixel counts. Anything else leaves it as it was.
+    void readStrips(const JsonValue& value, std::vector<int>& outStrips)
+    {
+        if (!value.isArray())
+        {
+            return;
+        }
+        outStrips.clear();
+        for (size_t i = 0; i < value.size(); ++i)
+        {
+            outStrips.push_back(value[i].asInt(0));
+        }
+    }
+
     /// The built-ins from kits/palettes.h, exposed by name so a config can say
     /// "p_ritual" instead of restating four colours.
     struct NamedPalette
@@ -316,6 +330,8 @@ namespace
         device.output.consoleChannels = output["console_channels"].asInt(device.output.consoleChannels);
         device.output.frameChannels = output["frame_channels"].asInt(device.output.frameChannels);
         device.output.start           = output["start"].asString(device.output.start);
+        device.output.relic           = output["relic"].asString(device.output.relic);
+        readStrips(output["strips"], device.output.strips);
 
         if (device.output.start != "streaming" && device.output.start != "released")
         {
@@ -971,6 +987,8 @@ bool edesk::loadConfig(const std::string& path, Config& outConfig, std::string& 
                 device.output.consoleChannels = output["console_channels"].asInt(device.output.consoleChannels);
                 device.output.frameChannels = output["frame_channels"].asInt(device.output.frameChannels);
                 device.output.start           = output["start"].asString(device.output.start);
+                device.output.relic           = output["relic"].asString(device.output.relic);
+                readStrips(output["strips"], device.output.strips);
 
                 if (device.output.start != "streaming" && device.output.start != "released")
                 {

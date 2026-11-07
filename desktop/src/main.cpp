@@ -97,7 +97,7 @@ namespace
             "  eclipse-dmx --blend-selftest\n"
             "  eclipse-dmx --link-selftest\n"
             "  eclipse-dmx --probe-relics\n"
-            "  eclipse-dmx --reboot-bootsel [--port <path>]\n"
+            "  eclipse-dmx --reboot-bootsel [--relic <name> | --port <path>]\n"
             "  eclipse-dmx --list-patterns\n"
             "  eclipse-dmx --list-palettes\n"
             "  eclipse-dmx --list-profiles\n"
@@ -1129,6 +1129,38 @@ namespace
             const float b = seam.evaluate(3.7f, 1.2f);
             check("week: the clock wrapped", seam.getCurrentTime() < 1.0f ? 1 : 0, 1);
             check("week: the seam is continuous", std::fabs(a - b) < 0.01f ? 1 : 0, 1);
+        }
+
+        // ---- two relics on one scanner: each device takes its own ---------
+        {
+            const std::vector<RelicProbe> both = {
+                {"/dev/ttyACM0", "jacket strip=0:220 strip=1:28 brightness=127"},
+                {"/dev/ttyACM1", "obelisk strip=0:344 brightness=63"},
+            };
+            const std::vector<std::string> show = {"obelisk", "jacket"};
+
+            check("relics: obelisk by its device name",
+                  chooseRelic(both, "obelisk", false, show).port == "/dev/ttyACM1" ? 1 : 0, 1);
+            check("relics: jacket by output.relic",
+                  chooseRelic(both, "jacket", true, show).port == "/dev/ttyACM0" ? 1 : 0, 1);
+
+            // the obelisk unplugged: its device must not take the jacket
+            const std::vector<RelicProbe> jacketOnly = {both[0]};
+            check("relics: a lone relic another device wants is not taken",
+                  chooseRelic(jacketOnly, "obelisk", false, {"jacket"}).port.empty() ? 1 : 0, 1);
+
+            // a config written for one sculpture, under some other name
+            const std::vector<RelicProbe> obeliskOnly = {both[1]};
+            check("relics: a lone free relic is taken by an unnamed device",
+                  chooseRelic(obeliskOnly, "device", false, {}).port == "/dev/ttyACM1" ? 1 : 0, 1);
+            check("relics: but not when the name was asked for",
+                  chooseRelic(obeliskOnly, "jacket", true, {}).port.empty() ? 1 : 0, 1);
+            check("relics: two answers and no name is no guess",
+                  chooseRelic(both, "device", false, {}).port.empty() ? 1 : 0, 1);
+
+            const std::vector<RelicProbe> twins = {both[1], {"/dev/ttyACM2", "obelisk"}};
+            check("relics: two boards flashed the same are refused",
+                  chooseRelic(twins, "obelisk", false, {}).port.empty() ? 1 : 0, 1);
         }
 
         emit(failures == 0 ? "SELFTEST PASS" : "SELFTEST FAILURES " + std::to_string(failures));
@@ -2213,6 +2245,10 @@ namespace
         std::string reportedOffline;
 
         bool isLive() const { return output != nullptr; }
+
+        /// The port this device's output was opened on; empty while offline
+        /// or when it has none. A relic probe skips it.
+        std::string port;
 
         /// Where this device's frames go, for a status line or a UI.
         std::string describeOutput() const
@@ -5302,6 +5338,7 @@ int main(int argc, char** argv)
 {
     std::string configPath;
     std::string portOverride;
+    std::string relicOverride;
     std::string deviceOverride;
     std::string patternOverride;
     std::string stateOverride;
@@ -5321,14 +5358,18 @@ int main(int argc, char** argv)
     bool sinkMode = false;
     float emitRate = 30.0f;
 
-    // --port is read ahead of the loop as well as in it, because the one-shot
-    // actions below act the moment they are parsed and would otherwise not see
-    // a --port that came after them on the line.
+    // --port and --relic are read ahead of the loop as well as in it, because
+    // the one-shot actions below act the moment they are parsed and would
+    // otherwise not see one that came after them on the line.
     for (int i = 1; i + 1 < argc; ++i)
     {
         if (std::string(argv[i]) == "--port")
         {
             portOverride = argv[i + 1];
+        }
+        if (std::string(argv[i]) == "--relic")
+        {
+            relicOverride = argv[i + 1];
         }
     }
 
@@ -5351,6 +5392,7 @@ int main(int argc, char** argv)
         }
         else if (arg == "--config" || arg == "-c") configPath = nextArg("--config");
         else if (arg == "--port")                  portOverride = nextArg("--port");
+        else if (arg == "--relic")                 relicOverride = nextArg("--relic");
         else if (arg == "--device")                deviceOverride = nextArg("--device");
         else if (arg == "--pattern")               patternOverride = nextArg("--pattern");
         else if (arg == "--state")                 stateOverride = nextArg("--state");
@@ -5407,11 +5449,38 @@ int main(int argc, char** argv)
 
             if (target.empty())
             {
-                const std::vector<RelicProbe> found = probeRelicPorts(115200);
-                if (!found.empty())
+                // With two relics on one machine "the first to answer" is a
+                // coin toss, so with more than one it has to be named.
+                //
+                // Counted by port, not by answer: a relic another process holds
+                // can stay silent (its reply goes to that reader), so one
+                // answer among two relic-shaped ports is not "only one relic".
+                size_t candidates = 0;
+                for (const SerialPortInfo& info : SerialPort::enumeratePorts())
                 {
-                    target = found.front().port;
-                    logLine("relic on " + target + ": " + found.front().identity);
+                    candidates += couldBeRelicPort(info.path) ? 1 : 0;
+                }
+                if (relicOverride.empty() && candidates > 1)
+                {
+                    emit("ERR " + std::to_string(candidates) + " ports could be relics;"
+                         " name the one to reboot with --relic NAME (--probe-relics"
+                         " lists who answers) or --port. Nothing was touched.");
+                    return 1;
+                }
+
+                const std::vector<RelicProbe> found = probeRelicPorts(115200);
+                const RelicChoice choice = chooseRelic(found, relicOverride,
+                                                       !relicOverride.empty(), {});
+                if (choice.port.empty() && !found.empty())
+                {
+                    emit("ERR " + choice.why + ". Pick one with --relic NAME"
+                         " (--probe-relics lists them). Nothing was touched.");
+                    return 1;
+                }
+                if (!choice.port.empty())
+                {
+                    target = choice.port;
+                    logLine("relic on " + target);
 
                     RelicUsbOutput relic(target, 115200, RelicUsbOutput::Mode::Cue);
                     std::string error;
@@ -5642,6 +5711,11 @@ int main(int argc, char** argv)
     //
     // `announce` is off on a retry: the port it found and the rate it settled
     // on are worth saying the first time and are noise every two seconds after.
+    // One probe at startup for every relic device, not one each: a pass costs
+    // every port a CDC settle, and a pi 3B under --client has a READY deadline
+    // to meet. A retry asks afresh.
+    std::optional<std::vector<RelicProbe>> startupProbes;
+
     const auto attachWire = [&](DeviceRuntime& device, bool announce) -> bool
     {
         const Device& config = *device.config;
@@ -5649,6 +5723,7 @@ int main(int argc, char** argv)
         std::string error;
 
         device.offline.clear();
+        device.port.clear();
 
         // ---- resolve its port --------------------------------------------
         std::string port = config.output.port;
@@ -5661,7 +5736,66 @@ int main(int argc, char** argv)
             // this machine the DMX widget and a Pico are both "COMn" with a
             // description that names neither, and picking the widget would mean
             // a show driving something that ignores it. See probeRelicPorts.
-            port = isRelic ? autoDetectRelicPort(config.output.baud) : autoDetectPort();
+            //
+            // And by name, because the scanner carries two: the first to
+            // answer is whichever enumerated first. The probe stays off ports
+            // this show already drives - a Hello there lands mid-stream.
+            std::string relicWhy;
+            if (isRelic)
+            {
+                std::vector<std::string> claimed;
+                for (const DeviceRuntime& other : show.devices)
+                {
+                    if (&other != &device && !other.port.empty())
+                    {
+                        claimed.push_back(other.port);
+                    }
+                }
+                // from the config rather than the runtimes: at startup the
+                // devices after this one are not built yet
+                std::vector<std::string> reserved;
+                for (const Device& other : show.config.devices)
+                {
+                    const bool theirsIsRelic = other.output.type == "relic_usb"
+                                            || other.output.type == "relic_usb_cue";
+                    if (&other != &config && theirsIsRelic)
+                    {
+                        reserved.push_back(other.output.relic.empty() ? other.name : other.output.relic);
+                    }
+                }
+
+                std::vector<RelicProbe> found;
+                if (announce)
+                {
+                    if (!startupProbes)
+                    {
+                        startupProbes = probeRelicPorts(config.output.baud);
+                    }
+                    for (const RelicProbe& relic : *startupProbes)
+                    {
+                        if (std::find(claimed.begin(), claimed.end(), relic.port) == claimed.end())
+                        {
+                            found.push_back(relic);
+                        }
+                    }
+                }
+                else
+                {
+                    found = probeRelicPorts(config.output.baud, 250, claimed);
+                }
+
+                const bool explicitName = !config.output.relic.empty();
+                const RelicChoice choice = chooseRelic(
+                    found,
+                    explicitName ? config.output.relic : config.name,
+                    explicitName, reserved);
+                port = choice.port;
+                relicWhy = choice.why;
+            }
+            else
+            {
+                port = autoDetectPort();
+            }
 
             const bool needsWire = config.output.type != "console"
                                 && config.output.type != "preview"
@@ -5677,7 +5811,7 @@ int main(int argc, char** argv)
 
             if (port.empty() && isRelic)
             {
-                device.offline = "no relic answered on any port";
+                device.offline = relicWhy;
             }
             else if (port.empty() && needsWire && !findsItsOwnWidget)
             {
@@ -5706,6 +5840,7 @@ int main(int argc, char** argv)
             if (RelicUsbOutput* relic = device.output->asRelicLink())
             {
                 relic->setStartReleased(config.output.start == "released");
+                relic->setStrips(config.output.strips);
             }
             if (!device.output->open(error))
             {
@@ -5746,7 +5881,23 @@ int main(int argc, char** argv)
             device.fps = outputCeiling;
         }
 
+        device.port = port;
         return true;
+    };
+
+    // A live device whose wire went: back to offline, where the retry below
+    // picks it up when the cable is back. One pulled cable is one dark device,
+    // not the end of the show.
+    const auto dropWire = [&](DeviceRuntime& device, const std::string& why, double frameSeconds)
+    {
+        device.output->close();
+        device.output.reset();
+        device.port.clear();
+        device.offline = why;
+        device.reportedOffline = why;
+        device.nextRetryAt = frameSeconds + kDeviceRetrySeconds;
+        logLine("[" + device.name() + "] lost its wire: " + why + "; retrying");
+        emit("OFFLINE " + device.name() + ": " + why);
     };
 
     // ---- bring every device up -------------------------------------------
@@ -6164,6 +6315,16 @@ int main(int argc, char** argv)
         const float master = show.blackout ? 0.0f : show.masterBrightness;
         const double frameSeconds = std::chrono::duration<double>(now.time_since_epoch()).count();
 
+        // ---- anything whose cable was just pulled -------------------------
+        for (DeviceRuntime& device : show.devices)
+        {
+            RelicUsbOutput* relic = device.isLive() ? device.output->asRelicLink() : nullptr;
+            if (relic && relic->hasLostLink())
+            {
+                dropWire(device, "the relic on " + device.port + " went away", frameSeconds);
+            }
+        }
+
         // ---- anything still without a wire -------------------------------
         // Ask again, every kDeviceRetrySeconds. This is the widget that was not
         // plugged in when the show started, the one that got knocked out of the
@@ -6219,7 +6380,6 @@ int main(int argc, char** argv)
             }
         }
 
-        bool outputFailed = false;
         for (DeviceRuntime& device : show.devices)
         {
             // Push through the strip so the desktop path and the
@@ -6284,17 +6444,8 @@ int main(int argc, char** argv)
 
             if (!device.output->sendFrame(device.universe, error))
             {
-                logLine("output error: [" + device.name() + "] " + error);
-                emit("ERR output " + device.name() + ": " + error);
-                outputFailed = true;
-                break;
+                dropWire(device, error, frameSeconds);
             }
-        }
-
-        if (outputFailed)
-        {
-            exitCode = 1;
-            break;
         }
 
         // What the relic has to say. It answers a Hello by naming its strips and

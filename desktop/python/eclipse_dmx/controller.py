@@ -42,6 +42,10 @@ Color = Union[str, Sequence[float]]
 #: with `remote_command`, or per machine with ECLIPSE_DMX_REMOTE_COMMAND.
 DEFAULT_REMOTE_COMMAND = "~/Documents/afterglow/launch-desk.sh"
 
+#: How long an eclipse-dmx over ssh gets to say READY. See the wait in
+#: ShowController.__init__.
+REMOTE_STARTUP_SECONDS = 15.0
+
 #: The desktop/ directory this package lives under. A remote host with the
 #: same checkout resolves a config path relative to it, so `config/scanner.json`
 #: names the same file at both ends whatever the checkouts are called.
@@ -733,8 +737,12 @@ class ShowController:
         _live.add(self)
 
         # Wait for READY (or an early ERR) so callers can assume the rig is
-        # live the moment the constructor returns.
-        deadline = time.monotonic() + max(self.command_timeout, 5.0)
+        # live the moment the constructor returns. Longer over ssh: the
+        # scanner-pi is a 3B starting a root python bridge, then probing every
+        # relic's port, and with the obelisk and the jacket both on it that
+        # took the 5s a local start gets.
+        startup = REMOTE_STARTUP_SECONDS if self.remote else 5.0
+        deadline = time.monotonic() + max(self.command_timeout, startup)
         while time.monotonic() < deadline:
             if any(event.startswith("READY") for event in self._events):
                 return
@@ -896,12 +904,18 @@ class ShowController:
 
         # OFFLINE <device>: <reason>
         #
-        # A device that came up without a wire. Deliberately not ERR: on this
+        # A device without a wire, at startup or after losing it. Not ERR: on this
         # protocol ERR is how a *command* is refused, and start() reads a
         # pre-READY ERR as a show that will not run - which this is not.
         if line.startswith("OFFLINE "):
             name, _, reason = line[len("OFFLINE "):].partition(":")
+            self.offline_devices = [d for d in self.offline_devices if d[0] != name.strip()]
             self.offline_devices.append((name.strip(), reason.strip()))
+
+        # ONLINE <device>: <output> - a wire came back, at startup or mid-show.
+        if line.startswith("ONLINE "):
+            name = line[len("ONLINE "):].partition(":")[0].strip()
+            self.offline_devices = [d for d in self.offline_devices if d[0] != name]
 
         if line.startswith("FIXTURES "):
             self.fixture_names = line.split()[1:]

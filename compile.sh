@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Compile the sketch. ./compile.sh [obelisk|whiteboard] [deploy|dev]
+# Compile the sketch. ./compile.sh [obelisk|whiteboard|jacket] [deploy|dev]
 # The words are tools/firmware-env.sh's; no words is the obelisk, dev.
 set -u
 export PATH="$HOME/.local/bin:$PATH"

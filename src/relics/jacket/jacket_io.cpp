@@ -5,6 +5,8 @@
 
 #include "jacket_io.h"
 
+#include "../wiring.h"
+
 #include <eio/strip_projection.h>
 #include <ecore/logging.h>
 
@@ -15,15 +17,21 @@ using namespace ecore::log;
 
 JacketIO::JacketIO()
 {
+    // The pendant where the scanner's ring is on the stage - radius 3.5 about
+    // (3.5, 19.5) - in the jacket's units, as desktop/devices/jacket.json
+    // stacks the sleeve: a stage unit is 1/7 across a ring, and above the
+    // shoulder ring (6.5 here, y 19 there) half a unit up the sleeve.
+    ringCentre = Coord(3.5f / 7.0f, 6.5f + 0.5f / 2.0f);
+    outerRingRadius = Coord(3.5f / 7.0f, 3.5f / 2.0f);
 }
 
 void JacketIO::init()
 {
     PendantIO::init();
 
-    int LENGTH = jacket::RING_ONE_LENGTH + jacket::RING_TWO_LENGTH + jacket::RING_THREE_LENGTH + jacket::RING_FOUR_LENGTH + jacket::RING_FIVE_LENGTH + jacket::RING_SIX_LENGTH + jacket::RING_SEVEN_LENGTH + jacket::MONOWIRE_LENGTH;
-    //TODO Replace pin #22
-    auto [mainStripIt, stripInserted] = strips.emplace(static_cast<uint8_t>(1), make_unique<HSVStrip>(LENGTH, pendant::OutfitLEDPin));
+    constexpr int LENGTH = jacket::RING_ONE_LENGTH + jacket::RING_TWO_LENGTH + jacket::RING_THREE_LENGTH + jacket::RING_FOUR_LENGTH + jacket::RING_FIVE_LENGTH + jacket::RING_SIX_LENGTH + jacket::RING_SEVEN_LENGTH + jacket::MONOWIRE_LENGTH;
+    static_assert(wiring::kJacket.length == LENGTH, "relics/wiring.h and the jacket's ring lengths disagree");
+    auto [mainStripIt, stripInserted] = strips.emplace(static_cast<uint8_t>(0), make_unique<HSVStrip>(wiring::kJacket)); // 0: the strip a desk's pixel frames address
 
 
     HSVStrip* mainStrip = mainStripIt->second.get();
