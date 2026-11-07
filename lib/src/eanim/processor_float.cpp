@@ -44,7 +44,9 @@ float Lerper::getProgress() const
 
 float Lerper::getValue() const
 {
-    return std::lerp(startValue, targetValue, getProgress());
+    const float progress = getProgress();
+    const float shaped = easing ? static_cast<float>(easing(progress)) : progress;
+    return std::lerp(startValue, targetValue, shaped);
 }
 
 // ---- Momentum -------------------------------------------------------------------

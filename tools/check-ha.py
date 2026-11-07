@@ -166,6 +166,8 @@ def main():
 
         # drive every command the config advertises and expect its state echo
         drives = []
+        if 'rgb_command_topic' in c:
+            drives.append((c['rgb_command_topic'], '255,0,0', c['rgb_state_topic'], '255,0,0'))
         if 'effect_command_topic' in c and c.get('effect_list'):
             eff = c['effect_list']
             drives += [(c['effect_command_topic'], e, c['effect_state_topic'], e) for e in eff[:2]]

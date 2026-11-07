@@ -52,6 +52,9 @@ namespace ecore
         // expected user facing constructor
         HSV(const float& inH, const float& inS, const float& inV);
 
+        /// From 8-bit red, green and blue.
+        static HSV fromRGB(uint8_t red, uint8_t green, uint8_t blue);
+
         void blendWith(const HSV& otherColor, float alphaAsFloat);
         static HSV blend(const HSV& a, const HSV& b, float alphaAsFloat);
 

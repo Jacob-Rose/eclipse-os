@@ -195,3 +195,37 @@ std::string HSV::to_string() const{
     str += " val: " + std::to_string(getValAs8());
     return str;
 }
+
+HSV HSV::fromRGB(uint8_t red, uint8_t green, uint8_t blue)
+{
+    const float r = red / 255.0f;
+    const float g = green / 255.0f;
+    const float b = blue / 255.0f;
+
+    const float high = std::max({r, g, b});
+    const float low = std::min({r, g, b});
+    const float range = high - low;
+
+    float hue = 0.0f;
+    if (range > 0.0f)
+    {
+        if (high == r)
+        {
+            hue = 60.0f * ((g - b) / range);
+        }
+        else if (high == g)
+        {
+            hue = 60.0f * ((b - r) / range + 2.0f);
+        }
+        else
+        {
+            hue = 60.0f * ((r - g) / range + 4.0f);
+        }
+        if (hue < 0.0f)
+        {
+            hue += 360.0f;
+        }
+    }
+
+    return HSV(hue, high > 0.0f ? range / high : 0.0f, high);
+}

@@ -8,6 +8,8 @@
 #include <ecore/core.h>
 #include <ecore/tickable.h>
 
+#include <external/easing.h>
+
 #include "attribute_float.h"
 
 using namespace ecore;
@@ -68,6 +70,11 @@ namespace eanim
 
         /// Heads for a target over the given seconds; zero or less snaps.
         void startLerp(float inTargetValue, float inDuration);
+        /// Shapes the move, such as getEasingFunction(easing_functions::EaseInOutCubic). Null is
+        /// a straight line. A lerp retargeted part way starts from where the
+        /// eased value is.
+        void setEasing(easingFunction inEasing) { easing = inEasing; }
+
         /// Heads for a target over the last duration used (1s before any).
         void setTargetValue(float inTargetValue) override { startLerp(inTargetValue, duration); }
 
@@ -84,6 +91,7 @@ namespace eanim
         float targetValue{0.0f};
         float duration{1.0f};
         float elapsed{1.0f};
+        easingFunction easing{nullptr};
     };
 
 

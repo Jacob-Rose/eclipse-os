@@ -230,6 +230,17 @@ TEST(mqtt_handler_routes_a_message_to_its_topic)
     CHECK(heard == "on");
 }
 
+TEST(mqtt_payload_parser_reads_home_assistants_rgb)
+{
+    uint8_t red = 0, green = 0, blue = 0;
+    CHECK(PayloadParser::parseRGB("255,128,0", red, green, blue));
+    CHECK_EQ(red, 255);
+    CHECK_EQ(green, 128);
+    CHECK_EQ(blue, 0);
+    CHECK(!PayloadParser::parseRGB("255,128", red, green, blue));
+    CHECK(!PayloadParser::parseRGB("256,0,0", red, green, blue));
+}
+
 TEST(mqtt_ha_discovery_publishes_off_arduino)
 {
     FakeTransport::Shared shared;

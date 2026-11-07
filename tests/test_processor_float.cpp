@@ -11,6 +11,34 @@
 
 using namespace eanim;
 
+TEST(lerper_eases_in_and_out_and_arrives)
+{
+    Lerper fade(0.0f);
+    fade.setEasing(getEasingFunction(easing_functions::EaseInOutCubic));
+    fade.startLerp(100.0f, 1.0f);
+
+    fade.tick(0.25f);
+    CHECK(fade.getValue() < 25.0f);     // slower than a line at the start
+    fade.tick(0.25f);
+    CHECK_NEAR(fade.getValue(), 50.0f, 0.01f);
+    fade.tick(0.25f);
+    CHECK(fade.getValue() > 75.0f);     // and easing off at the end
+    fade.tick(0.25f);
+    CHECK_NEAR(fade.getValue(), 100.0f, 0.001f);
+}
+
+TEST(lerper_reversed_part_way_through_an_ease_does_not_jump)
+{
+    Lerper fade(0.0f);
+    fade.setEasing(getEasingFunction(easing_functions::EaseInOutCubic));
+    fade.startLerp(100.0f, 1.0f);
+    fade.tick(0.75f);
+    const float before = fade.getValue();
+
+    fade.startLerp(0.0f, 1.0f);
+    CHECK_NEAR(fade.getValue(), before, 0.001f);
+}
+
 TEST(lerper_moves_in_a_straight_line_and_retargets_from_where_it_is)
 {
     Lerper lerp(0.0f);

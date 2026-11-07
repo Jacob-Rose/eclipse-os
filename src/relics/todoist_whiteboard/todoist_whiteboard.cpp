@@ -5,6 +5,8 @@
 
 #include "todoist_whiteboard.h"
 
+#include <algorithm>
+#include <cmath>
 #include <string>
 
 #include <eio/strip_projection.h>
@@ -18,6 +20,16 @@ using namespace ecore;
 using namespace ecore::log;
 using namespace eio;
 using namespace eanim;
+
+namespace
+{
+    /// What the strip runs at when Home Assistant says 255.
+    constexpr uint8_t kFullStripBrightness = 63;
+
+    constexpr float kBrightnessFadeSeconds = 0.75f;
+
+    constexpr uint32_t kDefaultColorRgb = 0x28CCCC;
+}
 
 WhiteboardIO::WhiteboardIO() : RelicIO()
 {
@@ -147,6 +159,7 @@ WhiteboardCore::WhiteboardCore(MqttClient& mqtt)
       mqttClient(mqtt),
       currentPattern(WhiteboardPattern::Noise),
       bPowerOn(true),
+      colorRgb(kDefaultColorRgb),
       bDiscoveryPublished(false),
       bHasHAConfig(false)
 {
@@ -162,7 +175,9 @@ WhiteboardCore::WhiteboardCore(MqttClient& mqtt)
     noiseState->init();
 
     monoState = std::make_shared<State_GenericHSV>("monoState", coreIO.get());
-    monoState->setGenerator(make_shared<Pattern_Whiteboard_Monocolor>());
+    monoPattern = make_shared<Pattern_Whiteboard_Monocolor>();
+    monoPattern->color = HSV::fromRGB((kDefaultColorRgb >> 16) & 0xFF, (kDefaultColorRgb >> 8) & 0xFF, kDefaultColorRgb & 0xFF);
+    monoState->setGenerator(monoPattern);
     monoState->init();
 
     rainbowState = std::make_shared<State_GenericHSV>("rainbowState", coreIO.get());
@@ -181,7 +196,9 @@ WhiteboardCore::WhiteboardCore(MqttClient& mqtt)
     stateMachine->setActiveState(noiseState);
     stateMachine->init();
 
-    brightnessByte.store(getEBrightnessAsByte(coreIO->getGlobalBrightness()));
+    stripFade.setEasing(getEasingFunction(easing_functions::EaseInOutCubic));
+    stripFade.reset(kFullStripBrightness);
+    appliedStripBrightness = getEBrightnessAsByte(coreIO->getGlobalBrightness());
 }
 
 // The topics the light advertises in its discovery config - see
@@ -270,6 +287,9 @@ void WhiteboardCore::setupMQTT()
     mqttHandler.registerHandler(haTopic(kLightId, "effect/set"), [this](const std::string& payload) {
         onPatternCommand(payload);
     });
+    mqttHandler.registerHandler(haTopic(kLightId, "rgb/set"), [this](const std::string& payload) {
+        onColorCommand(payload);
+    });
     mqttHandler.registerHandler("whiteboard/pattern", [this](const std::string& payload) {
         onPatternCommand(payload);
     });
@@ -298,6 +318,7 @@ void WhiteboardCore::subscribeTopics()
     mqttClient.subscribe(haTopic(kLightId, "set").c_str());
     mqttClient.subscribe(haTopic(kLightId, "brightness/set").c_str());
     mqttClient.subscribe(haTopic(kLightId, "effect/set").c_str());
+    mqttClient.subscribe(haTopic(kLightId, "rgb/set").c_str());
     mqttClient.subscribe("whiteboard/pattern");
     mqttClient.subscribe("whiteboard/brightness");
     mqttClient.subscribe("whiteboard/power");
@@ -360,6 +381,17 @@ void WhiteboardCore::onModeCommand(const std::string& payload)
     onPatternCommand(payload);
 }
 
+void WhiteboardCore::onColorCommand(const std::string& payload)
+{
+    dbgLog(("Color command: " + payload).c_str(), Verbosity::Display, Category::Relic);
+
+    uint8_t red, green, blue;
+    if (!PayloadParser::parseRGB(payload, red, green, blue))
+        return;
+
+    queueCommand(WhiteboardCommand::Kind::Color, (red << 16) | (green << 8) | blue);
+}
+
 void WhiteboardCore::applyCommands()
 {
     WhiteboardCommand command;
@@ -372,27 +404,59 @@ void WhiteboardCore::applyCommands()
                 break;
 
             case WhiteboardCommand::Kind::Brightness:
-                if (command.value >= 192)
-                    coreIO->setGlobalBrightness(EBrightness::HIGH);
-                else if (command.value >= 64)
-                    coreIO->setGlobalBrightness(EBrightness::MED);
+                // HA sends a brightness and then ON, so a level alone does not
+                // light a board that is off. Zero is how a slider says off.
+                if (command.value > 0)
+                    brightnessLevel.store(static_cast<uint8_t>(std::min(command.value, 255)));
                 else
-                    coreIO->setGlobalBrightness(EBrightness::MIN);
+                    bPowerOn.store(false);
+                startBrightnessFade();
                 markStateChanged();
                 break;
 
             case WhiteboardCommand::Kind::Power:
                 bPowerOn.store(command.value != 0);
-                coreIO->setGlobalBrightness(command.value != 0 ? EBrightness::HIGH : EBrightness::NIGHTTRIP);
+                startBrightnessFade();
                 markStateChanged();
                 break;
+
+            case WhiteboardCommand::Kind::Color:
+                colorRgb.store(static_cast<uint32_t>(command.value));
+                monoPattern->color = HSV::fromRGB((command.value >> 16) & 0xFF, (command.value >> 8) & 0xFF, command.value & 0xFF);
+                setPattern(WhiteboardPattern::Monocolor);
+                break;
+        }
+    }
+}
+
+void WhiteboardCore::startBrightnessFade()
+{
+    float target = 0.0f;
+    if (bPowerOn.load())
+    {
+        // Never rounded down to dark: only off is off.
+        target = std::max(1.0f, std::round(brightnessLevel.load() * kFullStripBrightness / 255.0f));
+    }
+    stripFade.startLerp(target, kBrightnessFadeSeconds);
+}
+
+void WhiteboardCore::tickBrightness(float deltaTime)
+{
+    stripFade.tick(deltaTime);
+
+    const uint8_t brightness = static_cast<uint8_t>(std::lround(stripFade.getValue()));
+    if (brightness != appliedStripBrightness)
+    {
+        appliedStripBrightness = brightness;
+        for (const auto& strip : coreIO->strips)
+        {
+            strip.second->setStripBrightness(brightness);
         }
     }
 }
 
 void WhiteboardCore::markStateChanged()
 {
-    brightnessByte.store(getEBrightnessAsByte(coreIO->getGlobalBrightness()));
     stateRevision.store(stateRevision.load(std::memory_order_relaxed) + 1, std::memory_order_release);
 }
 
@@ -414,14 +478,21 @@ const char* WhiteboardCore::patternName() const
 
 void WhiteboardCore::publishState()
 {
+    // Retained, so HA has them whenever it subscribes: the first ones go out
+    // alongside discovery, before it is listening.
     const char* power = bPowerOn.load() ? "ON" : "OFF";
-    mqttClient.publish(haTopic(kLightId, "state").c_str(), power);
-    mqttClient.publish(haTopic(kLightId, "effect").c_str(), patternName());
+    mqttClient.publish(haTopic(kLightId, "state").c_str(), power, true);
+    mqttClient.publish(haTopic(kLightId, "effect").c_str(), patternName(), true);
 
-    // What the slider should sit at: the byte the strip is actually on.
     char brightness[4];
-    snprintf(brightness, sizeof(brightness), "%u", static_cast<unsigned>(brightnessByte.load()));
-    mqttClient.publish(haTopic(kLightId, "brightness").c_str(), brightness);
+    snprintf(brightness, sizeof(brightness), "%u", static_cast<unsigned>(brightnessLevel.load()));
+    mqttClient.publish(haTopic(kLightId, "brightness").c_str(), brightness, true);
+
+    const uint32_t rgb = colorRgb.load();
+    char color[12];
+    snprintf(color, sizeof(color), "%u,%u,%u", static_cast<unsigned>((rgb >> 16) & 0xFF),
+             static_cast<unsigned>((rgb >> 8) & 0xFF), static_cast<unsigned>(rgb & 0xFF));
+    mqttClient.publish(haTopic(kLightId, "rgb").c_str(), color, true);
 
     // The older names, kept for anything already listening.
     mqttClient.publish("whiteboard/state", power);
@@ -430,14 +501,16 @@ void WhiteboardCore::publishState()
 
 void WhiteboardCore::publishModeState()
 {
-    mqttClient.publish(haTopic(kModeId, "state").c_str(), patternName());
+    mqttClient.publish(haTopic(kModeId, "state").c_str(), patternName(), true);
 }
 
 void WhiteboardCore::setPattern(WhiteboardPattern pattern)
 {
+    // A colour picker drags through many of these; the look is already up.
+    const bool changed = pattern != currentPattern.load();
     currentPattern = pattern;
 
-    switch (pattern) {
+    if (changed) switch (pattern) {
         case WhiteboardPattern::Noise:
             stateMachine->setNextState(noiseState);
             break;
@@ -465,13 +538,14 @@ void WhiteboardCore::tick(float deltaTime)
 {
     RelicCore::tick(deltaTime);
     applyCommands();
+    tickBrightness(deltaTime);
     stateMachine->tick(deltaTime);
 }
 
 void WhiteboardCore::tickWhileLinked(float deltaTime)
 {
-    (void)deltaTime;
     applyCommands();
+    tickBrightness(deltaTime);
 }
 
 void WhiteboardCore::tickNetwork()

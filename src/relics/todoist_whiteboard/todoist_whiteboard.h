@@ -11,6 +11,7 @@
 #include <ecore/core.h>
 #include <ecore/spsc_queue.h>
 #include <ecore/timer.h>
+#include <eanim/processor_float.h>
 #include <esm/state.h>
 #include <esm/state_generic.h>
 #include <eio/relic.h>
@@ -23,6 +24,8 @@ using namespace ecore;
 using namespace eio;
 using namespace esm;
 using namespace emqtt;
+
+class Pattern_Whiteboard_Monocolor;
 
 namespace todoist_whiteboard
 {
@@ -43,11 +46,12 @@ namespace todoist_whiteboard
     };
 
     /* @brief Something MQTT asked for, on its way to the render core.
-    * `value` is a WhiteboardPattern, a 0-255 brightness, or 0/1 for power.
+    * `value` is a WhiteboardPattern, a 0-255 brightness, 0/1 for power, or a
+    * colour as 0xRRGGBB.
     */
     struct WhiteboardCommand
     {
-        enum class Kind : uint8_t { Pattern, Brightness, Power };
+        enum class Kind : uint8_t { Pattern, Brightness, Power, Color };
 
         Kind kind{Kind::Pattern};
         int value{0};
@@ -90,7 +94,10 @@ namespace todoist_whiteboard
         void onBrightnessCommand(const std::string& payload);
         void onPowerCommand(const std::string& payload);
         void onModeCommand(const std::string& payload);
+        void onColorCommand(const std::string& payload);
         void applyCommands();
+        void startBrightnessFade();
+        void tickBrightness(float deltaTime);
         void queueCommand(WhiteboardCommand::Kind kind, int value);
         void markStateChanged();
         void markModeChanged();
@@ -104,6 +111,7 @@ namespace todoist_whiteboard
         shared_ptr<State_GenericHSV> monoState;
         shared_ptr<State_GenericHSV> rainbowState;
         shared_ptr<State_GenericHSV> fireState;
+        shared_ptr<Pattern_Whiteboard_Monocolor> monoPattern;
 
         MqttClient& mqttClient;
         MqttHandler mqttHandler;
@@ -115,9 +123,14 @@ namespace todoist_whiteboard
         // written by the render core, read by the network core
         std::atomic<WhiteboardPattern> currentPattern;
         std::atomic<bool> bPowerOn;
-        std::atomic<uint8_t> brightnessByte{0};
+        std::atomic<uint8_t> brightnessLevel{255};  // Home Assistant's 0-255; kept through an off
+        std::atomic<uint32_t> colorRgb;             // 0xRRGGBB
         std::atomic<uint32_t> stateRevision{0};
         std::atomic<uint32_t> modeRevision{0};
+
+        // the render core's own
+        eanim::Lerper stripFade;
+        uint8_t appliedStripBrightness{0};
 
         // the network core's own
         uint32_t publishedStateRevision{0};
